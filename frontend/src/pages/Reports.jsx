@@ -70,7 +70,7 @@ const Reports = () => {
     setBanner('');
     try {
       const token = localStorage.getItem('ats_token');
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/reports/export?report=${report}&format=${format}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/reports/export?report=${report}&format=${format}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
