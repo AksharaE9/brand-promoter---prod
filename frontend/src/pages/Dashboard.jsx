@@ -49,28 +49,17 @@ const Dashboard = () => {
 
     const load = async () => {
       try {
-        const [candidatesRes, jobsRes, applicationsRes, interviewsRes] = await Promise.all([
-          apiGet('/candidates?limit=1'),
-          apiGet('/jobs?limit=1'),
-          apiGet('/applications?limit=200'),
-          apiGet('/interviews'),
-        ]);
+        const res = await apiGet('/dashboard/init');
+        const { stats, recentApplications, upcomingInterviews } = res.data;
 
         if (!mounted) return;
 
-        setCandidatesTotal(candidatesRes.pagination?.total || candidatesRes.data?.length || 0);
-        setJobsTotal(jobsRes.pagination?.total || jobsRes.data?.length || 0);
-        setApplications(applicationsRes.data || []);
-        setInterviews(interviewsRes.data || []);
+        setCandidatesTotal(stats.candidates || 0);
+        setJobsTotal(stats.activeJobs || 0);
+        setApplications(recentApplications || []);
+        setInterviews(upcomingInterviews || []);
 
-        if (currentUser?.role === 'SUPER_ADMIN') {
-          try {
-            const usersRes = await apiGet('/users');
-            if (mounted) setUsersTotal(usersRes.data?.length || 0);
-          } catch (_) {
-            if (mounted) setUsersTotal(0);
-          }
-        }
+        setUsersTotal(stats.activeUsers || 0);
       } catch (err) {
         if (!mounted) return;
         setError(err.message || 'Failed to load dashboard data');

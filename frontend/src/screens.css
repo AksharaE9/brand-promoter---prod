@@ -76,9 +76,9 @@
 
 .os-nav-item:hover,
 .os-footer-link:hover {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  transform: translateX(2px);
+  transform: translateX(3px);
 }
 
 .os-nav-item.active {
@@ -107,14 +107,15 @@
 }
 
 .os-topbar {
-  height: 70px;
-  padding: 10px 18px;
+  height: 72px;
+  padding: 0 24px;
   display: grid;
-  grid-template-columns: minmax(240px, 420px) 1fr auto;
+  grid-template-columns: minmax(280px, 460px) 1fr auto;
   align-items: center;
-  gap: 18px;
+  gap: 24px;
   background: #fff;
   border-bottom: 1px solid var(--ats-line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .os-search {
@@ -141,7 +142,8 @@
 .os-top-tabs {
   display: flex;
   justify-content: center;
-  gap: 22px;
+  align-items: center;
+  gap: 32px;
 }
 
 .os-top-tab {
@@ -173,9 +175,9 @@
 }
 
 .os-icon-btn {
-  height: 36px;
-  width: 36px;
-  border-radius: 10px;
+  height: 40px;
+  width: 40px;
+  border-radius: 12px;
   border: 1px solid var(--ats-line);
   background: #fff;
   color: #546282;
@@ -183,7 +185,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .os-icon-btn:hover {
@@ -347,16 +349,18 @@
 .os-user-chip {
   display: flex;
   align-items: center;
-  gap: 10px;
-  border-left: 1px solid var(--ats-line);
-  padding-left: 12px;
+  gap: 14px;
+  border-left: 2px solid #f1f5f9;
+  padding-left: 20px;
+  height: 40px;
 }
 
 .os-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   object-fit: cover;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
 }
 
 .os-card {
@@ -431,7 +435,7 @@
   border-color: #cfd9e8;
   color: #2d3b61;
   transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(15, 27, 61, 0.08);
+  box-shadow: 0 12px 24px rgba(15, 27, 61, 0.08);
 }
 
 .os-btn-primary:active,
@@ -613,7 +617,9 @@
   height: 44px !important;
 }
 
-.text-white { color: #ffffff !important; }
+.text-white {
+  color: #ffffff !important;
+}
 
 /* Calendar Grid Styles */
 .calendar-container {
@@ -707,5 +713,14 @@
   border-left: 3px solid var(--ats-primary);
 }
 
-.calendar-event.result-pass { background: #e6f9f0; color: #1e8a54; border-left-color: #1e8a54; }
-.calendar-event.result-fail { background: #fff1f1; color: #d32f2f; border-left-color: #d32f2f; }
+.calendar-event.result-pass {
+  background: #e6f9f0;
+  color: #1e8a54;
+  border-left-color: #1e8a54;
+}
+
+.calendar-event.result-fail {
+  background: #fff1f1;
+  color: #d32f2f;
+  border-left-color: #d32f2f;
+}

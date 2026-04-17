@@ -77,6 +77,8 @@ model User {
   filesUploaded     FileMeta[]        @relation("FileUploadedBy")
   profilePhotoFileId String?          @map("profile_photo_file_id") @db.Uuid
   profilePhotoFile   FileMeta?         @relation("UserProfilePhoto", fields: [profilePhotoFileId], references: [id])
+  products           Product[]
+  coordinatedProducts Product[]       @relation("ProductCoordinator")
 
   @@index([email])
   @@map("users")
@@ -128,11 +130,14 @@ model Candidate {
   education            CandidateEducation[]
   applications         Application[]
   customFieldValues    CustomFieldValue[]
+  projectAssignments   ProductCandidateAssignment[]
 
   @@index([fullName])
   @@index([email])
   @@index([phone])
   @@index([category])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
   @@map("candidates")
 }
 
@@ -184,6 +189,7 @@ model Application {
   @@index([jobId, status])
   @@index([currentStageId])
   @@index([shortlisted])
+  @@index([joinedOn])
   @@map("applications")
 }
 
@@ -327,4 +333,83 @@ model AuditLog {
   @@index([actorUserId, createdAt(sort: Desc)])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+enum SalesStatus {
+  LEAD
+  CONTACTED
+  INTERESTED
+  CONVERTED
+  REJECTED
+  NEGOTIATION
+
+  @@map("sales_status")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  category    String   @db.VarChar(100)
+  location    String?  @db.VarChar(255)
+  description String?  @db.Text
+  price       Float?
+  tags        String[] @default([])
+  attachments Json?
+  coordinatorId String? @map("coordinator_id") @db.Uuid
+  createdById String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  coordinator User?    @relation("ProductCoordinator", fields: [coordinatorId], references: [id])
+
+  tracking    SalesTracking?
+  activities  SalesActivity[]
+  candidateAssignments ProductCandidateAssignment[]
+
+  @@index([category])
+  @@index([createdById])
+  @@index([coordinatorId])
+  @@index([createdAt(sort: Desc)])
+  @@map("products")
+}
+
+model SalesTracking {
+  id            String      @id @default(uuid()) @db.Uuid
+  productId     String      @unique @map("product_id") @db.Uuid
+  status        SalesStatus @default(LEAD)
+  notes         String?     @db.Text
+  followUpDate  DateTime?   @map("follow_up_date") @db.Timestamptz(6)
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([status])
+  @@index([followUpDate])
+  @@map("sales_tracking")
+}
+
+model SalesActivity {
+  id          String   @id @default(uuid()) @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  details     String?  @db.Text
+  actorId     String?  @map("actor_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt(sort: Desc)])
+  @@map("sales_activities")
+}
+
+model ProductCandidateAssignment {
+  id          String    @id @default(uuid()) @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  candidateId String    @map("candidate_id") @db.Uuid
+  assignedAt  DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, candidateId])
+  @@map("product_candidate_assignments")
 }

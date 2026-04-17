@@ -44,7 +44,7 @@ const LoginPage = () => {
 
       localStorage.setItem('ats_token', result.data.token);
       localStorage.setItem('ats_user', JSON.stringify(result.data.user));
-      navigate('/dashboard');
+      navigate('/workspaces');
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {
@@ -126,8 +126,8 @@ const LoginPage = () => {
           {hasToken() ? (
             <div className="mt-6 p-4 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] text-center">
               <p className="text-sm text-[#0f1b3d] font-semibold mb-2">You already have an active session</p>
-              <button className="os-btn-primary w-full h-11 text-base flex justify-center items-center gap-2" type="button" onClick={() => navigate('/dashboard')}>
-                Continue to Dashboard <span className="material-symbols-outlined text-base">arrow_forward</span>
+              <button className="os-btn-primary w-full h-11 text-base flex justify-center items-center gap-2" type="button" onClick={() => navigate('/workspaces')}>
+                Enter System Workspace <span className="material-symbols-outlined text-base">arrow_forward</span>
               </button>
             </div>
           ) : null}
@@ -154,7 +154,7 @@ const LoginPage = () => {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
-              <span 
+              <span
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7b86a1] cursor-pointer select-none"
                 onClick={() => setShowPassword(!showPassword)}
               >
