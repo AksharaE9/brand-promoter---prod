@@ -20,6 +20,7 @@ const ProductList = () => {
     const [editingProduct, setEditingProduct] = useState(null);
     const [teamProductId, setTeamProductId] = useState(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
     const [formData, setFormData] = useState({
         name: '', category: '', location: '', description: '',
         price: '', tags: '', coordinatorId: '', imageUrl: ''
@@ -160,10 +161,11 @@ const ProductList = () => {
         setIsModalOpen(true);
     };
 
-    const handleExport = () => {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
+    const handleExport = (format = 'csv') => {
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
         const token = localStorage.getItem('ats_token');
-        window.open(`${baseUrl}/sales/export/products?token=${token}`, '_blank');
+        window.open(`${baseUrl}/sales/export/products?token=${token}&format=${format}`, '_blank');
+        setIsExportDropdownOpen(false);
     };
 
     return (
@@ -181,13 +183,49 @@ const ProductList = () => {
                         <span className="material-symbols-outlined text-[20px]">upload_file</span>
                         Bulk Import
                     </button>
-                    <button
-                        onClick={handleExport}
-                        className="os-btn-outline h-11 px-6 flex items-center gap-2 border-[#e2e8f0] text-[#5c6a84]"
-                    >
-                        <span className="material-symbols-outlined text-[20px]">download</span>
-                        Export CSV
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                            className="os-btn-outline h-11 px-6 flex items-center gap-2 border-[#e2e8f0] text-[#5c6a84]"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">download</span>
+                            Export
+                            <span className="material-symbols-outlined text-[16px] transition-transform duration-200" style={{ transform: isExportDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }}>expand_more</span>
+                        </button>
+
+                        <AnimatePresence>
+                            {isExportDropdownOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-[#f1f5f9] p-2 z-[60]"
+                                >
+                                    <button
+                                        onClick={() => handleExport('csv')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-blue-50 hover:text-[#1f52cc] rounded-xl transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">csv</span>
+                                        Export as CSV
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('excel')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-green-50 hover:text-green-600 rounded-xl transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">grid_on</span>
+                                        Export as Excel
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('pdf')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-red-50 hover:text-red-600 rounded-xl transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                                        Export as PDF
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
                     <button
                         onClick={() => {
                             setEditingProduct(null);

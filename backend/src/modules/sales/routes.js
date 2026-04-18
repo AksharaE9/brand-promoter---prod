@@ -147,10 +147,13 @@ router.get(
   }),
 );
 
+const PDFDocument = require("pdfkit");
+
 router.get(
   "/export/products",
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
+    const { format = "csv" } = req.query;
     const isSalesperson = req.user.role === "RECRUITER";
     const where = isSalesperson ? { createdById: req.user.id } : {};
 
@@ -161,8 +164,75 @@ router.get(
         createdBy: { select: { fullName: true } },
         coordinator: { select: { fullName: true } },
       },
+      orderBy: { createdAt: "desc" }
     });
 
+    if (format === "excel") {
+      const data = products.map(p => ({
+        "Name": p.name,
+        "Category": p.category,
+        "Location": p.location || "-",
+        "Price": p.price || 0,
+        "Status": p.tracking?.status || "LEAD",
+        "Coordinator": p.coordinator?.fullName || "-",
+        "Created By": p.createdBy?.fullName || "-",
+        "Created At": p.createdAt.toLocaleString()
+      }));
+
+      const worksheet = xlsx.utils.json_to_sheet(data);
+      const workbook = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(workbook, worksheet, "Products");
+
+      const buffer = xlsx.write(workbook, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=products_report.xlsx");
+      return res.status(200).send(buffer);
+    }
+
+    if (format === "pdf") {
+      const doc = new PDFDocument({ margin: 30, size: "A4" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=products_report.pdf");
+      doc.pipe(res);
+
+      // Header
+      doc.fontSize(20).text("Product Inventory Report", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(10).text(`Generated on: ${new Date().toLocaleString()}`, { align: "right" });
+      doc.moveDown();
+
+      // Table Header
+      const tableTop = 150;
+      doc.fontSize(10).font("Helvetica-Bold");
+      doc.text("Product Name", 30, tableTop);
+      doc.text("Category", 180, tableTop);
+      doc.text("Price", 280, tableTop);
+      doc.text("Status", 340, tableTop);
+      doc.text("Coordinator", 420, tableTop);
+
+      doc.moveTo(30, tableTop + 15).lineTo(565, tableTop + 15).stroke();
+
+      // Rows
+      let y = tableTop + 25;
+      doc.font("Helvetica");
+      products.forEach((p, index) => {
+        if (y > 750) {
+          doc.addPage();
+          y = 50;
+        }
+        doc.text(p.name.substring(0, 25), 30, y);
+        doc.text(p.category.substring(0, 15), 180, y);
+        doc.text(`Rs ${p.price || 0}`, 280, y);
+        doc.text(p.tracking?.status || "LEAD", 340, y);
+        doc.text(p.coordinator?.fullName || "-", 420, y);
+        y += 20;
+      });
+
+      doc.end();
+      return;
+    }
+
+    // Default: CSV
     let csv = "Name,Category,Price,Status,Coordinator,Created By,Created At\n";
     products.forEach((p) => {
       csv += `"${p.name}","${p.category}",${p.price || 0},"${p.tracking?.status || "LEAD"}","${p.coordinator?.fullName || "-"}","${p.createdBy?.fullName || "-"}","${p.createdAt.toISOString()}"\n`;
