@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageEnter, Reveal } from '../../components/PageMotion';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
+import BulkImportModal from '../../components/BulkImportModal';
 
 const ProductList = () => {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -18,6 +19,7 @@ const ProductList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [teamProductId, setTeamProductId] = useState(null);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [formData, setFormData] = useState({
         name: '', category: '', location: '', description: '',
         price: '', tags: '', coordinatorId: '', imageUrl: ''
@@ -172,6 +174,13 @@ const ProductList = () => {
                     <p className="text-[#5d6784] mt-1">Manage and track your product catalog across regions.</p>
                 </div>
                 <div className="flex gap-3">
+                    <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="os-btn-outline h-11 px-6 flex items-center gap-2 border-[#e2e8f0] text-[#5c6a84]"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                        Bulk Import
+                    </button>
                     <button
                         onClick={handleExport}
                         className="os-btn-outline h-11 px-6 flex items-center gap-2 border-[#e2e8f0] text-[#5c6a84]"
@@ -420,6 +429,15 @@ const ProductList = () => {
                 isOpen={!!teamProductId}
                 onClose={() => setTeamProductId(null)}
                 onSuccess={loadProducts}
+            />
+
+            <BulkImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onImportComplete={loadProducts}
+                title="Bulk Import Products"
+                endpoint="/import/products"
+                templateHeaders={['Name', 'Category', 'Location', 'Description', 'Price', 'Tags']}
             />
         </PageEnter>
     );

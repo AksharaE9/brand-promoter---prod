@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
 import { PageEnter } from '../../components/PageMotion';
+import BulkImportModal from '../../components/BulkImportModal';
 
 const SalesCandidates = () => {
     const [candidates, setCandidates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', skills: '', source: 'Sales Workspace' });
 
     useEffect(() => {
@@ -17,7 +19,7 @@ const SalesCandidates = () => {
         setLoading(true);
         try {
             // Added limit to prevent over-fetching in dashboard views
-            const res = await apiGet('/candidates?limit=50'); 
+            const res = await apiGet('/candidates?limit=50');
             setCandidates(res.data || []);
         } catch (error) {
             console.error('Failed to load candidates', error);
@@ -55,13 +57,22 @@ const SalesCandidates = () => {
                     <h1 className="text-3xl font-bold text-[#10193f]">Sales Talent Pool</h1>
                     <p className="text-[#5d6784] mt-1">Manage onboarding candidates and talent available for product assignments.</p>
                 </div>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="os-btn-primary h-11 px-6 flex items-center gap-2"
-                >
-                    <span className="material-symbols-outlined text-[20px]">person_add</span>
-                    Add Candidate
-                </button>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="os-btn-outline h-11 px-6 flex items-center gap-2 border-[#e2e8f0] text-[#5c6a84]"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                        Bulk Import
+                    </button>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="os-btn-primary h-11 px-6 flex items-center gap-2"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">person_add</span>
+                        Add Candidate
+                    </button>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -92,7 +103,7 @@ const SalesCandidates = () => {
                                 <span className="material-symbols-outlined text-sm opacity-60">mail</span>
                                 {c.email}
                             </div>
-                            
+
                             <div className="flex flex-wrap gap-2 mb-4">
                                 {c.skills?.split(',').map(s => (
                                     <span key={s} className="px-2 py-0.5 bg-[#f1f5f9] text-[#5c6a84] rounded-md text-[10px] font-bold uppercase tracking-wider">{s.trim()}</span>
@@ -189,6 +200,15 @@ const SalesCandidates = () => {
                     </div>
                 )}
             </AnimatePresence>
+
+            <BulkImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onImportComplete={loadCandidates}
+                title="Bulk Import Candidates"
+                endpoint="/import/candidates"
+                templateHeaders={['Full Name', 'Email', 'Phone', 'Category', 'Source', 'Company']}
+            />
         </PageEnter>
     );
 };

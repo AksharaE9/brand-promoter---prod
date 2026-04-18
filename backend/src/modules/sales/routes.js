@@ -449,4 +449,125 @@ router.delete(
   })
 );
 
+const multer = require("multer");
+const xlsx = require("xlsx");
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// --- Helper: Parse Excel ---
+function parseExcel(buffer) {
+  const workbook = xlsx.read(buffer, { type: "buffer" });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  return xlsx.utils.sheet_to_json(sheet);
+}
+
+// --- Bulk Import Products ---
+router.post(
+  "/import/products",
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new ApiError(400, "No file uploaded");
+
+    const rows = parseExcel(req.file.buffer);
+    const results = { imported: 0, skipped: 0, errors: [] };
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        try {
+          const name = row.Name || row.name;
+          const category = row.Category || row.category;
+
+          if (!name || !category) {
+            results.skipped++;
+            continue;
+          }
+
+          const product = await tx.product.create({
+            data: {
+              name: String(name),
+              category: String(category),
+              location: row.Location || row.location || null,
+              description: row.Description || row.description || null,
+              price: row.Price || row.price ? Number(row.Price || row.price) : null,
+              tags: (row.Tags || row.tags || "").split(",").map(t => t.trim()).filter(Boolean),
+              createdById: req.user.id,
+              tracking: {
+                create: { status: "LEAD" }
+              }
+            }
+          });
+
+          await logActivity(tx, product.id, "PRODUCT_IMPORTED", "Product imported via bulk upload.", req.user.id);
+          results.imported++;
+        } catch (err) {
+          results.errors.push({ row: row.Name || "Unknown", error: err.message });
+          results.skipped++;
+        }
+      }
+    });
+
+    res.json({ success: true, data: results });
+  })
+);
+
+// --- Bulk Import Candidates ---
+router.post(
+  "/import/candidates",
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new ApiError(400, "No file uploaded");
+
+    const rows = parseExcel(req.file.buffer);
+    const results = { imported: 0, skipped: 0, errors: [] };
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        try {
+          const fullName = row["Full Name"] || row.fullName || row.name;
+          const email = row.Email || row.email;
+
+          if (!fullName) {
+            results.skipped++;
+            continue;
+          }
+
+          // Check if candidate already exists by email
+          if (email) {
+            const existing = await tx.candidate.findFirst({
+              where: { email: { equals: String(email).trim(), mode: "insensitive" } }
+            });
+            if (existing) {
+              results.skipped++;
+              results.errors.push({ row: fullName, error: "Candidate with this email already exists." });
+              continue;
+            }
+          }
+
+          const candidate = await tx.candidate.create({
+            data: {
+              fullName: String(fullName),
+              email: email ? String(email).trim().toLowerCase() : null,
+              phone: row.Phone || row.phone ? String(row.Phone || row.phone) : null,
+              category: row.Category || row.category || "Company",
+              source: row.Source || row.source || "Bulk Import",
+              currentCompany: row["Company"] || row.currentCompany || null,
+              createdById: req.user.id,
+            }
+          });
+
+          results.imported++;
+        } catch (err) {
+          results.errors.push({ row: row["Full Name"] || "Unknown", error: err.message });
+          results.skipped++;
+        }
+      }
+    });
+
+    res.json({ success: true, data: results });
+  })
+);
+
 module.exports = router;
