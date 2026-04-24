@@ -124,7 +124,7 @@ const candidateDetailInclude = {
 
 router.post(
   "/bulk-upload",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-bulk";
     next();
@@ -211,7 +211,7 @@ router.post(
 
 router.post(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const {
       fullName,
@@ -309,7 +309,7 @@ router.post(
 
 router.post(
   "/:id/resume",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-resumes";
     next();
@@ -382,7 +382,7 @@ router.post(
 
 router.post(
   "/:id/photo",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-photos";
     next();
@@ -465,7 +465,7 @@ router.get(
 
 router.post(
   "/custom-fields/definitions",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { fieldKey, fieldLabel, fieldType = "text", isRequired = false, optionsJson = null } = req.body || {};
 
@@ -698,7 +698,7 @@ router.get(
 
 router.patch(
   "/:id/custom-fields",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     if (!isUUID(id)) throw new ApiError(400, "Invalid candidate ID format");
@@ -736,7 +736,7 @@ router.patch(
 
 router.patch(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     if (!isUUID(id)) throw new ApiError(400, "Invalid candidate ID format");
@@ -843,7 +843,7 @@ router.get(
 
 router.delete(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     if (!isUUID(id)) throw new ApiError(400, "Invalid candidate ID format");

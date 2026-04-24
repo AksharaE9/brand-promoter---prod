@@ -41,7 +41,7 @@ router.get(
 
 router.get(
   "/interviewers",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const users = await prisma.user.findMany({
       where: {

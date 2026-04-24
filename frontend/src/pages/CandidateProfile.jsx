@@ -22,8 +22,8 @@ const CandidateProfile = () => {
   const [savingCustomFields, setSavingCustomFields] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
   const currentUser = getStoredUser();
-  const canUploadResume = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
-  const canEditCustomFields = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
+  const canUploadResume = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role);
+  const canEditCustomFields = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role);
 
   useEffect(() => {
     let mounted = true;
