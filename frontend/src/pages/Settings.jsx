@@ -3,7 +3,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiDelete, apiGet, apiPatch, apiPost } from '../lib/api';
+import { API_BASE_URL, apiDelete, apiGet, apiPatch, apiPost } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const emptyUserForm = {
@@ -190,7 +190,7 @@ const Settings = () => {
 
     try {
       setUploadingUserPhoto(true);
-      const res = await fetch(`${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/users/me/photo`, {
+      const res = await fetch(`${API_BASE_URL}/users/me/photo`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

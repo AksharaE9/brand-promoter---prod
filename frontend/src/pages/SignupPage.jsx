@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { hasToken } from '../lib/api';
+import { API_BASE_URL, hasToken } from '../lib/api';
 
 const earthImage =
   "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1800&q=80";
 
 const SignupPage = () => {
   const navigate = useNavigate();
-  const apiBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -48,7 +46,7 @@ const SignupPage = () => {
 
     try {
       setLoading(true);
-      const response = await fetch(`${apiBaseUrl}/auth/register`, {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

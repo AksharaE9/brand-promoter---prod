@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_BASE_URL } from '../lib/api';
 
 const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, templateHeaders }) => {
     const [file, setFile] = useState(null);
@@ -25,10 +26,9 @@ const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, t
         formData.append('file', file);
 
         const token = localStorage.getItem('ats_token');
-        const apiBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
 
         try {
-            const response = await fetch(`${apiBaseUrl}/sales${endpoint}`, {
+            const response = await fetch(`${API_BASE_URL}/sales${endpoint}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -62,122 +62,141 @@ const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, t
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden"
-                >
-                    <div className="p-8">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-2xl font-bold text-[#121c3e] font-[Manrope]">{title}</h3>
-                            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                                <span className="material-symbols-outlined text-gray-500">close</span>
-                            </button>
-                        </div>
-
-                        {!result ? (
-                            <div className="space-y-6">
-                                <div className="p-8 border-2 border-dashed border-[#dce4ee] rounded-3xl bg-[#f8fbff] text-center group hover:border-[#1f52cc] transition-colors">
-                                    <span className="material-symbols-outlined text-6xl text-[#1f52cc] mb-4">upload_file</span>
-                                    <div className="text-[#121c3e] font-semibold mb-2">
-                                        {file ? file.name : 'Select your Excel or CSV file'}
-                                    </div>
-                                    <div className="text-sm text-[#5d6784]">Support .xlsx, .xls, .csv</div>
-                                    <input
-                                        type="file"
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                        onChange={handleFileChange}
-                                        accept=".xlsx, .xls, .csv"
-                                    />
+            {isOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <motion.div
+                        className="absolute inset-0 bg-[#0f1b3e]/60 backdrop-blur-[8px]"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={onClose}
+                    />
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                        className="relative bg-white rounded-[32px] w-full max-w-lg shadow-2xl overflow-hidden"
+                    >
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h3 className="text-2xl font-bold text-[#10193f]">{title}</h3>
+                                    <p className="text-sm text-[#8b95ad] mt-1">Upload your file to sync data instantly.</p>
                                 </div>
+                                <button onClick={onClose} className="os-icon-btn">
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
 
-                                <div className="flex items-center justify-between p-4 bg-[#f3f6f9] rounded-2xl">
-                                    <div className="flex items-center gap-3">
-                                        <span className="material-symbols-outlined text-[#1f52cc]">info</span>
-                                        <span className="text-sm font-medium text-[#121c3e]">Download sample template</span>
+                            {!result ? (
+                                <div className="space-y-6">
+                                    <div className="relative p-10 border-2 border-dashed border-[#e2e8f0] rounded-[24px] bg-[#f8fafc] text-center group hover:border-[#1f52cc] hover:bg-blue-50/30 transition-all duration-300">
+                                        <span className="material-symbols-outlined text-6xl text-[#1f52cc] mb-4 opacity-80 group-hover:scale-110 transition-transform">upload_file</span>
+                                        <div className="text-[#10193f] font-bold mb-2">
+                                            {file ? file.name : 'Drop your file here or click to browse'}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-[#8b95ad] uppercase tracking-widest">Supports .xlsx, .xls, .csv</div>
+                                        <input
+                                            type="file"
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                            onChange={handleFileChange}
+                                            accept=".xlsx, .xls, .csv"
+                                        />
                                     </div>
+
+                                    <div className="flex items-center justify-between p-4 bg-[#f1f5f9]/50 rounded-2xl border border-[#f1f5f9]">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shadow-sm">
+                                                <span className="material-symbols-outlined text-[#1f52cc] text-lg">description</span>
+                                            </div>
+                                            <span className="text-xs font-bold text-[#10193f]">Sample Template</span>
+                                        </div>
+                                        <button
+                                            onClick={downloadTemplate}
+                                            className="text-[#1f52cc] text-xs font-bold hover:underline bg-white px-3 py-1.5 rounded-lg border border-blue-50 shadow-sm"
+                                        >
+                                            Download .csv
+                                        </button>
+                                    </div>
+
+                                    {error && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-[11px] font-medium flex items-start gap-3"
+                                        >
+                                            <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+                                            {error}
+                                        </motion.div>
+                                    )}
+
                                     <button
-                                        onClick={downloadTemplate}
-                                        className="text-[#1f52cc] text-sm font-bold hover:underline"
+                                        onClick={handleUpload}
+                                        disabled={!file || isUploading}
+                                        className={`os-btn-primary w-full h-14 text-sm flex items-center justify-center gap-2 shadow-lg ${!file || isUploading ? 'opacity-50 cursor-not-allowed shadow-none' : 'shadow-blue-100 hover:bg-[#1a47b0]'}`}
                                     >
-                                        Template.csv
+                                        {isUploading ? (
+                                            <>
+                                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                <span>Analyzing data...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="material-symbols-outlined text-xl">dataset_linked</span>
+                                                <span className="font-bold">Initialize Import</span>
+                                            </>
+                                        )}
                                     </button>
                                 </div>
-
-                                {error && (
-                                    <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm">
-                                        {error}
+                            ) : (
+                                <div className="text-center space-y-6 py-4">
+                                    <div className="w-24 h-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-2 border border-green-100">
+                                        <span className="material-symbols-outlined text-6xl">check_circle</span>
                                     </div>
-                                )}
+                                    <div>
+                                        <h4 className="text-2xl font-bold text-[#10193f]">Sync Successful</h4>
+                                        <p className="mt-1 text-[#8b95ad] text-sm">
+                                            Your records have been merged into the platform.
+                                        </p>
+                                    </div>
 
-                                <button
-                                    onClick={handleUpload}
-                                    disabled={!file || isUploading}
-                                    className="os-btn-primary w-full h-14 text-lg flex items-center justify-center gap-2"
-                                >
-                                    {isUploading ? (
-                                        <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            Processing...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="material-symbols-outlined">dataset_linked</span>
-                                            Start Bulk Import
-                                        </>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="p-5 bg-[#f8fafc] rounded-[24px] border border-[#f1f5f9]">
+                                            <div className="text-3xl font-black text-[#1f52cc]">{result.imported}</div>
+                                            <div className="text-[10px] font-bold text-[#8b95ad] uppercase tracking-widest mt-1">New Records</div>
+                                        </div>
+                                        <div className="p-5 bg-[#f8fafc] rounded-[24px] border border-[#f1f5f9]">
+                                            <div className="text-3xl font-black text-[#8b95ad]">{result.skipped}</div>
+                                            <div className="text-[10px] font-bold text-[#8b95ad] uppercase tracking-widest mt-1">Skipped</div>
+                                        </div>
+                                    </div>
+
+                                    {result.errors?.length > 0 && (
+                                        <div className="max-h-40 overflow-y-auto text-left space-y-2 p-4 bg-red-50/30 rounded-2xl border border-red-50">
+                                            <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest mb-2">Technical Errors</div>
+                                            {result.errors.slice(0, 5).map((err, i) => (
+                                                <div key={i} className="text-[11px] text-red-600 bg-white/50 p-2 rounded-lg border border-red-50">
+                                                    <span className="font-bold">Line {err.row}:</span> {err.error}
+                                                </div>
+                                            ))}
+                                            {result.errors.length > 5 && (
+                                                <div className="text-[10px] text-center text-red-400 font-bold">+{result.errors.length - 5} more conflicts</div>
+                                            )}
+                                        </div>
                                     )}
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="text-center space-y-6">
-                                <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
-                                    <span className="material-symbols-outlined text-5xl">check_circle</span>
-                                </div>
-                                <div>
-                                    <h4 className="text-xl font-bold text-[#121c3e]">Import Complete</h4>
-                                    <p className="mt-2 text-[#5d6784]">
-                                        We've successfully processed your file.
-                                    </p>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-green-50 rounded-2xl border border-green-100">
-                                        <div className="text-2xl font-bold text-green-700">{result.imported}</div>
-                                        <div className="text-xs font-semibold text-green-600 uppercase tracking-wider">Imported</div>
-                                    </div>
-                                    <div className="p-4 bg-orange-50 rounded-2xl border border-orange-100">
-                                        <div className="text-2xl font-bold text-orange-700">{result.skipped}</div>
-                                        <div className="text-xs font-semibold text-orange-600 uppercase tracking-wider">Skipped/Errors</div>
-                                    </div>
+                                    <button
+                                        onClick={onClose}
+                                        className="os-btn-primary w-full h-12 rounded-2xl font-bold mt-4"
+                                    >
+                                        Return to Dashboard
+                                    </button>
                                 </div>
-
-                                {result.errors?.length > 0 && (
-                                    <div className="max-h-40 overflow-y-auto text-left space-y-2 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                                        <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Error Details</div>
-                                        {result.errors.slice(0, 10).map((err, i) => (
-                                            <div key={i} className="text-xs text-red-500 bg-white p-2 rounded-lg border border-red-50">
-                                                <span className="font-bold">{err.row}:</span> {err.error}
-                                            </div>
-                                        ))}
-                                        {result.errors.length > 10 && (
-                                            <div className="text-[10px] text-center text-gray-400">...and {result.errors.length - 10} more</div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <button
-                                    onClick={onClose}
-                                    className="os-btn-primary w-full h-12"
-                                >
-                                    Close & Refresh
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </motion.div>
-            </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </AnimatePresence>
     );
 };

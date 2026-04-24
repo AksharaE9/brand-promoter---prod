@@ -3,7 +3,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiPost, getStoredUser } from '../lib/api';
+import { API_BASE_URL, apiGet, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const initialForm = {
@@ -175,7 +175,7 @@ const Candidates = () => {
       const formData = new FormData();
       formData.append('file', bulkFile);
 
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/candidates/bulk-upload`, {
+      const res = await fetch(`${API_BASE_URL}/candidates/bulk-upload`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -225,7 +225,7 @@ const Candidates = () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/candidates/${candidateId}`, {
+      const res = await fetch(`${API_BASE_URL}/candidates/${candidateId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('ats_token')}`,

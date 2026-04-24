@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, getStoredUser } from '../lib/api';
+import { API_BASE_URL, apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 function safePercent(value) {
@@ -150,7 +150,7 @@ const Analytics = () => {
     setBanner('');
     try {
       const token = localStorage.getItem('ats_token');
-      const res = await fetch(`${import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/reports/export?report=hiring-progress&format=pdf`, {
+      const res = await fetch(`${API_BASE_URL}/reports/export?report=hiring-progress&format=pdf`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 

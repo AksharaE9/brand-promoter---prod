@@ -4,7 +4,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiPatch, getStoredUser } from '../lib/api';
+import { API_BASE_URL, API_ROOT_URL, apiGet, apiPatch, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const CandidateProfile = () => {
@@ -79,7 +79,7 @@ const CandidateProfile = () => {
       const formData = new FormData();
       formData.append('file', resumeFile);
 
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/candidates/${id}/resume`, {
+      const res = await fetch(`${API_BASE_URL}/candidates/${id}/resume`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -109,7 +109,7 @@ const CandidateProfile = () => {
 
     try {
       setUploadingPhoto(true);
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/candidates/${id}/photo`, {
+      const res = await fetch(`${API_BASE_URL}/candidates/${id}/photo`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -349,7 +349,7 @@ const CandidateProfile = () => {
                         className="text-sm text-[#1f4bc6] mt-2 inline-block"
                         href={candidate.resumeFile.storageKey?.startsWith('http')
                           ? candidate.resumeFile.storageKey
-                          : `${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:4000'}/uploads/${candidate.resumeFile.storageKey}`
+                          : `${API_ROOT_URL || ''}/uploads/${candidate.resumeFile.storageKey}`
                         }
                         target="_blank"
                         rel="noreferrer"

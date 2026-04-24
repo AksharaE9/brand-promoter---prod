@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { hasToken } from '../lib/api';
+import { API_BASE_URL, hasToken } from '../lib/api';
 
 const earthImage =
   "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1800&q=80";
@@ -14,8 +14,6 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const apiBaseUrl = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-
   const handleLogin = async (event) => {
     event.preventDefault();
     setError('');
@@ -27,7 +25,7 @@ const LoginPage = () => {
 
     try {
       setIsLoading(true);
-      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

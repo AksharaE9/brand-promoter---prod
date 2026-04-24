@@ -4,7 +4,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
+import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const emptyScheduleForm = {
@@ -350,7 +350,7 @@ const InterviewSchedule = () => {
       const formData = new FormData();
       formData.append('file', uploadTarget);
 
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/interviews/${selectedInterview.id}/voice-recording`, {
+      const res = await fetch(`${API_BASE_URL}/interviews/${selectedInterview.id}/voice-recording`, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
@@ -380,7 +380,7 @@ const InterviewSchedule = () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'}/interviews/${interviewId}`, {
+      const res = await fetch(`${API_BASE_URL}/interviews/${interviewId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
@@ -705,7 +705,7 @@ const InterviewSchedule = () => {
                       className="text-[#1f4bc6] inline-block mt-3 bg-blue-50 px-3 py-2 rounded-lg text-xs font-semibold border border-blue-100"
                       href={selectedInterview.voiceRecordingFile.storageKey?.startsWith('http')
                         ? selectedInterview.voiceRecordingFile.storageKey
-                        : `${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:4000'}/uploads/${selectedInterview.voiceRecordingFile.storageKey}`
+                        : `${API_ROOT_URL || ''}/uploads/${selectedInterview.voiceRecordingFile.storageKey}`
                       }
                       target="_blank"
                       rel="noreferrer"
