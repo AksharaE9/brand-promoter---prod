@@ -120,6 +120,28 @@ const candidateDetailInclude = {
     },
     orderBy: { createdAt: "asc" },
   },
+  college: {
+    select: {
+      id: true,
+      name: true,
+      location: true,
+    },
+  },
+  collegeDrive: {
+    select: {
+      id: true,
+      title: true,
+      dateFrom: true,
+      dateTo: true,
+      status: true,
+      college: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  },
 };
 
 router.post(
@@ -221,6 +243,8 @@ router.post(
       currentCompany,
       source,
       category,
+      collegeId = null,
+      collegeDriveId = null,
       skills = [],
       education = [],
       customFields = {},
@@ -265,6 +289,8 @@ router.post(
         currentCompany,
         source,
         category: category || "Company",
+        collegeId,
+        collegeDriveId,
         createdById: req.user.id,
         skills: {
           create: skills.map((item) => ({
@@ -547,10 +573,27 @@ router.get(
           phone: true,
           totalExperienceYears: true,
           currentCompany: true,
-          source: true,
-          category: true,
-          createdAt: true,
-          profilePhotoFile: {
+            source: true,
+            category: true,
+            collegeId: true,
+            collegeDriveId: true,
+            createdAt: true,
+            college: {
+              select: {
+                id: true,
+                name: true,
+                location: true,
+              },
+            },
+            collegeDrive: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                dateFrom: true,
+              },
+            },
+            profilePhotoFile: {
             select: {
               id: true,
               storageKey: true,
@@ -777,7 +820,9 @@ router.patch(
         totalExperienceYears: data.totalExperienceYears,
         currentCompany: data.currentCompany,
         source: data.source,
-        category: data.category
+        category: data.category,
+        collegeId: data.collegeId,
+        collegeDriveId: data.collegeDriveId,
       },
     });
 

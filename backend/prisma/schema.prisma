@@ -57,6 +57,27 @@ enum ApplicationStatus {
   @@map("application_status")
 }
 
+enum CollegeDriveStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+
+  @@map("college_drive_status")
+}
+
+enum DriveCandidateStatus {
+  ADDED
+  SCREENED
+  SHORTLISTED
+  INTERVIEWED
+  OFFERED
+  JOINED
+  REJECTED
+
+  @@map("drive_candidate_status")
+}
+
 model User {
   id                String          @id @default(uuid()) @db.Uuid
   fullName          String          @map("full_name") @db.VarChar(120)
@@ -79,6 +100,10 @@ model User {
   profilePhotoFile   FileMeta?         @relation("UserProfilePhoto", fields: [profilePhotoFileId], references: [id])
   products           Product[]
   coordinatedProducts Product[]       @relation("ProductCoordinator")
+  ownedCollegeDrives CollegeDrive[]   @relation("CollegeDriveOwner")
+  collegeDriveAssignments CollegeDriveRecruiter[]
+  addedDriveCandidates CollegeDriveCandidate[] @relation("DriveCandidateAddedBy")
+  collegesCreated College[]
 
   @@index([email])
   @@map("users")
@@ -117,6 +142,8 @@ model Candidate {
   noticePeriodDays     Int?               @map("notice_period_days")
   source               String?            @db.VarChar(80)
   category             String?            @default("Company") @db.VarChar(50)
+  collegeId            String?            @map("college_id") @db.Uuid
+  collegeDriveId       String?            @map("college_drive_id") @db.Uuid
   status               CandidateStatus    @default(ACTIVE)
   resumeFileId         String?            @map("resume_file_id") @db.Uuid
   profilePhotoFileId   String?            @map("profile_photo_file_id") @db.Uuid
@@ -131,6 +158,9 @@ model Candidate {
   applications         Application[]
   customFieldValues    CustomFieldValue[]
   projectAssignments   ProductCandidateAssignment[]
+  college              College?           @relation(fields: [collegeId], references: [id])
+  collegeDrive         CollegeDrive?      @relation(fields: [collegeDriveId], references: [id])
+  driveLinks           CollegeDriveCandidate[]
 
   @@index([fullName])
   @@index([email])
@@ -138,7 +168,78 @@ model Candidate {
   @@index([category])
   @@index([status])
   @@index([createdAt(sort: Desc)])
+  @@index([collegeId])
+  @@index([collegeDriveId])
   @@map("candidates")
+}
+
+model College {
+  id          String        @id @default(uuid()) @db.Uuid
+  name        String        @db.VarChar(180)
+  location    String?       @db.VarChar(180)
+  createdById String?       @map("created_by") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   User?         @relation(fields: [createdById], references: [id])
+  drives      CollegeDrive[]
+  candidates  Candidate[]
+
+  @@unique([name, location])
+  @@index([name])
+  @@map("colleges")
+}
+
+model CollegeDrive {
+  id              String                  @id @default(uuid()) @db.Uuid
+  title           String                  @db.VarChar(180)
+  collegeId       String                  @map("college_id") @db.Uuid
+  dateFrom        DateTime                @map("date_from") @db.Date
+  dateTo          DateTime?               @map("date_to") @db.Date
+  status          CollegeDriveStatus      @default(PLANNED)
+  notes           String?
+  ownerId         String                  @map("owner_id") @db.Uuid
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  college         College                 @relation(fields: [collegeId], references: [id], onDelete: Cascade)
+  owner           User                    @relation("CollegeDriveOwner", fields: [ownerId], references: [id])
+  recruiters      CollegeDriveRecruiter[]
+  candidates      CollegeDriveCandidate[]
+  directCandidates Candidate[]
+
+  @@index([collegeId, dateFrom(sort: Desc)])
+  @@index([status])
+  @@map("college_drives")
+}
+
+model CollegeDriveRecruiter {
+  id         String       @id @default(uuid()) @db.Uuid
+  driveId    String       @map("drive_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  assignedAt DateTime     @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  drive      CollegeDrive @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([driveId, userId])
+  @@index([userId])
+  @@map("college_drive_recruiters")
+}
+
+model CollegeDriveCandidate {
+  id          String               @id @default(uuid()) @db.Uuid
+  driveId     String               @map("drive_id") @db.Uuid
+  candidateId String               @map("candidate_id") @db.Uuid
+  status      DriveCandidateStatus @default(ADDED)
+  note        String?
+  addedById   String               @map("added_by") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  drive       CollegeDrive         @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  candidate   Candidate            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  addedBy     User                 @relation("DriveCandidateAddedBy", fields: [addedById], references: [id])
+
+  @@unique([driveId, candidateId])
+  @@index([status])
+  @@map("college_drive_candidates")
 }
 
 model CandidateSkill {

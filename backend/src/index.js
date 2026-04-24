@@ -14,6 +14,7 @@ const jobRoutes = require("./modules/jobs/routes");
 const reportRoutes = require("./modules/reports/routes");
 const salesRoutes = require("./modules/sales/routes");
 const dashboardRoutes = require("./modules/dashboard/routes");
+const collegeDriveRoutes = require("./modules/college-drives/routes");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { createRateLimiter, setSecurityHeaders } = require("./middleware/security");
 
@@ -62,6 +63,7 @@ app.use("/api/interviews", interviewRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/college-drives", collegeDriveRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

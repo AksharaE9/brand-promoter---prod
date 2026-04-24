@@ -5,6 +5,7 @@ import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import { API_BASE_URL, apiGet, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 
 const initialForm = {
   fullName: '',
@@ -557,6 +558,13 @@ const Candidates = () => {
 
         {error ? <div className="mt-4 os-card p-4 text-red-600 text-sm">{error}</div> : null}
         {banner ? <div className="mt-4 os-card p-4 text-[#2454cf] text-sm">{banner}</div> : null}
+
+        {categoryFilter === 'College Drive' ? (
+          <CollegeDriveWorkspace
+            onBanner={(message) => setBanner(message)}
+            onError={(message) => setError(message)}
+          />
+        ) : null}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
           {visibleCandidates.map((candidate, idx) => (
