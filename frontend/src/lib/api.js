@@ -1,7 +1,8 @@
 const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
-const RESOLVED_API_BASE_URL = import.meta.env.PROD
-  ? '/api'
-  : (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL);
+const RESOLVED_API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  DEFAULT_API_BASE_URL;
 export const API_BASE_URL = RESOLVED_API_BASE_URL.replace(/\/+$/, '');
 export const API_ROOT_URL = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
 

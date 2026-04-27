@@ -144,6 +144,85 @@ const candidateDetailInclude = {
   },
 };
 
+const CANDIDATE_LIST_SELECT_V2 = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  totalExperienceYears: true,
+  currentCompany: true,
+  source: true,
+  category: true,
+  collegeId: true,
+  collegeDriveId: true,
+  createdAt: true,
+  college: {
+    select: {
+      id: true,
+      name: true,
+      location: true,
+    },
+  },
+  collegeDrive: {
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      dateFrom: true,
+    },
+  },
+  profilePhotoFile: {
+    select: {
+      id: true,
+      storageKey: true,
+    },
+  },
+  applications: {
+    select: {
+      id: true,
+      status: true,
+      shortlisted: true,
+      currentStage: {
+        select: { id: true, name: true },
+      },
+    },
+  },
+  _count: {
+    select: { applications: true },
+  },
+};
+
+const CANDIDATE_LIST_SELECT_LEGACY = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  totalExperienceYears: true,
+  currentCompany: true,
+  source: true,
+  category: true,
+  createdAt: true,
+  profilePhotoFile: {
+    select: {
+      id: true,
+      storageKey: true,
+    },
+  },
+  applications: {
+    select: {
+      id: true,
+      status: true,
+      shortlisted: true,
+      currentStage: {
+        select: { id: true, name: true },
+      },
+    },
+  },
+  _count: {
+    select: { applications: true },
+  },
+};
+
 router.post(
   "/bulk-upload",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -560,62 +639,32 @@ router.get(
       ];
     }
 
-    const [items, total] = await Promise.all([
-      prisma.candidate.findMany({
+    let items;
+    const totalPromise = prisma.candidate.count({ where });
+
+    try {
+      items = await prisma.candidate.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          fullName: true,
-          email: true,
-          phone: true,
-          totalExperienceYears: true,
-          currentCompany: true,
-            source: true,
-            category: true,
-            collegeId: true,
-            collegeDriveId: true,
-            createdAt: true,
-            college: {
-              select: {
-                id: true,
-                name: true,
-                location: true,
-              },
-            },
-            collegeDrive: {
-              select: {
-                id: true,
-                title: true,
-                status: true,
-                dateFrom: true,
-              },
-            },
-            profilePhotoFile: {
-            select: {
-              id: true,
-              storageKey: true,
-            },
-          },
-          applications: {
-            select: {
-              id: true,
-              status: true,
-              shortlisted: true,
-              currentStage: {
-                select: { id: true, name: true },
-              },
-            },
-          },
-          _count: {
-            select: { applications: true },
-          },
-        },
-      }),
-      prisma.candidate.count({ where }),
-    ]);
+        select: CANDIDATE_LIST_SELECT_V2,
+      });
+    } catch (error) {
+      if (error?.code !== "P2022") {
+        throw error;
+      }
+      // Some environments still have older candidate tables without college columns.
+      items = await prisma.candidate.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        select: CANDIDATE_LIST_SELECT_LEGACY,
+      });
+    }
+
+    const total = await totalPromise;
 
     res.json({
       success: true,
