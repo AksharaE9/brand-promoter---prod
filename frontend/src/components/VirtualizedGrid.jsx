@@ -1,6 +1,9 @@
 import React, { useRef, useMemo } from 'react';
-import { FixedSizeGrid as Grid } from 'react-window';
-import { AutoSizer } from 'react-virtualized-auto-sizer';
+import * as ReactWindow from 'react-window';
+import * as AutoSizerModule from 'react-virtualized-auto-sizer';
+
+const { FixedSizeGrid: Grid } = ReactWindow;
+const AutoSizer = AutoSizerModule.AutoSizer || AutoSizerModule.default || AutoSizerModule;
 
 /**
  * A highly optimized virtualized grid for enterprise datasets.
