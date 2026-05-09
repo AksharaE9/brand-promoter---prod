@@ -1,6 +1,6 @@
 import React, { useRef, useMemo } from 'react';
 import { FixedSizeGrid as Grid } from 'react-window';
-import AutoSizer from 'react-virtualized-auto-sizer';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 
 /**
  * A highly optimized virtualized grid for enterprise datasets.
