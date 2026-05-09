@@ -314,85 +314,92 @@ router.post(
 router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
-  asyncHandler(async (req, res) => {
-    const page = Number.parseInt(req.query.page, 10) || 1;
-    const limit = Number.parseInt(req.query.limit, 10) || 10;
-    const search = req.query.search?.trim()?.toLowerCase();
-    const category = req.query.category?.trim();
-    const status = req.query.status?.trim();
-    const assignedToMe = req.query.assignedToMe === 'true';
+    const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
+    
+    const data = await getCached(cacheKey, async () => {
+      let query = firestore.collection("candidates");
 
-    let query = firestore.collection("candidates");
+      if (category) {
+        query = query.where("category", "==", category);
+      }
+      if (status) {
+        query = query.where("status", "==", status);
+      }
+      if (assignedToMe) {
+        query = query.where("mentorId", "==", req.user.id);
+      }
 
-    if (category) {
-      query = query.where("category", "==", category);
-    }
-    if (status) {
-      query = query.where("status", "==", status);
-    }
-    if (assignedToMe) {
-      query = query.where("mentorId", "==", req.user.id);
-    }
+      const countSnap = await query.count().get();
+      const total = countSnap.data().count;
 
+      let items = [];
+      
+      // OPTIMIZATION: If searching, we fetch a larger chunk but still limit it
+      // In a real production app, use Algolia/Elasticsearch.
+      if (search) {
+        // Fetch more than limit to allow filtering, but not the whole DB
+        const searchSnap = await query.orderBy("createdAt", "desc").limit(100).get();
+        items = searchSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(c => 
+            c.fullName?.toLowerCase().includes(search) || 
+            c.email?.toLowerCase().includes(search) ||
+            c.phone?.includes(search)
+          )
+          .slice((page - 1) * limit, page * limit);
+      } else {
+        const snapshot = await query.orderBy("createdAt", "desc").offset((page - 1) * limit).limit(limit).get();
+        items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
 
-    const countSnap = await query.count().get();
-    const total = countSnap.data().count;
+      // Populate file details efficiently
+      if (items.length > 0) {
+        const fileIds = [...new Set(items.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
+        if (fileIds.length > 0) {
+          const fileMap = {};
+          // Use 'in' query for batch fetching (limit 30)
+          const fileChunks = [];
+          for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
+          
+          await Promise.all(fileChunks.map(async (chunk) => {
+            const snaps = await firestore.collection("fileMetas").where(firestore.FieldPath.documentId(), "in", chunk).get();
+            snaps.forEach(fs => { fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
+          }));
+          
+          items.forEach(c => {
+            if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
+            if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
+          });
+        }
 
-    let snapshot = await query.orderBy("createdAt", "desc").offset((page - 1) * limit).limit(limit).get();
-    let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Populate applications
+        const candidateIds = items.map(c => c.id);
+        const appMap = {};
+        const appChunks = [];
+        for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
 
-    if (search) {
-      const allSnap = await query.get();
-      items = allSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(c => c.fullName?.toLowerCase().includes(search) || c.email?.toLowerCase().includes(search))
-        .slice((page - 1) * limit, page * limit);
-    }
+        await Promise.all(appChunks.map(async (chunk) => {
+          const appSnap = await firestore.collection("applications")
+            .where("candidateId", "in", chunk)
+            .get();
+          appSnap.docs.forEach(doc => {
+            const app = { id: doc.id, ...doc.data() };
+            if (!appMap[app.candidateId]) appMap[app.candidateId] = [];
+            appMap[app.candidateId].push(app);
+          });
+        }));
 
-    // Populate file details
-    if (items.length > 0) {
-      const fileIds = [...new Set(items.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
-      if (fileIds.length > 0) {
-        const fileSnaps = await Promise.all(fileIds.map(fid => firestore.collection("fileMetas").doc(fid).get()));
-        const fileMap = {};
-        fileSnaps.forEach(fs => { if (fs.exists) fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
-        
         items.forEach(c => {
-          if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
-          if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
+          c.applications = appMap[c.id] || [];
         });
       }
 
-      // ── Populate applications for each candidate ──────────────────────────
-      // Batch fetch in chunks of 10 (Firestore 'in' limit)
-      const candidateIds = items.map(c => c.id);
-      const appMap = {}; // candidateId -> Application[]
-
-      const chunks = [];
-      for (let i = 0; i < candidateIds.length; i += 10) {
-        chunks.push(candidateIds.slice(i, i + 10));
-      }
-
-      await Promise.all(chunks.map(async (chunk) => {
-        const appSnap = await firestore.collection("applications")
-          .where("candidateId", "in", chunk)
-          .orderBy("createdAt", "desc")
-          .get();
-        appSnap.docs.forEach(doc => {
-          const app = { id: doc.id, ...doc.data() };
-          if (!appMap[app.candidateId]) appMap[app.candidateId] = [];
-          appMap[app.candidateId].push(app);
-        });
-      }));
-
-      items.forEach(c => {
-        c.applications = appMap[c.id] || [];
-      });
-    }
+      return { items, total, totalPages: Math.ceil(total / limit) };
+    }, 30000); // 30s cache
 
     res.json({
       success: true,
-      data: items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: data.items,
+      pagination: { page, limit, total: data.total, totalPages: data.totalPages },
     });
   }),
 );

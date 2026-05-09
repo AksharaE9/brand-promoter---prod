@@ -110,7 +110,17 @@ const InterviewSchedule = () => {
     setCandidates(candidatesRes.data || []);
     setJobs(jobsRes.data || []);
     setInterviewers(interviewerRows);
-    setSelectedId((prev) => prev || interviewRows[0]?.id || '');
+    
+    // Fix: Ensure selectedId is a candidateId for grouping
+    const firstGroup = Array.from(
+      interviewsRes.data.reduce((map, iv) => {
+        const cId = iv.application?.candidate?.id || iv.application?.candidateId;
+        if (cId && !map.has(cId)) map.set(cId, iv);
+        return map;
+      }, new Map()).values()
+    ).sort((a, b) => new Date(b.scheduledStart) - new Date(a.scheduledStart))[0];
+
+    setSelectedId((prev) => prev || firstGroup?.applicationId || '');
   };
 
   useEffect(() => {
@@ -268,22 +278,23 @@ const InterviewSchedule = () => {
       : interviews;
 
     filteredInterviews.forEach((interview) => {
-      const candidateId = interview.application?.candidate?.id || interview.application?.candidateId;
-      if (!candidateId) return;
+      const appId = interview.applicationId;
+      if (!appId) return;
 
-      if (!map.has(candidateId)) {
-        map.set(candidateId, {
-          candidateId,
-          application: interview.application,   // primary (latest) application for display
+      if (!map.has(appId)) {
+        map.set(appId, {
+          applicationId: appId,
+          candidateId: interview.application?.candidate?.id || interview.application?.candidateId,
+          application: interview.application,
           interviews: [],
           latestInterview: interview,
         });
       }
-      const group = map.get(candidateId);
+      const group = map.get(appId);
       group.interviews.push(interview);
       if (new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
         group.latestInterview = interview;
-        group.application = interview.application; // keep application in sync with latest
+        group.application = interview.application;
       }
     });
     let results = Array.from(map.values());
@@ -319,9 +330,9 @@ const InterviewSchedule = () => {
     return data;
   }, [interviews, applications]);
 
-  const selectedGroupId = selectedId || groupedApplications[0]?.candidateId || '';
+  const selectedGroupId = selectedId || groupedApplications[0]?.applicationId || '';
   const selectedGroup = useMemo(
-    () => groupedApplications.find((g) => g.candidateId === selectedGroupId) || groupedApplications[0] || null,
+    () => groupedApplications.find((g) => g.applicationId === selectedGroupId) || groupedApplications[0] || null,
     [groupedApplications, selectedGroupId],
   );
 
@@ -383,6 +394,29 @@ const InterviewSchedule = () => {
       j.title.toLowerCase().includes(jobSearch.toLowerCase())
     );
   }, [jobs, jobSearch]);
+
+  // Auto-sync round number based on application history
+  useEffect(() => {
+    if (showScheduleModal && scheduleForm.candidateId && scheduleForm.jobId) {
+       const app = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
+       if (app) {
+         const appInterviews = interviews.filter(iv => iv.applicationId === app.id);
+         const nextRound = appInterviews.length + 1;
+         if (scheduleForm.roundNo !== nextRound && scheduleForm.roundNo !== 99) { // 99 is Final
+            setScheduleForm(prev => ({ 
+              ...prev, 
+              roundNo: nextRound,
+              round: `Round ${nextRound}`
+            }));
+         }
+       } else {
+         // No application found (e.g. fresh candidate not in pipeline yet for this job)
+         if (scheduleForm.roundNo !== 1 && scheduleForm.roundNo !== 99) {
+            setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
+         }
+       }
+    }
+  }, [scheduleForm.candidateId, scheduleForm.jobId, showScheduleModal, applications, interviews]);
 
   const filteredInterviewersList = useMemo(() => {
     if (!interviewerSearch) return interviewers;
@@ -1368,7 +1402,14 @@ const InterviewSchedule = () => {
                               key={c.id} 
                               className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
                               onClick={() => {
-                                setScheduleForm(prev => ({ ...prev, candidateId: c.id }));
+                                const candInterviews = interviews.filter(iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id);
+                                const nextRound = candInterviews.length + 1;
+                                setScheduleForm(prev => ({ 
+                                  ...prev, 
+                                  candidateId: c.id,
+                                  roundNo: nextRound,
+                                  round: `Round ${nextRound}`
+                                }));
                                 setCandidateSearch(c.fullName);
                                 setShowCandidateList(false);
                               }}

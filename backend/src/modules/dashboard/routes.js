@@ -3,6 +3,8 @@ const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 
+const { getCached } = require("../../utils/cache");
+
 const router = express.Router();
 
 router.use(auth);
@@ -11,29 +13,27 @@ router.get(
   "/init",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const [candidateCount, jobCount, userCount, applicationSnap, interviewSnap] = await Promise.all([
-      firestore.collection("candidates").count().get(),
-      firestore.collection("jobs").where("isActive", "==", true).count().get(),
-      firestore.collection("users").where("status", "==", "ACTIVE").count().get(),
-      firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get(),
-      firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get()
-    ]);
+    const data = await getCached("dashboard_init", async () => {
+      const [candidateCount, jobCount, userCount, applicationSnap, interviewSnap] = await Promise.all([
+        firestore.collection("candidates").count().get(),
+        firestore.collection("jobs").where("isActive", "==", true).count().get(),
+        firestore.collection("users").where("status", "==", "ACTIVE").count().get(),
+        firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get(),
+        firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get()
+      ]);
 
-    const applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    const interviews = interviewSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const interviews = interviewSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Optimized Funnel stats (in production this would be a pre-aggregated counter doc)
-    const funnel = {};
-    const statuses = ['PENDING', 'SCREENING', 'INTERVIEWING', 'OFFER_SENT', 'JOINED', 'REJECTED'];
-    
-    await Promise.all(statuses.map(async (s) => {
-      const snap = await firestore.collection("applications").where("status", "==", s).count().get();
-      funnel[s] = snap.data().count;
-    }));
+      const funnel = {};
+      const statuses = ['PENDING', 'SCREENING', 'INTERVIEWING', 'OFFER_SENT', 'JOINED', 'REJECTED'];
+      
+      await Promise.all(statuses.map(async (s) => {
+        const snap = await firestore.collection("applications").where("status", "==", s).count().get();
+        funnel[s] = snap.data().count;
+      }));
 
-    res.json({
-      success: true,
-      data: {
+      return {
         stats: {
           candidates: candidateCount.data().count,
           activeJobs: jobCount.data().count,
@@ -43,7 +43,12 @@ router.get(
         },
         recentApplications: applications,
         upcomingInterviews: interviews
-      }
+      };
+    }, 60000); // 1 minute TTL
+
+    res.json({
+      success: true,
+      data
     });
   })
 );

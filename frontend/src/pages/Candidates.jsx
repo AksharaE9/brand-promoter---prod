@@ -11,6 +11,7 @@ import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser }
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 import VirtualizedGrid from '../components/VirtualizedGrid';
+import Skeleton, { CardSkeleton } from '../components/Skeleton';
 import './OfferDecision.css';
 
 const initialForm = {
@@ -578,7 +579,9 @@ const Candidates = () => {
         {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 border-red-100 text-sm animate-in fade-in slide-in-from-top-2">{error}</div>}
 
         {loading && items.length === 0 ? (
-          <Loader message="Accessing global candidate registry..." />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <CardSkeleton key={i} />)}
+          </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center os-card">
             <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>

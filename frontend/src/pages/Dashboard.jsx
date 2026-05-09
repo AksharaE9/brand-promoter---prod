@@ -8,6 +8,7 @@ import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
 import { apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import Skeleton, { DashboardSkeleton } from '../components/Skeleton';
 
 const MetricCard = React.memo(({ metric, onClick, delay }) => (
   <Reveal delay={delay}>
@@ -165,6 +166,7 @@ const Dashboard = () => {
     return items;
   }, [applications, candidatesTotal, interviews, jobsTotal]);
 
+
   if (loading) {
     return (
       <EnterpriseLayout
@@ -176,7 +178,13 @@ const Dashboard = () => {
           />
         }
       >
-        <Loader message="Synthesizing dashboard data..." fullPage />
+        <PageEnter>
+          <div className="mb-6">
+            <Skeleton width="150px" height="12px" className="mb-2" />
+            <Skeleton width="250px" height="32px" />
+          </div>
+          <DashboardSkeleton />
+        </PageEnter>
       </EnterpriseLayout>
     );
   }

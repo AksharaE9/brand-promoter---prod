@@ -1,26 +1,44 @@
 import React from 'react';
 
-const Skeleton = ({ className }) => (
-  <div className={`animate-pulse bg-slate-200 rounded ${className}`}></div>
+const Skeleton = ({ className, width, height, circle }) => {
+  const style = {
+    width: width || '100%',
+    height: height || '20px',
+    borderRadius: circle ? '50%' : '12px',
+  };
+
+  return (
+    <div 
+      className={`bg-slate-200 animate-pulse ${className || ''}`} 
+      style={style}
+    />
+  );
+};
+
+export const DashboardSkeleton = () => (
+  <div className="space-y-6">
+    <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map(i => <Skeleton key={i} height="100px" />)}
+    </div>
+    <div className="grid lg:grid-cols-3 gap-4">
+      <Skeleton className="lg:col-span-2" height="300px" />
+      <Skeleton height="300px" />
+    </div>
+  </div>
 );
 
-export const CandidateCardSkeleton = () => (
-  <div className="os-card p-5 border border-slate-100 shadow-sm h-[200px]">
-    <div className="flex items-start justify-between mb-4">
-      <Skeleton className="w-14 h-14 rounded-xl" />
-      <Skeleton className="w-16 h-6 rounded-full" />
+export const CardSkeleton = () => (
+  <div className="os-card p-5 space-y-4">
+    <div className="flex items-center gap-4">
+      <Skeleton width="56px" height="56px" />
+      <div className="flex-1 space-y-2">
+        <Skeleton width="60%" height="16px" />
+        <Skeleton width="40%" height="12px" />
+      </div>
     </div>
-    <Skeleton className="h-7 w-3/4 mb-2" />
-    <Skeleton className="h-4 w-1/2 mb-4" />
-    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
-      <div className="flex flex-col gap-1">
-        <Skeleton className="h-3 w-10" />
-        <Skeleton className="h-4 w-16" />
-      </div>
-      <div className="flex flex-col items-end gap-1">
-        <Skeleton className="h-3 w-10" />
-        <Skeleton className="h-4 w-16" />
-      </div>
+    <div className="pt-3 border-t border-slate-100 flex justify-between">
+      <Skeleton width="30%" height="24px" />
+      <Skeleton width="20%" height="24px" />
     </div>
   </div>
 );
