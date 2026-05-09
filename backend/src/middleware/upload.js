@@ -2,33 +2,32 @@ const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const cloudinary = require("../config/cloudinary");
 
-// 1. Cloudinary Storage (Persistent Files: Resumes, Recordings)
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: (req, file) => req.uploadFolder || "ats-misc",
-    resource_type: "auto", 
-    public_id: (req, file) => {
-      const base = (file.originalname || "file").split(".")[0].replace(/[^a-zA-Z0-9-_]/g, "_");
-      return `${Date.now()}-${base}`;
-    }
-  },
-});
-
+// 1. Memory Storage (General Files: Resumes, Recordings, Excel)
 const upload = multer({
-  storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 // 2. Memory Storage (Transient Files: Excel Bulk Uploads)
-// We use memory storage for Excel because XLSX needs to read the buffer 
-// and we avoid local filesystem path issues in Vercel.
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+// 3. Direct Cloudinary Storage (Offer Letters / Feedback Files)
+const offerLetterStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "ats-offer-letters",
+    resource_type: "auto",
+    public_id: (req, file) => `offer_${Date.now()}_${file.originalname.split('.')[0]}`,
+  },
+});
+
+const offerLetterUpload = multer({ storage: offerLetterStorage });
+
 module.exports = {
   upload,
   memoryUpload,
+  offerLetterUpload,
 };

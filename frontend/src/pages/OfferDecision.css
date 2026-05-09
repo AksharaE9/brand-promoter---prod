@@ -1,0 +1,374 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Offer Candidates — Offer Decision CSS
+   Scope: OfferCandidateRow, JoinModal, RejectModal, OfferDecisionBadge
+───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Row ───────────────────────────────────────────────────────────────────── */
+.offer-candidate-row {
+  transition: background-color 0.25s ease, border-left 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.offer-candidate-row.row--joined {
+  background-color: #f0fdf4;
+  border-left-color: #16a34a;
+}
+
+.offer-candidate-row.row--rejected {
+  background-color: #fff1f2;
+  border-left-color: #dc2626;
+}
+
+/* ── Highlight animation (newly arrived candidates) ──────────────────────── */
+@keyframes highlightFade {
+  0%,
+  70% { background-color: #eff6ff; }
+  100% { background-color: transparent; }
+}
+
+.row--highlight-new {
+  animation: highlightFade 2.5s ease forwards;
+}
+
+/* ── Action Buttons ─────────────────────────────────────────────────────────── */
+.offer-action-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background-color: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.btn-join:hover:not(:disabled) {
+  background-color: #15803d;
+}
+
+.btn-join:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-reject-offer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background-color: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.btn-reject-offer:hover:not(:disabled) {
+  background-color: #fff1f2;
+}
+
+.btn-reject-offer:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.btn-reject-offer .btn-spinner {
+  border-color: rgba(220, 38, 38, 0.3);
+  border-top-color: #dc2626;
+}
+
+/* ── Decision Badge ──────────────────────────────────────────────────────────── */
+.decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+}
+
+.decision-badge.badge--joined {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.decision-badge.badge--rejected {
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.badge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.badge-label {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.badge-sub {
+  font-size: 11px;
+  opacity: 0.8;
+  line-height: 1.3;
+}
+
+/* ── Modal ───────────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.modal-container {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 480px;
+  overflow: hidden;
+  animation: modalSlideIn 0.2s ease;
+}
+
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 24px 0;
+  gap: 12px;
+}
+
+.modal-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.modal-header-icon--join {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.modal-header-icon--reject {
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.modal-header-content {
+  flex: 1;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f1b3d;
+  margin: 0 0 2px;
+}
+
+.modal-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #94a3b8;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.modal-close-btn:hover:not(:disabled) {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.modal-close-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-description {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.55;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin: 0;
+}
+
+.modal-description strong {
+  color: #0f1b3d;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.modal-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.modal-field input,
+.modal-field select,
+.modal-field textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f8fafc;
+  color: #0f1b3d;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+  outline: none;
+}
+
+.modal-field input:focus,
+.modal-field select:focus,
+.modal-field textarea:focus {
+  border-color: #1f52cc;
+  background: #ffffff;
+}
+
+.modal-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  padding: 16px 24px 24px;
+  justify-content: flex-end;
+  border-top: 1px solid #f1f5f9;
+}
+
+.modal-btn-cancel {
+  padding: 9px 18px;
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.modal-btn-cancel:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.modal-btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-btn-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.modal-btn-confirm--join {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.modal-btn-confirm--join:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.modal-btn-confirm--reject {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.modal-btn-confirm--reject:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.modal-btn-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, apiGet, getStoredUser } from '../lib/api';
+import { API_BASE_URL, API_ROOT_URL, apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 function safePercent(value) {
@@ -25,43 +25,75 @@ const Analytics = () => {
   const [banner, setBanner] = useState('');
   const canExportReports = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
 
+  const load = async (mounted = true) => {
+    try {
+      const [jobsRes, applicationsRes, candidatesRes] = await Promise.all([
+        apiGet('/jobs?limit=100'),
+        apiGet('/applications?limit=300'),
+        apiGet('/candidates?limit=1'),
+      ]);
+
+      if (!mounted) return;
+
+      setJobs(jobsRes.data || []);
+      setApplications(applicationsRes.data || []);
+      setCandidatesTotal(candidatesRes.pagination?.total || candidatesRes.data?.length || 0);
+      try {
+        const insightsRes = await apiGet(`/reports/pipeline-insights?days=${days}`);
+        if (mounted) {
+          setInsights(insightsRes.data || null);
+        }
+      } catch (_) {
+        if (mounted) {
+          setInsights(null);
+        }
+      }
+    } catch (err) {
+      if (!mounted) return;
+      setError(err.message || 'Failed to load analytics');
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
-
-    const load = async () => {
-      try {
-        const [jobsRes, applicationsRes, candidatesRes] = await Promise.all([
-          apiGet('/jobs?limit=100'),
-          apiGet('/applications?limit=300'),
-          apiGet('/candidates?limit=1'),
-        ]);
-
-        if (!mounted) return;
-
-        setJobs(jobsRes.data || []);
-        setApplications(applicationsRes.data || []);
-        setCandidatesTotal(candidatesRes.pagination?.total || candidatesRes.data?.length || 0);
-        try {
-          const insightsRes = await apiGet(`/reports/pipeline-insights?days=${days}`);
-          if (mounted) {
-            setInsights(insightsRes.data || null);
-          }
-        } catch (_) {
-          if (mounted) {
-            setInsights(null);
-          }
-        }
-      } catch (err) {
-        if (!mounted) return;
-        setError(err.message || 'Failed to load analytics');
-      }
-    };
-
-    load();
+    load(mounted);
     return () => {
       mounted = false;
     };
   }, [days]);
+
+  // REAL-TIME UPDATE LISTENER
+  useEffect(() => {
+    const token = localStorage.getItem('ats_token');
+    if (!token) return;
+
+    const eventSource = new EventSource(`${API_ROOT_URL}/notifications/stream?token=${token}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'ping') return;
+        
+        const relevantTypes = [
+          'APPLICATION_STATUS_UPDATED',
+          'INTERVIEW_FEEDBACK_SUBMITTED',
+          'CANDIDATE_UPDATED',
+          'JOB_UPDATED'
+        ];
+
+        if (relevantTypes.includes(data.type)) {
+          console.log('[SSE] Analytics refreshing data...');
+          load();
+        }
+      } catch (err) {
+        console.error('[SSE] Failed to parse message:', err);
+      }
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   const passThroughRate = useMemo(() => {
     if (insights?.totals?.selectionRate !== undefined) {
@@ -70,7 +102,7 @@ const Analytics = () => {
     if (!applications.length) return 0;
     const progressed = applications.filter((a) => a.status === 'SELECTED' || a.status === 'JOINED').length;
     return safePercent((progressed / applications.length) * 100);
-  }, [applications]);
+  }, [applications, insights]);
 
   const departmentRows = useMemo(() => {
     const jobMap = new Map(jobs.map((j) => [j.id, j]));
@@ -128,21 +160,23 @@ const Analytics = () => {
     [timeToHireBars],
   );
 
-  const diversityCards = useMemo(() => {
-    const base = Math.max(1, candidatesTotal);
+  const analyticsSummaryCards = useMemo(() => {
+    const joined = applications.filter(a => a.status === 'JOINED').length;
+    const activeJobsCount = jobs.filter(j => j.isActive).length;
     return [
-      ['Female Representation', `${safePercent((applications.length / base) * 42)}%`, '+4% YoY'],
-      ['Underrepresented Groups', `${safePercent((jobs.length / base) * 31)}%`, '+2.5% YoY'],
-      ['Veteran Applicants', `${safePercent((applications.length / base) * 12)}%`, 'Stable'],
+      ['Pipeline Conversion', `${passThroughRate}%`, 'Overall Efficiency'],
+      ['Total Success', `${joined} Hires`, 'Joined candidates'],
+      ['Active Mandates', `${activeJobsCount} Jobs`, 'Current open roles'],
     ];
-  }, [applications.length, candidatesTotal, jobs.length]);
+  }, [applications, jobs, passThroughRate]);
+
   const ringRadius = 72;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringDash = ringCircumference * (1 - passThroughRate / 100);
 
   const onExportPdf = async () => {
     if (!canExportReports) {
-      setBanner('Only Super Admin and Recruiters can export reports.');
+      setBanner('Authorized personnel only can export reports.');
       return;
     }
 
@@ -178,18 +212,11 @@ const Analytics = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search analytics, candidates, or reports..."
-          tabs={[
-            { key: 'pipeline', label: 'Pipeline', href: '/pipeline' },
-            { key: 'sourcing', label: 'Sourcing', href: '/sourcing' },
-            { key: 'referrals', label: 'Referrals', href: '/referrals' },
-          ]}
+          tabs={[]}
           right={
             <>
               <NotificationBell />
-              <button className="os-icon-btn" type="button" onClick={() => navigate('/pipeline')}>
-                <span className="material-symbols-outlined">chat</span>
-              </button>
-              <UserChip fallbackName="Alex Rivera" fallbackRole="Recruiting Lead" avatarSeed="analytics-user" />
+              <UserChip avatarSeed="analytics-user" />
             </>
           }
         />
@@ -198,7 +225,7 @@ const Analytics = () => {
       <PageEnter>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="os-eyebrow">Operational Intelligence</div>
+            <div className="os-eyebrow">Real-time Performance Metrics</div>
             <h1 className="os-h1">Advanced Analytics</h1>
           </div>
           <div className="flex gap-2">
@@ -241,8 +268,7 @@ const Analytics = () => {
                     strokeLinecap="round"
                     strokeDasharray={ringCircumference}
                     initial={{ strokeDashoffset: ringCircumference }}
-                    whileInView={{ strokeDashoffset: ringDash }}
-                    viewport={{ once: true, amount: 0.6 }}
+                    animate={{ strokeDashoffset: ringDash }}
                     transition={{ duration: 1.15, ease: 'easeOut' }}
                   />
                 </svg>
@@ -252,7 +278,7 @@ const Analytics = () => {
                 </div>
               </div>
               <p className="text-sm text-[#5e6884] leading-relaxed mt-5">
-                Candidate flow shows stronger progression in selected and joined stages.
+                Calculated based on candidate progression through all recruitment stages.
               </p>
             </div>
           </Reveal>
@@ -260,17 +286,16 @@ const Analytics = () => {
           <Reveal className="xl:col-span-2" delay={0.06}>
             <div className="os-card p-6">
               <div className="flex justify-between">
-                <h3 className="text-2xl font-semibold font-[Manrope]">Time to Hire (Days)</h3>
-                <div className="text-xs text-[#838da5]">Current vs Goal</div>
+                <h3 className="text-2xl font-semibold font-[Manrope]">Average Time in Stage (Days)</h3>
+                <div className="text-xs text-[#838da5]">Live Data</div>
               </div>
               <div className="h-[250px] mt-5 rounded-xl border border-[#e8eef6] bg-[#f8fbff] p-4 grid grid-cols-6 gap-2 items-end">
                 {timeToHireBars.map((row, idx) => (
-                  <div key={row.label} className="bg-[#dce6fb] rounded-lg relative overflow-hidden" style={{ height: `${Math.max(22, (Number(row.avgDays || 0) / maxTimeBar) * 210)}px` }}>
+                  <div key={idx} className="bg-[#dce6fb] rounded-lg relative overflow-hidden" style={{ height: `${Math.max(22, (Number(row.avgDays || 0) / maxTimeBar) * 210)}px` }}>
                     <motion.div
                       className="absolute bottom-0 left-0 right-0 bg-[#1f52cc] rounded-lg"
                       initial={{ height: 0 }}
-                      whileInView={{ height: `${Math.max(14, (Number(row.avgDays || 0) / maxTimeBar) * 190)}px` }}
-                      viewport={{ once: true, amount: 0.5 }}
+                      animate={{ height: `${Math.max(14, (Number(row.avgDays || 0) / maxTimeBar) * 190)}px` }}
                       transition={{ delay: idx * 0.06, duration: 0.45, ease: 'easeOut' }}
                     />
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-[#6f7a95] whitespace-nowrap">
@@ -284,12 +309,12 @@ const Analytics = () => {
         </div>
 
         <div className="grid md:grid-cols-3 gap-4 mt-4">
-          {diversityCards.map((card, i) => (
+          {analyticsSummaryCards.map((card, i) => (
             <Reveal key={card[0]} delay={i * 0.04}>
-              <div className="os-card p-5">
+              <div className="os-card p-5 border-l-4 border-l-[#1f52cc]">
                 <div className="text-[11px] uppercase tracking-[.15em] text-[#8d96ac]">{card[0]}</div>
-                <div className="text-3xl font-bold mt-2 font-[Manrope]">{card[1]}</div>
-                <div className="text-sm text-[#2ea86f] mt-1">{card[2]}</div>
+                <div className="text-3xl font-bold mt-2 font-[Manrope] text-[#142651]">{card[1]}</div>
+                <div className="text-sm text-[#5e6884] mt-1">{card[2]}</div>
               </div>
             </Reveal>
           ))}
@@ -298,10 +323,7 @@ const Analytics = () => {
         <Reveal delay={0.08}>
           <div className="os-card mt-4 p-6">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-2xl font-semibold font-[Manrope]">Active Pipeline: Dept vs Status</h3>
-              <button className="text-sm font-semibold text-[#1f4bc6]" type="button" onClick={() => navigate(canExportReports ? '/reports' : '/dashboard')}>
-                View Full Report
-              </button>
+              <h3 className="text-2xl font-semibold font-[Manrope]">Pipeline Distribution by Department</h3>
             </div>
             <table className="w-full text-left text-sm">
               <thead className="text-[#8b95ad] text-[11px] uppercase tracking-[.15em]">
@@ -326,10 +348,9 @@ const Analytics = () => {
                       <div className="h-1.5 rounded-full bg-[#ecf0f4] w-[90px]">
                         <motion.div
                           className="h-full rounded-full"
-                          style={{ background: '#2fb56f' }}
+                          style={{ background: '#1f52cc' }}
                           initial={{ width: 0 }}
-                          whileInView={{ width: `${row.velocity}%` }}
-                          viewport={{ once: true, amount: 0.8 }}
+                          animate={{ width: `${row.velocity}%` }}
                           transition={{ duration: 0.55, ease: 'easeOut' }}
                         />
                       </div>
@@ -349,14 +370,14 @@ const Analytics = () => {
         <div className="grid xl:grid-cols-2 gap-4 mt-4">
           <Reveal>
             <div className="os-card p-6">
-              <h3 className="text-2xl font-semibold font-[Manrope] mb-3">Source Conversion Funnel</h3>
+              <h3 className="text-2xl font-semibold font-[Manrope] mb-3">Source Conversion</h3>
               <table className="w-full text-left text-sm">
                 <thead className="text-[#8b95ad] text-[11px] uppercase tracking-[.15em]">
                   <tr>
                     <th className="pb-2">Source</th>
                     <th className="pb-2">Total</th>
                     <th className="pb-2">Selected</th>
-                    <th className="pb-2">Joined %</th>
+                    <th className="pb-2">Conversion %</th>
                   </tr>
                 </thead>
                 <tbody className="text-[#1b2444]">
@@ -409,10 +430,10 @@ const Analytics = () => {
         </div>
 
         <Reveal delay={0.1}>
-          <div className="os-card mt-4 p-5" style={{ background: '#edf3ff' }}>
-            <div className="text-[#1f4bc6] font-semibold text-sm">Predictive Insight</div>
+          <div className="os-card mt-4 p-5 bg-[#f0f4ff] border-l-4 border-l-[#1f52cc]">
+            <div className="text-[#1f4bc6] font-semibold text-sm">System Update</div>
             <div className="text-sm text-[#5f6a84] mt-2">
-              Current conversion suggests stronger offer acceptance in top performing departments.
+              Metrics are automatically synced with the live recruitment database via real-time updates.
             </div>
           </div>
         </Reveal>
@@ -422,5 +443,3 @@ const Analytics = () => {
 };
 
 export default Analytics;
-
-

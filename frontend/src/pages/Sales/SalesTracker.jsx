@@ -145,61 +145,15 @@ const SalesTracker = () => {
                                     </button>
                                 </div>
 
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="os-card p-4 bg-[#f8fafc] border-none">
-                                            <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Current Status</div>
-                                            <div className="text-sm font-bold text-[#10193f]">{selectedProduct?.tracking?.status}</div>
-                                        </div>
-                                        <div className="os-card p-4 bg-[#f8fafc] border-none">
-                                            <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Price</div>
-                                            <div className="text-sm font-bold text-[#10193f]">
-                                                {selectedProduct?.price ? `₹${selectedProduct.price.toLocaleString()}` : 'N/A'}
-                                            </div>
-                                        </div>
+                                <div className="grid grid-cols-2 gap-4 mb-8">
+                                    <div className="os-card p-4 bg-[#f8fafc] border-none">
+                                        <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Current Status</div>
+                                        <div className="text-sm font-bold text-[#10193f]">{selectedProduct?.tracking?.status}</div>
                                     </div>
-
-                                    <div>
-                                        <div className="flex items-center gap-2 mb-4 px-1">
-                                            <span className="material-symbols-outlined text-[#1f52cc] text-xl">history</span>
-                                            <h4 className="text-sm font-bold text-[#10193f]">Activity History</h4>
-                                        </div>
-                                        <div className="space-y-4 border-l-2 border-[#f1f5f9] ml-3 pl-6 py-2">
-                                            {selectedProduct?.activities?.length > 0 ? selectedProduct.activities.map((act, i) => (
-                                                <div key={act.id} className="relative">
-                                                    <div className="absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full bg-white border-2 border-[#1f52cc]"></div>
-                                                    <div className="text-xs font-bold text-[#10193f] mb-0.5">{act.details}</div>
-                                                    <div className="text-[10px] text-[#8b95ad] flex items-center gap-2">
-                                                        <span>{new Date(act.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span>
-                                                        <span>•</span>
-                                                        <span className="uppercase tracking-widest font-bold text-[9px] text-[#1f52cc]">{act.action.replace('_', ' ')}</span>
-                                                    </div>
-                                                </div>
-                                            )) : (
-                                                <div className="text-xs text-[#8b95ad] italic">No activity recorded yet</div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h4 className="text-sm font-bold text-[#10193f] mb-4 px-1">Lead Details</h4>
-                                        <div className="os-card p-4 bg-[#f8fafc] border-none space-y-4">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="text-[#8b95ad]">Category</span>
-                                                <span className="font-bold text-[#10193f]">{selectedProduct?.category}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="text-[#8b95ad]">Follow-up Required</span>
-                                                <span className={`font-bold ${isOverdue(selectedProduct?.tracking?.followUpDate) ? 'text-red-500' : 'text-[#10193f]'}`}>
-                                                    {selectedProduct?.tracking?.followUpDate ? new Date(selectedProduct.tracking.followUpDate).toLocaleDateString() : 'Not set'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between items-start text-xs border-t border-[#e2e8f0] pt-4">
-                                                <span className="text-[#8b95ad]">Latest Note</span>
-                                                <span className="font-medium text-[#5c6a84] text-right max-w-[150px] italic">
-                                                    "{selectedProduct?.tracking?.notes || 'No recent notes'}"
-                                                </span>
-                                            </div>
+                                    <div className="os-card p-4 bg-[#f8fafc] border-none">
+                                        <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Price</div>
+                                        <div className="text-sm font-bold text-[#10193f]">
+                                            {selectedProduct?.price ? `₹${selectedProduct.price.toLocaleString()}` : 'N/A'}
                                         </div>
                                     </div>
                                 </div>
@@ -282,6 +236,18 @@ const SalesTracker = () => {
                                     </div>
                                 </form>
 
+                                <div className="mt-12">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-4 border-b border-[#f1f5f9] pb-2">Activity History</label>
+                                    <div className="space-y-6">
+                                        {selectedProduct?.activities?.map((act, i) => (
+                                            <div key={act.id} className="text-xs">
+                                                <div className="font-bold text-[#10193f]">{act.action.replace('_', ' ')}</div>
+                                                <div className="text-[#5c6a84] mt-1">{act.details}</div>
+                                                <div className="text-[10px] text-[#8b95ad] mt-1">{new Date(act.createdAt).toLocaleString()}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </motion.div>
                     </div>

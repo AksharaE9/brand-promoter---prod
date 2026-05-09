@@ -16,10 +16,6 @@ const UserChip = ({ fallbackName = 'User', fallbackRole = 'Team Member', avatarS
 
   return (
     <div className="os-user-chip">
-      <div className="text-right">
-        <div style={{ fontWeight: 700, fontSize: 13 }}>{name}</div>
-        <div className="os-muted" style={{ fontSize: 11 }}>{role}</div>
-      </div>
       {user?.profilePhotoUrl ? (
         <img className="os-avatar" src={user.profilePhotoUrl} alt={name} />
       ) : (

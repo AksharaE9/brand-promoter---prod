@@ -1,9 +1,10 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const http = require("http");
 require("dotenv").config();
+const { initSocket } = require("./config/socket");
 
-const prisma = require("./config/prisma");
 const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/users/routes");
 const candidateRoutes = require("./modules/candidates/routes");
@@ -15,6 +16,9 @@ const reportRoutes = require("./modules/reports/routes");
 const salesRoutes = require("./modules/sales/routes");
 const dashboardRoutes = require("./modules/dashboard/routes");
 const collegeDriveRoutes = require("./modules/college-drives/routes");
+const auditRoutes = require("./modules/audit/routes");
+const notificationRoutes = require("./modules/notifications/routes");
+const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { createRateLimiter, setSecurityHeaders } = require("./middleware/security");
 
@@ -29,6 +33,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(compression());
 app.use(
   cors({
     origin: allowedOrigin === "*" ? true : allowedOrigin,
@@ -40,9 +45,9 @@ app.use(
   }),
 );
 app.use(setSecurityHeaders);
-app.use(express.json({ limit: "2mb" }));
-app.use(createRateLimiter({ max: 240, message: "Too many API requests. Please retry shortly." }));
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
+app.use(createRateLimiter({ max: 500, message: "Too many API requests. Please retry shortly." })); // Increased for higher concurrency
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -64,15 +69,19 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/college-drives", collegeDriveRoutes);
+app.use("/api/audit-logs", auditRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
 
 async function bootstrap() {
   try {
-    await prisma.$connect();
-    const server = app.listen(PORT, () => {
-      console.log(`[ATS-STABILIZED-V2.0] Server is running on port ${PORT}`);
+    const server = http.createServer(app);
+    initSocket(server);
+
+    server.listen(PORT, () => {
+      console.log(`[ATS-STABILIZED-V3.0] Server is running on port ${PORT}`);
     });
 
     server.on("error", (err) => {
@@ -99,3 +108,4 @@ process.on("uncaughtException", (err) => {
 });
 
 bootstrap();
+ 

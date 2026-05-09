@@ -2,11 +2,13 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
-const prisma = require("../../config/prisma");
+const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
-const { upload } = require("../../middleware/upload");
+const { upload, offerLetterUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
+const { sendNotification } = require("../../utils/notifications");
+const { broadcast } = require("../../utils/sse");
 
 const router = express.Router();
 
@@ -19,181 +21,40 @@ router.get(
     const { date } = req.query;
     if (!date) throw new ApiError(400, "Date is required (YYYY-MM-DD)");
 
-    const start = new Date(`${date}T00:00:00.000Z`);
-    const end = new Date(`${date}T23:59:59.999Z`);
+    const start = new Date(`${date}T00:00:00.000Z`).toISOString();
+    const end = new Date(`${date}T23:59:59.999Z`).toISOString();
 
-    console.log(`[PDF EXPORT] Request for ${date}. Range: ${start.toISOString()} to ${end.toISOString()}`);
+    const snapshot = await firestore.collection("interviews")
+      .where("scheduledStart", ">=", start)
+      .where("scheduledStart", "<=", end)
+      .orderBy("scheduledStart", "asc")
+      .get();
+    
+    const interviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    try {
-      const interviews = await prisma.interview.findMany({
-        where: {
-          scheduledStart: { gte: start, lte: end },
-        },
-        include: {
-          application: {
-            include: {
-              candidate: { select: { fullName: true, email: true, phone: true } },
-              job: { select: { title: true } },
-            },
-          },
-          interviewers: { select: { fullName: true } },
-        },
-        orderBy: { scheduledStart: "asc" },
+    res.setHeader("Content-Disposition", `attachment; filename="interviews-${date}.pdf"`);
+    res.setHeader("Content-Type", "application/pdf");
+
+    const doc = new PDFDocument({ margin: 50 });
+    doc.pipe(res);
+
+    doc.fontSize(22).fillColor("#071f52").text("Daily Interview Schedule", { align: "center" });
+    doc.fontSize(12).fillColor("#6b7895").text(`Date: ${date}`, { align: "center" });
+    doc.moveDown(2.5);
+
+    if (interviews.length === 0) {
+      doc.fontSize(14).fillColor("#0f1b3d").text("No interviews scheduled for this day.", { align: "center" });
+    } else {
+      interviews.forEach((item) => {
+        const timeStr = new Date(item.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        doc.fontSize(13).fillColor("#071f52").text(`${timeStr} - ${item.candidateName || "N/A"}`, { underline: true });
+        doc.fontSize(10).fillColor("#333").text(`Round: ${item.roundNo} | Role: ${item.jobTitle || "General"}`);
+        doc.text(`Interviewers: ${item.interviewerNames || "N/A"} | Mode: ${item.mode}`);
+        doc.moveDown(1.5);
       });
-
-      console.log(`[PDF EXPORT] Found ${interviews.length} interviews for ${date}`);
-
-      res.setHeader("Content-Disposition", `attachment; filename="interviews-${date}.pdf"`);
-      res.setHeader("Content-Type", "application/pdf");
-
-      const doc = new PDFDocument({ margin: 50 });
-      doc.pipe(res);
-
-      doc.fontSize(22).fillColor("#071f52").text("Daily Interview Schedule", { align: "center" });
-      doc.fontSize(12).fillColor("#6b7895").text(`Date: ${date}`, { align: "center" });
-      doc.moveDown(2.5);
-
-      if (interviews.length === 0) {
-        doc.fontSize(14).fillColor("#0f1b3d").text("No interviews scheduled for this day.", { align: "center" });
-      } else {
-        interviews.forEach((item) => {
-          const timeStr = new Date(item.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-          doc.fontSize(13).fillColor("#071f52").text(`${timeStr} - ${item.application?.candidate?.fullName || "N/A"}`, { underline: true });
-          doc.fontSize(10).fillColor("#333").text(`Round: ${item.roundNo} | Role: ${item.application?.job?.title || "General"}`);
-          const interviewerNames = item.interviewers?.map((u) => u.fullName).join(", ") || "N/A";
-          doc.text(`Interviewers: ${interviewerNames} | Mode: ${item.mode}`);
-          doc.fillColor("#666").text(`Contact: ${item.application?.candidate?.email || item.application?.candidate?.phone || "N/A"}`);
-          doc.moveDown(1.5);
-        });
-      }
-
-      doc.end();
-      console.log(`[PDF EXPORT] Stream closed for ${date}`);
-    } catch (err) {
-      console.error(`[PDF EXPORT] CRITICAL ERROR:`, err);
-      if (!res.headersSent) {
-        res.status(500).send(`PDF Generation Error: ${err.message}`);
-      }
-    }
-  }),
-);
-
-router.post(
-  "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
-  asyncHandler(async (req, res) => {
-    const {
-      applicationId,
-      roundNo, // Keep for legacy if needed
-      round,   // New specific label
-      interviewerIds, // New array
-      scheduledStart,
-      scheduledEnd = null,
-      mode,
-      meetingLink = null,
-    } = req.body;
-
-    if (!applicationId || !interviewerIds || !Array.isArray(interviewerIds) || interviewerIds.length === 0 || !scheduledStart || !mode) {
-      throw new ApiError(
-        400,
-        "applicationId, interviewerIds (array), scheduledStart, and mode are required",
-      );
-    }
-    if (!["ONLINE", "OFFLINE", "PHONE"].includes(mode)) {
-      throw new ApiError(400, "mode must be ONLINE, OFFLINE, or PHONE");
     }
 
-    const [application, interviewers] = await Promise.all([
-      prisma.application.findUnique({ where: { id: applicationId }, select: { id: true } }),
-      prisma.user.findMany({
-        where: { id: { in: interviewerIds } },
-        select: { id: true, status: true },
-      }),
-    ]);
-
-    if (!application) throw new ApiError(404, "Application not found");
-    if (interviewers.length !== interviewerIds.length) throw new ApiError(404, "One or more interviewers not found");
-    if (interviewers.some(u => u.status !== "ACTIVE")) throw new ApiError(400, "One or more interviewers are inactive");
-
-    const interview = await prisma.interview.create({
-      data: {
-        applicationId,
-        roundNo: parseInt(roundNo) || 1,
-        round: round || `Round ${roundNo}`,
-        scheduledStart: new Date(scheduledStart),
-        scheduledEnd: scheduledEnd ? new Date(scheduledEnd) : null,
-        mode,
-        meetingLink,
-        createdById: req.user.id,
-        interviewers: {
-          connect: interviewerIds.map(id => ({ id }))
-        }
-      },
-      include: {
-        application: {
-          select: {
-            id: true,
-            candidate: { select: { id: true, fullName: true } },
-            job: { select: { id: true, title: true } },
-          },
-        },
-        interviewers: { select: { id: true, fullName: true, email: true } },
-      },
-    });
-
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "SCHEDULE_INTERVIEW",
-      entityType: "INTERVIEW",
-      entityId: interview.id,
-      newData: {
-        applicationId,
-        round,
-        interviewerIds,
-        scheduledStart,
-        scheduledEnd,
-        mode,
-      },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    // --- Automated Pipeline Transition: Move to 'Interview' stage ---
-    try {
-      // Find the "Interview" stage for this job (or global)
-      const stage = await prisma.pipelineStage.findFirst({
-        where: {
-          name: { equals: "Interview", mode: "insensitive" },
-          OR: [
-            { jobId: interview.application.job.id },
-            { jobId: null }
-          ]
-        },
-        orderBy: { jobId: "desc" } // Prioritize job-specific stage
-      });
-
-      if (stage) {
-        await prisma.application.update({
-          where: { id: applicationId },
-          data: { currentStageId: stage.id }
-        });
-
-        await prisma.stageHistory.create({
-          data: {
-            applicationId,
-            stageId: stage.id,
-            changedById: req.user.id,
-            remark: `Auto-moved to Interview stage (Interview Scheduled: ${interview.round})`
-          }
-        });
-      }
-    } catch (err) {
-      console.error("[AUTO-TRANSITION] Failed to move application to Interview stage:", err);
-    }
-    // -------------------------------------------------------------
-
-    res.status(201).json({ success: true, data: interview });
+    doc.end();
   }),
 );
 
@@ -201,125 +62,132 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const where = {};
-    if (req.query.applicationId) where.applicationId = req.query.applicationId;
-    if (req.query.interviewerId) {
-      where.interviewers = { some: { id: req.query.interviewerId } };
-    }
-    if (req.query.mode) where.mode = req.query.mode;
+    const page = Number.parseInt(req.query.page, 10) || 1;
+    const limit = Number.parseInt(req.query.limit, 10) || 20;
 
-    if (req.query.from || req.query.to) {
-      where.scheduledStart = {};
-      if (req.query.from) where.scheduledStart.gte = new Date(req.query.from);
-      if (req.query.to) where.scheduledStart.lte = new Date(req.query.to);
+    let query = firestore.collection("interviews");
+    
+    if (req.user.role === "INTERVIEWER") {
+      query = query.where("interviewerIds", "array-contains", req.user.id);
     }
 
-    const interviews = await prisma.interview.findMany({
-      where,
-      orderBy: { scheduledStart: "asc" },
-      include: {
-        application: {
-          select: {
-            id: true,
-            candidate: { select: { id: true, fullName: true } },
-            job: { select: { id: true, title: true } },
-          },
-        },
-        interviewers: { select: { id: true, fullName: true, email: true } },
-        feedbacks: {
-          include: {
-            submittedBy: { select: { id: true, fullName: true } }
-          }
-        },
-        voiceRecordingFile: {
-          select: {
-            id: true,
-            storageKey: true,
-            originalName: true,
-            mimeType: true,
-            createdAt: true,
-          },
-        },
-      },
+    if (req.query.status) query = query.where("status", "==", req.query.status);
+
+    query = query.orderBy("scheduledStart", "desc");
+
+    const snapshot = await query.get();
+    let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const total = logs.length;
+    const paginated = logs.slice((page - 1) * limit, page * limit);
+
+    // Populate relations for the paginated slice
+    const appIds = [...new Set(paginated.map(iv => iv.applicationId).filter(Boolean))];
+    if (appIds.length > 0) {
+      const appSnaps = await Promise.all(appIds.map(id => firestore.collection("applications").doc(id).get()));
+      const appMap = {};
+      appSnaps.forEach(snap => { if (snap.exists) appMap[snap.id] = { id: snap.id, ...snap.data() }; });
+
+      const candIds = [...new Set(Object.values(appMap).map(a => a.candidateId).filter(Boolean))];
+      const jobIds = [...new Set(Object.values(appMap).map(a => a.jobId).filter(Boolean))];
+
+      const [candSnaps, jobSnaps, userSnaps] = await Promise.all([
+        Promise.all(candIds.map(id => firestore.collection("candidates").doc(id).get())),
+        Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get())),
+        Promise.all([...new Set(paginated.flatMap(iv => iv.interviewerIds || []))].map(id => firestore.collection("users").doc(id).get()))
+      ]);
+
+      const candMap = {};
+      candSnaps.forEach(snap => { if (snap.exists) candMap[snap.id] = { id: snap.id, ...snap.data() }; });
+      const jobMap = {};
+      jobSnaps.forEach(snap => { if (snap.exists) jobMap[snap.id] = { id: snap.id, ...snap.data() }; });
+      const userMap = {};
+      userSnaps.forEach(snap => { if (snap.exists) userMap[snap.id] = { id: snap.id, ...snap.data() }; });
+
+      // Populate feedbacks
+      const interviewIds = paginated.map(iv => iv.id);
+      const feedbackSnaps = await Promise.all(interviewIds.map(id => 
+        firestore.collection("interviewFeedbacks").where("interviewId", "==", id).get()
+      ));
+      
+      const feedbackMap = {};
+      feedbackSnaps.forEach((snap, idx) => {
+        const iid = interviewIds[idx];
+        feedbackMap[iid] = snap.docs.map(d => ({ 
+          id: d.id, 
+          ...d.data(),
+          submittedBy: userMap[d.data().submittedById] || { fullName: 'Interviewer' }
+        }));
+      });
+
+      paginated.forEach(iv => {
+        const app = appMap[iv.applicationId];
+        if (app) {
+          app.candidate = candMap[app.candidateId];
+          app.job = jobMap[app.jobId];
+          iv.application = app;
+        }
+        iv.interviewers = (iv.interviewerIds || []).map(id => userMap[id]).filter(Boolean);
+        iv.feedbacks = feedbackMap[iv.id] || [];
+      });
+    }
+
+    res.json({
+      success: true,
+      data: paginated,
+      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
     });
-
-    res.json({ success: true, data: interviews });
   }),
 );
 
 router.post(
-  "/:id/voice-recording",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
-  (req, res, next) => {
-    req.uploadFolder = "interview-recordings";
-    next();
-  },
-  upload.single("file"),
+  "/",
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    if (!req.file) {
-      throw new ApiError(400, "Voice recording file is required (field: file)");
+    const { applicationId, interviewerIds, scheduledStart, mode, roundNo, round, meetingLink, zohoLink, scheduledEnd } = req.body;
+    
+    if (!applicationId || !interviewerIds || !scheduledStart || !mode) {
+      throw new ApiError(400, "Missing required fields");
     }
 
-    const interview = await prisma.interview.findUnique({
-      where: { id },
-      include: { voiceRecordingFile: true, interviewers: { select: { id: true } } },
-    });
-    if (!interview) {
-      throw new ApiError(404, "Interview not found");
-    }
+    const appDoc = await firestore.collection("applications").doc(applicationId).get();
+    if (!appDoc.exists) throw new ApiError(404, "Application not found");
 
-    if (req.user.role === "INTERVIEWER" && !interview.interviewers.some(u => u.id === req.user.id)) {
-      throw new ApiError(403, "You can upload recording only for your assigned interview");
-    }
+    const interviewData = {
+      applicationId,
+      interviewerIds,
+      scheduledStart,
+      scheduledEnd: scheduledEnd || null,
+      mode,
+      roundNo: parseInt(roundNo) || 1,
+      round: round || `Round ${roundNo || 1}`,
+      meetingLink: meetingLink || "",
+      zohoLink: zohoLink || "",
+      createdById: req.user.id,
+      createdAt: new Date().toISOString(),
+      status: "SCHEDULED"
+    };
 
-    const cloudinaryUrl = req.file.path;
-    const cloudinaryPublicId = req.file.filename;
-
-    const fileMeta = await prisma.fileMeta.create({
-      data: {
-        storageKey: cloudinaryUrl, // Absolute URL
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype || "application/octet-stream",
-        sizeBytes: BigInt(req.file.size || 0),
-        uploadedById: req.user.id,
-      },
-    });
-
-    await prisma.interview.update({
-      where: { id },
-      data: { voiceRecordingFileId: fileMeta.id },
-    });
-
-    // NOTE: Manual file cleanup (fs.unlink) is no longer needed for Cloudinary.
+    const docRef = await firestore.collection("interviews").add(interviewData);
 
     await logAudit({
       actorUserId: req.user.id,
-      action: "UPLOAD_INTERVIEW_RECORDING",
+      action: "SCHEDULE_INTERVIEW",
       entityType: "INTERVIEW",
-      entityId: id,
-      newData: {
-        fileId: fileMeta.id,
-        fileName: fileMeta.originalName,
-      },
+      entityId: docRef.id,
+      newData: interviewData,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    res.status(201).json({
-      success: true,
-      data: {
-        fileId: fileMeta.id,
-        originalName: fileMeta.originalName,
-        url: fileMeta.storageKey, // Absolute Cloudinary URL
-      },
-    });
+    res.status(201).json({ success: true, data: { id: docRef.id, ...interviewData } });
   }),
 );
 
 router.post(
   "/:id/feedback",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  offerLetterUpload.single("offerFile"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const {
@@ -327,122 +195,152 @@ router.post(
       communicationRating,
       cultureFitRating,
       strengths,
-      concerns,
-      recommendation,
+      weaknesses,
       overallComments,
+      recommendation,
     } = req.body;
 
-    if (
-      !technicalRating ||
-      !communicationRating ||
-      !cultureFitRating ||
-      !strengths ||
-      !concerns ||
-      !recommendation ||
-      !overallComments
-    ) {
-      throw new ApiError(
-        400,
-        "technicalRating, communicationRating, cultureFitRating, strengths, concerns, recommendation, and overallComments are required",
-      );
+    const interviewRef = firestore.collection("interviews").doc(id);
+    const interviewDoc = await interviewRef.get();
+    if (!interviewDoc.exists) throw new ApiError(404, "Interview not found");
+
+    // Check if feedback already exists for this interview
+    const existingFeedback = await firestore.collection("interviewFeedbacks")
+      .where("interviewId", "==", id)
+      .limit(1)
+      .get();
+    
+    if (!existingFeedback.empty) {
+      throw new ApiError(400, "Feedback has already been submitted for this interview round.");
     }
 
-    if (!["PASS", "FAIL", "HOLD", "PENDING", "OFFER"].includes(recommendation)) {
-      throw new ApiError(400, "Invalid recommendation");
+    const feedbackData = {
+      interviewId: id,
+      submittedById: req.user.id,
+      technicalRating: parseInt(technicalRating) || 0,
+      communicationRating: parseInt(communicationRating) || 0,
+      cultureFitRating: parseInt(cultureFitRating) || 0,
+      strengths: strengths || "",
+      weaknesses: weaknesses || req.body.concerns || "",
+      overallComments: overallComments || "",
+      recommendation: recommendation || "PENDING",
+      createdAt: new Date().toISOString()
+    };
+
+    if (req.file) {
+      feedbackData.offerFileUrl = req.file.path;
+      feedbackData.offerFileName = req.file.originalname;
     }
 
-    const interview = await prisma.interview.findUnique({
-      where: { id },
-      select: { id: true, result: true, mandatoryFeedbackSubmitted: true, interviewers: { select: { id: true } } },
-    });
-    if (!interview) throw new ApiError(404, "Interview not found");
+    const feedbackRef = await firestore.collection("interviewFeedbacks").add(feedbackData);
 
-    if (req.user.role === "INTERVIEWER" && !interview.interviewers.some(u => u.id === req.user.id)) {
-      throw new ApiError(403, "You can only submit feedback for interviews assigned to you");
+    const updateData = { 
+      status: "COMPLETED",
+      result: recommendation,
+      updatedAt: new Date().toISOString()
+    };
+    if (req.file) updateData.offerLetterUrl = req.file.path;
+
+    await interviewRef.update(updateData);
+
+    // SYNC: Update Application and Candidate status based on recommendation
+    const interviewDataRaw = interviewDoc.data();
+    if (interviewDataRaw.applicationId) {
+      const appRef = firestore.collection("applications").doc(interviewDataRaw.applicationId);
+      const appDoc = await appRef.get();
+      
+      if (appDoc.exists) {
+        const appData = appDoc.data();
+        let newStatus = appData.status;
+        let candidateStatus = "ACTIVE";
+
+        if (recommendation === "REJECTED") {
+          newStatus = "REJECTED";
+          candidateStatus = "REJECTED";
+        } else if (recommendation === "SELECTED" || recommendation === "OFFER_SENT" || recommendation === "OFFER_LETTER") {
+          newStatus = "OFFER_SENT";
+          candidateStatus = "OFFER_SENT";
+        } else if (recommendation === "JOINED") {
+          newStatus = "JOINED";
+          candidateStatus = "JOINED";
+        }
+
+        // Update Application
+        await appRef.update({ status: newStatus, updatedAt: new Date().toISOString() });
+
+        // Update Candidate global status
+        if (appData.candidateId) {
+          await firestore.collection("candidates").doc(appData.candidateId).update({
+            status: candidateStatus,
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
     }
-
-    const existingFeedback = await prisma.interviewFeedback.findFirst({
-      where: { interviewId: id, submittedById: req.user.id },
-      select: { id: true },
-    });
-    if (existingFeedback) {
-      throw new ApiError(409, "You have already submitted feedback for this interview");
-    }
-
-    const feedback = await prisma.interviewFeedback.create({
-      data: {
-        interviewId: id,
-        technicalRating,
-        communicationRating,
-        cultureFitRating,
-        strengths,
-        concerns,
-        recommendation,
-        overallComments,
-        submittedById: req.user.id,
-      },
-    });
-
-    await prisma.interview.update({
-      where: { id },
-      data: {
-        result: recommendation,
-        mandatoryFeedbackSubmitted: true,
-      },
-    });
 
     await logAudit({
       actorUserId: req.user.id,
       action: "SUBMIT_INTERVIEW_FEEDBACK",
-      entityType: "INTERVIEW",
-      entityId: id,
-      oldData: { mandatoryFeedbackSubmitted: interview.mandatoryFeedbackSubmitted, result: interview.result },
-      newData: { mandatoryFeedbackSubmitted: true, result: recommendation },
+      entityType: "INTERVIEW_FEEDBACK",
+      entityId: feedbackRef.id,
+      newData: feedbackData,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    // --- Automated Pipeline Transition: Move to 'Selected' if OFFER is recommended ---
-    if (recommendation === "OFFER") {
-      try {
-        const interviewFull = await prisma.interview.findUnique({
-          where: { id },
-          include: { application: { select: { id: true, jobId: true } } }
-        });
+    broadcast({ type: 'INTERVIEW_FEEDBACK_SUBMITTED', interviewId: id, recommendation });
 
-        const stage = await prisma.pipelineStage.findFirst({
-          where: {
-            name: { equals: "Selected", mode: "insensitive" },
-            OR: [
-              { jobId: interviewFull.application.jobId },
-              { jobId: null }
-            ]
-          },
-          orderBy: { jobId: "desc" }
-        });
+    res.status(201).json({ success: true, data: { id: feedbackRef.id, ...feedbackData } });
+  }),
+);
 
-        if (stage) {
-          await prisma.application.update({
-            where: { id: interviewFull.application.id },
-            data: { currentStageId: stage.id }
-          });
+router.post(
+  "/:id/recording",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    if (!req.file) throw new ApiError(400, "Recording file is required");
 
-          await prisma.stageHistory.create({
-            data: {
-              applicationId: interviewFull.application.id,
-              stageId: stage.id,
-              changedById: req.user.id,
-              remark: "Auto-moved to Selected stage (OFFER recommendation submitted)"
-            }
-          });
-        }
-      } catch (err) {
-        console.error("[AUTO-TRANSITION] Failed to move application to Selected stage:", err);
-      }
-    }
-    // --------------------------------------------------------------------------------
+    const interviewRef = firestore.collection("interviews").doc(id);
+    const interviewDoc = await interviewRef.get();
+    if (!interviewDoc.exists) throw new ApiError(404, "Interview not found");
 
-    res.status(201).json({ success: true, data: feedback });
+    // Use memory buffer for Firebase Storage
+    const { uploadFileToFirebase } = require("../../config/firebase");
+    const folder = "interview-recordings";
+    const fileName = `interview_${id}_${Date.now()}_${req.file.originalname}`;
+    
+    const fileUrl = await uploadFileToFirebase(req.file.buffer, folder, fileName, req.file.mimetype);
+
+    const fileMeta = {
+      storageKey: fileUrl,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      sizeBytes: req.file.size,
+      uploadedById: req.user.id,
+      createdAt: new Date().toISOString()
+    };
+
+    const fileRef = await firestore.collection("fileMetas").add(fileMeta);
+
+    await interviewRef.update({
+      voiceRecordingFileId: fileRef.id,
+      voiceRecordingUrl: fileUrl,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAudit({
+      actorUserId: req.user.id,
+      action: "UPLOAD_INTERVIEW_RECORDING",
+      entityType: "INTERVIEW",
+      entityId: id,
+      newData: { fileId: fileRef.id, url: fileUrl },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ success: true, data: { fileId: fileRef.id, url: fileUrl } });
   }),
 );
 
@@ -451,41 +349,62 @@ router.delete(
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    
-    const interview = await prisma.interview.findUnique({
-      where: { id },
-      include: {
-        application: {
-          select: {
-            candidate: { select: { fullName: true } }
-          }
-        }
-      }
-    });
+    const interviewRef = firestore.collection("interviews").doc(id);
+    const doc = await interviewRef.get();
+    if (!doc.exists) throw new ApiError(404, "Interview not found");
 
-    if (!interview) {
-      throw new ApiError(404, "Interview not found");
-    }
-
-    await prisma.interview.delete({
-      where: { id },
-    });
+    const existing = doc.data();
+    await interviewRef.delete();
 
     await logAudit({
       actorUserId: req.user.id,
       action: "DELETE_INTERVIEW",
       entityType: "INTERVIEW",
       entityId: id,
-      oldData: {
-        candidateName: interview.application?.candidate?.fullName,
-        round: interview.round,
-        scheduledStart: interview.scheduledStart
-      },
+      oldData: existing,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     res.json({ success: true, message: "Interview deleted successfully" });
+  }),
+);
+
+router.patch(
+  "/:id/panelists",
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { interviewerIds } = req.body;
+
+    if (!interviewerIds || !Array.isArray(interviewerIds)) {
+      throw new ApiError(400, "interviewerIds (array) is required");
+    }
+
+    const interviewRef = firestore.collection("interviews").doc(id);
+    const doc = await interviewRef.get();
+    if (!doc.exists) throw new ApiError(404, "Interview not found");
+
+    const oldData = doc.data();
+    await interviewRef.update({
+      interviewerIds,
+      updatedAt: new Date().toISOString()
+    });
+
+    await logAudit({
+      actorUserId: req.user.id,
+      action: "TRANSFER_INTERVIEW_PANELISTS",
+      entityType: "INTERVIEW",
+      entityId: id,
+      oldData: { interviewerIds: oldData.interviewerIds },
+      newData: { interviewerIds },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    broadcast({ type: 'INTERVIEW_PANELISTS_UPDATED', interviewId: id, interviewerIds });
+
+    res.json({ success: true, message: "Panelists transferred successfully" });
   }),
 );
 

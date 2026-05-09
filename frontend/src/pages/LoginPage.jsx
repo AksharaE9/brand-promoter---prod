@@ -121,21 +121,6 @@ const LoginPage = () => {
             Enter your credentials to access the talent architecture console.
           </p>
 
-          {hasToken() ? (
-            <div className="mt-6 p-4 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] text-center">
-              <p className="text-sm text-[#0f1b3d] font-semibold mb-2">You already have an active session</p>
-              <button className="os-btn-primary w-full h-11 text-base flex justify-center items-center gap-2" type="button" onClick={() => navigate('/workspaces')}>
-                Enter System Workspace <span className="material-symbols-outlined text-base">arrow_forward</span>
-              </button>
-            </div>
-          ) : null}
-
-          <div className="grid grid-cols-2 gap-3 mt-6">
-            <button className="os-btn-outline flex items-center justify-center gap-2" type="button"><span className="text-xs">G</span> Google</button>
-            <button className="os-btn-outline flex items-center justify-center gap-2" type="button"><span className="text-xs">GH</span> GitHub</button>
-          </div>
-
-          <div className="mt-6 text-center text-xs tracking-[.2em] uppercase text-[#8b94a9]">or continue with email</div>
 
           <div className="mt-6 space-y-4">
             <input

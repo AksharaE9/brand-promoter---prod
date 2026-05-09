@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -150,17 +150,10 @@ const JobsManager = () => {
         <EnterpriseTopbar
           searchPlaceholder="Search jobs, candidates, or applications..."
           tabs={[
-            { key: 'pipeline', label: 'Pipeline', href: '/pipeline', active: true },
-            { key: 'sourcing', label: 'Sourcing', href: '/sourcing' },
-            { key: 'referrals', label: 'Referrals', href: '/referrals' },
+            { key: 'all', label: 'All Jobs', href: '/jobs', active: true },
           ]}
           right={
             <>
-              {canManageJobs ? (
-                <button className="os-btn-primary" type="button" onClick={() => setShowCreate((value) => !value)}>
-                  {showCreate ? 'Close Form' : '+ Create Job'}
-                </button>
-              ) : null}
               <NotificationBell />
               <UserChip fallbackName="Alex Rivera" fallbackRole="Recruiting Lead" avatarSeed="jobs-user" />
             </>
@@ -169,19 +162,26 @@ const JobsManager = () => {
       }
     >
       <PageEnter>
-        <div className="flex flex-wrap justify-between items-start gap-3">
-          <div>
-            <div className="os-eyebrow">Recruitment Overview</div>
-            <h1 className="os-h1">Job Management</h1>
-          </div>
-          <div className="flex gap-3">
-            <div className="os-card px-4 py-3 text-sm text-[#4f5a77] flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#1f4bc6]">bolt</span>
-              Hiring Velocity <b style={{ color: '#1f4bc6' }}>12.4 days</b>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="os-eyebrow">Recruitment Overview</div>
+              <h1 className="os-h1">Job Management</h1>
             </div>
-            <div className="rounded-2xl bg-[#2455d9] text-white px-4 py-3 text-sm flex items-center gap-2">
-              <span className="material-symbols-outlined">groups</span>
-              Total Active <b>{activeCount} Roles</b>
+            {canManageJobs && (
+              <button className="os-btn-primary !h-9 ml-4" type="button" onClick={() => setShowCreate((v) => !v)}>
+                {showCreate ? 'Close Form' : '+ Post Job'}
+              </button>
+            )}
+          </div>
+          <div className="flex gap-3 self-end mb-1">
+            <div className="os-card px-4 py-2.5 text-[11px] text-[#4f5a77] flex items-center gap-2 font-bold uppercase tracking-wider">
+              <span className="material-symbols-outlined text-[#1f4bc6] text-sm">bolt</span>
+              Velocity <b style={{ color: '#1f4bc6' }}>12.4d</b>
+            </div>
+            <div className="rounded-2xl bg-[#2455d9] text-white px-4 py-2.5 text-[11px] flex items-center gap-2 font-bold uppercase tracking-wider shadow-md">
+              <span className="material-symbols-outlined text-sm">groups</span>
+              Active <b>{activeCount}</b>
             </div>
           </div>
         </div>
@@ -251,7 +251,7 @@ const JobsManager = () => {
             <Reveal key={row.id} delay={idx * 0.04}>
               <div className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.62fr_.62fr_.72fr_.9fr] items-start md:items-center gap-4">
                 <div>
-                  <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/pipeline?jobId=${row.id}`)}>
+                  <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/schedule?jobId=${row.id}`)}>
                     {row.title}
                   </button>
                   <div className="text-sm text-[#6b7690] mt-1">{row.location}</div>
@@ -270,8 +270,8 @@ const JobsManager = () => {
                   <div className="text-sm mt-1">{row.lead}</div>
                 </div>
                 <div className="flex flex-wrap gap-2 md:justify-start">
-                  <button className="os-btn-outline" type="button" onClick={() => navigate(`/pipeline?jobId=${row.id}`)}>
-                    View Pipeline
+                  <button className="os-btn-primary !bg-[#2454cf] hover:!bg-[#1d43a6] !border-transparent !text-white" type="button" onClick={() => navigate(`/jobs/${row.id}`)}>
+                    JD & Docs
                   </button>
                   {canManageJobs ? (
                     <button className="os-btn-outline" type="button" onClick={() => onToggleStatus(row)}>

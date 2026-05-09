@@ -1,8 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL, apiGet, apiPost } from '../lib/api';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import Reveal from './PageMotion';
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
 const DRIVE_STATUS_OPTIONS = ['PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
+
+const emptyCollegeForm = {
+  name: '',
+  location: '',
+  area: '',
+  year: '',
+  role: '',
+  course: '',
+};
 
 const emptyDriveForm = {
   title: '',
@@ -12,49 +24,56 @@ const emptyDriveForm = {
   notes: '',
 };
 
-const emptyCandidateForm = {
+const emptyStudentForm = {
   fullName: '',
   email: '',
   phone: '',
 };
 
 function CollegeDriveWorkspace({ onBanner, onError }) {
+  const navigate = useNavigate();
   const [colleges, setColleges] = useState([]);
   const [drives, setDrives] = useState([]);
   const [driveCandidates, setDriveCandidates] = useState([]);
-  const [timeline, setTimeline] = useState([]);
   const [users, setUsers] = useState([]);
+  const [globalJobs, setGlobalJobs] = useState([]);
 
   const [selectedCollegeId, setSelectedCollegeId] = useState('');
   const [selectedDriveId, setSelectedDriveId] = useState('');
 
-  const [collegeForm, setCollegeForm] = useState({ name: '', location: '' });
+  const [showCollegeModal, setShowCollegeModal] = useState(false);
+  const [showStudentModal, setShowStudentModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
+
+  const [collegeForm, setCollegeForm] = useState(emptyCollegeForm);
   const [driveForm, setDriveForm] = useState(emptyDriveForm);
-  const [candidateForm, setCandidateForm] = useState(emptyCandidateForm);
+  const [studentForm, setStudentForm] = useState(emptyStudentForm);
   const [bulkFile, setBulkFile] = useState(null);
+  const [bulkResults, setBulkResults] = useState(null);
 
   const [selectedRecruiterIds, setSelectedRecruiterIds] = useState([]);
+  const [selectedJobToLink, setSelectedJobToLink] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const selectedDrive = useMemo(
-    () => drives.find((d) => d.id === selectedDriveId) || null,
-    [drives, selectedDriveId],
-  );
+  const selectedCollege = useMemo(() => colleges.find(c => c.id === selectedCollegeId), [colleges, selectedCollegeId]);
+  const selectedDrive = useMemo(() => drives.find(d => d.id === selectedDriveId), [drives, selectedDriveId]);
 
   const loadColleges = async () => {
     const res = await apiGet('/college-drives/colleges');
-    const rows = res.data || [];
-    setColleges(rows);
-
-    if (!selectedCollegeId && rows.length > 0) {
-      setSelectedCollegeId(rows[0].id);
-    }
+    setColleges(res.data || []);
+    if (!selectedCollegeId && res.data?.length > 0) setSelectedCollegeId(res.data[0].id);
   };
 
   const loadUsers = async () => {
     const res = await apiGet('/users/interviewers');
     setUsers(res.data || []);
+  };
+
+  const loadGlobalJobs = async () => {
+    const res = await apiGet('/jobs?limit=100&isActive=true');
+    setGlobalJobs(res.data || []);
   };
 
   const loadDrives = async (collegeId) => {
@@ -63,196 +82,123 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       setSelectedDriveId('');
       return;
     }
-
     const res = await apiGet(`/college-drives/drives?collegeId=${collegeId}`);
-    const rows = res.data || [];
-    setDrives(rows);
-
-    if (rows.length === 0) {
+    setDrives(res.data || []);
+    if (res.data?.length > 0 && !res.data.some(d => d.id === selectedDriveId)) {
+      setSelectedDriveId(res.data[0].id);
+    } else if (res.data?.length === 0) {
       setSelectedDriveId('');
-      return;
-    }
-
-    if (!rows.some((item) => item.id === selectedDriveId)) {
-      setSelectedDriveId(rows[0].id);
     }
   };
 
   const loadDriveDetails = async (driveId) => {
     if (!driveId) {
       setDriveCandidates([]);
-      setTimeline([]);
       setSelectedRecruiterIds([]);
       return;
     }
-
-    const [candRes, timelineRes, drivesRes] = await Promise.all([
-      apiGet(`/college-drives/drives/${driveId}/candidates`),
-      apiGet(`/college-drives/drives/${driveId}/timeline`),
-      apiGet(`/college-drives/drives?collegeId=${selectedCollegeId}`),
-    ]);
-
+    const candRes = await apiGet(`/college-drives/drives/${driveId}/candidates`);
     setDriveCandidates(candRes.data || []);
-    setTimeline(timelineRes.data || []);
-
-    const drive = (drivesRes.data || []).find((item) => item.id === driveId);
-    setSelectedRecruiterIds((drive?.recruiters || []).map((item) => item.userId));
+    setSelectedRecruiterIds((selectedDrive?.recruiters || []).map(r => r.userId));
   };
 
   useEffect(() => {
-    let mounted = true;
-
     const run = async () => {
       try {
         setLoading(true);
-        await Promise.all([loadColleges(), loadUsers()]);
+        await Promise.all([loadColleges(), loadUsers(), loadGlobalJobs()]);
       } catch (err) {
-        if (mounted) onError(err.message || 'Failed to load college workspace');
+        onError(err.message || 'Failed to load workspace');
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     };
-
     run();
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   useEffect(() => {
-    loadDrives(selectedCollegeId).catch((err) => onError(err.message || 'Failed to load drives'));
+    loadDrives(selectedCollegeId).catch(err => onError(err.message));
   }, [selectedCollegeId]);
 
   useEffect(() => {
-    loadDriveDetails(selectedDriveId).catch((err) => onError(err.message || 'Failed to load drive details'));
+    loadDriveDetails(selectedDriveId).catch(err => onError(err.message));
   }, [selectedDriveId]);
 
-  const createCollege = async (event) => {
-    event.preventDefault();
-    if (!collegeForm.name.trim()) return;
-
+  const handleAddCollege = async (e) => {
+    e.preventDefault();
     try {
       setSaving(true);
-      await apiPost('/college-drives/colleges', {
-        name: collegeForm.name.trim(),
-        location: collegeForm.location.trim() || null,
-      });
-      setCollegeForm({ name: '', location: '' });
+      await apiPost('/college-drives/colleges', collegeForm);
+      setCollegeForm(emptyCollegeForm);
+      setShowCollegeModal(false);
       await loadColleges();
-      onBanner('College added successfully.');
+      onBanner('College added successfully');
     } catch (err) {
-      onError(err.message || 'Failed to create college');
+      onError(err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const createDrive = async (event) => {
-    event.preventDefault();
-    if (!selectedCollegeId || !driveForm.title.trim() || !driveForm.dateFrom) {
-      onError('Drive title and start date are required.');
-      return;
-    }
-
+  const handleAddDrive = async (e) => {
+    e.preventDefault();
     try {
       setSaving(true);
-      await apiPost('/college-drives/drives', {
-        collegeId: selectedCollegeId,
-        title: driveForm.title.trim(),
-        dateFrom: driveForm.dateFrom,
-        dateTo: driveForm.dateTo || null,
-        notes: driveForm.notes || null,
-        status: driveForm.status,
-      });
+      await apiPost('/college-drives/drives', { ...driveForm, collegeId: selectedCollegeId });
       setDriveForm(emptyDriveForm);
+      setShowDriveModal(false);
       await loadDrives(selectedCollegeId);
-      onBanner('College drive created.');
+      onBanner('Drive created successfully');
     } catch (err) {
-      onError(err.message || 'Failed to create drive');
+      onError(err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const saveRecruiters = async () => {
-    if (!selectedDriveId) return;
+  const handleAddStudent = async (e) => {
+    e.preventDefault();
     try {
       setSaving(true);
-      await apiPost(`/college-drives/drives/${selectedDriveId}/recruiters`, {
-        recruiterIds: selectedRecruiterIds,
-      });
-      await loadDrives(selectedCollegeId);
-      onBanner('Drive recruiter assignments updated.');
-    } catch (err) {
-      onError(err.message || 'Failed to update recruiters');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const addCandidate = async (event) => {
-    event.preventDefault();
-    if (!selectedDriveId) {
-      onError('Select a drive first.');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      await apiPost(`/college-drives/drives/${selectedDriveId}/candidates`, {
-        fullName: candidateForm.fullName.trim(),
-        email: candidateForm.email.trim() || null,
-        phone: candidateForm.phone.trim() || null,
-      });
-      setCandidateForm(emptyCandidateForm);
+      await apiPost(`/college-drives/drives/${selectedDriveId}/candidates`, studentForm);
+      setStudentForm(emptyStudentForm);
+      setShowStudentModal(false);
       await loadDriveDetails(selectedDriveId);
-      onBanner('Candidate added to college drive.');
+      onBanner('Student added successfully');
     } catch (err) {
-      onError(err.message || 'Failed to add candidate');
+      onError(err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const uploadBulk = async (event) => {
-    event.preventDefault();
-    if (!selectedDriveId || !bulkFile) {
-      onError('Select drive and upload file.');
-      return;
-    }
-
+  const handleBulkUpload = async (e) => {
+    e.preventDefault();
+    if (!bulkFile) return;
     try {
       setSaving(true);
-      const token = localStorage.getItem('ats_token');
       const formData = new FormData();
       formData.append('file', bulkFile);
-
-      const response = await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/bulk-upload`, {
+      const res = await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/bulk-upload`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { Authorization: `Bearer ${localStorage.getItem('ats_token')}` },
         body: formData,
       });
-
-      const payload = await response.json();
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.message || 'Bulk upload failed');
-      }
-
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Upload failed');
+      setBulkResults(json.data);
       await loadDriveDetails(selectedDriveId);
-      setBulkFile(null);
-      onBanner(`Bulk upload complete. Inserted: ${payload.data.inserted}, Skipped: ${payload.data.skipped}`);
+      onBanner(`Bulk upload complete: ${json.data.inserted} inserted`);
     } catch (err) {
-      onError(err.message || 'Failed bulk upload');
+      onError(err.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const updateDriveCandidateStatus = async (candidateId, status) => {
-    if (!selectedDriveId || !candidateId) return;
-
+  const updateCandidateStatus = async (candId, status) => {
     try {
-      await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/candidates/${candidateId}/status`, {
+      await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/candidates/${candId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -260,206 +206,383 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
         },
         body: JSON.stringify({ status }),
       });
-
       await loadDriveDetails(selectedDriveId);
-      onBanner('Candidate drive status updated.');
+      onBanner('Status updated');
     } catch (err) {
-      onError(err.message || 'Failed to update status');
+      onError(err.message);
     }
   };
 
-  if (loading) {
-    return <div className="os-card mt-4 p-5 text-sm text-[#6f7d98]">Loading college drive workspace...</div>;
-  }
+  if (loading) return <div className="p-10 text-center text-slate-400">Loading workspace...</div>;
 
   return (
-    <div className="grid xl:grid-cols-[1fr_1fr] gap-4 mt-4">
-      <div className="space-y-4">
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">Colleges</h3>
-          <form className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3" onSubmit={createCollege}>
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              placeholder="College Name"
-              value={collegeForm.name}
-              onChange={(event) => setCollegeForm((prev) => ({ ...prev, name: event.target.value }))}
-              required
-            />
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              placeholder="Location"
-              value={collegeForm.location}
-              onChange={(event) => setCollegeForm((prev) => ({ ...prev, location: event.target.value }))}
-            />
-            <button className="os-btn-primary" type="submit" disabled={saving}>Add College</button>
-          </form>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {colleges.map((college) => (
-              <button
-                key={college.id}
-                className={`os-btn-outline !h-9 ${college.id === selectedCollegeId ? '!border-[#1f52cc] !text-[#1f52cc]' : ''}`}
-                type="button"
-                onClick={() => setSelectedCollegeId(college.id)}
-              >
-                {college.name}
-              </button>
-            ))}
-            {colleges.length === 0 ? <div className="text-xs text-[#6f7d98]">No colleges added yet.</div> : null}
-          </div>
-        </div>
-
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">College Drives</h3>
-          <form className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3" onSubmit={createDrive}>
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm md:col-span-2"
-              placeholder="Drive Title (e.g., CSE Final Year 2026)"
-              value={driveForm.title}
-              onChange={(event) => setDriveForm((prev) => ({ ...prev, title: event.target.value }))}
-              required
-            />
-            <input
-              type="date"
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              value={driveForm.dateFrom}
-              onChange={(event) => setDriveForm((prev) => ({ ...prev, dateFrom: event.target.value }))}
-              required
-            />
-            <input
-              type="date"
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              value={driveForm.dateTo}
-              onChange={(event) => setDriveForm((prev) => ({ ...prev, dateTo: event.target.value }))}
-            />
-            <select
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              value={driveForm.status}
-              onChange={(event) => setDriveForm((prev) => ({ ...prev, status: event.target.value }))}
+    <div className="space-y-6 mt-4">
+      {/* HEADER ACTIONS */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button 
+            className="h-11 px-6 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-100 hover:bg-[#1844b0] transition-all flex items-center gap-2"
+            onClick={() => setShowCollegeModal(true)}
+          >
+            <span className="material-symbols-outlined text-xl">school</span>
+            Add College
+          </button>
+          {selectedCollegeId && (
+            <button 
+              className="h-11 px-6 rounded-2xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition-all flex items-center gap-2"
+              onClick={() => setShowDriveModal(true)}
             >
-              {DRIVE_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
-            <button className="os-btn-primary" type="submit" disabled={saving}>Create Drive</button>
-          </form>
-
-          <div className="mt-3 space-y-2">
-            {drives.map((drive) => (
-              <button
-                key={drive.id}
-                className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${selectedDriveId === drive.id ? 'border-[#1f52cc] bg-blue-50 text-[#1f52cc]' : 'border-[#dbe4ee]'}`}
-                onClick={() => setSelectedDriveId(drive.id)}
-                type="button"
-              >
-                <div className="font-semibold">{drive.title}</div>
-                <div className="text-[11px] text-[#6f7d98]">{drive.status} | {new Date(drive.dateFrom).toLocaleDateString()}</div>
-              </button>
-            ))}
-            {drives.length === 0 ? <div className="text-xs text-[#6f7d98]">No drives for selected college.</div> : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">Recruiters/Interviewers in Drive</h3>
-          {selectedDrive ? (
-            <>
-              <div className="mt-3 max-h-40 overflow-y-auto border border-[#dbe4ee] rounded-lg p-2 space-y-1">
-                {users.map((user) => (
-                  <label key={user.id} className="flex items-center gap-2 text-sm text-[#213152]">
-                    <input
-                      type="checkbox"
-                      checked={selectedRecruiterIds.includes(user.id)}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setSelectedRecruiterIds((prev) => checked ? [...prev, user.id] : prev.filter((item) => item !== user.id));
-                      }}
-                    />
-                    {user.fullName} ({user.role})
-                  </label>
-                ))}
-              </div>
-              <button className="os-btn-primary mt-3" type="button" onClick={saveRecruiters} disabled={saving}>Save Assignments</button>
-            </>
-          ) : (
-            <div className="mt-2 text-sm text-[#6f7d98]">Select a drive to assign recruiters/interviewers.</div>
+              <span className="material-symbols-outlined text-xl">campaign</span>
+              Add Drive
+            </button>
           )}
         </div>
 
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">Add Candidates to Drive</h3>
-          <form className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3" onSubmit={addCandidate}>
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              placeholder="Full Name"
-              value={candidateForm.fullName}
-              onChange={(event) => setCandidateForm((prev) => ({ ...prev, fullName: event.target.value }))}
-              required
-            />
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              placeholder="Email"
-              value={candidateForm.email}
-              onChange={(event) => setCandidateForm((prev) => ({ ...prev, email: event.target.value }))}
-            />
-            <input
-              className="h-10 rounded-lg border border-[#dbe4ee] px-3 text-sm"
-              placeholder="Phone"
-              value={candidateForm.phone}
-              onChange={(event) => setCandidateForm((prev) => ({ ...prev, phone: event.target.value }))}
-            />
-            <button className="os-btn-primary md:col-span-3" type="submit" disabled={saving}>Add Candidate</button>
-          </form>
-
-          <form className="mt-3 flex flex-wrap gap-2" onSubmit={uploadBulk}>
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="h-10 text-sm"
-              onChange={(event) => setBulkFile(event.target.files?.[0] || null)}
-            />
-            <button className="os-btn-outline" type="submit" disabled={saving || !bulkFile}>Bulk Upload Excel</button>
-          </form>
-        </div>
-
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">Drive Candidate Tracking</h3>
-          <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
-            {driveCandidates.map((row) => (
-              <div key={row.candidate.id} className="border border-[#dbe4ee] rounded-lg p-2 text-sm">
-                <div className="font-semibold text-[#12244b]">{row.candidate.fullName}</div>
-                <div className="text-[11px] text-[#6f7d98]">{row.candidate.email || row.candidate.phone || 'No contact'}</div>
-                <div className="mt-2 flex gap-2 items-center">
-                  <select
-                    className="h-8 rounded border border-[#dbe4ee] px-2 text-xs"
-                    value={row.status}
-                    onChange={(event) => updateDriveCandidateStatus(row.candidate.id, event.target.value)}
-                  >
-                    {STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                  <span className="text-[10px] text-[#6f7d98]">Apps: {row.candidate._count?.applications || 0}</span>
-                </div>
-              </div>
-            ))}
-            {driveCandidates.length === 0 ? <div className="text-xs text-[#6f7d98]">No candidates in selected drive.</div> : null}
-          </div>
-        </div>
-
-        <div className="os-card p-5">
-          <h3 className="text-lg font-semibold text-[#0f1b3d]">Drive Timeline</h3>
-          <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
-            {timeline.slice(0, 25).map((item, idx) => (
-              <div key={`${item.type}-${item.at}-${idx}`} className="border border-[#e7edf4] rounded-lg p-2 text-xs">
-                <div className="font-semibold text-[#12244b]">{item.candidate?.fullName || 'Candidate'}</div>
-                <div className="text-[#6f7d98]">{item.type.replaceAll('_', ' ')}</div>
-                <div className="text-[#1f52cc]">{item.status || item.applicationStatus || '-'}</div>
-                <div className="text-[#9aa3b8]">{new Date(item.at).toLocaleString()}</div>
-              </div>
-            ))}
-            {timeline.length === 0 ? <div className="text-xs text-[#6f7d98]">No timeline events yet.</div> : null}
-          </div>
+        <div className="flex items-center gap-2">
+          {selectedDriveId && (
+            <>
+              <button 
+                className="h-11 px-6 rounded-2xl bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center gap-2"
+                onClick={() => setShowStudentModal(true)}
+              >
+                <span className="material-symbols-outlined text-xl">person_add</span>
+                Add Student
+              </button>
+              <button 
+                className="h-11 px-6 rounded-2xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition-all flex items-center gap-2"
+                onClick={() => setShowBulkModal(true)}
+              >
+                <span className="material-symbols-outlined text-xl">upload_file</span>
+                Bulk Upload
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      <div className="grid grid-cols-12 gap-6">
+        {/* COLLEGES & DRIVES COLUMN */}
+        <div className="col-span-12 lg:col-span-4 space-y-6">
+          <div className="os-card p-6">
+            <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">apartment</span>
+              Select College
+            </h3>
+            <div className="grid grid-cols-1 gap-2">
+              {colleges.map(college => (
+                <button
+                  key={college.id}
+                  onClick={() => setSelectedCollegeId(college.id)}
+                  className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedCollegeId === college.id ? 'bg-blue-50 border-blue-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
+                >
+                  <div className="font-bold text-slate-900">{college.name}</div>
+                  <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                    <span className="material-symbols-outlined text-[14px]">location_on</span>
+                    {college.location || 'No location'}
+                  </div>
+                  {college.course && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-400 uppercase">{college.course}</span>
+                      <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-400 uppercase">{college.year}</span>
+                    </div>
+                  )}
+                </button>
+              ))}
+              {colleges.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">No colleges added yet.</div>}
+            </div>
+          </div>
+
+          {selectedCollegeId && (
+            <Reveal className="os-card p-6">
+              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">timeline</span>
+                Available Drives
+              </h3>
+              <div className="space-y-2">
+                {drives.map(drive => (
+                  <button
+                    key={drive.id}
+                    onClick={() => setSelectedDriveId(drive.id)}
+                    className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedDriveId === drive.id ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold text-slate-900">{drive.title}</div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${drive.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{drive.status}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">
+                      {new Date(drive.dateFrom).toLocaleDateString()} — {drive.dateTo ? new Date(drive.dateTo).toLocaleDateString() : 'Ongoing'}
+                    </div>
+                  </button>
+                ))}
+                {drives.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">No drives for this college.</div>}
+              </div>
+            </Reveal>
+          )}
+        </div>
+
+        {/* DRIVE DETAILS & STUDENTS */}
+        <div className="col-span-12 lg:col-span-8">
+          {selectedDriveId ? (
+            <Reveal className="os-card p-6 min-h-[600px]">
+              <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
+                <div>
+                  <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-widest mb-1">{selectedCollege?.name}</div>
+                  <h2 className="text-2xl font-bold text-slate-900">{selectedDrive?.title}</h2>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Students Enrolled</div>
+                  <div className="text-3xl font-black text-slate-900 leading-none">{driveCandidates.length}</div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Student Name</th>
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Contact Details</th>
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Current Status</th>
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {driveCandidates.map(cand => (
+                      <tr key={cand.id} className="group hover:bg-slate-50/50 transition-colors">
+                        <td className="py-4 px-2">
+                          <div className="font-bold text-slate-800">{cand.fullName}</div>
+                        </td>
+                        <td className="py-4 px-2">
+                          <div className="text-xs text-slate-600">{cand.email}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{cand.phone}</div>
+                        </td>
+                        <td className="py-4 px-2">
+                          <select 
+                            className="bg-white border border-slate-200 rounded-lg text-xs font-bold px-2 py-1 outline-none focus:border-blue-500 transition-all"
+                            value={cand.status}
+                            onChange={(e) => updateCandidateStatus(cand.candidateId, e.target.value)}
+                          >
+                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                        <td className="py-4 px-2 text-right">
+                          <button 
+                            className="w-8 h-8 rounded-full hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center"
+                            onClick={() => navigate(`/candidate/${cand.candidateId}`)}
+                          >
+                            <span className="material-symbols-outlined text-lg">visibility</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {driveCandidates.length === 0 && (
+                      <tr>
+                        <td colSpan="4" className="py-20 text-center text-slate-400 italic text-sm">No students added to this drive yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Reveal>
+          ) : (
+            <div className="os-card p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+              <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-200 mb-6">
+                <span className="material-symbols-outlined text-4xl">drive_file_rename_outline</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Drive Workspace</h3>
+              <p className="text-slate-500 text-sm max-w-xs">Select a college and then a drive from the left to manage students and recruiters.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* MODALS */}
+      <AnimatePresence>
+        {showCollegeModal && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowCollegeModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">Add New College</h2>
+                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowCollegeModal(false)}>
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+                <form className="grid grid-cols-2 gap-4" onSubmit={handleAddCollege}>
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">College Name</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.name} onChange={e => setCollegeForm({...collegeForm, name: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Location</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.location} onChange={e => setCollegeForm({...collegeForm, location: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Area / Region</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={collegeForm.area} onChange={e => setCollegeForm({...collegeForm, area: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Batch Year</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. 2026" value={collegeForm.year} onChange={e => setCollegeForm({...collegeForm, year: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Target Role</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. Trainee" value={collegeForm.role} onChange={e => setCollegeForm({...collegeForm, role: e.target.value})} />
+                  </div>
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Preferred Course</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. B.Tech CSE" value={collegeForm.course} onChange={e => setCollegeForm({...collegeForm, course: e.target.value})} />
+                  </div>
+                  <button className="col-span-2 h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Adding...' : 'Create College Entry'}</button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showStudentModal && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowStudentModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Add Student</h2>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedDrive?.title}</p>
+                  </div>
+                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowStudentModal(false)}>
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+                <form className="space-y-4" onSubmit={handleAddStudent}>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Full Name</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.fullName} onChange={e => setStudentForm({...studentForm, fullName: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Email Address</label>
+                    <input type="email" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Phone Number (Required)</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} />
+                  </div>
+                  <button className="w-full h-14 rounded-2xl bg-emerald-600 text-white font-bold text-lg mt-4 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Saving...' : 'Add to Drive'}</button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showBulkModal && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowBulkModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900">Bulk Upload Students</h2>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">Excel / CSV Supported</p>
+                  </div>
+                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+
+                {!bulkResults ? (
+                  <form onSubmit={handleBulkUpload} className="space-y-6">
+                    <div className="p-10 border-2 border-dashed border-slate-200 rounded-[28px] bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                      <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 mb-4">
+                        <span className="material-symbols-outlined text-3xl">cloud_upload</span>
+                      </div>
+                      <h4 className="font-bold text-slate-800 mb-1">Select Excel Template</h4>
+                      <p className="text-xs text-slate-500 mb-6 max-w-xs">Template columns: <b>fullName, email, phone</b>. Duplicates checked via phone number.</p>
+                      <input 
+                        type="file" 
+                        accept=".xlsx, .csv" 
+                        className="hidden" 
+                        id="bulk-file-input" 
+                        onChange={e => setBulkFile(e.target.files?.[0])}
+                      />
+                      <label htmlFor="bulk-file-input" className="h-11 px-6 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-all flex items-center gap-2">
+                        {bulkFile ? bulkFile.name : 'Choose File'}
+                      </label>
+                    </div>
+                    <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={!bulkFile || saving}>{saving ? 'Processing...' : 'Upload & Sync'}</button>
+                  </form>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-center">
+                        <div className="text-2xl font-black text-emerald-600">{bulkResults.inserted}</div>
+                        <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Inserted</div>
+                      </div>
+                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-center">
+                        <div className="text-2xl font-black text-amber-600">{bulkResults.skipped}</div>
+                        <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Skipped / Failed</div>
+                      </div>
+                    </div>
+
+                    {bulkResults.errors?.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">Detailed Error Report</div>
+                        <div className="max-h-48 overflow-y-auto bg-red-50/30 rounded-2xl border border-red-100 p-4 divide-y divide-red-100">
+                          {bulkResults.errors.map((err, i) => (
+                            <div key={i} className="py-2 text-[11px] text-red-700 font-medium flex items-start gap-2">
+                              <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+                              {err}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <button className="w-full h-12 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-all" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>Done</button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showDriveModal && (
+          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowDriveModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
+              <div className="p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900">Create Hiring Drive</h2>
+                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowDriveModal(false)}>
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+                <form className="space-y-4" onSubmit={handleAddDrive}>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
+                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.title} onChange={e => setDriveForm({...driveForm, title: e.target.value})} placeholder="e.g. Campus Recruitment 2026" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Start Date</label>
+                      <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.dateFrom} onChange={e => setDriveForm({...driveForm, dateFrom: e.target.value})} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">End Date (Optional)</label>
+                      <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={driveForm.dateTo} onChange={e => setDriveForm({...driveForm, dateTo: e.target.value})} />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Status</label>
+                    <select className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-bold" value={driveForm.status} onChange={e => setDriveForm({...driveForm, status: e.target.value})}>
+                      {DRIVE_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+                  <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Creating...' : 'Launch Drive'}</button>
+                </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

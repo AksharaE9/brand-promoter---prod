@@ -1,20 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiGet } from '../lib/api';
+import { apiGet, apiPatch, getStoredUser } from '../lib/api';
 
-const SEEN_KEY = 'ats_notifications_seen_v1';
-
-function loadSeenMap() {
-  try {
-    return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}');
-  } catch (_) {
-    return {};
-  }
-}
-
-function saveSeenMap(map) {
-  localStorage.setItem(SEEN_KEY, JSON.stringify(map));
-}
 
 function ageLabel(iso) {
   const ts = new Date(iso).getTime();
@@ -31,56 +18,51 @@ const NotificationBell = () => {
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
-  const [seenMap, setSeenMap] = useState(loadSeenMap);
   const [error, setError] = useState('');
+  const user = getStoredUser();
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await apiGet('/notifications');
+      if (res.success) {
+        setItems(res.data);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   useEffect(() => {
-    let active = true;
+    if (!user?.id) return;
 
-    const load = async () => {
+    fetchNotifications();
+
+    const token = localStorage.getItem('ats_token');
+
+    const streamUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/notifications/stream${token ? `?token=${token}` : ''}`;
+    const eventSource = new EventSource(streamUrl, {
+      withCredentials: true
+    });
+    
+    eventSource.onmessage = (event) => {
       try {
-        const [interviewsRes, appsRes] = await Promise.all([
-          apiGet('/interviews'),
-          apiGet('/applications?limit=35'),
-        ]);
-        if (!active) return;
-
-        const interviewItems = (interviewsRes.data || []).slice(0, 8).map((row) => ({
-          id: `int-${row.id}`,
-          title: `Interview ${row.result === 'PENDING' ? 'scheduled' : row.result?.toLowerCase() || 'updated'}`,
-          body: `${row.application?.candidate?.fullName || 'Candidate'} - ${row.application?.job?.title || 'Role'}`,
-          at: row.updatedAt || row.createdAt || new Date().toISOString(),
-          href: '/schedule',
-          kind: 'interview',
-        }));
-
-        const appItems = (appsRes.data || []).slice(0, 8).map((row) => ({
-          id: `app-${row.id}`,
-          title: row.shortlisted ? 'Candidate shortlisted' : 'Application updated',
-          body: `${row.candidate?.fullName || 'Candidate'} in ${row.currentStage?.name || 'Pipeline'}`,
-          at: row.updatedAt || row.createdAt || new Date().toISOString(),
-          href: row.candidate?.id ? `/candidate/${row.candidate.id}` : '/pipeline',
-          kind: 'application',
-        }));
-
-        const merged = [...interviewItems, ...appItems]
-          .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-          .slice(0, 12);
-        setItems(merged);
-        setError('');
+        const data = JSON.parse(event.data);
+        if (data.type === 'ping') return;
+        setItems(prev => [data, ...prev].slice(0, 20));
       } catch (err) {
-        if (!active) return;
-        setError(err.message || 'Unable to load notifications');
+        console.error('SSE Error processing message', err);
       }
     };
 
-    load();
-    const timer = setInterval(load, 45000);
-    return () => {
-      active = false;
-      clearInterval(timer);
+    eventSource.onerror = (error) => {
+      console.error('SSE Error:', error);
+      eventSource.close();
     };
-  }, []);
+
+    return () => {
+      eventSource.close();
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const onDocClick = (event) => {
@@ -91,25 +73,26 @@ const NotificationBell = () => {
   }, []);
 
   const unreadCount = useMemo(
-    () => items.reduce((acc, item) => acc + (seenMap[item.id] ? 0 : 1), 0),
-    [items, seenMap],
+    () => items.filter(item => !item.isRead).length,
+    [items],
   );
 
-  const markRead = (id) => {
-    setSeenMap((prev) => {
-      const next = { ...prev, [id]: true };
-      saveSeenMap(next);
-      return next;
-    });
+  const markRead = async (id) => {
+    try {
+      await apiPatch(`/notifications/${id}/read`);
+      setItems(prev => prev.map(item => item.id === id ? { ...item, isRead: true } : item));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const markAllRead = () => {
-    const next = { ...seenMap };
-    items.forEach((item) => {
-      next[item.id] = true;
-    });
-    setSeenMap(next);
-    saveSeenMap(next);
+  const markAllRead = async () => {
+    try {
+      await apiPatch('/notifications/read-all');
+      setItems(prev => prev.map(item => ({ ...item, isRead: true })));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
@@ -140,18 +123,18 @@ const NotificationBell = () => {
               {items.map((item) => (
                 <Link
                   key={item.id}
-                  to={item.href}
-                  className={`os-notify-item ${seenMap[item.id] ? 'seen' : ''}`}
+                  to={item.link || '#'}
+                  className={`os-notify-item ${item.isRead ? 'seen' : ''}`}
                   onClick={() => {
                     markRead(item.id);
                     setOpen(false);
                   }}
                 >
                   <div className="os-notify-item-head">
-                    <span>{item.title}</span>
-                    <span>{ageLabel(item.at)}</span>
+                    <span className="font-bold">{item.title}</span>
+                    <span className="text-[10px] text-slate-400">{ageLabel(item.createdAt)}</span>
                   </div>
-                  <div className="os-notify-item-body">{item.body}</div>
+                  <div className="os-notify-item-body">{item.message}</div>
                 </Link>
               ))}
             </div>

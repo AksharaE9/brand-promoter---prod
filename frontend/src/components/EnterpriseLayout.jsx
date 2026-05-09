@@ -2,17 +2,21 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { clearAuth, getStoredUser } from '../lib/api';
 
-function NavItem({ item, className }) {
+const NavItem = React.memo(({ item, className }) => {
   const handleClick = (event) => {
     if (typeof item.onClick === 'function') {
       item.onClick(event);
     }
   };
 
+  const iconEl = item.icon ? (
+    <span className="material-symbols-outlined os-nav-icon">{item.icon}</span>
+  ) : null;
+
   if (item.href && item.href.startsWith('/')) {
     return (
       <Link className={className} to={item.href} onClick={handleClick}>
-        <span className="material-symbols-outlined os-nav-icon">{item.icon}</span>
+        {iconEl}
         {item.label}
       </Link>
     );
@@ -20,13 +24,14 @@ function NavItem({ item, className }) {
 
   return (
     <a className={className} href={item.href || '#'} onClick={handleClick}>
-      <span className="material-symbols-outlined os-nav-icon">{item.icon}</span>
+      {iconEl}
       {item.label}
     </a>
   );
-}
+});
+NavItem.displayName = 'NavItem';
 
-export function EnterpriseSidebar({
+export const EnterpriseSidebar = React.memo(({
   brand = 'ATS',
   subtitle = 'Enterprise ATS',
   items = [],
@@ -34,9 +39,13 @@ export function EnterpriseSidebar({
   footerButton = null,
   footerLinks = [],
   hideHub = false,
-}) {
+}) => {
   const role = getStoredUser()?.role;
-  const roleFilter = (item) => !Array.isArray(item.roles) || !role || item.roles.includes(role);
+  const roleFilter = (item) => {
+    if (!item.roles || !Array.isArray(item.roles)) return true;
+    if (!role) return false;
+    return item.roles.includes(role);
+  };
 
   const links = footerLinks.length
     ? footerLinks
@@ -52,11 +61,11 @@ export function EnterpriseSidebar({
       },
     ];
 
-  const visibleItems = items.filter(roleFilter);
-  const visibleLinks = links.filter(roleFilter);
+  const visibleItems = React.useMemo(() => items.filter(roleFilter), [items, role]);
+  const visibleLinks = React.useMemo(() => links.filter(roleFilter), [links, role]);
 
   return (
-    <aside className="os-sidebar">
+    <aside className="app-sidebar os-sidebar">
       <div className="os-brand">
         <div className="os-brand-title">{brand}</div>
         <div className="os-brand-sub">{subtitle}</div>
@@ -82,9 +91,10 @@ export function EnterpriseSidebar({
       </div>
     </aside>
   );
-}
+});
+EnterpriseSidebar.displayName = 'EnterpriseSidebar';
 
-export function EnterpriseTopbar({ searchPlaceholder = 'Search...', tabs = [], right = null }) {
+export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', tabs = [], right = null }) => {
   return (
     <header className="os-topbar">
       <div className="os-search">
@@ -104,23 +114,24 @@ export function EnterpriseTopbar({ searchPlaceholder = 'Search...', tabs = [], r
         {right}
         <Link
           to="/sales"
-          className="ml-3 px-4 py-1.5 bg-gradient-to-r from-[#1f52cc] to-[#35b577] text-white text-[11px] font-bold uppercase rounded-lg shadow-lg hover:shadow-xl transition-all no-underline"
+          className="os-sales-btn"
         >
           Sales Workspace
         </Link>
       </div>
     </header>
   );
-}
+});
+EnterpriseTopbar.displayName = 'EnterpriseTopbar';
 
-export default function EnterpriseLayout({ sidebar, topbar, children, contentClassName = '' }) {
+export default React.memo(function EnterpriseLayout({ sidebar, topbar, children, contentClassName = '' }) {
   return (
-    <div className="os-shell">
+    <div className="app-layout os-shell page-transition">
       {sidebar}
-      <div className="os-main">
+      <div className="main-content os-main">
         {topbar}
         <main className={`os-content ${contentClassName}`}>{children}</main>
       </div>
     </div>
   );
-}
+});

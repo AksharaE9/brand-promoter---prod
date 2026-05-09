@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const { db: firestore } = require("../config/firebase");
 const { verifyAccessToken } = require("../utils/jwt");
 const { ApiError } = require("../utils/errors");
 
@@ -24,19 +24,16 @@ async function auth(req, res, next) {
 
   try {
     const payload = verifyAccessToken(token);
-    const user = await prisma.user.findUnique({
-      where: { id: payload.userId },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        role: true,
-        status: true,
-      },
-    });
+    const userDoc = await firestore.collection("users").doc(payload.userId).get();
 
-    if (!user || user.status !== "ACTIVE") {
-      return next(new ApiError(401, "Invalid or inactive user"));
+    if (!userDoc.exists) {
+      return next(new ApiError(401, "Invalid user"));
+    }
+
+    const user = { id: userDoc.id, ...userDoc.data() };
+
+    if (user.status !== "ACTIVE") {
+      return next(new ApiError(401, "Inactive user account"));
     }
 
     req.user = user;

@@ -1,6 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const prisma = require("../../config/prisma");
+const { db: firestore } = require("../../config/firebase");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { signAccessToken } = require("../../utils/jwt");
 const { auth } = require("../../middleware/auth");
@@ -27,42 +27,30 @@ router.post(
       throw new ApiError(400, "Password must be at least 8 characters");
     }
 
-    const existing = await prisma.user.findFirst({
-      where: { email: { equals: normalizedEmail, mode: "insensitive" } },
-      select: { id: true },
-    });
-    if (existing) {
+    const snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+    if (!snapshot.empty) {
       throw new ApiError(409, "User with this email already exists");
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await prisma.user.create({
-      data: {
-        fullName: builtName,
-        email: normalizedEmail,
-        phone: phone ? String(phone).trim() : null,
-        passwordHash,
-        role: normalizedRole,
-        status: "PENDING",
-      },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        role: true,
-        profilePhotoFile: {
-          select: {
-            id: true,
-            storageKey: true,
-          },
-        },
-      },
-    });
+    
+    const userData = {
+      fullName: builtName,
+      email: normalizedEmail,
+      phone: phone ? String(phone).trim() : null,
+      passwordHash,
+      role: normalizedRole,
+      status: "PENDING",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const docRef = await firestore.collection("users").add(userData);
 
     return res.status(201).json({
       success: true,
       message: "Registration successful",
-      data: user,
+      data: { id: docRef.id, ...userData },
     });
   }),
 );
@@ -76,21 +64,15 @@ router.post(
       throw new ApiError(400, "Email and password are required");
     }
 
-    const user = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
-      include: {
-        profilePhotoFile: {
-          select: {
-            id: true,
-            storageKey: true,
-          },
-        },
-      },
-    });
+    const normalizedEmail = email.trim().toLowerCase();
+    const snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
 
-    if (!user) {
+    if (snapshot.empty) {
       throw new ApiError(401, "Invalid credentials");
     }
+
+    const userDoc = snapshot.docs[0];
+    const user = { id: userDoc.id, ...userDoc.data() };
 
     if (user.status !== "ACTIVE") {
       throw new ApiError(403, "User is inactive");
@@ -115,7 +97,7 @@ router.post(
           fullName: user.fullName,
           email: user.email,
           role: user.role,
-          profilePhotoUrl: user.profilePhotoFile?.storageKey || null,
+          profilePhotoUrl: user.profilePhotoUrl || null,
         },
       },
     });

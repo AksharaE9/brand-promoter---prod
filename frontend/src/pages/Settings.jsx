@@ -29,9 +29,10 @@ const Settings = () => {
   const [userPhotoFile, setUserPhotoFile] = useState(null);
   const [uploadingUserPhoto, setUploadingUserPhoto] = useState(false);
   const [preferences, setPreferences] = useState({
-    emailDigests: true,
-    pushAlerts: true,
-    slackConnect: false,
+    INTERVIEW: { inApp: true, email: false },
+    APPLICATION: { inApp: true, email: false },
+    FEEDBACK: { inApp: true, email: false },
+    SYSTEM: { inApp: true, email: false },
   });
 
   const isSuperAdmin = me?.role === 'SUPER_ADMIN';
@@ -42,15 +43,27 @@ const Settings = () => {
     setMe(meData);
 
     if (meData?.role === 'SUPER_ADMIN') {
-      const [usersRes, logsRes] = await Promise.all([
+      const [usersRes, logsRes, prefsRes] = await Promise.all([
         apiGet('/users'),
         apiGet('/users/audit-logs?limit=20'),
+        apiGet('/notifications/preferences')
       ]);
       setTeam(usersRes.data || []);
       setAuditLogs(logsRes.data || []);
+      if (prefsRes.data) {
+        const prefObj = { INTERVIEW: { inApp: true, email: false }, APPLICATION: { inApp: true, email: false }, FEEDBACK: { inApp: true, email: false }, SYSTEM: { inApp: true, email: false } };
+        prefsRes.data.forEach(p => { prefObj[p.type] = p; });
+        setPreferences(prefObj);
+      }
       return;
     }
 
+    const prefsRes = await apiGet('/notifications/preferences');
+    if (prefsRes.data) {
+      const prefObj = { INTERVIEW: { inApp: true, email: false }, APPLICATION: { inApp: true, email: false }, FEEDBACK: { inApp: true, email: false }, SYSTEM: { inApp: true, email: false } };
+      prefsRes.data.forEach(p => { prefObj[p.type] = p; });
+      setPreferences(prefObj);
+    }
     setTeam(meData ? [meData] : []);
     setAuditLogs([]);
   };
@@ -74,24 +87,24 @@ const Settings = () => {
     };
   }, []);
 
-  useEffect(() => {
+  const onTogglePreference = async (type, field) => {
+    const current = preferences[type] || { inApp: true, email: false };
+    const nextVal = !current[field];
+    
+    setPreferences(prev => ({ ...prev, [type]: { ...current, [field]: nextVal } }));
+    
     try {
-      const raw = localStorage.getItem('ats_notification_preferences');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      setPreferences((prev) => ({ ...prev, ...parsed }));
-    } catch (_) {
-      // noop
+      await apiPatch('/notifications/preferences', {
+        type,
+        inApp: field === 'inApp' ? nextVal : current.inApp,
+        email: field === 'email' ? nextVal : current.email
+      });
+      setBanner(`Preference for ${type} updated.`);
+    } catch (err) {
+      setError('Failed to update preference: ' + err.message);
+      // Revert
+      setPreferences(prev => ({ ...prev, [type]: { ...current, [field]: current[field] } }));
     }
-  }, []);
-
-  const onTogglePreference = (key) => {
-    setPreferences((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      localStorage.setItem('ats_notification_preferences', JSON.stringify(next));
-      return next;
-    });
-    setBanner('Notification preferences updated.');
   };
 
   const onCreateUser = async (event) => {
@@ -227,11 +240,7 @@ const Settings = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search settings..."
-          tabs={[
-            { key: 'pipeline', label: 'Pipeline', href: '/pipeline' },
-            { key: 'sourcing', label: 'Sourcing', href: '/sourcing' },
-            { key: 'referrals', label: 'Referrals', href: '/referrals' },
-          ]}
+          tabs={[]}
           right={
             <>
               <NotificationBell />
@@ -297,22 +306,36 @@ const Settings = () => {
             <div className="os-card p-6">
               <h3 className="text-2xl font-semibold font-[Manrope]">Notifications</h3>
               <p className="os-muted text-sm mt-1">Control your focus environment.</p>
-              <div className="space-y-3 mt-5">
+              <div className="space-y-4 mt-5">
                 {[
-                  ['Email Digests', 'emailDigests', 'Daily summaries'],
-                  ['Push Alerts', 'pushAlerts', 'Real-time updates'],
-                  ['Slack Connect', 'slackConnect', 'Channel updates'],
-                ].map(([item, key, help]) => (
-                  <div key={item} className="rounded-xl bg-[#f6f9fb] border border-[#e7edf3] p-4 flex items-center justify-between">
+                  ['Interview Alerts', 'INTERVIEW', 'Interview scheduled or updated'],
+                  ['Application Events', 'APPLICATION', 'Stage changes and new applications'],
+                  ['Feedback Submissions', 'FEEDBACK', 'New interview feedback'],
+                  ['System Alerts', 'SYSTEM', 'Bulk imports and general alerts'],
+                ].map(([item, type, help]) => {
+                  const pref = preferences[type] || { inApp: true, email: false };
+                  return (
+                  <div key={item} className="rounded-xl bg-[#f6f9fb] border border-[#e7edf3] p-4 flex flex-col gap-3">
                     <div>
                       <div className="font-semibold text-sm">{item}</div>
                       <div className="text-xs text-[#7a859f]">{help}</div>
                     </div>
-                    <button className={`w-11 h-6 rounded-full relative ${preferences[key] ? 'bg-[#1f52cc]' : 'bg-[#d9e1ea]'}`} type="button" onClick={() => onTogglePreference(key)}>
-                      <span className={`absolute top-0.5 h-5 w-5 bg-white rounded-full ${preferences[key] ? 'right-0.5' : 'left-0.5'}`} />
-                    </button>
+                    <div className="flex items-center gap-6 mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[#4f5a77]">In-App</span>
+                        <button className={`w-9 h-5 rounded-full relative ${pref.inApp ? 'bg-[#1f52cc]' : 'bg-[#d9e1ea]'}`} type="button" onClick={() => onTogglePreference(type, 'inApp')}>
+                          <span className={`absolute top-0.5 h-4 w-4 bg-white rounded-full transition-all ${pref.inApp ? 'right-0.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[#4f5a77]">Email</span>
+                        <button className={`w-9 h-5 rounded-full relative ${pref.email ? 'bg-[#1f52cc]' : 'bg-[#d9e1ea]'}`} type="button" onClick={() => onTogglePreference(type, 'email')}>
+                          <span className={`absolute top-0.5 h-4 w-4 bg-white rounded-full transition-all ${pref.email ? 'right-0.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
           </Reveal>

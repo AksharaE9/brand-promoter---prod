@@ -65,10 +65,7 @@ const LandingPage = () => {
         <nav className="h-16 bg-white border-b border-[#e4ebf2] px-6 md:px-10 flex items-center justify-between sticky top-0 z-50 shadow-[0_1px_0_rgba(9,20,53,.05)]">
           <div className="text-[42px] leading-none font-extrabold text-[#183f96] font-[Manrope] tracking-[-0.02em]">ATS</div>
           <div className="hidden md:flex items-center gap-8 text-sm text-[#4b5876]">
-            <Link to="/pipeline" className="text-[#1f4bc6] border-b-2 border-[#1f4bc6] pb-1">Platform</Link>
-            <Link to="/sourcing">Solutions</Link>
-            <Link to="/careers">Resources</Link>
-            <Link to="/signup">Pricing</Link>
+            <Link to="/dashboard" className="text-[#1f4bc6] border-b-2 border-[#1f4bc6] pb-1">Platform</Link>
           </div>
           <div className="flex items-center gap-4">
             <Link className="text-sm font-medium text-[#16213f]" to="/login">Log In</Link>

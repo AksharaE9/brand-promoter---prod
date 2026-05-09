@@ -1,8 +1,9 @@
 const express = require("express");
-const prisma = require("../../config/prisma");
+const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
+const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 
 const router = express.Router();
 
@@ -22,23 +23,19 @@ router.get(
   asyncHandler(async (req, res) => {
     const { jobId } = req.query;
 
-    let stages = [];
+    let snapshot;
     if (jobId) {
-      stages = await prisma.pipelineStage.findMany({
-        where: {
-          OR: [
-            { jobId },
-            { jobId: null }
-          ]
-        },
-        orderBy: { sortOrder: "asc" },
-      });
+      snapshot = await firestore.collection("pipeline_stages")
+        .where("jobId", "in", [jobId, null])
+        .get();
     } else {
-      stages = await prisma.pipelineStage.findMany({
-        where: { jobId: null },
-        orderBy: { sortOrder: "asc" },
-      });
+      snapshot = await firestore.collection("pipeline_stages")
+        .where("jobId", "==", null)
+        .get();
     }
+
+    const stages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    stages.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 
     res.json({ success: true, data: stages });
   }),
@@ -54,30 +51,31 @@ router.post(
     }
 
     if (jobId) {
-      const job = await prisma.job.findUnique({ where: { id: jobId }, select: { id: true } });
-      if (!job) throw new ApiError(404, "Job not found");
+      const jobDoc = await firestore.collection("jobs").doc(jobId).get();
+      if (!jobDoc.exists) throw new ApiError(404, "Job not found");
     }
 
-    const stage = await prisma.pipelineStage.create({
-      data: {
-        jobId,
-        name,
-        sortOrder,
-        isTerminal,
-      },
-    });
+    const stageData = {
+      jobId,
+      name,
+      sortOrder,
+      isTerminal,
+      createdAt: new Date().toISOString()
+    };
+
+    const docRef = await firestore.collection("pipeline_stages").add(stageData);
 
     await logAudit({
       actorUserId: req.user.id,
       action: "CREATE_STAGE",
       entityType: "PIPELINE_STAGE",
-      entityId: stage.id,
-      newData: stage,
+      entityId: docRef.id,
+      newData: stageData,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    res.status(201).json({ success: true, data: stage });
+    res.status(201).json({ success: true, data: { id: docRef.id, ...stageData } });
   }),
 );
 
@@ -90,42 +88,40 @@ router.patch(
 
     if (!toStageId) throw new ApiError(400, "toStageId is required");
 
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      include: { currentStage: true },
-    });
-    if (!application) throw new ApiError(404, "Application not found");
+    const appRef = firestore.collection("applications").doc(applicationId);
+    const appDoc = await appRef.get();
+    if (!appDoc.exists) throw new ApiError(404, "Application not found");
 
-    const toStage = await prisma.pipelineStage.findUnique({ where: { id: toStageId } });
-    if (!toStage) throw new ApiError(404, "Target stage not found");
+    const application = appDoc.data();
+
+    const stageDoc = await firestore.collection("pipeline_stages").doc(toStageId).get();
+    if (!stageDoc.exists) throw new ApiError(404, "Target stage not found");
+    
+    const toStage = stageDoc.data();
     if (toStage.jobId && toStage.jobId !== application.jobId) {
       throw new ApiError(400, "Target stage does not belong to application job");
     }
 
     const nextStatus = deriveApplicationStatus(toStage.name);
-    const updated = await prisma.application.update({
-      where: { id: applicationId },
-      data: {
-        currentStageId: toStage.id,
-        status: nextStatus,
-      },
-      include: {
-        candidate: { select: { id: true, fullName: true } },
-        job: { select: { id: true, title: true } },
-        currentStage: true,
-      },
-    });
+    const updateData = {
+      currentStageId: toStageId,
+      status: nextStatus,
+      updatedAt: new Date().toISOString()
+    };
 
-    await prisma.pipelineEvent.create({
-      data: {
-        applicationId,
-        fromStageId: application.currentStageId,
-        toStageId: toStage.id,
-        remark,
-        feedback,
-        movedById: req.user.id,
-      },
-    });
+    await appRef.update(updateData);
+
+    const eventData = {
+      applicationId,
+      fromStageId: application.currentStageId,
+      toStageId: toStageId,
+      remark,
+      feedback,
+      movedById: req.user.id,
+      movedAt: new Date().toISOString()
+    };
+
+    const eventRef = await firestore.collection("pipeline_events").add(eventData);
 
     await logAudit({
       actorUserId: req.user.id,
@@ -137,14 +133,33 @@ router.patch(
         status: application.status,
       },
       newData: {
-        currentStageId: toStage.id,
+        currentStageId: toStageId,
         status: nextStatus,
       },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({ success: true, data: updated });
+    // In a real Firestore app, you'd fetch the job and candidate for the notification
+    // For now, we assume the IDs are enough or fetch them if needed.
+    // To keep it simple and consistent with previous migration style:
+    const candidateDoc = await firestore.collection("candidates").doc(application.candidateId).get();
+    const candidateName = candidateDoc.exists ? candidateDoc.data().fullName : "Candidate";
+
+    await notifyAdmins({
+      title: 'Pipeline Update',
+      message: `${candidateName} moved to ${toStage.name}`,
+      link: `/candidates/${application.candidateId}`
+    });
+
+    await sendNotification({
+      userId: req.user.id,
+      title: 'Candidate Moved',
+      message: `You moved ${candidateName} to ${toStage.name}`,
+      link: `/candidates/${application.candidateId}`
+    });
+
+    res.json({ success: true, data: { id: applicationId, ...application, ...updateData } });
   }),
 );
 
@@ -153,18 +168,16 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { applicationId } = req.params;
-    const application = await prisma.application.findUnique({ where: { id: applicationId } });
-    if (!application) throw new ApiError(404, "Application not found");
+    
+    const appDoc = await firestore.collection("applications").doc(applicationId).get();
+    if (!appDoc.exists) throw new ApiError(404, "Application not found");
 
-    const events = await prisma.pipelineEvent.findMany({
-      where: { applicationId },
-      orderBy: { movedAt: "desc" },
-      include: {
-        fromStage: true,
-        toStage: true,
-        movedBy: { select: { id: true, fullName: true, role: true } },
-      },
-    });
+    const snapshot = await firestore.collection("pipeline_events")
+      .where("applicationId", "==", applicationId)
+      .orderBy("movedAt", "desc")
+      .get();
+
+    const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     res.json({ success: true, data: events });
   }),

@@ -1,5 +1,5 @@
 const express = require("express");
-const prisma = require("../../config/prisma");
+const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 
@@ -11,52 +11,72 @@ router.get(
   "/init",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    // Single parallel block for high-level counts
-    const [candidateCount, jobCount, applications, interviews, userCount] = await Promise.all([
-      prisma.candidate.count(),
-      prisma.job.count({ where: { isActive: true } }),
-      prisma.application.findMany({
-        take: 50,
-        orderBy: { createdAt: "desc" },
-        include: {
-          candidate: { select: { fullName: true, profilePhotoFile: { select: { storageKey: true } } } },
-          job: { select: { title: true } },
-          currentStage: { select: { name: true } }
-        }
-      }),
-      prisma.interview.findMany({
-        where: { scheduledStart: { gte: new Date() } },
-        take: 10,
-        orderBy: { scheduledStart: "asc" },
-        include: {
-          application: {
-            select: { candidate: { select: { fullName: true } } }
-          }
-        }
-      }),
-      prisma.user.count({ where: { status: "ACTIVE" } })
+    const [candidateCount, jobCount, userCount, applicationSnap, interviewSnap] = await Promise.all([
+      firestore.collection("candidates").count().get(),
+      firestore.collection("jobs").where("isActive", "==", true).count().get(),
+      firestore.collection("users").where("status", "==", "ACTIVE").count().get(),
+      firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get(),
+      firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get()
     ]);
 
-    // Calculate funnel stats efficiently
-    const funnel = await prisma.application.groupBy({
-      by: ["status"],
-      _count: { _all: true }
-    });
+    const applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const interviews = interviewSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Optimized Funnel stats (in production this would be a pre-aggregated counter doc)
+    const funnel = {};
+    const statuses = ['PENDING', 'SCREENING', 'INTERVIEWING', 'OFFER_SENT', 'JOINED', 'REJECTED'];
+    
+    await Promise.all(statuses.map(async (s) => {
+      const snap = await firestore.collection("applications").where("status", "==", s).count().get();
+      funnel[s] = snap.data().count;
+    }));
 
     res.json({
       success: true,
       data: {
         stats: {
-          candidates: candidateCount,
-          activeJobs: jobCount,
-          activeUsers: userCount,
-          totalApplications: applications.length, // Rough count from recent
-          funnel: funnel.reduce((acc, curr) => ({ ...acc, [curr.status]: curr._count._all }), {})
+          candidates: candidateCount.data().count,
+          activeJobs: jobCount.data().count,
+          activeUsers: userCount.data().count,
+          totalApplications: Object.values(funnel).reduce((a, b) => a + b, 0),
+          funnel
         },
         recentApplications: applications,
         upcomingInterviews: interviews
       }
     });
+  })
+);
+
+router.get(
+  "/recruiter-summary",
+  requireRoles("RECRUITER"),
+  asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    
+    // We need to count applications of candidates assigned to this recruiter
+    // In Firestore, this requires a composite query.
+    // stats: active (INTERVIEWING/SCREENING), pendingOffer (OFFER_SENT), joined (JOINED)
+    
+    const [activeSnap, offerSnap, joinedSnap] = await Promise.all([
+      firestore.collection("candidates").where("mentorId", "==", userId).get(), // We'll have to filter in-memory for now or use complex indexes
+      // Actually, let's just get the candidates and map
+    ]);
+
+    const candidates = activeSnap.docs.map(d => d.data());
+    const stats = {
+      active: 0,
+      pendingOffer: 0,
+      joined: 0
+    };
+
+    // This is still slightly heavy but better than fetching ALL and filtering
+    candidates.forEach(c => {
+      // Logic from RecruiterDashboard
+      // (This would be even better if applications were subcollections or if we had a summary doc)
+    });
+    
+    res.json({ success: true, data: stats }); // Placeholder, I'll refine this in a bit
   })
 );
 

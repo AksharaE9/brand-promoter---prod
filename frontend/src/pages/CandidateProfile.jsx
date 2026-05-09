@@ -1,11 +1,103 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, API_ROOT_URL, apiGet, apiPatch, getStoredUser } from '../lib/api';
+import Loader from '../components/Loader';
+import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+
+const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, navigate, currentUser }) => {
+  return (
+    <div className="os-card !rounded-2xl p-5 border-l-4 border-l-[#1f52cc] bg-white shadow-sm transition-all hover:shadow-md">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#1f52cc] flex flex-col items-center justify-center font-bold">
+            <div className="text-xs">R</div>
+            <div className="text-lg leading-none">{iv.roundNo || (idx + 1)}</div>
+          </div>
+          <div>
+            <div className="font-bold text-[#10193f] text-lg">{iv.round || `Round ${iv.roundNo || (idx + 1)}`}</div>
+            <div className="text-xs text-[#1f52cc] font-bold mt-0.5">{iv.application?.job?.title || 'General Hiring'}</div>
+            <div className="text-[10px] text-[#7a88a3] mt-1 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[12px]">calendar_today</span>
+              {new Date(iv.scheduledStart).toLocaleDateString()} • {iv.mode}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {iv.result === 'PASS' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">check_circle</span> SELECTED
+            </div>
+          ) : iv.result === 'FAIL' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">cancel</span> REJECTED
+            </div>
+          ) : (
+            <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold">PENDING</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-5 grid md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Interviewer Feedback</label>
+            <div className="mt-1.5 text-sm text-[#334155] leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+              {iv.feedbackText || "Waiting for feedback submission..."}
+            </div>
+          </div>
+          {iv.interviewerRating && (
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Rating:</label>
+              <div className="flex gap-0.5">
+                {[1,2,3,4,5].map(star => (
+                  <span key={star} className={`material-symbols-outlined text-sm ${star <= iv.interviewerRating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'}`}>star</span>
+                ))}
+              </div>
+              <span className="text-xs font-bold text-slate-600">{iv.interviewerRating}/5</span>
+            </div>
+          )}
+        </div>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Optional Links</label>
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-slate-400 text-base">link</span>
+              <div className="flex-1 flex items-center gap-2">
+                <input 
+                  className="flex-1 h-9 rounded-lg border border-[#e4ebf1] px-3 text-xs focus:border-[#1f52cc] outline-none"
+                  placeholder="Meeting Link"
+                  defaultValue={iv.zohoLink || iv.meetingLink || ''}
+                  onBlur={(e) => onUpdateLinks(iv.id, { zohoLink: e.target.value })}
+                />
+                {(iv.zohoLink || iv.meetingLink) && (
+                  <a href={iv.zohoLink || iv.meetingLink} target="_blank" rel="noreferrer" className="h-9 w-9 rounded-lg bg-blue-50 text-[#1f52cc] flex items-center justify-center hover:bg-blue-100 transition-colors">
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="relative">
+              <button className={`os-btn-outline !h-9 w-full !text-[10px] flex items-center justify-center gap-2 ${iv.voiceRecordingFile ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : ''}`} type="button">
+                <span className="material-symbols-outlined text-base">{iv.voiceRecordingFile ? 'play_circle' : 'mic'}</span>
+                {iv.voiceRecordingFile ? 'Recording Uploaded' : 'Upload Voice Recording'}
+                <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="audio/*" onChange={(e) => onUploadRecording(iv.id, e.target.files?.[0])} />
+              </button>
+            </div>
+            {(!iv.result || iv.result === 'PENDING') && (
+              <button className="os-btn-primary w-full !h-9 !text-xs mt-2 shadow-lg shadow-blue-100" onClick={() => navigate(`/schedule?interviewId=${iv.id}&submitFeedback=true`)}>
+                Submit Feedback
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const CandidateProfile = () => {
   const navigate = useNavigate();
@@ -20,272 +112,205 @@ const CandidateProfile = () => {
   const [customDefinitions, setCustomDefinitions] = useState([]);
   const [customValues, setCustomValues] = useState({});
   const [savingCustomFields, setSavingCustomFields] = useState(false);
-  const [historyItems, setHistoryItems] = useState([]);
-  const currentUser = getStoredUser();
-  const canUploadResume = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role);
-  const canEditCustomFields = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role);
+  const [interviews, setInterviews] = useState([]);
+  const [team, setTeam] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [savingManagement, setSavingManagement] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-    const load = async () => {
-      try {
-        const [candidateRes, definitionRes] = await Promise.all([
-          apiGet(`/candidates/${id}`),
-          apiGet('/candidates/custom-fields/definitions'),
-        ]);
-        if (!mounted) return;
-        const loadedCandidate = candidateRes.data;
-        setCandidate(loadedCandidate);
-        setCustomDefinitions(definitionRes.data || []);
+  const currentUser = useMemo(() => getStoredUser(), []);
+  const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
 
-        const mappedValues = {};
-        (loadedCandidate?.customFieldValues || []).forEach((item) => {
-          const key = item?.fieldDefinition?.fieldKey;
-          if (!key) return;
-          mappedValues[key] = item.valueText || '';
-        });
-        setCustomValues(mappedValues);
-
-        try {
-          const historyRes = await apiGet(`/candidates/${id}/history`);
-          setHistoryItems(historyRes?.data?.timeline || []);
-        } catch (_) {
-          setHistoryItems([]);
-        }
-      } catch (err) {
-        if (!mounted) return;
-        setError(err.message || 'Failed to load candidate details');
-      }
-    };
-
-    if (id) load();
-    return () => {
-      mounted = false;
-    };
-  }, [id]);
-
-  const uploadResume = async () => {
-    if (!id || !resumeFile) {
-      setError('Please select a resume file.');
-      return;
+  const loadAll = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [candidateRes, definitionRes, teamRes, jobsRes, interviewsRes] = await Promise.all([
+        apiGet(`/candidates/${id}`),
+        apiGet('/candidates/custom-fields/definitions'),
+        apiGet('/users/interviewers'),
+        apiGet('/jobs?limit=100&isActive=true'),
+        apiGet(`/interviews?candidateId=${id}&limit=50`)
+      ]);
+      const loadedCandidate = candidateRes.data;
+      if (!loadedCandidate) throw new Error('Candidate dossier not found');
+      setCandidate(loadedCandidate);
+      setCustomDefinitions(definitionRes.data || []);
+      setTeam(teamRes.data || []);
+      setJobs(jobsRes.data || []);
+      
+      const allInterviews = interviewsRes.data || [];
+      const filteredInterviews = allInterviews.filter(iv => 
+        iv.interviewers?.some(u => u.id === currentUser?.id) || currentUser?.role === 'SUPER_ADMIN'
+      );
+      setInterviews(filteredInterviews);
+      setCustomValues(loadedCandidate.customFields || {});
+      setEditForm({
+        fullName: loadedCandidate.fullName || '',
+        email: loadedCandidate.email || '',
+        phone: loadedCandidate.phone || '',
+        currentCompany: loadedCandidate.currentCompany || '',
+        totalExperienceYears: loadedCandidate.totalExperienceYears || '',
+        location: loadedCandidate.location || '',
+        preferredRole: loadedCandidate.preferredRole || '',
+        primarySkill: loadedCandidate.primarySkill || '',
+        category: loadedCandidate.category || 'Company',
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to load data');
+    } finally {
+      setLoading(false);
     }
+  }, [id, currentUser?.id, currentUser?.role]);
 
-    setError('');
-    setBanner('');
+  const handleUploadResume = useCallback(async (file) => {
+    if (!file) return;
     try {
       setUploadingResume(true);
       const token = localStorage.getItem('ats_token');
       const formData = new FormData();
-      formData.append('file', resumeFile);
+      formData.append('resume', file);
 
-      const res = await fetch(`${API_BASE_URL}/candidates/${id}/resume`, {
+      const response = await fetch(`${API_BASE_URL}/candidates/${id}/resume`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
       });
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        throw new Error(json?.message || 'Resume upload failed');
-      }
-
-      const refreshed = await apiGet(`/candidates/${id}`);
-      setCandidate(refreshed.data);
+      if (!response.ok) throw new Error('Resume upload failed');
       setBanner('Resume uploaded successfully.');
-      setResumeFile(null);
+      loadAll();
     } catch (err) {
-      setError(err.message || 'Failed to upload resume');
+      setError(err.message);
     } finally {
       setUploadingResume(false);
     }
-  };
-
-  const uploadPhoto = async () => {
-    if (!id || !photoFile) return;
-    setError('');
-    const token = localStorage.getItem('ats_token');
-    const formData = new FormData();
-    formData.append('file', photoFile);
-
-    try {
-      setUploadingPhoto(true);
-      const res = await fetch(`${API_BASE_URL}/candidates/${id}/photo`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-      const json = await res.json();
-      if (!res.ok || !json?.success) throw new Error(json?.message || 'Photo upload failed');
-
-      const refreshed = await apiGet(`/candidates/${id}`);
-      setCandidate(refreshed.data);
-      setPhotoFile(null);
-      setBanner('Profile photo updated.');
-    } catch (err) {
-      setError(err.message || 'Failed to upload photo');
-    } finally {
-      setUploadingPhoto(false);
-    }
-  };
+  }, [id, loadAll]);
 
   useEffect(() => {
-    if (photoFile) uploadPhoto();
-  }, [photoFile]);
+    loadAll();
+  }, [loadAll]);
 
-  const saveCustomFields = async () => {
-    if (!id) return;
-    setError('');
-    setBanner('');
-
+  const handleUpdateLinks = useCallback(async (interviewId, links) => {
     try {
-      setSavingCustomFields(true);
-      const res = await apiPatch(`/candidates/${id}/custom-fields`, {
-        customFields: customValues,
-      });
-      setCandidate(res.data);
-      setBanner('Custom fields updated successfully.');
+      await apiPatch(`/interviews/${interviewId}`, links);
+      setBanner('Interview links updated.');
+      loadAll();
     } catch (err) {
-      setError(err.message || 'Failed to update custom fields');
+      setError(err.message);
+    }
+  }, [loadAll]);
+
+  const handleUploadRecording = useCallback(async (interviewId, file) => {
+    if (!file) return;
+    try {
+      setUploadingRecording(true);
+      const token = localStorage.getItem('ats_token');
+      const formData = new FormData();
+      formData.append('recording', file);
+
+      const response = await fetch(`${API_BASE_URL}/interviews/${interviewId}/recording`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      if (!response.ok) throw new Error('Upload failed');
+      setBanner('Recording uploaded successfully.');
+      loadAll();
+    } catch (err) {
+      setError(err.message);
     } finally {
-      setSavingCustomFields(false);
+      setUploadingRecording(false);
     }
-  };
+  }, [loadAll]);
 
-  const skills = useMemo(() => {
-    if (!candidate?.skills?.length) {
-      return [
-        { label: 'Communication', value: 86 },
-        { label: 'Technical Depth', value: 90 },
-      ];
-    }
+  if (loading) {
+    return (
+      <EnterpriseLayout
+        sidebar={<EnterpriseSidebar active="candidates" items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
+        topbar={<EnterpriseTopbar searchPlaceholder="Loading profile..." right={<UserChip avatarSeed={id} />} />}
+      >
+        <Loader message="Synchronizing candidate dossier..." fullPage />
+      </EnterpriseLayout>
+    );
+  }
 
-    return candidate.skills.map((s, idx) => ({
-      label: s.skillName,
-      value: s.proficiency || 70 + ((idx * 8) % 25),
-    }));
-  }, [candidate]);
+  if (!candidate && !error) return <div className="p-10 text-center font-bold text-[#1f52cc] animate-pulse">Loading Premium Candidate Dossier...</div>;
 
   return (
     <EnterpriseLayout
       sidebar={<EnterpriseSidebar active="candidates" items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
-      topbar={
-        <EnterpriseTopbar
-          searchPlaceholder="Search candidate profile..."
-          tabs={[
-            { key: 'overview', label: 'Overview', href: `/candidate/${id}#overview`, active: true },
-            { key: 'resume', label: 'Resume', href: `/candidate/${id}#resume` },
-            { key: 'interviews', label: 'Interviews', href: `/candidate/${id}#interviews` },
-            { key: 'notes', label: 'Notes', href: `/candidate/${id}#notes` },
-          ]}
-          right={
-            <>
-              <NotificationBell />
-              <Link className="os-btn-outline" to="/candidates">Back to Search</Link>
-              <UserChip fallbackName="Alex Rivera" fallbackRole="Recruiting Lead" avatarSeed="profile-user" />
-            </>
-          }
-        />
-      }
+      topbar={<EnterpriseTopbar searchPlaceholder="Search..." right={<UserChip avatarSeed="candidate-profile" />} />}
     >
       <PageEnter>
-        {error ? <div className="os-card p-4 text-sm text-red-600">{error}</div> : null}
-        {banner ? <div className="os-card p-4 text-sm text-[#2454cf] mt-2">{banner}</div> : null}
-        {!candidate && !error ? <div className="os-card p-4 text-sm text-[#6f7d98]">Loading candidate...</div> : null}
+        <div className="mb-4">
+          <Link to="/candidates" className="text-sm text-[#1f4bc6] flex items-center gap-1 font-semibold hover:underline">
+            <span className="material-symbols-outlined text-sm">arrow_back</span>
+            Back to Directory
+          </Link>
+        </div>
 
-        {candidate ? (
-          <div className="grid lg:grid-cols-[1.7fr_.9fr] gap-4">
-            <div className="space-y-4">
+        {error && <div className="os-card p-4 text-red-600 text-sm mb-4 border-red-100 bg-red-50">{error}</div>}
+        {banner && <div className="os-card p-4 text-[#2454cf] text-sm mb-4 border-blue-100 bg-blue-50">{banner}</div>}
+
+        {candidate && (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="xl:col-span-2 space-y-6">
               <Reveal>
-                <div className="os-card p-6" id="overview">
-                  <div className="flex items-start gap-4">
-                    <div className="relative group">
-                      {candidate.profilePhotoFile?.storageKey ? (
-                        <img className="w-20 h-20 rounded-2xl object-cover" src={candidate.profilePhotoFile.storageKey} alt={candidate.fullName} />
-                      ) : (
-                        <div className="w-20 h-20 rounded-2xl bg-[#1f52cc] text-white flex items-center justify-center font-bold text-2xl">
-                          {candidate.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                        </div>
-                      )}
-                      {canUploadResume ? (
-                        <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl cursor-pointer">
-                          <span className="material-symbols-outlined text-white">photo_camera</span>
-                          <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setPhotoFile(file);
-                              // We use a useEffect or a separate upload button. 
-                              // Let's make it auto-upload for better UX.
-                            }
-                          }} />
-                        </label>
-                      ) : null}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h1 className="text-3xl font-bold font-[Manrope]">{candidate.fullName}</h1>
-                          <p className="text-[#1f4bc6] text-lg mt-1">{candidate.currentCompany || 'Candidate'}</p>
-                        </div>
-                        <span className="px-3 py-1 rounded-full bg-[#d9e4ff] text-[#4560bd] text-[11px] uppercase tracking-[.12em] font-semibold">Verified Talent</span>
-                      </div>
-                      <div className="mt-4 text-sm text-[#5f6c88] flex flex-wrap gap-4">
-                        <span>{candidate.email || '-'}</span>
-                        <span>{candidate.phone || '-'}</span>
-                        <span>{candidate.source || 'Direct'}</span>
-                      </div>
-                    </div>
+                <div className="os-card p-6 flex flex-wrap items-start gap-6 relative overflow-hidden bg-gradient-to-br from-white to-[#f8fafc]">
+                  <div className="absolute top-0 right-0 p-4 opacity-40">
+                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">REF: {candidate.id.slice(-8)}</div>
                   </div>
-                  <div className="mt-5 border-t border-[#e6edf4] pt-5">
-                    <div className="text-xs uppercase tracking-[.14em] font-semibold">Professional Summary</div>
-                    <p className="mt-3 text-[#44516f] leading-relaxed">
-                      Experienced profile with structured ATS data. Track interviews, feedback, and hiring decision from this card.
-                    </p>
+                  <div className="relative group">
+                    {candidate.profilePhotoFile?.storageKey ? (
+                      <img className="w-28 h-28 rounded-3xl object-cover shadow-xl border-4 border-white" src={candidate.profilePhotoFile.storageKey} alt={candidate.fullName} />
+                    ) : (
+                      <div className="w-28 h-28 rounded-3xl bg-gradient-to-br from-[#1f52cc] to-[#3a7bd5] text-white flex items-center justify-center font-bold text-4xl shadow-xl border-4 border-white">
+                        {(candidate.fullName || 'Candidate').split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <h1 className="os-h1 !mb-0 !text-3xl">{candidate.fullName}</h1>
+                      <div className="os-tag bg-[#eef3ff] text-[#1f4bc6] uppercase font-bold tracking-wider">{candidate.category || 'Company'}</div>
+                    </div>
+                    <p className="text-[#1f52cc] mt-1 font-bold text-lg">{candidate.preferredRole || 'Candidate'}</p>
+                    <div className="flex flex-wrap gap-6 mt-4 text-sm text-[#5a6881]">
+                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">mail</span>{candidate.email}</div>
+                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">call</span>{candidate.phone}</div>
+                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">location_on</span>{candidate.location || 'N/A'}</div>
+                    </div>
                   </div>
                 </div>
               </Reveal>
 
               <Reveal delay={0.05}>
-                <div className="os-card p-6" id="notes">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold mb-5">Education</h3>
-                  <div className="space-y-3 text-sm">
-                    {(candidate.education?.length ? candidate.education : [{ institution: 'No education records yet', degree: '-' }]).map((edu, idx) => (
-                      <div key={`${edu.institution}-${idx}`} className="border border-[#e8eef5] rounded-xl p-3">
-                        <div className="font-semibold text-[#1d2b4f]">{edu.degree || '-'}</div>
-                        <div className="text-[#6b7895] mt-1">{edu.institution || '-'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </Reveal>
-
-              <Reveal delay={0.07}>
                 <div className="os-card p-6">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold mb-4">Candidate History</h3>
-                  <div className="space-y-3">
-                    {historyItems.length === 0 ? (
-                      <div className="text-sm text-[#6f7d98]">No timeline events yet.</div>
+                  <h2 className="text-xl font-bold font-[Manrope] mb-6 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-blue-600">assessment</span>
+                    Technical Assessments & Feedback
+                  </h2>
+                  <div className="space-y-6">
+                    {interviews.length === 0 ? (
+                      <div className="py-12 text-center bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">
+                        <span className="material-symbols-outlined text-4xl text-slate-300">history_edu</span>
+                        <p className="text-sm text-slate-400 mt-2">No assigned interview feedback yet.</p>
+                      </div>
                     ) : (
-                      historyItems.slice(0, 14).map((item, idx) => (
-                        <div key={`${item.type}-${item.at}-${idx}`} className="border border-[#e8eef5] rounded-xl p-3">
-                          <div className="text-[11px] uppercase tracking-[.12em] text-[#6f7d98]">{item.type.replaceAll('_', ' ')}</div>
-                          <div className="text-sm text-[#1d2b4f] mt-1">
-                            {item.toStage?.name ? `Moved to ${item.toStage.name}` : null}
-                            {item.recommendation ? `Feedback assessment: ${item.recommendation}` : null}
-                            {item.job?.title ? `Job: ${item.job.title}` : null}
-                            {!item.toStage?.name && !item.recommendation && !item.job?.title ? 'Candidate activity updated' : null}
-                          </div>
-                          {item.remark && (
-                            <div className="text-xs text-[#5e6a85] bg-[#f8f9fb] p-2 mt-2 rounded-lg border border-[#e8ecf0] italic">
-                              "{item.remark}"
-                            </div>
-                          )}
-                          {item.feedback && (
-                            <div className="text-xs text-[#5e6a85] mt-1 opacity-80">
-                              Note: {item.feedback}
-                            </div>
-                          )}
-                          <div className="text-xs text-[#7a86a0] mt-1">{new Date(item.at).toLocaleString()}</div>
-                        </div>
+                      interviews.map((iv, idx) => (
+                        <InterviewItem 
+                          key={iv.id} 
+                          iv={iv} 
+                          idx={idx} 
+                          onUpdateLinks={handleUpdateLinks} 
+                          onUploadRecording={handleUploadRecording} 
+                          navigate={navigate}
+                          currentUser={currentUser}
+                        />
                       ))
                     )}
                   </div>
@@ -293,116 +318,63 @@ const CandidateProfile = () => {
               </Reveal>
             </div>
 
-            <div className="space-y-4">
-              <Reveal>
-                <div className="os-card p-5" id="interviews">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold mb-4">Core Expertise</h3>
-                  <div className="space-y-4">
-                    {skills.map((s) => (
-                      <div key={s.label}>
-                        <div className="flex justify-between text-sm mb-1"><span>{s.label}</span><span className="font-semibold text-[#1f4bc6]">{s.value}%</span></div>
-                        <div className="h-1.5 rounded-full bg-[#e8edf4]"><div className="h-full rounded-full bg-[#1f4bc6]" style={{ width: `${Math.min(100, s.value)}%` }} /></div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </Reveal>
+            <div className="space-y-6">
+               <Reveal delay={0.1}>
+                 <div className="os-card p-5 bg-[#1f52cc] text-white">
+                   <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 opacity-80">Quick Actions</h3>
+                   <div className="grid grid-cols-1 gap-2">
+                     <button className="flex items-center gap-3 w-full p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-sm font-semibold" onClick={() => navigate('/schedule')}>
+                       <span className="material-symbols-outlined">event</span> Schedule Round
+                     </button>
+                     {/* <button className="flex items-center gap-3 w-full p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-sm font-semibold" onClick={() => navigate(`/pipeline?candidateId=${id}`)}>
+                       <span className="material-symbols-outlined">send</span> Send Offer
+                     </button> */}
+                   </div>
+                 </div>
+               </Reveal>
 
-              <Reveal delay={0.06}>
-                <div className="os-card p-5">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold">Candidate Fit</h3>
-                  <div className="grid grid-cols-2 gap-3 mt-3 text-center">
-                    <div><div className="text-2xl font-bold text-[#1f4bc6]">A</div><div className="text-[10px] uppercase tracking-[.12em] text-[#7a86a0]">Technical</div></div>
-                    <div><div className="text-2xl font-bold text-[#1f4bc6]">91%</div><div className="text-[10px] uppercase tracking-[.12em] text-[#7a86a0]">Culture</div></div>
-                  </div>
-                </div>
-              </Reveal>
-
-              <Reveal delay={0.08}>
-                <div className="os-card p-5">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold mb-3">Actions</h3>
-                  <div className="grid gap-2">
-                    <button className="os-btn-primary" type="button" onClick={() => navigate('/schedule')}>
-                      Schedule Interview
-                    </button>
-                    <button className="os-btn-outline" type="button" onClick={() => navigate(`/pipeline?candidateId=${id}`)}>
-                      Send Offer
-                    </button>
-                    <button className="os-btn-outline" type="button" onClick={() => setBanner('Candidate marked for rejection review. Move stage in pipeline to finalize.')}>
-                      Reject
-                    </button>
-                  </div>
-                  <div className="mt-4 border-t border-[#e6edf4] pt-4" id="resume">
-                    <div className="text-xs uppercase tracking-[.12em] text-[#76839f] mb-2">Resume</div>
-                    {canUploadResume ? (
-                      <>
-                        <input className="os-file-input" type="file" accept=".pdf,.doc,.docx" onChange={(event) => setResumeFile(event.target.files?.[0] || null)} />
-                        <button className="os-btn-outline w-full mt-2" type="button" onClick={uploadResume} disabled={uploadingResume}>
-                          {uploadingResume ? 'Uploading...' : 'Upload Resume'}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="text-xs text-[#7b88a3]">Read only for your role.</div>
-                    )}
-                    {candidate.resumeFile?.storageKey ? (
-                      <a
-                        className="text-sm text-[#1f4bc6] mt-2 inline-block"
-                        href={candidate.resumeFile.storageKey?.startsWith('http')
-                          ? candidate.resumeFile.storageKey
-                          : `${API_ROOT_URL || ''}/uploads/${candidate.resumeFile.storageKey}`
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        View Current Resume: {candidate.resumeFile.originalName}
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              </Reveal>
-
-              <Reveal delay={0.1}>
-                <div className="os-card p-5">
-                  <h3 className="text-xs uppercase tracking-[.14em] font-semibold mb-3">Custom Attributes</h3>
-                  <div className="space-y-2">
-                    {customDefinitions.length === 0 ? (
-                      <div className="text-xs text-[#7b88a3]">No custom fields configured.</div>
-                    ) : (
-                      customDefinitions.map((definition) => (
-                        <div key={definition.id}>
-                          <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">
-                            {definition.fieldLabel}
-                            {definition.isRequired ? ' *' : ''}
-                          </label>
-                          <input
-                            className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm"
-                            value={customValues?.[definition.fieldKey] || ''}
-                            onChange={(event) =>
-                              setCustomValues((prev) => ({
-                                ...prev,
-                                [definition.fieldKey]: event.target.value,
-                              }))
-                            }
-                            disabled={!canEditCustomFields}
-                          />
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  {canEditCustomFields ? (
-                    <button className="os-btn-outline w-full mt-3" type="button" onClick={saveCustomFields} disabled={savingCustomFields}>
-                      {savingCustomFields ? 'Saving...' : 'Save Custom Attributes'}
-                    </button>
-                  ) : null}
-                </div>
-              </Reveal>
+               <Reveal delay={0.15}>
+                 <div className="os-card p-5">
+                   <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 text-[#76839f]">Documentation</h3>
+                   {candidate.resumeFile?.storageKey ? (
+                     <div className="space-y-2">
+                       <a 
+                         href={candidate.resumeFile.storageKey} 
+                         download={candidate.resumeFile.originalName || `${candidate.fullName}-resume`}
+                         target="_blank"
+                         rel="noreferrer"
+                         className="os-btn-primary w-full !h-12 flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
+                       >
+                         <span className="material-symbols-outlined">download</span>
+                         Download Resume
+                       </a>
+                       <div className="text-[10px] text-slate-400 text-center truncate px-2">{candidate.resumeFile.originalName || 'Resume document'}</div>
+                       {canManageCandidate && (
+                         <label className="flex items-center justify-center gap-2 w-full h-9 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400 cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
+                           <span className="material-symbols-outlined text-sm">upload</span>
+                           Replace Resume
+                           <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={e => e.target.files?.[0] && handleUploadResume(e.target.files[0])} />
+                         </label>
+                       )}
+                     </div>
+                   ) : (
+                     <label className="flex flex-col items-center justify-center gap-2 w-full h-28 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-[#1f52cc] hover:bg-blue-50/30 transition-all group">
+                       <span className="material-symbols-outlined text-3xl text-slate-300 group-hover:text-[#1f52cc] transition-colors">upload_file</span>
+                       <span className="text-xs text-slate-400 font-medium group-hover:text-[#1f52cc]">
+                         {uploadingResume ? 'Uploading...' : 'Upload Resume'}
+                       </span>
+                       <span className="text-[10px] text-slate-300">PDF, DOC, DOCX</span>
+                       <input type="file" className="hidden" accept=".pdf,.doc,.docx" disabled={uploadingResume} onChange={e => e.target.files?.[0] && handleUploadResume(e.target.files[0])} />
+                     </label>
+                   )}
+                 </div>
+               </Reveal>
             </div>
           </div>
-        ) : null}
+        )}
       </PageEnter>
     </EnterpriseLayout>
   );
 };
 
 export default CandidateProfile;
-

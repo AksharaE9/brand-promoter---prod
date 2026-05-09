@@ -1,7 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
+/* Performance & Smoothness Optimizations */
 :root {
   --background: #FFFFFF;
   --text-primary: #0B1B3D;
@@ -11,12 +12,18 @@
   --sidebar-bg: #0B1B3D;
   --font-main: 'Inter', sans-serif;
   --font-display: 'Sora', sans-serif;
+  
+  /* Performance Tokens */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
@@ -24,16 +31,117 @@ body {
   background-color: #F8FAFC;
   color: var(--text-primary);
   overflow-x: hidden;
+  text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3, h4 {
-  font-family: var(--font-display);
+/* Hardware Accelerated Base Classes */
+.os-card, .glass-card, button, .app-sidebar, .main-content {
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .glass-card {
   background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px); /* Slightly reduced for better performance */
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   box-shadow: var(--card-shadow);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+/* Optimized Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-transition {
+  animation: fadeIn var(--transition-smooth);
+}
+
+/* Fast Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Layout Speed Fixes */
+.app-layout {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  contain: layout size;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  contain: layout;
+}
+
+/* Optimized Interaction Targets */
+button, a {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+/* Three panel optimization */
+.schedule-page {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  contain: strict;
+}
+
+.candidate-list-panel {
+  flex: 0 0 280px;
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  contain: layout;
+}
+
+.interview-detail-panel {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  contain: layout;
+}
+
+/* Micro-loading states */
+.loading-pulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+

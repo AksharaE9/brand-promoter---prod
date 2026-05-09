@@ -104,7 +104,7 @@ const Sourcing = () => {
                     <div className="text-sm text-[#67748f] mt-1">{candidate.currentCompany || 'Candidate'}</div>
                   </button>
                 ))}
-                {filtered.length === 0 ? <div className="text-sm os-muted">No matches found.</div> : null}
+                {filtered.length === 0 ? <div className="text-sm os-muted">No profiles found.</div> : null}
               </div>
             </div>
           </Reveal>

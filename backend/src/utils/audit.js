@@ -1,4 +1,4 @@
-const prisma = require("../config/prisma");
+const { db: firestore } = require("../config/firebase");
 
 async function logAudit({
   actorUserId = null,
@@ -11,17 +11,16 @@ async function logAudit({
   userAgent = null,
 }) {
   try {
-    await prisma.auditLog.create({
-      data: {
-        actorUserId,
-        action,
-        entityType,
-        entityId,
-        oldData,
-        newData,
-        ipAddress,
-        userAgent,
-      },
+    await firestore.collection("auditLogs").add({
+      actorUserId,
+      action,
+      entityType,
+      entityId,
+      oldData,
+      newData,
+      ipAddress,
+      userAgent,
+      createdAt: new Date().toISOString()
     });
   } catch (error) {
     console.error("Audit log failed:", error.message);
