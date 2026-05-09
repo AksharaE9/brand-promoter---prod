@@ -27,7 +27,7 @@ export const DashboardSkeleton = () => (
   </div>
 );
 
-export const CardSkeleton = () => (
+export const CandidateCardSkeleton = () => (
   <div className="os-card p-5 space-y-4">
     <div className="flex items-center gap-4">
       <Skeleton width="56px" height="56px" />
@@ -42,5 +42,7 @@ export const CardSkeleton = () => (
     </div>
   </div>
 );
+
+export const CardSkeleton = CandidateCardSkeleton;
 
 export default Skeleton;
