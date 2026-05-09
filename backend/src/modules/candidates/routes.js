@@ -9,6 +9,7 @@ const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
+const { getCached } = require("../../utils/cache");
 
 const router = express.Router();
 
@@ -314,6 +315,14 @@ router.post(
 router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const page = Number.parseInt(req.query.page, 10) || 1;
+    const limit = Number.parseInt(req.query.limit, 10) || 10;
+    const search = req.query.search?.trim()?.toLowerCase();
+    const category = req.query.category?.trim();
+    const status = req.query.status?.trim();
+    const assignedToMe = req.query.assignedToMe === 'true';
+
     const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
     
     const data = await getCached(cacheKey, async () => {
@@ -334,10 +343,7 @@ router.get(
 
       let items = [];
       
-      // OPTIMIZATION: If searching, we fetch a larger chunk but still limit it
-      // In a real production app, use Algolia/Elasticsearch.
       if (search) {
-        // Fetch more than limit to allow filtering, but not the whole DB
         const searchSnap = await query.orderBy("createdAt", "desc").limit(100).get();
         items = searchSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
           .filter(c => 
@@ -351,12 +357,10 @@ router.get(
         items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
 
-      // Populate file details efficiently
       if (items.length > 0) {
         const fileIds = [...new Set(items.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
         if (fileIds.length > 0) {
           const fileMap = {};
-          // Use 'in' query for batch fetching (limit 30)
           const fileChunks = [];
           for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
           
@@ -371,7 +375,6 @@ router.get(
           });
         }
 
-        // Populate applications
         const candidateIds = items.map(c => c.id);
         const appMap = {};
         const appChunks = [];
@@ -394,7 +397,7 @@ router.get(
       }
 
       return { items, total, totalPages: Math.ceil(total / limit) };
-    }, 30000); // 30s cache
+    }, 30000);
 
     res.json({
       success: true,
