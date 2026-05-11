@@ -13,11 +13,25 @@ router.get(
   "/init",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const data = await getCached("dashboard_init", async () => {
+    // Use shorter cache for real-time feel
+    const cacheKey = `dashboard_init_${req.user.id}`;
+    const data = await getCached(cacheKey, async () => {
+      // Helper to safely get count with fallback
+      async function safeCount(collectionRef) {
+        try {
+          const snap = await collectionRef.count().get();
+          return snap.data().count;
+        } catch (err) {
+          console.warn("⚠️ Count query failed, using fallback:", err.message);
+          const allSnap = await collectionRef.limit(1000).get();
+          return allSnap.size;
+        }
+      }
+
       const [candidateCount, jobCount, userCount, applicationSnap, interviewSnap] = await Promise.all([
-        firestore.collection("candidates").count().get(),
-        firestore.collection("jobs").where("isActive", "==", true).count().get(),
-        firestore.collection("users").where("status", "==", "ACTIVE").count().get(),
+        safeCount(firestore.collection("candidates")),
+        safeCount(firestore.collection("jobs").where("isActive", "==", true)),
+        safeCount(firestore.collection("users").where("status", "==", "ACTIVE")),
         firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get(),
         firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get()
       ]);
@@ -27,24 +41,23 @@ router.get(
 
       const funnel = {};
       const statuses = ['PENDING', 'SCREENING', 'INTERVIEWING', 'OFFER_SENT', 'JOINED', 'REJECTED'];
-      
+
       await Promise.all(statuses.map(async (s) => {
-        const snap = await firestore.collection("applications").where("status", "==", s).count().get();
-        funnel[s] = snap.data().count;
+        funnel[s] = await safeCount(firestore.collection("applications").where("status", "==", s));
       }));
 
       return {
         stats: {
-          candidates: candidateCount.data().count,
-          activeJobs: jobCount.data().count,
-          activeUsers: userCount.data().count,
+          candidates: candidateCount,
+          activeJobs: jobCount,
+          activeUsers: userCount,
           totalApplications: Object.values(funnel).reduce((a, b) => a + b, 0),
           funnel
         },
         recentApplications: applications,
         upcomingInterviews: interviews
       };
-    }, 60000); // 1 minute TTL
+    }, 30000); // 30 second TTL for more real-time feel
 
     res.json({
       success: true,

@@ -67,7 +67,7 @@ const Analytics = () => {
     const token = localStorage.getItem('ats_token');
     if (!token) return;
 
-    const eventSource = new EventSource(`${API_ROOT_URL}/notifications/stream?token=${token}`);
+    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
 
     eventSource.onmessage = (event) => {
       try {

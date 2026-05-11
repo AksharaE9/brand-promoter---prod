@@ -162,8 +162,8 @@ const InterviewSchedule = () => {
     const token = localStorage.getItem('ats_token');
     if (!token) return;
 
-    // Use root URL for SSE stream
-    const eventSource = new EventSource(`${API_ROOT_URL}/notifications/stream?token=${token}`);
+    // Use API base URL for SSE stream (with /api prefix)
+    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -883,7 +883,9 @@ const InterviewSchedule = () => {
                   className={`w-full text-left flex gap-3 p-3 rounded-xl mb-1 ${selectedGroupId === candidateId ? 'bg-[#eef3ff] border-l-4 border-[#1f4bc6]' : 'hover:bg-[#f6f9fc]'}`}
                   onClick={() => {
                     setSelectedId(candidateId);
-                    setActiveInterviewId(group.latestInterview.id);
+                    if (group.latestInterview?.id) {
+                      setActiveInterviewId(group.latestInterview.id);
+                    }
                   }}
                   type="button"
                 >

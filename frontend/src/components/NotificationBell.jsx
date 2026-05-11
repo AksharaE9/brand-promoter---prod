@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { apiGet, apiPatch, getStoredUser } from '../lib/api';
+import { apiGet, apiPatch, getStoredUser, API_BASE_URL } from '../lib/api';
 
 
 function ageLabel(iso) {
@@ -39,7 +39,7 @@ const NotificationBell = () => {
 
     const token = localStorage.getItem('ats_token');
 
-    const streamUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/notifications/stream${token ? `?token=${token}` : ''}`;
+    const streamUrl = `${API_BASE_URL}/notifications/stream${token ? `?token=${token}` : ''}`;
     const eventSource = new EventSource(streamUrl, {
       withCredentials: true
     });

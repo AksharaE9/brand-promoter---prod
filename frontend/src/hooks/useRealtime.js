@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_ROOT_URL } from '../lib/api';
+import { API_BASE_URL } from '../lib/api';
 
 /**
  * A global hook for handling real-time updates via SSE.
@@ -12,7 +12,7 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
     const token = localStorage.getItem('ats_token');
     if (!token) return;
 
-    const eventSource = new EventSource(`${API_ROOT_URL}/notifications/stream?token=${token}`);
+    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
 
     eventSource.onmessage = (event) => {
       try {

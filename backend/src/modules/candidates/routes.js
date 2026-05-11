@@ -324,7 +324,7 @@ router.get(
     const assignedToMe = req.query.assignedToMe === 'true';
 
     const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
-    
+
     const data = await getCached(cacheKey, async () => {
       let query = firestore.collection("candidates");
 
@@ -338,8 +338,16 @@ router.get(
         query = query.where("mentorId", "==", req.user.id);
       }
 
-      const countSnap = await query.count().get();
-      const total = countSnap.data().count;
+      // Use fallback count method to avoid composite index requirement
+      let total = 0;
+      try {
+        const countSnap = await query.count().get();
+        total = countSnap.data().count;
+      } catch (countErr) {
+        console.warn("⚠️ Candidates count query failed, using fallback:", countErr.message);
+        const allSnap = await query.limit(1000).get();
+        total = allSnap.size;
+      }
 
       let items = [];
       
@@ -557,6 +565,33 @@ router.delete(
     });
 
     res.json({ success: true, message: "Candidate deleted successfully" });
+  }),
+);
+
+// DELETE all candidates (admin only - for testing/reset)
+router.delete(
+  "/all",
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const snapshot = await firestore.collection("candidates").get();
+    const batch = firestore.batch();
+
+    snapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+
+    await logAudit({
+      actorUserId: req.user.id,
+      action: "DELETE_ALL_CANDIDATES",
+      entityType: "CANDIDATE",
+      oldData: { count: snapshot.size },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    res.json({ success: true, message: `Deleted ${snapshot.size} candidates` });
   }),
 );
 

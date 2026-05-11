@@ -6,7 +6,7 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
-import { apiGet, getStoredUser } from '../lib/api';
+import { apiGet, getStoredUser, API_BASE_URL } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import Skeleton, { DashboardSkeleton } from '../components/Skeleton';
 
@@ -113,6 +113,54 @@ const Dashboard = () => {
     load();
     return () => { mounted = false; };
   }, [currentUser?.role]);
+
+  // REAL-TIME UPDATE LISTENER - Refresh dashboard on relevant changes
+  useEffect(() => {
+    const token = localStorage.getItem('ats_token');
+    if (!token) return;
+
+    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'ping') return;
+
+        const relevantTypes = [
+          'CANDIDATE_CREATED',
+          'CANDIDATE_UPDATED',
+          'APPLICATION_STATUS_UPDATED',
+          'INTERVIEW_SCHEDULED',
+          'INTERVIEW_FEEDBACK_SUBMITTED',
+          'PIPELINE_MOVED'
+        ];
+
+        if (relevantTypes.includes(data.type)) {
+          console.log('[Dashboard] Real-time update:', data.type);
+          // Refresh dashboard data
+          apiGet('/dashboard/init').then(res => {
+            const { stats, recentApplications, upcomingInterviews } = res.data;
+            setCandidatesTotal(stats.candidates || 0);
+            setJobsTotal(stats.activeJobs || 0);
+            setApplications(recentApplications || []);
+            setInterviews(upcomingInterviews || []);
+            setUsersTotal(stats.activeUsers || 0);
+          }).catch(err => console.warn('[Dashboard] Refresh failed:', err));
+        }
+      } catch (err) {
+        console.error('[Dashboard] SSE parse error:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('[Dashboard] SSE connection error:', err);
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   const recentApplicants = useMemo(() => applications.slice(0, 6), [applications]);
 
