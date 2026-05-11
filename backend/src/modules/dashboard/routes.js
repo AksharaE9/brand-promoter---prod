@@ -58,7 +58,31 @@ router.get(
         })()
       ]);
 
-      const applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Map applications and populate candidate/job data
+      let applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Populate candidate and job data for recent applications
+      if (applications.length > 0) {
+        const candidateIds = [...new Set(applications.map(a => a.candidateId).filter(Boolean))];
+        const jobIds = [...new Set(applications.map(a => a.jobId).filter(Boolean))];
+
+        const [candDocs, jobDocs] = await Promise.all([
+          Promise.all(candidateIds.map(id => firestore.collection("candidates").doc(id).get())),
+          Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get()))
+        ]);
+
+        const candMap = {};
+        candDocs.forEach(doc => { if (doc.exists) candMap[doc.id] = { id: doc.id, ...doc.data() }; });
+        const jobMap = {};
+        jobDocs.forEach(doc => { if (doc.exists) jobMap[doc.id] = { id: doc.id, ...doc.data() }; });
+
+        applications = applications.map(app => ({
+          ...app,
+          candidate: candMap[app.candidateId] || null,
+          job: jobMap[app.jobId] || null
+        })).filter(app => app.candidate !== null); // Only show apps with existing candidates
+      }
+
       const interviews = interviewSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       const funnel = {};

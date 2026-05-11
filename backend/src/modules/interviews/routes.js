@@ -78,7 +78,7 @@ router.get(
     const snapshot = await query.get();
     let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    const total = logs.length;
+    // Populate relations first, then filter
     const paginated = logs.slice((page - 1) * limit, page * limit);
 
     // Populate relations for the paginated slice
@@ -123,8 +123,8 @@ router.get(
       paginated.forEach(iv => {
         const app = appMap[iv.applicationId];
         if (app) {
-          app.candidate = candMap[app.candidateId];
-          app.job = jobMap[app.jobId];
+          app.candidate = candMap[app.candidateId] || null;
+          app.job = jobMap[app.jobId] || null;
           iv.application = app;
         }
         iv.interviewers = (iv.interviewerIds || []).map(id => userMap[id]).filter(Boolean);
@@ -132,10 +132,13 @@ router.get(
       });
     }
 
+    // Filter out interviews where candidate has been deleted
+    const filteredData = paginated.filter(iv => iv.application?.candidate !== null);
+
     res.json({
       success: true,
-      data: paginated,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+      data: filteredData,
+      pagination: { total: filteredData.length, page, limit, totalPages: Math.ceil(filteredData.length / limit) }
     });
   }),
 );
