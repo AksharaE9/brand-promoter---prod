@@ -10,7 +10,6 @@ import RejectModal from '../components/RejectModal';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
-import VirtualizedGrid from '../components/VirtualizedGrid';
 import Skeleton, { CardSkeleton } from '../components/Skeleton';
 import './OfferDecision.css';
 
@@ -733,23 +732,18 @@ const Candidates = () => {
             )}
           </>
         ) : (
-          <div className="h-full">
-            <VirtualizedGrid 
-              items={visibleCandidates}
-              itemHeight={180}
-              minChildWidth={320}
-              gap={20}
-              renderItem={(c) => (
-                <CandidateCard 
-                  candidate={c} 
-                  onNavigate={handleNavigate} 
-                  onDelete={onDeleteCandidate} 
-                  onUpdateStatus={onUpdateStatus}
-                  canManageCandidates={canManageCandidates}
-                  isOfferSent={statusFilter === 'OFFER_SENT'}
-                />
-              )}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {visibleCandidates.map((c) => (
+              <CandidateCard 
+                key={c.id}
+                candidate={c} 
+                onNavigate={handleNavigate} 
+                onDelete={onDeleteCandidate} 
+                onUpdateStatus={onUpdateStatus}
+                canManageCandidates={canManageCandidates}
+                isOfferSent={statusFilter === 'OFFER_SENT'}
+              />
+            ))}
           </div>
         )}
       </PageEnter>
