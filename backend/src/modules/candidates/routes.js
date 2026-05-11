@@ -243,6 +243,9 @@ router.post(
     invalidateAll();
     invalidate("dashboard_init_");
 
+    // Broadcast to notify frontend to refresh
+    broadcast({ type: 'CANDIDATE_CREATED', candidateId: docRef.id, fullName: candidateData.fullName });
+
     res.status(201).json({ success: true, data: { id: docRef.id, ...candidateData } });
   }),
 );

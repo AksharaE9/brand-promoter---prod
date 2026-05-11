@@ -344,11 +344,11 @@ const Candidates = () => {
     function connect() {
       es = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
 
-      // Generic messages (status updates, feedback, etc.)
+      // Generic messages (status updates, feedback, new candidates, etc.)
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
-          if (['APPLICATION_STATUS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'CANDIDATE_UPDATED'].includes(d.type)) {
+          if (['APPLICATION_STATUS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'CANDIDATE_UPDATED', 'CANDIDATE_CREATED'].includes(d.type)) {
             loadCandidates(debouncedSearch, statusFilter, 1, false, true);
           }
         } catch (_) {}
@@ -798,8 +798,10 @@ const Candidates = () => {
 
                   setBanner('Candidate created successfully!');
                   setShowCreateModal(false);
-                  loadCandidates(debouncedSearch, statusFilter);
-                  setTimeout(() => setBanner(''), 3000);
+                  // Force reload without cache
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 1000);
                 } catch (err) {
                   setError(err.message);
                 } finally {
