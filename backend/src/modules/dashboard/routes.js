@@ -32,8 +32,30 @@ router.get(
         safeCount(firestore.collection("candidates")),
         safeCount(firestore.collection("jobs").where("isActive", "==", true)),
         safeCount(firestore.collection("users").where("status", "==", "ACTIVE")),
-        firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get(),
-        firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get()
+        // Try orderBy with fallback
+        (async () => {
+          try {
+            return await firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get();
+          } catch (e) {
+            console.warn("⚠️ Applications orderBy failed:", e.message);
+            const snap = await firestore.collection("applications").limit(10).get();
+            const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            docs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            return { docs: docs.map(d => ({ id: d.id, data: () => d })) };
+          }
+        })(),
+        // Try interview orderBy with fallback
+        (async () => {
+          try {
+            return await firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get();
+          } catch (e) {
+            console.warn("⚠️ Interviews orderBy failed:", e.message);
+            const snap = await firestore.collection("interviews").limit(5).get();
+            const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            docs.sort((a, b) => new Date(a.scheduledStart || 0) - new Date(b.scheduledStart || 0));
+            return { docs: docs.map(d => ({ id: d.id, data: () => d })) };
+          }
+        })()
       ]);
 
       const applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));

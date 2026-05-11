@@ -326,6 +326,7 @@ router.get(
     const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
 
     const data = await getCached(cacheKey, async () => {
+      // Build query without orderBy first (to avoid index issues), we'll sort in memory
       let query = firestore.collection("candidates");
 
       if (category) {
@@ -338,73 +339,100 @@ router.get(
         query = query.where("mentorId", "==", req.user.id);
       }
 
-      // Use fallback count method to avoid composite index requirement
+      // Get total count - with fallback
       let total = 0;
       try {
         const countSnap = await query.count().get();
         total = countSnap.data().count;
       } catch (countErr) {
-        console.warn("⚠️ Candidates count query failed, using fallback:", countErr.message);
-        const allSnap = await query.limit(1000).get();
-        total = allSnap.size;
+        console.warn("⚠️ Count query failed, using fallback:", countErr.message);
+        try {
+          const allSnap = await query.limit(1000).get();
+          total = allSnap.size;
+        } catch (e2) {
+          console.error("❌ Fallback count also failed:", e2.message);
+          total = 0;
+        }
       }
 
-      let items = [];
-      
+      // Fetch all candidates (limit to 1000 to avoid memory issues)
+      let allDocs = [];
+      try {
+        const snapshot = await query.limit(1000).get();
+        allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (queryErr) {
+        console.error("❌ Query failed:", queryErr.message);
+        // Try simpler query without filters
+        try {
+          const simpleSnap = await firestore.collection("candidates").limit(500).get();
+          allDocs = simpleSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (e3) {
+          console.error("❌ Simple query also failed:", e3.message);
+          allDocs = [];
+        }
+      }
+
+      // Filter by search in memory
+      let items = allDocs;
       if (search) {
-        const searchSnap = await query.orderBy("createdAt", "desc").limit(100).get();
-        items = searchSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(c => 
-            c.fullName?.toLowerCase().includes(search) || 
-            c.email?.toLowerCase().includes(search) ||
-            c.phone?.includes(search)
-          )
-          .slice((page - 1) * limit, page * limit);
-      } else {
-        const snapshot = await query.orderBy("createdAt", "desc").offset((page - 1) * limit).limit(limit).get();
-        items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        items = items.filter(c =>
+          c.fullName?.toLowerCase().includes(search) ||
+          c.email?.toLowerCase().includes(search) ||
+          c.phone?.includes(search)
+        );
       }
 
-      if (items.length > 0) {
-        const fileIds = [...new Set(items.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
+      // Sort by createdAt desc in memory
+      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+      // Apply pagination
+      const paginatedItems = items.slice((page - 1) * limit, page * limit);
+
+      // Populate file and application data
+      if (paginatedItems.length > 0) {
+        const fileIds = [...new Set(paginatedItems.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
         if (fileIds.length > 0) {
           const fileMap = {};
-          const fileChunks = [];
-          for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
-          
-          await Promise.all(fileChunks.map(async (chunk) => {
-            const snaps = await firestore.collection("fileMetas").where(firestore.FieldPath.documentId(), "in", chunk).get();
-            snaps.forEach(fs => { fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
-          }));
-          
-          items.forEach(c => {
+          try {
+            const fileChunks = [];
+            for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
+
+            await Promise.all(fileChunks.map(async (chunk) => {
+              const snaps = await firestore.collection("fileMetas").where(firestore.FieldPath.documentId(), "in", chunk).get();
+              snaps.forEach(fs => { fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
+            }));
+          } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
+
+          paginatedItems.forEach(c => {
             if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
             if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
           });
         }
 
-        const candidateIds = items.map(c => c.id);
+        const candidateIds = paginatedItems.map(c => c.id);
         const appMap = {};
-        const appChunks = [];
-        for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
+        try {
+          const appChunks = [];
+          for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
 
-        await Promise.all(appChunks.map(async (chunk) => {
-          const appSnap = await firestore.collection("applications")
-            .where("candidateId", "in", chunk)
-            .get();
-          appSnap.docs.forEach(doc => {
-            const app = { id: doc.id, ...doc.data() };
-            if (!appMap[app.candidateId]) appMap[app.candidateId] = [];
-            appMap[app.candidateId].push(app);
-          });
-        }));
+          await Promise.all(appChunks.map(async (chunk) => {
+            const appSnap = await firestore.collection("applications")
+              .where("candidateId", "in", chunk)
+              .get();
+            appSnap.docs.forEach(doc => {
+              const app = { id: doc.id, ...doc.data() };
+              if (!appMap[app.candidateId]) appMap[app.candidateId] = [];
+              appMap[app.candidateId].push(app);
+            });
+          }));
+        } catch (e) { console.warn("⚠️ App fetch failed:", e.message); }
 
-        items.forEach(c => {
+        paginatedItems.forEach(c => {
           c.applications = appMap[c.id] || [];
         });
       }
 
-      return { items, total, totalPages: Math.ceil(total / limit) };
+      return { items: paginatedItems, total, totalPages: Math.ceil(total / limit) };
     }, 30000);
 
     res.json({

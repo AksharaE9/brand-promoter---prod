@@ -141,15 +141,47 @@ router.get(
     if (req.query.candidateId) query = query.where("candidateId", "==", req.query.candidateId);
     if (req.query.stageId) query = query.where("currentStageId", "==", req.query.stageId);
 
-    query = query.orderBy("createdAt", "desc");
+    // Try orderBy, fallback if no index
+    let hasOrderBy = false;
+    try {
+      query = query.orderBy("createdAt", "desc");
+      hasOrderBy = true;
+    } catch (e) {
+      console.warn("⚠️ orderBy skipped - no index:", e.message);
+    }
 
-    const snapshot = await query.limit(page * limit).get();
+    // Get data
+    let snapshot;
+    try {
+      snapshot = await query.limit(page * limit).get();
+    } catch (queryErr) {
+      console.error("❌ Query failed:", queryErr.message);
+      // Fallback: simple query without order
+      snapshot = await firestore.collection("applications").limit(page * limit).get();
+    }
     let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Sort in memory if no orderBy
+    if (!hasOrderBy) {
+      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    }
 
     // Page-based slicing
     const paginated = items.slice((page - 1) * limit, page * limit);
-    const totalSnap = await query.count().get();
-    const total = totalSnap.data().count;
+
+    // Get total count - with fallback
+    let total = paginated.length;
+    try {
+      const totalSnap = await query.count().get();
+      total = totalSnap.data().count;
+    } catch (countErr) {
+      console.warn("⚠️ Count query failed:", countErr.message);
+      // Count all documents
+      try {
+        const allSnap = await firestore.collection("applications").limit(1000).get();
+        total = allSnap.size;
+      } catch (e) { total = paginated.length; }
+    }
 
     // Populate relations
     if (paginated.length > 0) {
