@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://brandpromoter-backend.onrender.com/api/:path*"
+      "destination": "https://ats-sales-backend.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
