@@ -279,6 +279,28 @@ const Candidates = () => {
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
+  const isSuperAdmin = useMemo(() => currentUser?.role === 'SUPER_ADMIN', [currentUser]);
+
+  // Delete all candidates (SUPER_ADMIN only)
+  const handleDeleteAll = async () => {
+    if (!window.confirm('Are you sure you want to DELETE ALL candidates? This cannot be undone!')) return;
+    if (!window.confirm('This will permanently remove ALL candidates from the database. Continue?')) return;
+
+    try {
+      setLoading(true);
+      const res = await apiDelete('/candidates/all');
+      if (res.success) {
+        setBanner(`Deleted all candidates: ${res.message}`);
+        loadCandidates('', 'All', 1);
+      } else {
+        setError(res.message || 'Failed to delete candidates');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to delete candidates');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadCandidates = useCallback(async (query = '', stat = statusFilter, targetPage = 1, append = false, silent = false) => {
     try {
@@ -564,12 +586,21 @@ const Candidates = () => {
             )}
 
             {canManageCandidates && statusFilter === 'All' && (
-              <button 
+              <button
                 className="os-btn-primary flex items-center gap-2 !h-11 shadow-lg shadow-blue-100"
                 onClick={() => setShowCreateModal(true)}
               >
                 <span className="material-symbols-outlined text-base">person_add</span>
                 Add Candidate
+              </button>
+            )}
+            {isSuperAdmin && items.length > 0 && (
+              <button
+                className="os-btn-outline !h-11 text-red-600 border-red-200 hover:bg-red-50"
+                onClick={handleDeleteAll}
+              >
+                <span className="material-symbols-outlined text-base">delete_sweep</span>
+                Clear All
               </button>
             )}
           </div>
