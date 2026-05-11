@@ -9,7 +9,7 @@ const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
-const { getCached } = require("../../utils/cache");
+const { getCached, invalidate, invalidateAll, invalidatePattern } = require("../../utils/cache");
 
 const router = express.Router();
 
@@ -238,6 +238,10 @@ router.post(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    // Invalidate cache to ensure dashboard and lists are updated
+    invalidateAll();
+    invalidate("dashboard_init_");
 
     res.status(201).json({ success: true, data: { id: docRef.id, ...candidateData } });
   }),
@@ -497,6 +501,10 @@ router.patch(
 
     broadcast({ type: 'CANDIDATE_UPDATED', candidateId: id, fullName: data.fullName });
 
+    // Invalidate cache
+    invalidateAll();
+    invalidate("dashboard_init_");
+
     res.json({ success: true, data: { id, ...doc.data(), ...data } });
   }),
 );
@@ -592,6 +600,10 @@ router.delete(
       userAgent: req.headers["user-agent"],
     });
 
+    // Invalidate cache
+    invalidateAll();
+    invalidate("dashboard_init_");
+
     res.json({ success: true, message: "Candidate deleted successfully" });
   }),
 );
@@ -618,6 +630,9 @@ router.delete(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    // Invalidate all cache
+    invalidateAll();
 
     res.json({ success: true, message: `Deleted ${snapshot.size} candidates` });
   }),
