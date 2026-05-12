@@ -145,7 +145,7 @@ const CandidateProfile = () => {
       
       const allInterviews = interviewsRes.data || [];
       const filteredInterviews = allInterviews.filter(iv => 
-        iv.interviewers?.some(u => u.id === currentUser?.id) || currentUser?.role === 'SUPER_ADMIN'
+        iv.interviewers?.some(u => u.id === currentUser?.id)
       );
       setInterviews(filteredInterviews);
       setCustomValues(loadedCandidate.customFields || {});
@@ -227,6 +227,20 @@ const CandidateProfile = () => {
     }
   }, [loadAll]);
 
+  const handleSaveEdit = async () => {
+    try {
+      setSavingEdit(true);
+      await apiPatch(`/candidates/${id}`, editForm);
+      setBanner('Profile updated successfully.');
+      setIsEditing(false);
+      loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to update profile');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   if (loading) {
     return (
       <EnterpriseLayout
@@ -274,15 +288,50 @@ const CandidateProfile = () => {
                     )}
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <h1 className="os-h1 !mb-0 !text-3xl">{candidate.fullName}</h1>
-                      <div className="os-tag bg-[#eef3ff] text-[#1f4bc6] uppercase font-bold tracking-wider">{candidate.category || 'Company'}</div>
-                    </div>
-                    <p className="text-[#1f52cc] mt-1 font-bold text-lg">{candidate.preferredRole || 'Candidate'}</p>
-                    <div className="flex flex-wrap gap-6 mt-4 text-sm text-[#5a6881]">
-                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">mail</span>{candidate.email}</div>
-                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">call</span>{candidate.phone}</div>
-                      <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">location_on</span>{candidate.location || 'N/A'}</div>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        {isEditing ? (
+                          <div className="space-y-3 max-w-lg">
+                            <div className="flex items-center gap-2">
+                              <input className="os-input flex-1 !text-2xl !font-bold !h-12" value={editForm.fullName} onChange={e => setEditForm({ ...editForm, fullName: e.target.value })} placeholder="Full Name" />
+                              <select className="os-input !h-12 !w-auto" value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })}>
+                                <option value="Company">Company</option>
+                                <option value="College">College</option>
+                                <option value="External">External</option>
+                              </select>
+                            </div>
+                            <input className="os-input w-full" value={editForm.preferredRole} onChange={e => setEditForm({ ...editForm, preferredRole: e.target.value })} placeholder="Role (e.g. Frontend Developer)" />
+                            <div className="grid grid-cols-2 gap-3">
+                              <input className="os-input w-full" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} placeholder="Email Address" />
+                              <input className="os-input w-full" value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} placeholder="Phone Number" />
+                              <input className="os-input w-full col-span-2" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} placeholder="Location" />
+                            </div>
+                            <div className="flex items-center gap-2 mt-4">
+                              <button onClick={handleSaveEdit} disabled={savingEdit} className="os-btn-primary !h-9 !px-4 text-xs">{savingEdit ? 'Saving...' : 'Save Changes'}</button>
+                              <button onClick={() => setIsEditing(false)} disabled={savingEdit} className="os-btn-outline !h-9 !px-4 text-xs !border-slate-200">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <h1 className="os-h1 !mb-0 !text-3xl">{candidate.fullName}</h1>
+                              <div className="os-tag bg-[#eef3ff] text-[#1f4bc6] uppercase font-bold tracking-wider">{candidate.category || 'Company'}</div>
+                            </div>
+                            <p className="text-[#1f52cc] mt-1 font-bold text-lg">{candidate.preferredRole || 'Candidate'}</p>
+                            <div className="flex flex-wrap gap-6 mt-4 text-sm text-[#5a6881]">
+                              <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">mail</span>{candidate.email}</div>
+                              <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">call</span>{candidate.phone}</div>
+                              <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">location_on</span>{candidate.location || 'N/A'}</div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      
+                      {!isEditing && canManageCandidate && (
+                        <button onClick={() => setIsEditing(true)} className="ml-4 p-2 text-slate-400 hover:text-[#1f52cc] hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center">
+                          <span className="material-symbols-outlined text-xl">edit_square</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

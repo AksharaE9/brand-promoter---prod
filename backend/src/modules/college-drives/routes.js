@@ -5,6 +5,7 @@ const { auth, requireRoles } = require("../../middleware/auth");
 const { memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
+const { broadcast } = require("../../utils/sse");
 
 const router = express.Router();
 router.use(auth);
@@ -142,6 +143,11 @@ router.post(
     await firestore.collection("collegeDriveCandidates").add({
       driveId, candidateId, fullName, email, phone, status: "ADDED", createdAt: new Date().toISOString()
     });
+
+    // Real-time broadcast
+    broadcast({ type: 'CANDIDATE_CREATED', data: { fullName, phone, email, source: "College Drive" } });
+    broadcast({ type: 'DRIVE_CANDIDATE_ADDED', driveId, candidateId, fullName });
+
     res.json({ success: true });
   }),
 );
@@ -154,16 +160,40 @@ router.post(
     const driveId = req.params.id;
     if (!req.file) throw new ApiError(400, "Excel file is required");
 
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+    let rows = [];
+    try {
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true, cellNF: false, cellText: false });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      rows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
+      console.log(`[BulkUpload] Parsed ${rows.length} rows from sheet "${firstSheetName}"`);
+      if (rows.length > 0) {
+        console.log(`[BulkUpload] Headers found: ${Object.keys(rows[0]).join(", ")}`);
+      }
+    } catch (err) {
+      console.error("[BulkUpload] XLSX Parse Error:", err);
+      throw new ApiError(400, "Failed to parse Excel file. Please ensure it is a valid .xlsx or .csv file.");
+    }
 
     const results = { inserted: 0, skipped: 0, errors: [] };
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const lineNo = i + 2;
-      const fullName = String(row.fullName || row.name || "").trim();
-      const phone = String(row.phone || "").trim();
-      const email = String(row.email || "").trim().toLowerCase();
+
+      // Extremely flexible header matching (case-insensitive, space-insensitive)
+      const getValue = (patterns) => {
+        const key = Object.keys(row).find(k => 
+          patterns.some(p => k.trim().toLowerCase() === p.toLowerCase())
+        );
+        return key ? String(row[key] || "").trim() : "";
+      };
+
+      const fullName = getValue(["fullName", "name", "Name", "NAME", "Full Name", "Student Name"]);
+      const phone = getValue(["phone", "Phone", "PHONE", "contact", "Contact", "CONTACT", "mobile", "Mobile", "phone number", "PhoneNumber"]);
+      const email = getValue(["email", "Email", "EMAIL", "mail id", "MailID"]).toLowerCase();
+
+      // Skip completely empty rows
+      if (!fullName && !phone && !email) continue;
 
       if (!fullName || !phone) {
         results.skipped++;
@@ -199,6 +229,9 @@ router.post(
         results.skipped++;
         results.errors.push(`Row ${lineNo}: Error - ${e.message}`);
       }
+    }
+    if (results.inserted > 0) {
+      broadcast({ type: 'CANDIDATE_CREATED', count: results.inserted });
     }
     res.json({ success: true, data: results });
   }),
@@ -245,7 +278,16 @@ router.patch("/drives/:id/candidates/:candidateId/status", requireRoles(...CAN_A
     .where("candidateId", "==", req.params.candidateId)
     .limit(1).get();
   if (!snap.empty) {
-    await snap.docs[0].ref.update({ status: req.body.status, updatedAt: new Date().toISOString() });
+    const doc = snap.docs[0];
+    await doc.ref.update({ status: req.body.status, updatedAt: new Date().toISOString() });
+    
+    // Real-time broadcast
+    broadcast({ 
+      type: 'CANDIDATE_UPDATED', 
+      candidateId: req.params.candidateId, 
+      driveId: req.params.id, 
+      status: req.body.status 
+    });
   }
   res.json({ success: true });
 }));

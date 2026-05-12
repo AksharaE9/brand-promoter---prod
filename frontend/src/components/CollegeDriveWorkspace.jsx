@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { API_BASE_URL, apiGet, apiPost } from '../lib/api';
+import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Reveal from './PageMotion';
@@ -124,6 +124,26 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
     loadDriveDetails(selectedDriveId).catch(err => onError(err.message));
   }, [selectedDriveId]);
 
+  // Real-time sync listener
+  useEffect(() => {
+    const token = localStorage.getItem('ats_token');
+    const es = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`, { withCredentials: true });
+    
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        // Refresh drive candidates if any relevant candidate or drive event occurs
+        if (['CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED', 'APPLICATION_STATUS_UPDATED'].includes(d.type)) {
+          if (selectedDriveId) {
+            loadDriveDetails(selectedDriveId);
+          }
+        }
+      } catch (_) {}
+    };
+
+    return () => es.close();
+  }, [selectedDriveId]);
+
   const handleAddCollege = async (e) => {
     e.preventDefault();
     try {
@@ -138,6 +158,24 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const downloadTemplate = () => {
+    const headers = ["NAME", "CONTACT", "email"];
+    const rows = [
+      ["Sample Student", "9988776655", "sample@college.edu"],
+      ["Example Name", "9123456789", "example@student.com"]
+    ];
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "ats_drive_template.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleAddDrive = async (e) => {
@@ -341,6 +379,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     <tr className="border-b border-slate-100">
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Student Name</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Contact Details</th>
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Date Added</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Current Status</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2 text-right">Actions</th>
                     </tr>
@@ -354,6 +393,14 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                         <td className="py-4 px-2">
                           <div className="text-xs text-slate-600">{cand.email}</div>
                           <div className="text-[10px] text-slate-400 font-medium">{cand.phone}</div>
+                        </td>
+                        <td className="py-4 px-2">
+                          <div className="text-xs text-slate-600">
+                            {cand.createdAt ? new Date(cand.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '---'}
+                          </div>
+                          <div className="text-[9px] text-slate-400 uppercase font-bold">
+                            {cand.email?.includes('bulk') ? 'Bulk Sync' : 'Direct'}
+                          </div>
                         </td>
                         <td className="py-4 px-2">
                           <select 
@@ -496,7 +543,15 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                         <span className="material-symbols-outlined text-3xl">cloud_upload</span>
                       </div>
                       <h4 className="font-bold text-slate-800 mb-1">Select Excel Template</h4>
-                      <p className="text-xs text-slate-500 mb-6 max-w-xs">Template columns: <b>fullName, email, phone</b>. Duplicates checked via phone number.</p>
+                      <p className="text-xs text-slate-500 mb-2 max-w-xs">Template columns: <b>NAME, CONTACT, email</b>.</p>
+                      <button 
+                        type="button" 
+                        onClick={downloadTemplate}
+                        className="text-[#1f52cc] text-[10px] font-bold uppercase tracking-wider hover:underline mb-6 flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-sm">download</span>
+                        Download Sample Template
+                      </button>
                       <input 
                         type="file" 
                         accept=".xlsx, .csv" 

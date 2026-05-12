@@ -94,12 +94,17 @@ export const EnterpriseSidebar = React.memo(({
 });
 EnterpriseSidebar.displayName = 'EnterpriseSidebar';
 
-export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', tabs = [], right = null }) => {
+export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', searchValue, onSearchChange, tabs = [], right = null }) => {
   return (
     <header className="os-topbar">
       <div className="os-search">
         <span className="material-symbols-outlined !text-[18px]">search</span>
-        <input placeholder={searchPlaceholder} className="bg-transparent border-none outline-none w-full text-sm py-1.5" />
+        <input 
+          placeholder={searchPlaceholder} 
+          className="bg-transparent border-none outline-none w-full text-sm py-1.5" 
+          value={searchValue !== undefined ? searchValue : undefined}
+          onChange={onSearchChange}
+        />
       </div>
 
       <div className="os-top-tabs">

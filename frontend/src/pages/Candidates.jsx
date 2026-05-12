@@ -172,6 +172,12 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold font-[Manrope] text-[#0f1b3d] leading-tight truncate pr-6">{candidate.name}</h3>
             <p className="text-sm text-[#1f52cc] font-semibold mt-0.5 truncate">{candidate.role}</p>
+            {candidate.source && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[#6f7d98] font-bold uppercase tracking-wider">
+                <span className="material-symbols-outlined text-[12px] text-[#1f52cc]">hub</span>
+                {candidate.source}
+              </div>
+            )}
             {candidate.joiningDate && (
               <div className="mt-2 inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                 <span className="material-symbols-outlined text-[12px]">event_available</span>
@@ -376,8 +382,8 @@ const Candidates = () => {
               ),
             };
           }));
-          // Trigger silent refetch for other status-filtered pages
-          if (statusFilter === 'OFFER_SENT') {
+          // Trigger silent refetch for all relevant events
+          if (['APPLICATION_STATUS_UPDATED', 'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED'].includes(payload.type)) {
             loadCandidates(debouncedSearch, statusFilter, 1, false, true);
           }
         } catch (_) {}
@@ -556,7 +562,7 @@ const Candidates = () => {
   return (
     <EnterpriseLayout
       sidebar={<EnterpriseSidebar active={activeNavKey} items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
-      topbar={<EnterpriseTopbar searchPlaceholder="Search pool..." tabs={[]} right={<UserChip avatarSeed="candidates" />} />}
+      topbar={<EnterpriseTopbar searchPlaceholder="Search pool..." searchValue={search} onSearchChange={e => setSearch(e.target.value)} tabs={[]} right={<UserChip avatarSeed="candidates" />} />}
     >
       <PageEnter>
         <div className="flex justify-between items-center mb-6">
