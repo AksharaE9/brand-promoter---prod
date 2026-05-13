@@ -160,15 +160,26 @@ router.post(
     const driveId = req.params.id;
     if (!req.file) throw new ApiError(400, "Excel file is required");
 
-    let rows = [];
+    let allRows = [];
     try {
       const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true, cellNF: false, cellText: false });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      rows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
-      console.log(`[BulkUpload] Parsed ${rows.length} rows from sheet "${firstSheetName}"`);
-      if (rows.length > 0) {
-        console.log(`[BulkUpload] Headers found: ${Object.keys(rows[0]).join(", ")}`);
+      for (const sheetName of workbook.SheetNames) {
+        const worksheet = workbook.Sheets[sheetName];
+        const sheetRows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
+        
+        sheetRows.forEach((row, idx) => {
+          allRows.push({
+            ...row,
+            _sheetName: sheetName,
+            _rowIndex: idx + 2
+          });
+        });
+        console.log(`[BulkUpload] Parsed ${sheetRows.length} rows from sheet "${sheetName}"`);
+      }
+      
+      if (allRows.length > 0) {
+        const headers = Object.keys(allRows[0]).filter(k => !k.startsWith('_'));
+        console.log(`[BulkUpload] Headers found: ${headers.join(", ")}`);
       }
     } catch (err) {
       console.error("[BulkUpload] XLSX Parse Error:", err);
@@ -176,9 +187,9 @@ router.post(
     }
 
     const results = { inserted: 0, skipped: 0, errors: [] };
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const lineNo = i + 2;
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i];
+      const sheetInfo = `[Sheet: ${row._sheetName}, Row ${row._rowIndex}]`;
 
       // Extremely flexible header matching (case-insensitive, space-insensitive)
       const getValue = (patterns) => {
@@ -197,7 +208,7 @@ router.post(
 
       if (!fullName || !phone) {
         results.skipped++;
-        results.errors.push(`Row ${lineNo}: Missing fullName or phone`);
+        results.errors.push(`${sheetInfo}: Missing fullName or phone`);
         continue;
       }
 

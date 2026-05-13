@@ -58,9 +58,19 @@ router.post(
       throw new ApiError(400, "Excel file is required (field: file)");
     }
 
+    let allRows = [];
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      const sheetRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      sheetRows.forEach((row, idx) => {
+        allRows.push({
+          ...row,
+          _sheetName: sheetName,
+          _rowIndex: idx + 2
+        });
+      });
+    }
 
     let inserted = 0;
     let skipped = 0;
@@ -70,15 +80,16 @@ router.post(
     const existingEmails = new Set();
     const existingPhones = new Set();
 
-    for (let i = 0; i < rows.length; i += 1) {
-      const raw = rows[i];
+    for (let i = 0; i < allRows.length; i += 1) {
+      const raw = allRows[i];
       const fullName = String(raw.fullName || raw.name || "").trim();
       const email = String(raw.email || "").trim().toLowerCase() || null;
       const phone = String(raw.phone || "").trim() || null;
+      const sheetInfo = `[Sheet: ${raw._sheetName}, Row ${raw._rowIndex}]`;
 
       if (!fullName || (!email && !phone)) {
         skipped += 1;
-        errors.push(`Row ${i + 2}: fullName and (email or phone) are required`);
+        errors.push(`${sheetInfo}: fullName and (email or phone) are required`);
         continue;
       }
 
@@ -114,14 +125,14 @@ router.post(
       actorUserId: req.user.id,
       action: "BULK_UPLOAD_CANDIDATES",
       entityType: "CANDIDATE",
-      newData: { totalRows: rows.length, inserted, skipped },
+      newData: { totalRows: allRows.length, inserted, skipped },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     res.status(201).json({
       success: true,
-      data: { totalRows: rows.length, inserted, skipped, errors },
+      data: { totalRows: allRows.length, inserted, skipped, errors },
     });
   }),
 );
@@ -266,6 +277,11 @@ router.post(
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!email && !phone) throw new ApiError(400, "Either email or phone is required");
 
+    if (phone) {
+      const existingPhone = await firestore.collection("candidates").where("phone", "==", phone).get();
+      if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
+    }
+
     let resumeFileId = null;
     let storageKey = null;
     if (req.file) {
@@ -311,6 +327,9 @@ router.post(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'CANDIDATE_CREATED', candidateId: docRef.id, fullName: candidateData.fullName });
 
     res.status(201).json({ 
       success: true, 

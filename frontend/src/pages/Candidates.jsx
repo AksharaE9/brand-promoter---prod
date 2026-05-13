@@ -402,6 +402,24 @@ const Candidates = () => {
     };
   }, [debouncedSearch, statusFilter, loadCandidates]);
 
+  // Infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && page < totalPages) {
+          const nextPage = page + 1;
+          loadCandidates(debouncedSearch, statusFilter, nextPage, true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    const trigger = document.getElementById('load-more-trigger');
+    if (trigger) observer.observe(trigger);
+    return () => {
+      if (trigger) observer.unobserve(trigger);
+    };
+  }, [loading, page, totalPages, debouncedSearch, statusFilter, loadCandidates]);
+
   const handleNavigate = useCallback((id) => navigate(`/candidate/${id}`), [navigate]);
   
   const onUpdateStatus = useCallback(async (applicationId, status, joiningDate = null, notes = null, action = 'status', rejectionReason = null) => {
@@ -738,19 +756,26 @@ const Candidates = () => {
             )}
           </>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {visibleCandidates.map((c) => (
-              <CandidateCard 
-                key={c.id}
-                candidate={c} 
-                onNavigate={handleNavigate} 
-                onDelete={onDeleteCandidate} 
-                onUpdateStatus={onUpdateStatus}
-                canManageCandidates={canManageCandidates}
-                isOfferSent={statusFilter === 'OFFER_SENT'}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {visibleCandidates.map((c) => (
+                <CandidateCard 
+                  key={c.id}
+                  candidate={c} 
+                  onNavigate={handleNavigate} 
+                  onDelete={onDeleteCandidate} 
+                  onUpdateStatus={onUpdateStatus}
+                  canManageCandidates={canManageCandidates}
+                  isOfferSent={statusFilter === 'OFFER_SENT'}
+                />
+              ))}
+            </div>
+            {page < totalPages && (
+              <div id="load-more-trigger" className="h-20 flex items-center justify-center mt-6 w-full col-span-full">
+                <Loader size="small" message="Loading more candidates..." />
+              </div>
+            )}
+          </>
         )}
       </PageEnter>
 
@@ -798,10 +823,9 @@ const Candidates = () => {
 
                   setBanner('Candidate created successfully!');
                   setShowCreateModal(false);
-                  // Force reload without cache
-                  setTimeout(() => {
-                    window.location.reload();
-                  }, 1000);
+                  setCreateForm(emptyCreateForm);
+                  // Real-time update without reload
+                  loadCandidates(debouncedSearch, statusFilter, 1, false, true);
                 } catch (err) {
                   setError(err.message);
                 } finally {

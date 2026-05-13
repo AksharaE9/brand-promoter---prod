@@ -88,10 +88,10 @@ const InterviewSchedule = () => {
 
   const loadAll = async () => {
     const [interviewsRes, applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/interviews'),
-      apiGet('/applications?limit=100'),
-      apiGet('/candidates?limit=100'),
-      apiGet('/jobs?limit=100'),
+      apiGet('/interviews?limit=10000'),
+      apiGet('/applications?limit=10000'),
+      apiGet('/candidates?limit=10000'),
+      apiGet('/jobs?limit=10000'),
     ]);
 
     let interviewerRows = [];
@@ -176,7 +176,8 @@ const InterviewSchedule = () => {
           'INTERVIEW_FEEDBACK_SUBMITTED',
           'APPLICATION_STATUS_UPDATED',
           'INTERVIEW_SCHEDULED',
-          'CANDIDATE_UPDATED'
+          'CANDIDATE_UPDATED',
+          'CANDIDATE_CREATED'
         ];
 
         if (relevantTypes.includes(data.type)) {
@@ -273,30 +274,50 @@ const InterviewSchedule = () => {
 
   const groupedApplications = useMemo(() => {
     const map = new Map();
+    
+    // If not strictly filtering by "My Interviews", show all candidates in the pool
+    if (!filterMine) {
+      candidates.forEach(candidate => {
+        map.set(candidate.id, {
+          candidateId: candidate.id,
+          applicationId: candidate.applications?.[0]?.id || null,
+          application: { ...(candidate.applications?.[0] || {}), candidate },
+          interviews: [],
+          latestInterview: null,
+          createdAt: candidate.createdAt || 0
+        });
+      });
+    }
+
     const filteredInterviews = filterMine 
       ? interviews.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
       : interviews;
 
     filteredInterviews.forEach((interview) => {
-      const appId = interview.applicationId;
-      if (!appId) return;
+      const cId = interview.application?.candidate?.id || interview.application?.candidateId;
+      if (!cId) return;
 
-      if (!map.has(appId)) {
-        map.set(appId, {
-          applicationId: appId,
-          candidateId: interview.application?.candidate?.id || interview.application?.candidateId,
+      if (!map.has(cId)) {
+        map.set(cId, {
+          candidateId: cId,
+          applicationId: interview.applicationId,
           application: interview.application,
           interviews: [],
-          latestInterview: interview,
+          latestInterview: null,
+          createdAt: 0
         });
       }
-      const group = map.get(appId);
+      const group = map.get(cId);
       group.interviews.push(interview);
-      if (new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
+      if (!group.latestInterview || new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
         group.latestInterview = interview;
-        group.application = interview.application;
+        if (!group.application?.id) {
+          group.application = interview.application;
+          group.applicationId = interview.applicationId;
+        }
       }
     });
+    
     let results = Array.from(map.values());
 
     if (interviewListSearch) {
@@ -307,10 +328,12 @@ const InterviewSchedule = () => {
       );
     }
 
-    return results.sort((a, b) =>
-      new Date(b.latestInterview.scheduledStart) - new Date(a.latestInterview.scheduledStart)
-    );
-  }, [interviews, filterMine, currentUser?.id, interviewListSearch]);
+    return results.sort((a, b) => {
+      const dateA = a.latestInterview?.scheduledStart || a.createdAt;
+      const dateB = b.latestInterview?.scheduledStart || b.createdAt;
+      return new Date(dateB) - new Date(dateA);
+    });
+  }, [interviews, candidates, filterMine, currentUser?.id, interviewListSearch]);
 
   // Optimization: Pre-calculate schedules per date to avoid filtering in render
   const scheduleData = useMemo(() => {
@@ -332,7 +355,7 @@ const InterviewSchedule = () => {
 
   const selectedGroupId = selectedId || groupedApplications[0]?.applicationId || '';
   const selectedGroup = useMemo(
-    () => groupedApplications.find((g) => g.applicationId === selectedGroupId) || groupedApplications[0] || null,
+    () => groupedApplications.find((g) => g.applicationId === selectedGroupId || g.candidateId === selectedGroupId) || groupedApplications[0] || null,
     [groupedApplications, selectedGroupId],
   );
 
@@ -1367,7 +1390,7 @@ const InterviewSchedule = () => {
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowScheduleModal(false)} />
           <Reveal className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
-            <div className="p-8">
+            <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-2xl font-bold text-[#0f1b3d]">Schedule Interview</h2>
@@ -1511,7 +1534,7 @@ const InterviewSchedule = () => {
                       onChange={(e) => setInterviewerSearch(e.target.value)}
                     />
                   </div>
-                  <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50">
+                  <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 custom-scrollbar">
                     {interviewers
                       .filter(p => p.fullName.toLowerCase().includes(interviewerSearch.toLowerCase()))
                       .map((person) => (
