@@ -78,7 +78,11 @@ router.post(
       throw new ApiError(403, "User is inactive");
     }
 
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    const hashToCompare = user.passwordHash || user.password;
+    if (!hashToCompare) {
+      throw new ApiError(500, "User account is misconfigured (missing password hash)");
+    }
+    const isValidPassword = await bcrypt.compare(password, hashToCompare);
     if (!isValidPassword) {
       throw new ApiError(401, "Invalid credentials");
     }

@@ -52,7 +52,7 @@ router.post(
     const userData = {
       fullName,
       email: email.toLowerCase(),
-      password: hashedPassword,
+      passwordHash: hashedPassword,
       role,
       phone,
       status: "ACTIVE",
@@ -73,6 +73,9 @@ router.post(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'USER_CREATED', userId: docRef.id, fullName: userData.fullName });
 
     res.status(201).json({ success: true, data: newUser });
   }),
@@ -139,6 +142,9 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'USER_UPDATED', userId: id, fullName });
+
     res.json({ success: true, data: { id, ...existing, ...updateData } });
   }),
 );
@@ -176,6 +182,9 @@ router.patch(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'USER_STATUS_UPDATED', userId: id, status });
 
     res.json({ success: true, data: { id, status } });
   }),

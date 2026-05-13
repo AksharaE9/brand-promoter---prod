@@ -4,7 +4,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiPatch, apiPost } from '../lib/api';
+import { apiGet, apiPatch, apiPost, API_BASE_URL } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const fallbackMembers = [
@@ -42,8 +42,24 @@ const Team = () => {
     };
 
     load();
+
+    const token = localStorage.getItem('ats_token');
+    let eventSource;
+    if (token) {
+      eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'USER_CREATED' || data.type === 'USER_UPDATED' || data.type === 'USER_STATUS_UPDATED') {
+            if (mounted) loadAll();
+          }
+        } catch (err) {}
+      };
+    }
+
     return () => {
       mounted = false;
+      if (eventSource) eventSource.close();
     };
   }, []);
 
