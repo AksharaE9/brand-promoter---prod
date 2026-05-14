@@ -14,65 +14,75 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
     if (action) query = query.where("action", "==", action);
     if (actorUserId) query = query.where("actorUserId", "==", actorUserId);
 
-    const countSnap = await query.count().get();
-    const total = countSnap.data().count;
+    // Fetch without orderBy to avoid composite index requirement — sort in memory
+    const snapshot = await query.limit(parseInt(limit) + parseInt(offset)).get();
+    let all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    const snapshot = await query
-      .orderBy("createdAt", "desc")
-      .offset(parseInt(offset))
-      .limit(parseInt(limit))
-      .get();
+    // Sort by createdAt descending in memory
+    all.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-    const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Paginate in memory
+    const logs = all.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+    const total = snapshot.size;
 
-    // 1. Resolve actorUserId → actor name/email
-    const uniqueActorIds = [...new Set(logs.map(l => l.actorUserId).filter(Boolean))];
-    const actorMap = {};
-    if (uniqueActorIds.length > 0) {
-      const actorChunks = [];
-      for (let i = 0; i < uniqueActorIds.length; i += 30) actorChunks.push(uniqueActorIds.slice(i, i + 30));
-      await Promise.all(actorChunks.map(async chunk => {
-        const snap = await firestore.collection('users')
-          .where(firestore.FieldPath.documentId(), 'in', chunk).get();
-        snap.forEach(d => {
-          const u = d.data();
-          actorMap[d.id] = { fullName: u.fullName || u.name || 'Unknown', email: u.email || '', role: u.role || '' };
-        });
+    // Resolve actor names and entity names — isolated so failures don't break the response
+    try {
+      // 1. Resolve actorUserId → actor name/email
+      const uniqueActorIds = [...new Set(logs.map(l => l.actorUserId).filter(Boolean))];
+      const actorMap = {};
+      if (uniqueActorIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < uniqueActorIds.length; i += 30) chunks.push(uniqueActorIds.slice(i, i + 30));
+        await Promise.all(chunks.map(async chunk => {
+          const snap = await firestore.collection('users')
+            .where(firestore.FieldPath.documentId(), 'in', chunk).get();
+          snap.forEach(d => {
+            const u = d.data();
+            actorMap[d.id] = { fullName: u.fullName || u.name || 'Unknown', email: u.email || '', role: u.role || '' };
+          });
+        }));
+      }
+
+      // 2. Resolve entityId → readable name
+      const entityGroups = {};
+      logs.forEach(log => {
+        if (!log.entityId) return;
+        const type = log.entityType || 'UNKNOWN';
+        if (!entityGroups[type]) entityGroups[type] = new Set();
+        entityGroups[type].add(log.entityId);
+      });
+
+      const entityNameMap = {};
+      const collectionForType = { CANDIDATE: 'candidates', USER: 'users', INTERVIEW: 'interviews', APPLICATION: 'applications' };
+
+      await Promise.all(Object.entries(entityGroups).map(async ([type, idSet]) => {
+        const collectionName = collectionForType[type];
+        if (!collectionName) return;
+        const ids = [...idSet];
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+        await Promise.all(chunks.map(async chunk => {
+          const snap = await firestore.collection(collectionName)
+            .where(firestore.FieldPath.documentId(), 'in', chunk).get();
+          snap.forEach(d => {
+            const data = d.data();
+            entityNameMap[d.id] = data.fullName || data.name || data.title || d.id;
+          });
+        }));
       }));
+
+      logs.forEach(log => {
+        log.actor = actorMap[log.actorUserId] || { fullName: log.actorUserId || 'System', email: '', role: '' };
+        log.entityName = log.entityId ? (entityNameMap[log.entityId] || log.entityId) : null;
+      });
+    } catch (enrichErr) {
+      // Name resolution failed — still return raw logs
+      console.warn('[Audit] Name resolution failed:', enrichErr.message);
+      logs.forEach(log => {
+        log.actor = log.actor || { fullName: log.actorUserId || 'System', email: '', role: '' };
+        log.entityName = log.entityName || log.entityId || null;
+      });
     }
-
-    // 2. Resolve entityId → readable name based on entityType
-    const entityGroups = {};
-    logs.forEach(log => {
-      if (!log.entityId) return;
-      const type = log.entityType || 'UNKNOWN';
-      if (!entityGroups[type]) entityGroups[type] = new Set();
-      entityGroups[type].add(log.entityId);
-    });
-
-    const entityNameMap = {};
-    const collectionForType = { CANDIDATE: 'candidates', USER: 'users', INTERVIEW: 'interviews', APPLICATION: 'applications' };
-
-    await Promise.all(Object.entries(entityGroups).map(async ([type, idSet]) => {
-      const collectionName = collectionForType[type];
-      if (!collectionName) return;
-      const ids = [...idSet];
-      const chunks = [];
-      for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
-      await Promise.all(chunks.map(async chunk => {
-        const snap = await firestore.collection(collectionName)
-          .where(firestore.FieldPath.documentId(), 'in', chunk).get();
-        snap.forEach(d => {
-          const data = d.data();
-          entityNameMap[d.id] = data.fullName || data.name || data.title || d.id;
-        });
-      }));
-    }));
-
-    logs.forEach(log => {
-      log.actor = actorMap[log.actorUserId] || { fullName: 'System', email: '', role: '' };
-      log.entityName = log.entityId ? (entityNameMap[log.entityId] || log.entityId) : null;
-    });
 
     res.json({
       success: true,
@@ -80,6 +90,7 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       pagination: { total, limit: parseInt(limit), offset: parseInt(offset) }
     });
   } catch (error) {
+    console.error('[Audit] Query failed:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });
