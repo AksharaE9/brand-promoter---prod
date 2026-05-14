@@ -145,7 +145,7 @@ const AuditLogs = () => {
                 <th className="p-4 text-[11px] uppercase font-bold text-slate-600">Actor</th>
                 <th className="p-4 text-[11px] uppercase font-bold text-slate-600">Action</th>
                 <th className="p-4 text-[11px] uppercase font-bold text-slate-600">Entity</th>
-                <th className="p-4 text-[11px] uppercase font-bold text-slate-600">ID</th>
+                <th className="p-4 text-[11px] uppercase font-bold text-slate-600">Name</th>
                 <th className="p-4 text-[11px] uppercase font-bold text-slate-600">IP Address</th>
               </tr>
             </thead>
@@ -182,7 +182,7 @@ const AuditLogs = () => {
                       </span>
                     </td>
                     <td className="p-4 text-sm font-medium text-slate-700">{log.entityType}</td>
-                    <td className="p-4 text-xs text-slate-400 font-mono">{log.entityId || 'N/A'}</td>
+                    <td className="p-4 text-sm font-medium text-slate-700">{log.entityName || 'N/A'}</td>
                     <td className="p-4 text-xs text-slate-500">{log.ipAddress || 'Internal'}</td>
                   </tr>
                 ))
