@@ -381,16 +381,16 @@ router.get(
         }
       }
 
-      // Fetch all candidates — no hard cap
+      // Fetch candidates — hard cap at 500 to prevent full-collection reads
       let allDocs = [];
       try {
-        const snapshot = await query.get();
+        const snapshot = await query.limit(500).get();
         allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (queryErr) {
         console.error("❌ Query failed:", queryErr.message);
         // Try simpler query without filters
         try {
-          const simpleSnap = await firestore.collection("candidates").get();
+          const simpleSnap = await firestore.collection("candidates").limit(500).get();
           allDocs = simpleSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (e3) {
           console.error("❌ Simple query also failed:", e3.message);

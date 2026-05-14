@@ -339,66 +339,35 @@ const Candidates = () => {
     loadCandidates(debouncedSearch, statusFilter);
   }, [debouncedSearch, statusFilter, loadCandidates]);
 
+  // Smart polling — replaces SSE (SSE causes reconnect storms on Vercel serverless)
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
+    let pollTimer = null;
 
-    let es;
-    let reconnectTimer;
+    const poll = () => {
+      if (document.visibilityState === 'visible') {
+        loadCandidates(debouncedSearch, statusFilter, 1, false, true);
+      }
+    };
 
-    function connect() {
-      es = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
+    const startPolling = () => {
+      pollTimer = setInterval(poll, 30000); // 30s interval
+    };
 
-      // Generic messages (status updates, feedback, new candidates, etc.)
-      es.onmessage = (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          if (['APPLICATION_STATUS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'CANDIDATE_UPDATED', 'CANDIDATE_CREATED'].includes(d.type)) {
-            loadCandidates(debouncedSearch, statusFilter, 1, false, true);
-          }
-        } catch (_) {}
-      };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        poll(); // immediate refresh on tab focus
+        startPolling();
+      } else {
+        clearInterval(pollTimer); // pause when tab hidden
+      }
+    };
 
-      // Named OFFER_DECISION events — update local card state without full reload
-      es.addEventListener('OFFER_DECISION', (e) => {
-        try {
-          const payload = JSON.parse(e.data);
-          setItems(prev => prev.map(c => {
-            const matchedApp = c.applications?.find(a => a.id === payload.applicationId);
-            if (!matchedApp) return c;
-            return {
-              ...c,
-              applications: c.applications.map(a =>
-                a.id === payload.applicationId
-                  ? {
-                      ...a,
-                      status: payload.type,
-                      offerDecision: payload.type,
-                      offerDecidedAt: payload.offerDecidedAt,
-                      dateOfJoining: payload.dateOfJoining || null,
-                      rejectionReason: payload.rejectionReason || null,
-                    }
-                  : a
-              ),
-            };
-          }));
-          // Trigger silent refetch for all relevant events
-          if (['APPLICATION_STATUS_UPDATED', 'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED'].includes(payload.type)) {
-            loadCandidates(debouncedSearch, statusFilter, 1, false, true);
-          }
-        } catch (_) {}
-      });
+    document.addEventListener('visibilitychange', handleVisibility);
+    startPolling();
 
-      es.onerror = () => {
-        es.close();
-        reconnectTimer = setTimeout(connect, 3000);
-      };
-    }
-
-    connect();
     return () => {
-      clearTimeout(reconnectTimer);
-      es?.close();
+      clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [debouncedSearch, statusFilter, loadCandidates]);
 

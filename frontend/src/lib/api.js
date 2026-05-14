@@ -112,19 +112,26 @@ export async function apiGetBlob(path) {
   return response.blob();
 }
 
+function invalidateRelated(path) {
+  // Targeted: only clear cache keys matching the top-level resource
+  const resource = '/' + (path.split('/')[1] || '');
+  for (const key of apiCache.keys()) {
+    if (key.includes(resource)) apiCache.delete(key);
+  }
+}
+
 export function apiPost(path, body) {
-  // Clear cache on mutations to ensure fresh data
-  apiCache.clear(); 
+  invalidateRelated(path);
   return request(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function apiPatch(path, body) {
-  apiCache.clear();
+  invalidateRelated(path);
   return request(path, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
 export function apiDelete(path) {
-  apiCache.clear();
+  invalidateRelated(path);
   return request(path, { method: 'DELETE' });
 }
 
