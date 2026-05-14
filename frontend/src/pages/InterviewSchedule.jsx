@@ -1066,13 +1066,23 @@ const InterviewSchedule = () => {
                   <button 
                     className="os-btn-primary !h-9 !px-4 !bg-[#1f52cc]" 
                     onClick={() => {
+                      const candidateName = selectedCandidate?.fullName || '';
+                      const resolvedJobId = selectedGroup?.application?.jobId
+                        || selectedGroup?.application?.job?.id
+                        || '';
+                      const resolvedJobTitle = selectedGroup?.application?.job?.title || '';
+                      const nextRound = (selectedGroup?.interviews?.length || 0) + 1;
+
                       setScheduleForm({
                         ...emptyScheduleForm,
                         candidateId: selectedCandidate?.id || '',
-                        jobId: selectedGroup?.application?.jobId || '',
-                        roundNo: (selectedGroup?.interviews.length || 0) + 1,
-                        round: `Round ${(selectedGroup?.interviews.length || 0) + 1}`
+                        jobId: resolvedJobId,
+                        roundNo: nextRound,
+                        round: `Round ${nextRound}`
                       });
+                      // Pre-fill display fields so the user sees what's already selected
+                      setCandidateSearch(candidateName);
+                      setJobSearch(resolvedJobTitle);
                       setShowScheduleModal(true);
                     }}
                   >

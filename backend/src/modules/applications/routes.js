@@ -47,7 +47,7 @@ async function resolveDefaultStage(jobId) {
 
 router.post(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { candidateId, jobId, currentStageId, shortlisted = false } = req.body;
 
@@ -262,7 +262,7 @@ router.patch(
 
 router.patch(
   "/:id/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { status, joiningDate } = req.body;
