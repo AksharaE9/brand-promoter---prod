@@ -608,7 +608,7 @@ const Candidates = () => {
               </div>
             )}
 
-            {canManageCandidates && statusFilter === 'All' && (
+            {canManageCandidates && (
               <button
                 className="os-btn-primary flex items-center gap-2 !h-11 shadow-lg shadow-blue-100"
                 onClick={() => setShowCreateModal(true)}

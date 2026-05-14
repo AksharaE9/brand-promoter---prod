@@ -11,7 +11,7 @@ const upload = multer({
 // 2. Memory Storage (Transient Files: Excel Bulk Uploads)
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 // 3. Direct Cloudinary Storage (Offer Letters / Feedback Files)

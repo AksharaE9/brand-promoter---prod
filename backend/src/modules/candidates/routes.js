@@ -373,7 +373,7 @@ router.get(
       } catch (countErr) {
         console.warn("⚠️ Count query failed, using fallback:", countErr.message);
         try {
-          const allSnap = await query.limit(1000).get();
+          const allSnap = await query.get();
           total = allSnap.size;
         } catch (e2) {
           console.error("❌ Fallback count also failed:", e2.message);
@@ -381,16 +381,16 @@ router.get(
         }
       }
 
-      // Fetch all candidates (limit to 1000 to avoid memory issues)
+      // Fetch all candidates — no hard cap
       let allDocs = [];
       try {
-        const snapshot = await query.limit(1000).get();
+        const snapshot = await query.get();
         allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (queryErr) {
         console.error("❌ Query failed:", queryErr.message);
         // Try simpler query without filters
         try {
-          const simpleSnap = await firestore.collection("candidates").limit(500).get();
+          const simpleSnap = await firestore.collection("candidates").get();
           allDocs = simpleSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (e3) {
           console.error("❌ Simple query also failed:", e3.message);
