@@ -141,7 +141,7 @@ const importJobs = new Map();
 
 router.post(
   "/bulk-import",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { rows, jobId } = req.body;
     if (!rows || !Array.isArray(rows) || !jobId) {
@@ -214,7 +214,7 @@ router.post(
 
 router.get(
   "/import-jobs/:importJobId/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const job = importJobs.get(req.params.importJobId);
     if (!job) throw new ApiError(404, "Import job not found");
@@ -263,7 +263,7 @@ router.post(
 
 router.post(
   "/with-resume-upload",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-resumes";
     next();
@@ -567,7 +567,7 @@ router.get(
 
 router.post(
   "/:id/resume",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   upload.single("resume"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -662,7 +662,7 @@ router.delete(
 
 router.get(
   "/reports/joining",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { from, to } = req.query;
     let query = firestore.collection("candidates").where("doj", "!=", null);
@@ -688,7 +688,7 @@ router.get(
 
 router.post(
   "/:id/transfer",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { toJobId } = req.body;
