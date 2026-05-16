@@ -41,6 +41,26 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json({ success: true, data: notifications });
 }));
 
+// POST /notifications
+router.post('/', asyncHandler(async (req, res) => {
+  const { title, message, type, recipientId } = req.body;
+  const docRef = firestore.collection("notifications").doc();
+  const notif = {
+    userId: recipientId || req.user.id,
+    title,
+    message,
+    type: type || 'INFO',
+    isRead: false,
+    createdAt: new Date().toISOString()
+  };
+  await docRef.set(notif);
+  
+  const { broadcast } = require('../../utils/sse');
+  broadcast(notif.userId, { type: 'NOTIFICATION', data: notif });
+
+  res.json({ success: true, data: { id: docRef.id, ...notif } });
+}));
+
 // PATCH /notifications/:id/read
 router.patch('/:id/read', asyncHandler(async (req, res) => {
   const docRef = firestore.collection("notifications").doc(req.params.id);

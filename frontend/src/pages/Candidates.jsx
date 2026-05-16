@@ -7,6 +7,7 @@ import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
 import JoinModal from '../components/JoinModal';
 import RejectModal from '../components/RejectModal';
+import BulkUploadModal from '../components/BulkUpload/BulkUploadModal';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
@@ -277,6 +278,7 @@ const Candidates = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [creating, setCreating] = useState(false);
   const [banner, setBanner] = useState('');
@@ -313,8 +315,15 @@ const Candidates = () => {
       const searchParam = query.trim() ? `&search=${encodeURIComponent(query.trim())}` : '';
       const statParam = stat && stat !== 'All' ? `&status=${encodeURIComponent(stat)}` : '';
       const res = await apiGet(`/candidates?limit=24&page=${targetPage}${searchParam}${statParam}`);
-      
-      setItems(prev => append ? [...prev, ...(res.data || [])] : (res.data || []));
+      const newData = res.data || [];
+      setItems(prev => {
+        if (append) return [...prev, ...newData];
+        // Prevent unnecessary full re-renders on silent polling by comparing deep equality
+        if (silent && JSON.stringify(prev) === JSON.stringify(newData)) {
+          return prev;
+        }
+        return newData;
+      });
       if (res.pagination) {
         setTotalPages(res.pagination.totalPages || 1);
         setPage(res.pagination.page || 1);
@@ -578,23 +587,24 @@ const Candidates = () => {
             )}
 
             {canManageCandidates && (
-              <button
-                className="os-btn-primary flex items-center gap-2 !h-11 shadow-lg shadow-blue-100"
-                onClick={() => setShowCreateModal(true)}
-              >
-                <span className="material-symbols-outlined text-base">person_add</span>
-                Add Candidate
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="os-btn-outline flex items-center gap-2 !h-11 bg-white border-[#e4ebf1] text-[#142651] hover:bg-slate-50 shadow-sm"
+                  onClick={() => setShowBulkModal(true)}
+                >
+                  <span className="material-symbols-outlined text-base">upload_file</span>
+                  Bulk Upload
+                </button>
+                <button
+                  className="os-btn-primary flex items-center gap-2 !h-11 shadow-lg shadow-blue-100"
+                  onClick={() => setShowCreateModal(true)}
+                >
+                  <span className="material-symbols-outlined text-base">person_add</span>
+                  Add Candidate
+                </button>
+              </div>
             )}
-            {isSuperAdmin && items.length > 0 && (
-              <button
-                className="os-btn-outline !h-11 text-red-600 border-red-200 hover:bg-red-50"
-                onClick={handleDeleteAll}
-              >
-                <span className="material-symbols-outlined text-base">delete_sweep</span>
-                Clear All
-              </button>
-            )}
+
           </div>
         </div>
 
@@ -748,6 +758,12 @@ const Candidates = () => {
         )}
       </PageEnter>
 
+      <BulkUploadModal 
+        isOpen={showBulkModal} 
+        onClose={() => setShowBulkModal(false)} 
+        onImportComplete={() => loadCandidates(debouncedSearch, statusFilter, 1, false, true)} 
+      />
+
       {/* CREATE CANDIDATE MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
@@ -813,12 +829,11 @@ const Candidates = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Email Address *</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Email Address</label>
                     <input 
                       type="email"
                       className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none transition-all" 
                       placeholder="e.g. john@example.com"
-                      required
                       value={createForm.email}
                       onChange={e => setCreateForm(prev => ({...prev, email: e.target.value}))}
                     />
@@ -827,10 +842,11 @@ const Candidates = () => {
 
                 <div className="grid grid-cols-2 gap-5">
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Phone Number</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Phone Number *</label>
                     <input 
                       className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none transition-all" 
                       placeholder="e.g. +91 98765 43210"
+                      required
                       value={createForm.phone}
                       onChange={e => setCreateForm(prev => ({...prev, phone: e.target.value}))}
                     />

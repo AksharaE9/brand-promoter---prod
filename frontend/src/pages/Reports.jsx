@@ -20,7 +20,13 @@ const Reports = () => {
       try {
         const hiringRes = await apiGet('/reports/hiring-progress');
         if (!mounted) return;
-        setHiringProgress(hiringRes.data || []);
+        const newData = hiringRes.data || [];
+        setHiringProgress(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(newData)) {
+            return prev;
+          }
+          return newData;
+        });
       } catch (err) {
         if (!mounted) return;
         setError(err.message || 'Failed to load reports');

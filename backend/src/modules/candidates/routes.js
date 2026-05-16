@@ -87,13 +87,13 @@ router.post(
       const phone = String(raw.phone || "").trim() || null;
       const sheetInfo = `[Sheet: ${raw._sheetName}, Row ${raw._rowIndex}]`;
 
-      if (!fullName || (!email && !phone)) {
+      if (!fullName || !phone) {
         skipped += 1;
-        errors.push(`${sheetInfo}: fullName and (email or phone) are required`);
+        errors.push(`${sheetInfo}: fullName and phone are required`);
         continue;
       }
 
-      if ((email && existingEmails.has(email)) || (phone && existingPhones.has(phone))) {
+      if (existingPhones.has(phone)) {
         skipped += 1;
         continue;
       }
@@ -101,7 +101,7 @@ router.post(
       const candRef = firestore.collection("candidates").doc();
       batch.set(candRef, {
         fullName,
-        email,
+        email: email || "N/A",
         phone,
         currentCompany: String(raw.currentCompany || "").trim() || null,
         totalExperienceYears: raw.totalExperienceYears || raw.experienceYears ? parseFloat(raw.totalExperienceYears || raw.experienceYears) : null,
@@ -162,14 +162,14 @@ router.post(
           const email = String(raw.email || "").trim().toLowerCase() || null;
           const phone = String(raw.phone || "").trim() || null;
 
-          if (!fullName || (!email && !phone)) {
+          if (!fullName || !phone) {
             skipped++;
             continue;
           }
 
           const candRef = await firestore.collection("candidates").add({
             fullName,
-            email,
+            email: email || "N/A",
             phone,
             location: raw.location || null,
             area: raw.area || null,
@@ -228,10 +228,15 @@ router.post(
   asyncHandler(async (req, res) => {
     const data = req.body;
     if (!data.fullName) throw new ApiError(400, "fullName is required");
-    if (!data.email && !data.phone) throw new ApiError(400, "Either email or phone is required");
+    if (!data.phone) throw new ApiError(400, "Phone number is required");
+
+    // Deduplication by phone
+    const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
+    if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
 
     const candidateData = {
       ...data,
+      email: data.email || "N/A",
       createdById: req.user.id,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -275,12 +280,10 @@ router.post(
     console.log("📝 Data:", { fullName, email, phone });
 
     if (!fullName) throw new ApiError(400, "fullName is required");
-    if (!email && !phone) throw new ApiError(400, "Either email or phone is required");
+    if (!phone) throw new ApiError(400, "Phone number is required");
 
-    if (phone) {
-      const existingPhone = await firestore.collection("candidates").where("phone", "==", phone).get();
-      if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
-    }
+    const existingPhone = await firestore.collection("candidates").where("phone", "==", phone.trim()).limit(1).get();
+    if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
 
     let resumeFileId = null;
     let storageKey = null;
@@ -308,6 +311,7 @@ router.post(
 
     const candidateData = {
       ...req.body,
+      email: email || "N/A",
       resumeFileId,
       createdById: req.user.id,
       createdAt: new Date().toISOString(),
@@ -352,39 +356,15 @@ router.get(
     const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
 
     const data = await getCached(cacheKey, async () => {
-      // Build query without orderBy first (to avoid index issues), we'll sort in memory
-      let query = firestore.collection("candidates");
+      // Fetch newest candidates first using single-field index, then filter in memory
+      let query = firestore.collection("candidates").orderBy("createdAt", "desc");
 
-      if (category) {
-        query = query.where("category", "==", category);
-      }
-      if (status) {
-        query = query.where("status", "==", status);
-      }
-      if (assignedToMe) {
-        query = query.where("mentorId", "==", req.user.id);
-      }
+      // Total count will be determined after in-memory filtering
 
-      // Get total count - with fallback
-      let total = 0;
-      try {
-        const countSnap = await query.count().get();
-        total = countSnap.data().count;
-      } catch (countErr) {
-        console.warn("⚠️ Count query failed, using fallback:", countErr.message);
-        try {
-          const allSnap = await query.get();
-          total = allSnap.size;
-        } catch (e2) {
-          console.error("❌ Fallback count also failed:", e2.message);
-          total = 0;
-        }
-      }
-
-      // Fetch candidates — hard cap at 500 to prevent full-collection reads
+      // Fetch candidates — limit to 1000 to ensure we have enough pool to filter from
       let allDocs = [];
       try {
-        const snapshot = await query.limit(500).get();
+        const snapshot = await query.limit(1000).get();
         allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (queryErr) {
         console.error("❌ Query failed:", queryErr.message);
@@ -398,8 +378,18 @@ router.get(
         }
       }
 
-      // Filter by search in memory
+      // Filter in memory to avoid missing composite index slowdowns
       let items = allDocs;
+      
+      if (category) {
+        items = items.filter(c => c.category === category);
+      }
+      if (status) {
+        items = items.filter(c => c.status === status);
+      }
+      if (assignedToMe) {
+        items = items.filter(c => c.mentorId === req.user.id);
+      }
       if (search) {
         items = items.filter(c =>
           c.fullName?.toLowerCase().includes(search) ||
@@ -407,6 +397,9 @@ router.get(
           c.phone?.includes(search)
         );
       }
+
+      // Total items after all in-memory filtering
+      const total = items.length;
 
       // Sort by createdAt desc in memory
       items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
@@ -508,6 +501,17 @@ router.patch(
     const candRef = firestore.collection("candidates").doc(id);
     const doc = await candRef.get();
     if (!doc.exists) throw new ApiError(404, "Candidate not found");
+
+    if (data.phone) {
+      const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
+      if (!existingPhone.empty && existingPhone.docs[0].id !== id) {
+        throw new ApiError(409, "A candidate with this phone number already exists.");
+      }
+    }
+
+    if (data.email === "" || data.email === null) {
+      data.email = "N/A";
+    }
 
     await candRef.update({ ...data, updatedAt: new Date().toISOString() });
 

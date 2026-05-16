@@ -34,15 +34,7 @@ export default defineConfig({
         },
         rollupOptions: {
             output: {
-                manualChunks(id) {
-                    if (id.includes('node_modules')) {
-                        if (id.includes('react')) return 'vendor-react';
-                        if (id.includes('framer-motion')) return 'vendor-motion';
-                        if (id.includes('lucide-react')) return 'vendor-icons';
-                        if (id.includes('react-window') || id.includes('react-virtualized-auto-sizer')) return 'vendor-virtual';
-                        return 'vendor-utils';
-                    }
-                }
+                // Default chunking is handled by Vite/Rolldown
             }
         },
         chunkSizeWarningLimit: 600,

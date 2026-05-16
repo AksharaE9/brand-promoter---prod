@@ -6,6 +6,8 @@ import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import { apiGet, apiPatch, apiPost, API_BASE_URL } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import EditRecruiterModal from '../components/Team/EditRecruiterModal';
+import EditInterviewerModal from '../components/Team/EditInterviewerModal';
 
 const fallbackMembers = [
   { id: '1', fullName: 'Alex Sterling', role: 'SUPER_ADMIN', status: 'ACTIVE', email: 'alex@talent-os.com' },
@@ -18,6 +20,13 @@ const Team = () => {
   const [members, setMembers] = useState(fallbackMembers);
   const [me, setMe] = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [editingUserRole, setEditingUserRole] = useState(null);
+
+  const handleEditMember = (member) => {
+    setEditingUserId(member.id);
+    setEditingUserRole(member.role);
+  };
 
   const loadAll = async () => {
     try {
@@ -185,6 +194,11 @@ const Team = () => {
                       Approve
                     </button>
                   )}
+                  {(me?.role === 'SUPER_ADMIN' || me?.id === member.id) && (member.role === 'RECRUITER' || member.role === 'INTERVIEWER') && (
+                    <button className="os-btn-outline !h-9 !px-3" type="button" onClick={() => handleEditMember(member)} title="Edit Profile">
+                      <span className="material-symbols-outlined text-base">edit</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </Reveal>
@@ -195,6 +209,18 @@ const Team = () => {
           <Reveal className="md:col-span-2"><div className="rounded-3xl bg-[#0b1b3d] text-white p-6"><div className="text-xs uppercase tracking-[.12em] text-[#9cb4ed]">Team Performance Flux</div><div className="flex items-center gap-8 mt-3"><div><div className="text-4xl font-bold font-[Manrope]">98.4%</div><div className="text-xs text-[#c4d2f5] uppercase tracking-[.1em] mt-1">Synchronization</div></div><div className="flex-1 h-2 rounded-full bg-white/15 overflow-hidden"><div className="h-full bg-[#4f8fff] rounded-full" style={{ width: '98%' }} /></div></div></div></Reveal>
           <Reveal delay={0.06}><div className="os-card p-6 text-center h-full flex flex-col justify-center"><div className="text-xs uppercase tracking-[.12em] text-[#8b97ad]">Active Sessions</div><div className="text-4xl font-bold font-[Manrope] mt-2">{Math.max(1, members.length - 1)}/{members.length || 1}</div><div className="text-xs uppercase tracking-[.1em] text-[#2fa96f] mt-2">Optimal Load</div></div></Reveal>
         </div>
+        <EditRecruiterModal
+          isOpen={editingUserId !== null && editingUserRole === 'RECRUITER'}
+          userId={editingUserId}
+          onClose={() => { setEditingUserId(null); setEditingUserRole(null); }}
+          onUpdate={loadAll}
+        />
+        <EditInterviewerModal
+          isOpen={editingUserId !== null && editingUserRole === 'INTERVIEWER'}
+          userId={editingUserId}
+          onClose={() => { setEditingUserId(null); setEditingUserRole(null); }}
+          onUpdate={loadAll}
+        />
       </PageEnter>
     </EnterpriseLayout>
   );

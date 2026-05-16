@@ -38,24 +38,34 @@ async function buildHiringProgress() {
   const jobs = jobsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
   const progress = await Promise.all(jobs.map(async (job) => {
-    const [totalSnap, pipelineSnap, selectedSnap, rejectedSnap, joinedSnap] = await Promise.all([
-      firestore.collection("applications").where("jobId", "==", job.id).count().get(),
-      firestore.collection("applications").where("jobId", "==", job.id).where("status", "==", "IN_PIPELINE").count().get(),
-      firestore.collection("applications").where("jobId", "==", job.id).where("status", "==", "SELECTED").count().get(),
-      firestore.collection("applications").where("jobId", "==", job.id).where("status", "==", "REJECTED").count().get(),
-      firestore.collection("applications").where("jobId", "==", job.id).where("status", "==", "JOINED").count().get(),
-    ]);
+    // Fetch all applications for this job using single-field index to avoid composite index errors
+    const appsSnap = await firestore.collection("applications").where("jobId", "==", job.id).get();
+    
+    let total = 0;
+    let inPipeline = 0;
+    let selected = 0;
+    let rejected = 0;
+    let joined = 0;
+
+    appsSnap.docs.forEach(doc => {
+      const status = doc.data().status;
+      total++;
+      if (status === "IN_PIPELINE") inPipeline++;
+      else if (status === "SELECTED") selected++;
+      else if (status === "REJECTED") rejected++;
+      else if (status === "JOINED") joined++;
+    });
 
     return {
       jobId: job.id,
       title: job.title,
       department: job.department || "General",
       jobStatus: job.isActive ? "ACTIVE" : "CLOSED",
-      totalApplications: totalSnap.data().count,
-      inPipeline: pipelineSnap.data().count,
-      selected: selectedSnap.data().count,
-      rejected: rejectedSnap.data().count,
-      joined: joinedSnap.data().count,
+      totalApplications: total,
+      inPipeline: inPipeline,
+      selected: selected,
+      rejected: rejected,
+      joined: joined,
     };
   }));
 
@@ -77,27 +87,28 @@ router.get("/hiring-progress", auth, requireRoles("SUPER_ADMIN", "RECRUITER"), a
 router.get("/pipeline-insights", auth, requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const { days = 30 } = req.query;
   // Mocking detailed insights for now based on current app data
-  // In a real system, you'd aggregate pipelineEvents
-  const appsSnap = await firestore.collection("applications").get();
-  const candsSnap = await firestore.collection("candidates").get();
+  // Fetching counts instead of full collections to avoid memory crash
+  const appsCountSnap = await firestore.collection("applications").count().get();
+  const candsCountSnap = await firestore.collection("candidates").count().get();
+  const selectedCountSnap = await firestore.collection("applications").where("status", "in", ["SELECTED", "JOINED"]).count().get().catch(() => ({ data: () => ({ count: 0 }) }));
   
-  const total = appsSnap.size;
-  const selected = appsSnap.docs.filter(d => ['SELECTED', 'JOINED'].includes(d.data().status)).length;
-  
-  // Aggregate real sources
+  const total = appsCountSnap.data().count;
+  const candsTotal = candsCountSnap.data().count;
+  const selected = selectedCountSnap.data().count;
+
+  // We can't aggregate real sources without pulling all candidates, so we'll pull only a limited sample
+  const candsSampleSnap = await firestore.collection("candidates").orderBy("createdAt", "desc").limit(500).get();
   const sources = {};
-  candsSnap.docs.forEach(doc => {
+  candsSampleSnap.docs.forEach(doc => {
     const s = doc.data().source || 'Direct';
-    if (!sources[s]) sources[s] = { total: 0, selected: 0 };
+    if (!sources[s]) sources[s] = { total: 0 };
     sources[s].total++;
   });
 
-  // Map selected back to sources if possible (requires joining app -> cand)
-  // For now, let's just distribute 'selected' proportionally or keep it simple
   const sourceFunnel = Object.keys(sources).map(s => ({
     source: s,
     total: sources[s].total,
-    selected: Math.round((sources[s].total / Math.max(1, candsSnap.size)) * selected),
+    selected: Math.round((sources[s].total / Math.max(1, candsTotal)) * selected),
     joinedRate: Math.round((selected / Math.max(1, total)) * 100)
   })).sort((a, b) => b.total - a.total).slice(0, 5);
 

@@ -411,4 +411,184 @@ router.patch(
   }),
 );
 
+// EDIT INTERVIEW ROUTES
+router.get(
+  "/:roundId",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const doc = await firestore.collection("interviews").doc(roundId).get();
+    if (!doc.exists) throw new ApiError(404, "Interview not found");
+    res.json({ success: true, data: { id: doc.id, ...doc.data() } });
+  })
+);
+
+router.put(
+  "/:roundId",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const data = req.body;
+    
+    const interviewRef = firestore.collection("interviews").doc(roundId);
+    const doc = await interviewRef.get();
+    if (!doc.exists) throw new ApiError(404, "Interview not found");
+    const oldData = doc.data();
+
+    const isSuperAdmin = req.user.role === "SUPER_ADMIN";
+
+    if (!isSuperAdmin) {
+      if (new Date(data.scheduledStart) < new Date() && data.scheduledStart !== oldData.scheduledStart) {
+        throw new ApiError(400, "Interview date must not be in the past");
+      }
+      if (oldData.status === "COMPLETED" || oldData.status === "CANCELLED") {
+        throw new ApiError(400, `Cannot edit interview in ${oldData.status} status`);
+      }
+    }
+
+    if (!data.interviewerIds || data.interviewerIds.length === 0) {
+      throw new ApiError(400, "Panel members array must contain at least one member");
+    }
+
+    if (!["IN_PERSON", "VIRTUAL", "PHONE"].includes(data.mode)) {
+      throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, PHONE");
+    }
+
+    if (data.mode === "VIRTUAL" && !data.meetingLink) {
+      throw new ApiError(422, "Meeting link is required for virtual interviews");
+    }
+
+    const durationMinutes = data.durationMinutes || 60;
+    if (durationMinutes < 15 || durationMinutes > 480) {
+      throw new ApiError(400, "Duration must be between 15 and 480 minutes");
+    }
+
+    let status = oldData.status;
+    let rescheduleHistory = oldData.rescheduleHistory || [];
+
+    if (data.scheduledStart !== oldData.scheduledStart && oldData.status === "SCHEDULED") {
+      status = "RESCHEDULED";
+      rescheduleHistory.push({
+        previousDate: oldData.scheduledStart,
+        newDate: data.scheduledStart,
+        reason: data.rescheduleReason || "No reason provided",
+        rescheduledBy: req.user.id,
+        rescheduledAt: new Date().toISOString()
+      });
+    }
+
+    const updateData = {
+      ...data,
+      status,
+      rescheduleHistory,
+      updatedAt: new Date().toISOString()
+    };
+
+    await interviewRef.update(updateData);
+
+    const updatedDoc = await interviewRef.get();
+    const updatedPayload = { id: updatedDoc.id, ...updatedDoc.data() };
+
+    broadcast({ type: "INTERVIEW_UPDATED", data: updatedPayload });
+
+    // Dummy Notification Trigger (You would inject your notification logic here)
+    if (data.scheduledStart !== oldData.scheduledStart || data.mode !== oldData.mode) {
+      data.interviewerIds.forEach(id => {
+        sendNotification(id, "Interview Updated", `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`);
+      });
+    }
+
+    res.json({ success: true, data: updatedPayload });
+  })
+);
+
+router.patch(
+  "/:roundId/reschedule",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { scheduledStart, mode, rescheduleReason } = req.body;
+
+    const interviewRef = firestore.collection("interviews").doc(roundId);
+    const doc = await interviewRef.get();
+    if (!doc.exists) throw new ApiError(404, "Interview not found");
+    const oldData = doc.data();
+
+    let rescheduleHistory = oldData.rescheduleHistory || [];
+    rescheduleHistory.push({
+      previousDate: oldData.scheduledStart,
+      newDate: scheduledStart,
+      reason: rescheduleReason || "No reason provided",
+      rescheduledBy: req.user.id,
+      rescheduledAt: new Date().toISOString()
+    });
+
+    const updateData = {
+      scheduledStart,
+      mode,
+      status: "RESCHEDULED",
+      rescheduleHistory,
+      updatedAt: new Date().toISOString()
+    };
+
+    await interviewRef.update(updateData);
+    
+    const updatedDoc = await interviewRef.get();
+    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
+
+    res.json({ success: true, data: updateData });
+  })
+);
+
+router.patch(
+  "/:roundId/panel",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { interviewerIds } = req.body;
+    
+    if (!interviewerIds || interviewerIds.length === 0) {
+      throw new ApiError(400, "Panel members array must contain at least one member");
+    }
+
+    const interviewRef = firestore.collection("interviews").doc(roundId);
+    await interviewRef.update({ interviewerIds, updatedAt: new Date().toISOString() });
+
+    const updatedDoc = await interviewRef.get();
+    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
+
+    res.json({ success: true, data: { interviewerIds } });
+  })
+);
+
+router.patch(
+  "/:roundId/cancel",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const interviewRef = firestore.collection("interviews").doc(roundId);
+    await interviewRef.update({ status: "CANCELLED", updatedAt: new Date().toISOString() });
+
+    const updatedDoc = await interviewRef.get();
+    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
+
+    res.json({ success: true });
+  })
+);
+
+router.patch(
+  "/:roundId/complete",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const interviewRef = firestore.collection("interviews").doc(roundId);
+    await interviewRef.update({ status: "COMPLETED", updatedAt: new Date().toISOString() });
+
+    const updatedDoc = await interviewRef.get();
+    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
+
+    res.json({ success: true });
+  })
+);
+
 module.exports = router;

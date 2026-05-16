@@ -57,9 +57,15 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+const bulkUploadRoutes = require("./routes/bulkUpload");
+
+
+
 app.use("/api/auth", createRateLimiter({ max: 20, message: "Too many authentication attempts. Please wait." }));
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/team", require("./modules/team/routes"));
+app.use("/api/candidates/bulk-upload", bulkUploadRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/applications", applicationRoutes);

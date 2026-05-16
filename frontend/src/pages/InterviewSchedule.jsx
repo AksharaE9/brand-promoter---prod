@@ -6,6 +6,7 @@ import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import EditInterviewModal from '../components/Interview/EditInterviewModal';
 
 const emptyScheduleForm = {
   candidateId: '',
@@ -73,6 +74,7 @@ const InterviewSchedule = () => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferringInterview, setTransferringInterview] = useState(null);
+  const [editingInterviewId, setEditingInterviewId] = useState(null);
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
   const currentUser = getStoredUser();
@@ -1144,6 +1146,13 @@ const InterviewSchedule = () => {
                               <span className="text-[10px] ml-1 font-bold">Transfer</span>
                             </button>
                             <button
+                              onClick={() => setEditingInterviewId(selectedInterview.id)}
+                              className="text-slate-500 hover:text-slate-700 p-1 flex items-center"
+                              title="Edit Interview"
+                            >
+                              <span className="material-symbols-outlined text-sm">edit</span>
+                            </button>
+                            <button
                               onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.round || `Round ${selectedInterview.roundNo}`)}
                               className="text-red-500 hover:text-red-700 p-1 flex items-center"
                               title="Delete this interview"
@@ -1662,6 +1671,13 @@ const InterviewSchedule = () => {
           </Reveal>
         </div>
       )}
+      
+      <EditInterviewModal
+        isOpen={!!editingInterviewId}
+        interviewId={editingInterviewId}
+        onClose={() => setEditingInterviewId(null)}
+        onUpdate={loadAll}
+      />
 
     </EnterpriseLayout>
   );

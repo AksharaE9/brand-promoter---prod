@@ -53,15 +53,33 @@ const protectedElement = (element, allowedRoles = ALL_ROLES) => (
   <ProtectedRoute allowedRoles={allowedRoles}>{element}</ProtectedRoute>
 );
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30 * 1000,        // 30 seconds — data considered fresh
+      gcTime: 5 * 60 * 1000,       // 5 minutes — keep in cache after unmount
+      retry: 1,                     // retry failed queries once
+      refetchOnWindowFocus: false,  // do not refetch on tab switch
+      refetchOnMount: false,        // use cache if within staleTime
+    },
+    mutations: {
+      retry: 0
+    }
+  }
+});
+
 const App = () => {
   const currentUser = getStoredUser();
   return (
-    <Router>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
 
 
           <Route path="/workspaces" element={protectedElement(<WorkspaceSelector />)} />
@@ -95,6 +113,7 @@ const App = () => {
         </Routes>
       </Suspense>
     </Router>
+    </QueryClientProvider>
   );
 };
 
