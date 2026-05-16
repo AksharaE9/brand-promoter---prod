@@ -925,7 +925,7 @@ const InterviewSchedule = () => {
                     <div className="text-sm font-medium truncate">{candidate?.fullName || 'Candidate'}</div>
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
                     <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded inline-block mt-1">
-                      {group.interviews.length} {group.interviews.length === 1 ? 'Round' : 'Rounds'}
+                      {group.latestInterview ? `Round ${group.latestInterview.roundNo || 1}` : 'Not Scheduled'}
                     </div>
                   </div>
                 </button>
