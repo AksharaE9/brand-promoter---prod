@@ -64,58 +64,84 @@ router.get(
   asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
     const limit = Math.min(200, parseInt(req.query.limit, 10) || 50);
-    const { getCached, invalidate } = require("../../utils/cache");
+    const { getCached } = require("../../utils/cache");
 
-    const cacheKey = `interviews_list_${req.user.role}_${req.user.id}_p${page}_l${limit}_s${req.query.status || ""}`;
+    const cacheKey = `interviews_list_${req.user.role}_${req.user.id}_p${page}_l${limit}`;
 
     const result = await getCached(cacheKey, async () => {
-      let query = firestore.collection("interviews");
-
-      if (req.user.role === "INTERVIEWER") {
-        query = query.where("interviewerIds", "array-contains", req.user.id);
+      // Fetch all interviews — try sorted, fall back to unsorted
+      let allDocs = [];
+      try {
+        let query = firestore.collection("interviews");
+        if (req.user.role === "INTERVIEWER") {
+          query = query.where("interviewerIds", "array-contains", req.user.id);
+        }
+        const snapshot = await query.orderBy("scheduledStart", "desc").get();
+        allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (indexErr) {
+        // Firestore index not created — fallback: fetch without orderBy, sort in JS
+        console.warn("[interviews] orderBy fallback:", indexErr.message);
+        try {
+          let query = firestore.collection("interviews");
+          if (req.user.role === "INTERVIEWER") {
+            query = query.where("interviewerIds", "array-contains", req.user.id);
+          }
+          const snapshot = await query.get();
+          allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          allDocs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
+        } catch (err2) {
+          console.error("[interviews] fetch failed:", err2.message);
+          throw err2;
+        }
       }
-      if (req.query.status) query = query.where("status", "==", req.query.status);
 
-      // Apply limit at DB level, then paginate with offset
-      query = query.orderBy("scheduledStart", "desc").limit(limit * page);
-      const snapshot = await query.get();
-      const allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Apply pagination in memory
+      const total = allDocs.length;
       const paginated = allDocs.slice((page - 1) * limit, page * limit);
 
       if (paginated.length === 0) {
-        return { data: [], pagination: { total: 0, page, limit, totalPages: 0 } };
+        return { data: [], pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
       }
 
-      // Batch fetch applications in ONE round-trip
-      const appIds = [...new Set(paginated.map(iv => iv.applicationId).filter(Boolean))];
+      // Collect unique IDs needed
+      const appIds    = [...new Set(paginated.map(iv => iv.applicationId).filter(Boolean))];
+      const userIds   = [...new Set(paginated.flatMap(iv => iv.interviewerIds || []).filter(Boolean))];
+
+      // Fetch applications individually (safe, no getAll limit issues)
       const appMap = {};
       if (appIds.length > 0) {
-        const appSnaps = await firestore.getAll(...appIds.map(id => firestore.collection("applications").doc(id)));
+        const appSnaps = await Promise.all(
+          appIds.map(id => firestore.collection("applications").doc(id).get())
+        );
         appSnaps.forEach(snap => { if (snap.exists) appMap[snap.id] = { id: snap.id, ...snap.data() }; });
       }
 
-      // Collect candidate, job, user IDs
+      // Collect candidate + job IDs from applications
       const candIds = [...new Set(Object.values(appMap).map(a => a.candidateId).filter(Boolean))];
       const jobIds  = [...new Set(Object.values(appMap).map(a => a.jobId).filter(Boolean))];
-      const userIds = [...new Set(paginated.flatMap(iv => iv.interviewerIds || []).filter(Boolean))];
 
-      // Batch fetch candidates, jobs, interviewers in ONE round-trip each
+      // Fetch candidates, jobs, users individually (safe)
       const [candSnaps, jobSnaps, userSnaps] = await Promise.all([
-        candIds.length > 0 ? firestore.getAll(...candIds.map(id => firestore.collection("candidates").doc(id))) : Promise.resolve([]),
-        jobIds.length  > 0 ? firestore.getAll(...jobIds.map(id  => firestore.collection("jobs").doc(id)))        : Promise.resolve([]),
-        userIds.length > 0 ? firestore.getAll(...userIds.map(id => firestore.collection("users").doc(id)))       : Promise.resolve([]),
+        Promise.all(candIds.map(id => firestore.collection("candidates").doc(id).get())),
+        Promise.all(jobIds.map(id  => firestore.collection("jobs").doc(id).get())),
+        Promise.all(userIds.map(id => firestore.collection("users").doc(id).get())),
       ]);
 
       const candMap = {};
       candSnaps.forEach(snap => { if (snap.exists) candMap[snap.id] = { id: snap.id, ...snap.data() }; });
       const jobMap = {};
-      jobSnaps.forEach(snap =>  { if (snap.exists) jobMap[snap.id]  = { id: snap.id, ...snap.data() }; });
+      jobSnaps.forEach(snap  => { if (snap.exists) jobMap[snap.id]  = { id: snap.id, ...snap.data() }; });
       const userMap = {};
       userSnaps.forEach(snap => { if (snap.exists) userMap[snap.id] = { id: snap.id, ...snap.data() }; });
 
-      // Batch fetch all feedbacks in parallel (one query per interview)
+      // Fetch feedbacks for each interview in parallel
       const feedbackSnaps = await Promise.all(
-        paginated.map(iv => firestore.collection("interviewFeedbacks").where("interviewId", "==", iv.id).get())
+        paginated.map(iv =>
+          firestore.collection("interviewFeedbacks")
+            .where("interviewId", "==", iv.id)
+            .get()
+            .catch(() => ({ docs: [] })) // never crash on missing feedback
+        )
       );
       const feedbackMap = {};
       feedbackSnaps.forEach((snap, idx) => {
@@ -126,9 +152,10 @@ router.get(
         }));
       });
 
-      // Populate all relations
+      // Build populated response
       const populated = paginated.map(iv => {
-        const app = appMap[iv.applicationId] ? { ...appMap[iv.applicationId] } : null;
+        const appRaw = appMap[iv.applicationId];
+        const app = appRaw ? { ...appRaw } : null;
         if (app) {
           app.candidate = candMap[app.candidateId] || null;
           app.job       = jobMap[app.jobId]        || null;
@@ -137,15 +164,16 @@ router.get(
           ...iv,
           application: app,
           interviewers: (iv.interviewerIds || []).map(id => userMap[id]).filter(Boolean),
-          feedbacks: feedbackMap[iv.id] || [],
+          feedbacks:    feedbackMap[iv.id] || [],
         };
-      }).filter(iv => iv.application?.candidate !== null);
+      });
+      // Include ALL interviews, even those without candidates (don't filter)
 
       return {
         data: populated,
-        pagination: { total: snapshot.size, page, limit, totalPages: Math.ceil(snapshot.size / limit) },
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
       };
-    }, 30000); // 30s cache per user+page
+    }, 30000); // 30s cache
 
     res.json({ success: true, ...result });
   }),

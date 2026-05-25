@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
@@ -10,130 +10,147 @@ import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseN
 import Skeleton, { DashboardSkeleton } from '../components/Skeleton';
 import { subscribeSSE } from '../lib/sse';
 
+// SSE types that should trigger a dashboard refresh
 const DASHBOARD_SSE_TYPES = [
   'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
   'INTERVIEW_SCHEDULED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'PIPELINE_MOVED',
+  'JOB_CREATED', 'JOB_UPDATED', 'JOB_STATUS_UPDATED',
 ];
-// Debounce: minimum 10s between SSE-triggered dashboard refreshes
-const SSE_REFRESH_DEBOUNCE_MS = 10000;
 
-const MetricCard = React.memo(({ metric, onClick, delay }) => (
+// Minimum 15s between SSE-triggered refreshes
+const SSE_DEBOUNCE_MS = 15000;
+
+const MetricCard = React.memo(({ label, value, tag, tagColor = '#29a86f', onClick, delay }) => (
   <Reveal delay={delay}>
     <button
-      className="os-card p-5 w-full text-left hover:scale-[1.02] transition-transform"
+      className="os-card p-5 w-full text-left"
+      style={{ cursor: 'pointer' }}
       type="button"
       onClick={onClick}
     >
       <div className="flex justify-between items-center text-sm text-[#7c87a1]">
-        <span>{metric.label}</span>
-        <span className="text-[#29a86f] font-semibold text-xs">{metric.tag}</span>
+        <span>{label}</span>
+        <span className="font-semibold text-xs" style={{ color: tagColor }}>{tag}</span>
       </div>
-      <div className="mt-3 text-3xl font-bold text-[#10193f] font-[Manrope]">{metric.value}</div>
+      <div className="mt-3 text-3xl font-bold text-[#10193f]" style={{ fontFamily: 'Manrope, sans-serif' }}>
+        {value}
+      </div>
     </button>
   </Reveal>
 ));
 MetricCard.displayName = 'MetricCard';
 
-const FeedItem = React.memo(({ app, onClick, delay }) => (
-  <motion.button
-    className="flex gap-3 w-full text-left p-2 rounded-xl hover:bg-[#f8fafc] transition-colors"
-    type="button"
-    onClick={onClick}
-    initial={{ opacity: 0, x: 8 }}
-    animate={{ opacity: 1, x: 0 }}
-    transition={{ delay, duration: 0.25 }}
-  >
-    {app.candidate?.profilePhotoFile?.storageKey ? (
-      <img className="w-10 h-10 rounded-full object-cover" src={app.candidate.profilePhotoFile.storageKey} alt="candidate" loading="lazy" />
-    ) : (
-      <div className="w-10 h-10 rounded-full bg-[#1f52cc] text-white flex items-center justify-center font-bold text-xs shrink-0">
-        {(app.candidate?.fullName || 'C').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 1)}
+const FeedItem = React.memo(({ app, onClick, delay }) => {
+  const initial = (app.candidate?.fullName || 'C')[0].toUpperCase();
+  return (
+    <motion.button
+      className="flex gap-3 w-full text-left p-2 rounded-xl"
+      style={{ background: 'transparent', cursor: 'pointer' }}
+      type="button"
+      onClick={onClick}
+      initial={{ opacity: 0, x: 8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay, duration: 0.22 }}
+    >
+      <div className="w-10 h-10 rounded-full bg-[#1f52cc] text-white flex items-center justify-center font-bold text-sm shrink-0">
+        {initial}
       </div>
-    )}
-    <div>
-      <div className="text-sm leading-snug">
-        {app.candidate?.fullName || 'Candidate'} moved to {app.currentStage?.name || 'Pipeline'}
+      <div className="overflow-hidden">
+        <div className="text-sm font-medium leading-snug truncate">
+          {app.candidate?.fullName || 'Candidate'}
+        </div>
+        <div className="text-xs text-slate-400 mt-0.5 truncate">
+          {app.status ? app.status.replace(/_/g, ' ') : 'Pipeline Update'}
+        </div>
       </div>
-      <div className="os-muted text-xs mt-1">Activity</div>
-    </div>
-  </motion.button>
-));
+    </motion.button>
+  );
+});
 FeedItem.displayName = 'FeedItem';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const currentUser = useMemo(() => getStoredUser(), []);
-  const [usersTotal, setUsersTotal] = useState(0);
-  const [candidatesTotal, setCandidatesTotal] = useState(0);
-  const [jobsTotal, setJobsTotal] = useState(0);
-  const [applications, setApplications] = useState([]);
-  const [interviews, setInterviews] = useState([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  // Track last SSE-triggered refresh time to debounce
-  const lastRefreshRef = useRef(0);
 
-  const applyDashboardData = useCallback((data) => {
-    const { stats, recentApplications, upcomingInterviews } = data;
-    setCandidatesTotal(stats.candidates || 0);
-    setJobsTotal(stats.activeJobs || 0);
-    setApplications(recentApplications || []);
-    setInterviews(upcomingInterviews || []);
-    setUsersTotal(stats.activeUsers || 0);
+  // Dashboard data state
+  const [stats, setStats] = useState({ candidates: 0, activeJobs: 0, activeUsers: 0 });
+  const [recentApplications, setRecentApplications] = useState([]);
+  const [upcomingInterviews, setUpcomingInterviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const lastRefreshRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  const greetingName = useMemo(() => {
+    const name = currentUser?.fullName || currentUser?.email || 'there';
+    return name.split(' ')[0];
+  }, [currentUser]);
+
+  const applyData = useCallback((data) => {
+    if (!data) return;
+    if (data.stats) setStats(data.stats);
+    if (Array.isArray(data.recentApplications)) setRecentApplications(data.recentApplications);
+    if (Array.isArray(data.upcomingInterviews)) setUpcomingInterviews(data.upcomingInterviews);
   }, []);
 
-  const canManageJobs = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
-  const greetingName = useMemo(() => (currentUser?.fullName || 'there').split(' ')[0], [currentUser]);
+  const fetchDashboard = useCallback(async (bypassCache = false) => {
+    try {
+      // Bypass cache on SSE-triggered refresh by adding timestamp
+      const url = bypassCache
+        ? `/dashboard/init?_t=${Date.now()}`
+        : '/dashboard/init';
+      const res = await apiGet(url);
+      if (!mountedRef.current) return;
+      if (res?.success && res?.data) {
+        applyData(res.data);
+      }
+    } catch (err) {
+      if (!mountedRef.current) return;
+      if (!bypassCache) setError(err.message || 'Failed to load dashboard');
+    }
+  }, [applyData]);
 
   // Initial load
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        const res = await apiGet('/dashboard/init');
-        if (!mounted) return;
-        applyDashboardData(res.data);
-      } catch (err) {
-        if (!mounted) return;
-        setError(err.message || 'Failed to load dashboard data');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    return () => { mounted = false; };
-  }, [applyDashboardData]);
+    mountedRef.current = true;
+    setLoading(true);
+    fetchDashboard(false).finally(() => {
+      if (mountedRef.current) setLoading(false);
+    });
+    return () => { mountedRef.current = false; };
+  }, [fetchDashboard]);
 
-  // Singleton SSE subscription — debounced refresh
+  // SSE subscription — refresh on relevant events with debounce
   useEffect(() => {
-    const unsub = subscribeSSE((data) => {
-      if (!DASHBOARD_SSE_TYPES.includes(data.type)) return;
+    const unsub = subscribeSSE((event) => {
+      if (!DASHBOARD_SSE_TYPES.includes(event.type)) return;
       const now = Date.now();
-      if (now - lastRefreshRef.current < SSE_REFRESH_DEBOUNCE_MS) return;
+      if (now - lastRefreshRef.current < SSE_DEBOUNCE_MS) return;
       lastRefreshRef.current = now;
-      apiGet('/dashboard/init')
-        .then(res => applyDashboardData(res.data))
-        .catch(() => {});
-    }, DASHBOARD_SSE_TYPES);
+      fetchDashboard(true); // bypass cache for real-time feel
+    });
     return unsub;
-  }, [applyDashboardData]);
+  }, [fetchDashboard]);
 
-  const recentApplicants = useMemo(() => applications.slice(0, 6), [applications]);
-
-  const metrics = useMemo(() => {
-    const interviewsToday = interviews.filter(item => {
-      const when = item?.scheduledStart ? new Date(item.scheduledStart) : null;
-      return when && when.toDateString() === new Date().toDateString();
+  // Metrics computed from state
+  const interviewsToday = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return upcomingInterviews.filter(iv => {
+      const d = iv.scheduledStart ? new Date(iv.scheduledStart) : null;
+      return d && d.toDateString() === todayStr;
     }).length;
-    const selected = applications.filter(a => a.status === 'SELECTED').length;
-    return [
-      { label: 'Total Candidates', value: candidatesTotal, tag: 'All time', href: '/candidates' },
-      { label: 'Active Roles',     value: jobsTotal,       tag: 'Open now', href: '/jobs' },
-      { label: 'Interviews Today', value: interviewsToday, tag: 'Scheduled', href: '/schedule' },
-      { label: 'Offer Pending',    value: selected,        tag: '85% Rate', href: '/candidates?status=OFFER_SENT' },
-    ];
-  }, [applications, candidatesTotal, interviews, jobsTotal]);
+  }, [upcomingInterviews]);
+
+  const offerPending = useMemo(
+    () => recentApplications.filter(a => a.status === 'OFFER_SENT' || a.status === 'SELECTED').length,
+    [recentApplications],
+  );
+
+  const feedItems = useMemo(() => recentApplications.slice(0, 6), [recentApplications]);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   if (loading) {
     return (
@@ -147,13 +164,11 @@ const Dashboard = () => {
           />
         }
       >
-        <PageEnter>
-          <div className="mb-6">
-            <Skeleton width="150px" height="12px" className="mb-2" />
-            <Skeleton width="250px" height="32px" />
-          </div>
-          <DashboardSkeleton />
-        </PageEnter>
+        <div className="mb-6">
+          <Skeleton width="120px" height="12px" className="mb-2" />
+          <Skeleton width="280px" height="36px" />
+        </div>
+        <DashboardSkeleton />
       </EnterpriseLayout>
     );
   }
@@ -170,47 +185,104 @@ const Dashboard = () => {
       }
     >
       <PageEnter>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="os-eyebrow">Performance Overview</div>
-            <h1 className="os-h1">Morning, {greetingName}.</h1>
-          </div>
+        {/* Header */}
+        <div className="mb-6">
+          <div className="os-eyebrow">Performance Overview</div>
+          <h1 className="os-h1">{greeting}, {greetingName}.</h1>
+          {error && (
+            <div className="mt-2 text-sm text-red-500 flex items-center gap-2">
+              <span className="material-symbols-outlined text-base">warning</span>
+              {error}
+              <button
+                type="button"
+                className="underline ml-1"
+                onClick={() => { setError(''); fetchDashboard(true); }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
-          {metrics.map((metric, idx) => (
-            <MetricCard
-              key={metric.label}
-              metric={metric}
-              onClick={() => navigate(metric.href)}
-              delay={idx * 0.05}
-            />
-          ))}
+        {/* Metric Cards */}
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <MetricCard
+            label="Total Candidates"
+            value={stats.candidates ?? 0}
+            tag="All time"
+            delay={0}
+            onClick={() => navigate('/candidates')}
+          />
+          <MetricCard
+            label="Active Roles"
+            value={stats.activeJobs ?? 0}
+            tag="Open now"
+            delay={0.05}
+            onClick={() => navigate('/jobs')}
+          />
+          <MetricCard
+            label="Interviews Today"
+            value={interviewsToday}
+            tag="Scheduled"
+            tagColor="#3b82f6"
+            delay={0.1}
+            onClick={() => navigate('/schedule')}
+          />
+          <MetricCard
+            label="Offer Pending"
+            value={offerPending}
+            tag="Awaiting"
+            tagColor="#f59e0b"
+            delay={0.15}
+            onClick={() => navigate('/candidates')}
+          />
         </div>
 
+        {/* Lower section */}
         <div className="grid lg:grid-cols-3 gap-4 mt-4">
+          {/* Pipeline Summary */}
           <Reveal className="lg:col-span-2">
             <div className="os-card p-6 h-full">
-              <div className="text-2xl font-semibold font-[Manrope]">Pipeline Velocity</div>
-              <div className="mt-4 text-slate-400 text-sm italic">Activity trends loaded from recent applications.</div>
+              <div className="text-xl font-bold mb-4">Pipeline Summary</div>
+              {stats.funnel ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {Object.entries(stats.funnel).map(([status, count]) => (
+                    <div key={status} className="bg-slate-50 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold text-[#10193f]">{count}</div>
+                      <div className="text-xs text-slate-500 mt-1">{status.replace(/_/g, ' ')}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-slate-400 text-sm italic">No pipeline data yet.</div>
+              )}
             </div>
           </Reveal>
 
+          {/* Live Feed */}
           <Reveal delay={0.1}>
             <div className="os-card p-6">
-              <div className="text-xl font-bold mb-4">Live Feed</div>
-              <div className="space-y-2">
-                {recentApplicants.length === 0 && (
-                  <div className="text-slate-400 text-sm italic">No recent activity.</div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-xl font-bold">Live Feed</div>
+                {recentApplications.length > 0 && (
+                  <span className="text-xs text-[#29a86f] font-semibold bg-[#f0fdf4] px-2 py-0.5 rounded-full">
+                    Live
+                  </span>
                 )}
-                {recentApplicants.map((app, idx) => (
-                  <FeedItem
-                    key={app.id}
-                    app={app}
-                    onClick={() => navigate(`/candidate/${app.candidate?.id}`)}
-                    delay={idx * 0.04}
-                  />
-                ))}
+              </div>
+              <div className="space-y-1">
+                {feedItems.length === 0 ? (
+                  <div className="text-slate-400 text-sm italic">No recent activity.</div>
+                ) : (
+                  feedItems.map((app, idx) => (
+                    <FeedItem
+                      key={app.id}
+                      app={app}
+                      onClick={() => navigate(`/candidate/${app.candidateId || app.candidate?.id}`)}
+                      delay={idx * 0.04}
+                    />
+                  ))
+                )}
               </div>
             </div>
           </Reveal>
