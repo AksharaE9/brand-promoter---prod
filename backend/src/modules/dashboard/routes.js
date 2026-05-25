@@ -80,12 +80,8 @@ router.get(
         const jobIds  = [...new Set(applications.map(a => a.jobId).filter(Boolean))];
 
         const [candSnaps, jobSnaps] = await Promise.all([
-          candIds.length > 0
-            ? firestore.getAll(...candIds.map(id => firestore.collection("candidates").doc(id)))
-            : Promise.resolve([]),
-          jobIds.length > 0
-            ? firestore.getAll(...jobIds.map(id => firestore.collection("jobs").doc(id)))
-            : Promise.resolve([]),
+          Promise.all(candIds.map(id => firestore.collection("candidates").doc(id).get())),
+          Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get())),
         ]);
 
         const candMap = {};

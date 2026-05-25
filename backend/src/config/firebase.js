@@ -150,7 +150,10 @@ if (!usingAdmin) {
       }),
       add: (data) => addDoc(collection(webDb, p), sanitizeData(data)),
       batch: () => db.batch()
-    })
+    }),
+    getAll: async (...docRefs) => {
+      return Promise.all(docRefs.map(ref => ref.get()));
+    }
   };
 
   rtdb = {
