@@ -184,7 +184,9 @@ const Analytics = () => {
     offers: [5, 8, 4, 12, 8, 14, 18],
     acceptance: [50, 60, 55, 68, 70, 72, 75],
     days: [26, 24, 25, 22, 23, 21, 21.4],
-    interviews: [20, 35, 28, 42, 38, 48, 52]
+    interviews: [20, 35, 28, 42, 38, 48, 52],
+    joined: [1, 2, 1, 3, 2, 4, 5],
+    rejected: [5, 8, 12, 6, 9, 11, 8]
   };
 
   const renderSparkline = (dataPoints, stroke = "#1f52cc") => (
@@ -255,8 +257,8 @@ const Analytics = () => {
 
         {error && <div className="mt-4 os-card p-4 text-red-600 bg-red-50 text-sm font-semibold">{error}</div>}
 
-        {/* METRICS CARDS (6 grid items) */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6">
+        {/* METRICS CARDS (8 grid items) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mt-6">
           
           {/* Card 1: Total Candidates */}
           <Reveal className="os-card p-4 flex flex-col justify-between">
@@ -316,8 +318,44 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-          {/* Card 4: Offer Acceptance Rate */}
-          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.09}>
+          {/* Card 4: Joined Candidates */}
+          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.08}>
+            <div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="material-symbols-outlined text-base">check_circle</span>
+                {renderSparkline(mockSparklines.joined, "#10b981")}
+              </div>
+              <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
+                {loading ? '...' : overview?.metrics?.candidatesJoined || 0}
+              </div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Joined Candidates</div>
+            </div>
+            <div className="text-[10px] font-bold mt-2 text-emerald-600 flex items-center gap-1">
+              <span>●</span>
+              <span>Active</span>
+            </div>
+          </Reveal>
+
+          {/* Card 5: Rejected Candidates */}
+          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.10}>
+            <div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="material-symbols-outlined text-base">cancel</span>
+                {renderSparkline(mockSparklines.rejected, "#f43f5e")}
+              </div>
+              <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
+                {loading ? '...' : overview?.metrics?.candidatesRejected || 0}
+              </div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Rejected Candidates</div>
+            </div>
+            <div className="text-[10px] font-bold mt-2 text-rose-500 flex items-center gap-1">
+              <span>●</span>
+              <span>Overall</span>
+            </div>
+          </Reveal>
+
+          {/* Card 6: Offer Acceptance Rate */}
+          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.12}>
             <div>
               <div className="flex items-center justify-between text-slate-400">
                 <span className="material-symbols-outlined text-base">verified_user</span>
@@ -336,8 +374,8 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-          {/* Card 5: Average Days to Hire */}
-          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.12}>
+          {/* Card 7: Average Days to Hire */}
+          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.14}>
             <div>
               <div className="flex items-center justify-between text-slate-400">
                 <span className="material-symbols-outlined text-base">schedule</span>
@@ -354,8 +392,8 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-          {/* Card 6: Interviews This Month */}
-          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.15}>
+          {/* Card 8: Interviews This Month */}
+          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.16}>
             <div>
               <div className="flex items-center justify-between text-slate-400">
                 <span className="material-symbols-outlined text-base">forum</span>
@@ -376,46 +414,8 @@ const Analytics = () => {
         </div>
 
         {/* Section 1: Pipeline Funnel */}
-        <div className="grid lg:grid-cols-3 gap-6 mt-6">
-          <Reveal className="lg:col-span-2 os-card p-6 relative" ref={chartRefs.pipeline}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold font-[Manrope] text-slate-800">Pipeline Funnel Distribution</h3>
-              <div className="relative">
-                <button className="material-symbols-outlined text-slate-400 hover:text-slate-600" onClick={() => setActiveMenuId(activeMenuId === 'pipeline' ? null : 'pipeline')}>more_vert</button>
-                {activeMenuId === 'pipeline' && (
-                  <div className="absolute right-0 mt-1 z-30 w-32 bg-white border border-slate-200 rounded-xl shadow-lg p-1">
-                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsPng('pipeline', 'pipeline_funnel')}>Export PNG</button>
-                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsCsv(pipelineData, 'pipeline_funnel')}>Export CSV</button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="h-[280px]">
-              {loading ? (
-                <div className="h-full w-full bg-slate-50 animate-pulse rounded-lg" />
-              ) : pipelineData.length === 0 ? (
-                <div className="h-full flex flex-col justify-center items-center text-slate-400">
-                  <span className="material-symbols-outlined text-4xl">bar_chart</span>
-                  <span className="text-sm mt-2">No data for this period</span>
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <FunnelChart>
-                    <Tooltip />
-                    <Funnel data={pipelineData} dataKey="count" nameKey="label" labelKey="label">
-                      {pipelineData.map((entry, index) => {
-                        const colors = ['#1f52cc', '#3262db', '#4f7ff3', '#7aa0f7', '#a5bffa'];
-                        return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
-                      })}
-                      <LabelList position="right" fill="#475879" stroke="none" dataKey="label" />
-                    </Funnel>
-                  </FunnelChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </Reveal>
-
-          {/* Right Funnel conversions Table */}
+        <div className="mt-6">
+          {/* Funnel conversions Table */}
           <Reveal className="os-card p-6">
             <h3 className="text-lg font-bold font-[Manrope] text-slate-800 mb-6">Stage Conversion Efficiency</h3>
             <table className="w-full text-left text-sm border-collapse">
