@@ -33,11 +33,11 @@ const JobsManager = () => {
   const currentUser = getStoredUser();
   const canManageJobs = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
 
-  const loadJobs = async () => {
+  const loadJobs = async (useCache = true) => {
     const query = statusFilter === 'all' ? '' : `&isActive=${statusFilter === 'active'}`;
     const [jobsRes, applicationsRes] = await Promise.all([
-      apiGet(`/jobs?limit=40${query}`),
-      apiGet('/applications?limit=400'),
+      apiGet(`/jobs?limit=40${query}`, useCache),
+      apiGet('/applications?limit=400', useCache),
     ]);
     const shortlistMap = {};
     (applicationsRes.data || []).forEach((app) => {
@@ -56,7 +56,8 @@ const JobsManager = () => {
       try {
         setLoading(true);
         setError('');
-        await loadJobs();
+        const shouldBypass = reloadTrigger > 0;
+        await loadJobs(!shouldBypass);
       } catch (err) {
         if (!mounted) return;
         setError(err.message || 'Failed to load jobs');

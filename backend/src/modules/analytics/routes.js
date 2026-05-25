@@ -9,8 +9,28 @@ router.use(auth);
 // Helper to parse date query params (default: last 90 days)
 function getPeriod(req) {
   const { startDate, endDate } = req.query;
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  
+  let end;
+  if (endDate) {
+    end = new Date(`${endDate}T23:59:59.999Z`);
+    if (isNaN(end.getTime())) {
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+    }
+  } else {
+    end = new Date();
+  }
+
+  let start;
+  if (startDate) {
+    start = new Date(`${startDate}T00:00:00.000Z`);
+    if (isNaN(start.getTime())) {
+      start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+    }
+  } else {
+    start = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  }
   
   const diffMs = end.getTime() - start.getTime();
   const prevStart = new Date(start.getTime() - diffMs);
@@ -49,22 +69,20 @@ router.get("/overview", asyncHandler(async (req, res) => {
   const currCands = filterByDate(candidates, "createdAt", start, end);
   const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
 
-  const currApps = filterByDate(apps, "createdAt", start, end);
-  const prevApps = filterByDate(apps, "createdAt", prevStart, prevEnd);
-
   const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
   const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
 
   // Active is when status is not rejected/joined
   const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
   
-  const currOffers = currApps.filter(a => a.status === "OFFER_SENT").length;
-  const prevOffers = prevApps.filter(a => a.status === "OFFER_SENT").length;
+  // Count offers, joined, rejected based on the date the status change occurred (updatedAt || createdAt)
+  const currOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+  const prevOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
 
-  const currJoined = currApps.filter(a => a.status === "JOINED").length;
-  const prevJoined = prevApps.filter(a => a.status === "JOINED").length;
+  const currJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+  const prevJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
 
-  const currRejected = currApps.filter(a => a.status === "REJECTED").length;
+  const currRejected = apps.filter(a => a.status === "REJECTED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
 
   // Monthly interviews count
   const thisMonthStart = new Date();
@@ -76,9 +94,9 @@ router.get("/overview", asyncHandler(async (req, res) => {
   }).length;
 
   // Offer Acceptance Rate
-  const offersAccepted = currApps.filter(a => a.status === "JOINED" || a.status === "SELECTED").length;
+  const offersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
   const offerRate = currOffers > 0 ? Math.round((offersAccepted / currOffers) * 100) : 0;
-  const prevOffersAccepted = prevApps.filter(a => a.status === "JOINED" || a.status === "SELECTED").length;
+  const prevOffersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
   const prevOfferRate = prevOffers > 0 ? Math.round((prevOffersAccepted / prevOffers) * 100) : 0;
 
   // Mock Average Time to Hire
@@ -118,11 +136,12 @@ router.get("/overview", asyncHandler(async (req, res) => {
 
 // 2. GET /api/analytics/pipeline
 router.get("/pipeline", asyncHandler(async (req, res) => {
+  const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
   const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
     firestore.collection("candidates").get(),
     firestore.collection("applications").get(),
-    firestore.collection("pipelineStages").get()
+    firestore.collection("pipeline_stages").get()
   ]);
 
   const candidates = candidatesSnap.docs
@@ -131,12 +150,32 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
   const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
   const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+  const stageMap = {};
+  stages.forEach(s => {
+    stageMap[s.id] = (s.name || "").toLowerCase();
+  });
+
+  const currCands = candidates.filter(c => {
+    const cd = new Date(c.createdAt);
+    return cd >= start && cd <= end;
+  });
+
+  const filteredApps = apps.filter(a => {
+    const d = new Date(a.updatedAt || a.createdAt);
+    return d >= start && d <= end;
+  });
+
+  const screenedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
+  const interviewedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
+  const offeredCount = filteredApps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) || (stageMap[a.currentStageId] || "").includes("offer")).length;
+  const joinedCount = filteredApps.filter(a => a.status === 'JOINED' || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
+
   const funnel = [
-    { stage: 'APPLIED', label: 'Applied', count: candidates.length, percentage: 100 },
-    { stage: 'SCREENING', label: 'Screened', count: apps.filter(a => a.currentStageId === 'SCREENING' || a.currentStageId === 'SCREEN' || a.currentStageId === 'screening').length, percentage: candidates.length > 0 ? Math.round((apps.filter(a => a.currentStageId === 'SCREENING' || a.currentStageId === 'SCREEN' || a.currentStageId === 'screening').length / candidates.length) * 100) : 0 },
-    { stage: 'INTERVIEW', label: 'Interviewed', count: apps.filter(a => a.currentStageId === 'INTERVIEW' || a.currentStageId === 'interview' || a.currentStageId === 'TECHNICAL_INTERVIEW').length, percentage: candidates.length > 0 ? Math.round((apps.filter(a => a.currentStageId === 'INTERVIEW' || a.currentStageId === 'interview' || a.currentStageId === 'TECHNICAL_INTERVIEW').length / candidates.length) * 100) : 0 },
-    { stage: 'OFFER_SENT', label: 'Offered', count: apps.filter(a => a.status === 'OFFER_SENT' || a.status === 'OFFER').length, percentage: candidates.length > 0 ? Math.round((apps.filter(a => a.status === 'OFFER_SENT' || a.status === 'OFFER').length / candidates.length) * 100) : 0 },
-    { stage: 'JOINED', label: 'Joined', count: apps.filter(a => a.status === 'JOINED').length, percentage: candidates.length > 0 ? Math.round((apps.filter(a => a.status === 'JOINED').length / candidates.length) * 100) : 0 }
+    { stage: 'APPLIED', label: 'Applied', count: currCands.length, percentage: 100 },
+    { stage: 'SCREENING', label: 'Screened', count: screenedCount, percentage: currCands.length > 0 ? Math.round((screenedCount / currCands.length) * 100) : 0 },
+    { stage: 'INTERVIEW', label: 'Interviewed', count: interviewedCount, percentage: currCands.length > 0 ? Math.round((interviewedCount / currCands.length) * 100) : 0 },
+    { stage: 'OFFER_SENT', label: 'Offered', count: offeredCount, percentage: currCands.length > 0 ? Math.round((offeredCount / currCands.length) * 100) : 0 },
+    { stage: 'JOINED', label: 'Joined', count: joinedCount, percentage: currCands.length > 0 ? Math.round((joinedCount / currCands.length) * 100) : 0 }
   ];
 
   res.json({ success: true, data: { funnel } });
@@ -236,12 +275,18 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
 
 // 6. GET /api/analytics/source-analysis
 router.get("/source-analysis", asyncHandler(async (req, res) => {
+  const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
   const snapshot = await firestore.collection("candidates").get();
 
   const cands = snapshot.docs
     .map(d => d.data())
     .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
+
+  const currCands = cands.filter(c => {
+    const cd = new Date(c.createdAt);
+    return cd >= start && cd <= end;
+  });
 
   const sourcesMap = {
     "Direct": 0,
@@ -251,7 +296,7 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
     "Manual": 0
   };
 
-  cands.forEach(c => {
+  currCands.forEach(c => {
     const s = c.source || "Direct";
     if (s.includes("Referral")) sourcesMap["Referral"]++;
     else if (s.includes("Drive") || s.includes("College")) sourcesMap["College Drive"]++;
@@ -260,7 +305,7 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
     else sourcesMap["Direct"]++;
   });
 
-  const total = cands.length;
+  const total = currCands.length;
   const sources = Object.keys(sourcesMap).map(name => {
     const count = sourcesMap[name];
     return {
@@ -276,23 +321,40 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
 
 // 7. GET /api/analytics/stage-conversion
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
+  const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
   const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
     firestore.collection("candidates").get(),
     firestore.collection("applications").get(),
-    firestore.collection("pipelineStages").get()
+    firestore.collection("pipeline_stages").get()
   ]);
 
   const candidates = candidatesSnap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
   const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
+  const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const appliedCount = candidates.length;
-  const screeningCount = apps.filter(a => a.currentStageId === "SCREENING" || a.currentStageId === "SCREEN" || a.currentStageId === "screening").length;
-  const interviewCount = apps.filter(a => a.currentStageId === "INTERVIEW" || a.currentStageId === "interview" || a.currentStageId === "TECHNICAL_INTERVIEW").length;
-  const offerCount = apps.filter(a => a.status === "OFFER_SENT" || a.status === "OFFER" || a.status === "SELECTED").length;
-  const joinedCount = apps.filter(a => a.status === "JOINED").length;
+  const stageMap = {};
+  stages.forEach(s => {
+    stageMap[s.id] = (s.name || "").toLowerCase();
+  });
+
+  const currCands = candidates.filter(c => {
+    const cd = new Date(c.createdAt);
+    return cd >= start && cd <= end;
+  });
+
+  const filteredApps = apps.filter(a => {
+    const d = new Date(a.updatedAt || a.createdAt);
+    return d >= start && d <= end;
+  });
+
+  const appliedCount = currCands.length;
+  const screeningCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
+  const interviewCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
+  const offerCount = filteredApps.filter(a => a.status === "OFFER_SENT" || a.status === "OFFER" || a.status === "SELECTED" || (stageMap[a.currentStageId] || "").includes("offer")).length;
+  const joinedCount = filteredApps.filter(a => a.status === "JOINED" || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
 
   const stagesData = [
     { stage: "Applied", count: appliedCount, color: "#1f52cc" },

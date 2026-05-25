@@ -30,12 +30,12 @@ async function request(path, options = {}, retries = 2) {
   const isGet = !options.method || options.method === 'GET';
   const requestKey = `${options.method || 'GET'}:${path}`;
 
-  if (isGet && inflightRequests.has(requestKey)) {
+  if (isGet && !options.bypassCache && inflightRequests.has(requestKey)) {
     return inflightRequests.get(requestKey);
   }
 
   // Cache lookup
-  if (isGet && apiCache.has(requestKey)) {
+  if (isGet && !options.bypassCache && apiCache.has(requestKey)) {
     const cached = apiCache.get(requestKey);
     if (Date.now() - cached.timestamp < CACHE_TTL) {
       return cached.data;
@@ -108,7 +108,7 @@ export function apiGet(path, useCache = true) {
     const requestKey = `GET:${path}`;
     apiCache.delete(requestKey);
   }
-  return request(path, { method: 'GET' });
+  return request(path, { method: 'GET', bypassCache: !useCache });
 }
 
 export async function apiGetBlob(path) {
@@ -136,6 +136,14 @@ function invalidateRelated(path) {
   const resource = '/' + (path.split('/')[1] || '');
   for (const key of apiCache.keys()) {
     if (key.includes(resource)) apiCache.delete(key);
+  }
+  // Clear analytics and dashboard cache on any candidate, application, job, or interview mutation
+  if (['/candidates', '/applications', '/jobs', '/interviews'].includes(resource)) {
+    for (const key of apiCache.keys()) {
+      if (key.includes('/analytics') || key.includes('/dashboard')) {
+        apiCache.delete(key);
+      }
+    }
   }
 }
 

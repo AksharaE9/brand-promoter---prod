@@ -18,8 +18,8 @@ const DASHBOARD_SSE_TYPES = [
   'TEAM_UPDATE', 'OFFER_DECISION'
 ];
 
-// Minimum 15s between SSE-triggered refreshes
-const SSE_DEBOUNCE_MS = 15000;
+// Minimum 1s between SSE-triggered refreshes
+const SSE_DEBOUNCE_MS = 1000;
 
 const MetricCard = React.memo(({ label, value, tag, tagColor = '#29a86f', onClick, delay }) => (
   <Reveal delay={delay}>
@@ -97,11 +97,7 @@ const Dashboard = () => {
 
   const fetchDashboard = useCallback(async (bypassCache = false) => {
     try {
-      // Bypass cache on SSE-triggered refresh by adding timestamp
-      const url = bypassCache
-        ? `/dashboard/init?_t=${Date.now()}`
-        : '/dashboard/init';
-      const res = await apiGet(url);
+      const res = await apiGet('/dashboard/init', !bypassCache);
       if (!mountedRef.current) return;
       if (res?.success && res?.data) {
         applyData(res.data);

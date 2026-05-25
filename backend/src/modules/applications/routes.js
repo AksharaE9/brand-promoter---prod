@@ -25,8 +25,8 @@ router.post(
 );
 
 async function resolveDefaultStage(jobId) {
-  // In Firestore, we'll look for stages in the "pipelineStages" collection
-  const snapshot = await firestore.collection("pipelineStages")
+  // In Firestore, we'll look for stages in the "pipeline_stages" collection
+  const snapshot = await firestore.collection("pipeline_stages")
     .where("jobId", "==", jobId)
     .orderBy("sortOrder", "asc")
     .limit(1)
@@ -34,7 +34,7 @@ async function resolveDefaultStage(jobId) {
   
   if (!snapshot.empty) return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
 
-  const globalSnapshot = await firestore.collection("pipelineStages")
+  const globalSnapshot = await firestore.collection("pipeline_stages")
     .where("jobId", "==", null)
     .orderBy("sortOrder", "asc")
     .limit(1)
@@ -99,7 +99,7 @@ router.post(
     const applicationId = docRef.id;
 
     // Record initial pipeline event
-    await firestore.collection("pipelineEvents").add({
+    await firestore.collection("pipeline_events").add({
       applicationId,
       fromStageId: null,
       toStageId: stageId,
@@ -192,7 +192,7 @@ router.get(
       const [candSnaps, jobSnaps, stageSnaps] = await Promise.all([
         Promise.all(candidateIds.map(id => firestore.collection("candidates").doc(id).get())),
         Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get())),
-        Promise.all(stageIds.map(id => firestore.collection("pipelineStages").doc(id).get()))
+        Promise.all(stageIds.map(id => firestore.collection("pipeline_stages").doc(id).get()))
       ]);
 
       const candMap = {};

@@ -21,7 +21,7 @@ async function getUsersMap() {
 
 // Helper to get all stages
 async function getStagesMap() {
-  const snapshot = await firestore.collection("pipelineStages").get();
+  const snapshot = await firestore.collection("pipeline_stages").get();
   const map = {};
   snapshot.docs.forEach(doc => {
     map[doc.id] = { id: doc.id, ...doc.data() };

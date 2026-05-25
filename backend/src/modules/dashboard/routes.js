@@ -36,10 +36,12 @@ router.get(
 
     const data = await getCached(cacheKey, async () => {
       // Run all independent queries in parallel
-      const [candidateCount, jobCount, userCount] = await Promise.all([
+      const [candidateCount, jobCount, userCount, appsSnap, stagesSnap] = await Promise.all([
         safeCount(firestore.collection("candidates")),
         safeCount(firestore.collection("jobs").where("isActive", "==", true)),
         safeCount(firestore.collection("users")),
+        firestore.collection("applications").get(),
+        firestore.collection("pipeline_stages").get(),
       ]);
 
       // Recent applications with fallback ordering
@@ -97,12 +99,56 @@ router.get(
         // Don't filter out apps with missing candidates — keep them for the feed
       }
 
-      // Funnel counts in parallel
-      const statuses = ["PENDING", "SCREENING", "INTERVIEWING", "OFFER_SENT", "JOINED", "REJECTED"];
-      const funnelCounts = await Promise.all(
-        statuses.map(s => safeCount(firestore.collection("applications").where("status", "==", s)))
-      );
-      const funnel = Object.fromEntries(statuses.map((s, i) => [s, funnelCounts[i]]));
+      // Funnel counts in-memory grouping using pipeline_stages to resolve IN_PIPELINE stages
+      const appsList = appsSnap.docs.map(d => d.data());
+      const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const stageMap = {};
+      stages.forEach(s => {
+        stageMap[s.id] = (s.name || "").toLowerCase();
+      });
+
+      let pendingCount = 0;
+      let screeningCount = 0;
+      let interviewCount = 0;
+      let offerCount = 0;
+      let joinedCount = 0;
+      let rejectedCount = 0;
+
+      appsList.forEach(a => {
+        const status = a.status || "PENDING";
+        const stageName = stageMap[a.currentStageId] || "";
+
+        if (status === "JOINED") {
+          joinedCount++;
+        } else if (status === "REJECTED") {
+          rejectedCount++;
+        } else if (status === "OFFER_SENT") {
+          offerCount++;
+        } else if (status === "PENDING") {
+          pendingCount++;
+        } else {
+          // status is IN_PIPELINE or anything else, check stage name
+          if (stageName.includes("screen") || stageName.includes("screening")) {
+            screeningCount++;
+          } else if (stageName.includes("interview") || stageName.includes("technical") || stageName.includes("hr")) {
+            interviewCount++;
+          } else if (stageName.includes("offer")) {
+            offerCount++;
+          } else {
+            // default fallback based on stage order/name or pending
+            pendingCount++;
+          }
+        }
+      });
+
+      const funnel = {
+        PENDING: pendingCount,
+        SCREENING: screeningCount,
+        INTERVIEWING: interviewCount,
+        OFFER_SENT: offerCount,
+        JOINED: joinedCount,
+        REJECTED: rejectedCount
+      };
 
       return {
         stats: {

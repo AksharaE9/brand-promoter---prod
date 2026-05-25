@@ -20,6 +20,7 @@ const Team = () => {
   const [me, setMe] = useState(null);
   const [activeTab, setActiveTab] = useState('RECRUITERS'); // RECRUITERS, SUPER_ADMINS, DELETED
   const [showAddMember, setShowAddMember] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserRole, setEditingUserRole] = useState(null);
 
@@ -294,6 +295,7 @@ const Team = () => {
               const userType = e.target.userType.value;
               const password = e.target.password.value;
               
+              setIsAdding(true);
               try {
                 await apiPost('/users', { fullName, email, role, userType, password });
                 await loadAll();
@@ -301,36 +303,38 @@ const Team = () => {
                 alert(`Member ${fullName} added successfully.`);
               } catch (err) {
                 alert(err.message || 'Failed to add member');
+              } finally {
+                setIsAdding(false);
               }
             }}>
               <div>
                 <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">Full Name</label>
-                <input name="name" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="e.g. John Doe" required />
+                <input name="name" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="e.g. John Doe" required disabled={isAdding} />
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">Email</label>
-                <input name="email" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="e.g. john@example.com" required />
+                <input name="email" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="e.g. john@example.com" required disabled={isAdding} />
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">Initial Password</label>
-                <input name="password" type="password" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="Min 8 chars" required />
+                <input name="password" type="password" className="mt-1 h-10 w-full rounded-lg border border-[#dbe4ee] px-3 text-sm" placeholder="Min 8 chars" required disabled={isAdding} />
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">Role</label>
-                <select name="role" className="mt-1 h-10 w-full rounded-xl border border-[#dbe4ee] px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#1f52cc]">
+                <select name="role" className="mt-1 h-10 w-full rounded-xl border border-[#dbe4ee] px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#1f52cc]" disabled={isAdding}>
                   <option value="RECRUITER">RECRUITER</option>
                   <option value="SUPER_ADMIN">SUPER ADMIN</option>
                 </select>
               </div>
               <div>
                 <label className="text-[11px] uppercase tracking-[.12em] text-[#7b86a0]">User Type</label>
-                <select name="userType" className="mt-1 h-10 w-full rounded-xl border border-[#dbe4ee] px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#1f52cc]">
+                <select name="userType" className="mt-1 h-10 w-full rounded-xl border border-[#dbe4ee] px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#1f52cc]" disabled={isAdding}>
                   <option value="RECRUITER">Recruiter</option>
                 </select>
               </div>
               <div className="md:col-span-4 flex justify-end gap-2 mt-2">
-                <button className="os-btn-outline" type="button" onClick={() => setShowAddMember(false)}>Cancel</button>
-                <button className="os-btn-primary" type="submit">Add Member</button>
+                <button className="os-btn-outline" type="button" onClick={() => setShowAddMember(false)} disabled={isAdding}>Cancel</button>
+                <button className="os-btn-primary" type="submit" disabled={isAdding}>{isAdding ? 'Adding...' : 'Add Member'}</button>
               </div>
             </form>
           </Reveal>

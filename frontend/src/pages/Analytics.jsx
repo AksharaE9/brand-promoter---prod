@@ -65,7 +65,7 @@ const Analytics = () => {
     source: sourceRef,
   }), []);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = async (useCache = true) => {
     try {
       setLoading(true);
       setError('');
@@ -74,13 +74,13 @@ const Analytics = () => {
       const queryParams = `?startDate=${startDate}&endDate=${endDate}`;
       
       const [overviewRes, pipelineRes, velocityRes, interviewerRes, sourceRes, conversionRes, trendsRes] = await Promise.all([
-        apiGet(`/analytics/overview${queryParams}`),
-        apiGet(`/analytics/pipeline${queryParams}`),
-        apiGet(`/analytics/hiring-velocity${queryParams}`),
-        apiGet(`/analytics/interviewer-load${queryParams}`),
-        apiGet(`/analytics/source-analysis${queryParams}`),
-        apiGet(`/analytics/stage-conversion${queryParams}`),
-        apiGet(`/analytics/monthly-trends${queryParams}`)
+        apiGet(`/analytics/overview${queryParams}`, useCache),
+        apiGet(`/analytics/pipeline${queryParams}`, useCache),
+        apiGet(`/analytics/hiring-velocity${queryParams}`, useCache),
+        apiGet(`/analytics/interviewer-load${queryParams}`, useCache),
+        apiGet(`/analytics/source-analysis${queryParams}`, useCache),
+        apiGet(`/analytics/stage-conversion${queryParams}`, useCache),
+        apiGet(`/analytics/monthly-trends${queryParams}`, useCache)
       ]);
 
       if (overviewRes.success) setOverview(overviewRes.data);
@@ -99,16 +99,18 @@ const Analytics = () => {
   };
 
   useEffect(() => {
-    loadAnalytics();
+    const shouldBypass = reloadTrigger > 0;
+    loadAnalytics(!shouldBypass);
   }, [startDate, endDate, reloadTrigger]);
 
-  // Singleton SSE — debounced reload (30s minimum between analytics refreshes)
+  // Singleton SSE — debounced reload (1s minimum between analytics refreshes)
   const lastAnalyticsSSERef = useRef(0);
-  const ANALYTICS_SSE_DEBOUNCE = 30000;
+  const ANALYTICS_SSE_DEBOUNCE = 1000;
   const ANALYTICS_SSE_TYPES = [
     'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
-    'PIPELINE_MOVED', 'INTERVIEW_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
-    'RECRUITER_UPDATED', 'RECRUITER_STATUS_UPDATED'
+    'PIPELINE_MOVED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
+    'RECRUITER_UPDATED', 'RECRUITER_STATUS_UPDATED', 'TEAM_UPDATE', 'OFFER_DECISION',
+    'DRIVE_CREATED', 'DRIVE_UPDATED'
   ];
   useEffect(() => {
     const unsub = subscribeSSE((payload) => {
@@ -189,6 +191,24 @@ const Analytics = () => {
     rejected: [5, 8, 12, 6, 9, 11, 8]
   };
 
+  const pipelineDistributionData = useMemo(() => {
+    if (!overview?.metrics) return [];
+    
+    const joined = overview.metrics.candidatesJoined || 0;
+    const rejected = overview.metrics.candidatesRejected || 0;
+    const pipeline = overview.metrics.activeCandidates || 0;
+    const offered = overview.metrics.offersExtended || 0;
+    
+    const total = joined + rejected + pipeline + offered;
+    
+    return [
+      { name: 'Joined', value: joined, color: '#10b981', percentage: total > 0 ? Math.round((joined / total) * 100) : 0 },
+      { name: 'Rejected in Pipeline', value: rejected, color: '#f43f5e', percentage: total > 0 ? Math.round((rejected / total) * 100) : 0 },
+      { name: 'In Pipeline', value: pipeline, color: '#1f52cc', percentage: total > 0 ? Math.round((pipeline / total) * 100) : 0 },
+      { name: 'Offer Extended', value: offered, color: '#f2994a', percentage: total > 0 ? Math.round((offered / total) * 100) : 0 }
+    ];
+  }, [overview]);
+
   const renderSparkline = (dataPoints, stroke = "#1f52cc") => (
     <svg className="w-16 h-8 overflow-visible" viewBox="0 0 70 30">
       <path
@@ -251,14 +271,14 @@ const Analytics = () => {
               />
             </div>
             
-            <button className="os-btn-primary !h-8 text-xs font-bold" onClick={loadAnalytics}>Refresh</button>
+            <button className="os-btn-primary !h-8 text-xs font-bold" onClick={() => loadAnalytics(false)}>Refresh</button>
           </div>
         </div>
 
         {error && <div className="mt-4 os-card p-4 text-red-600 bg-red-50 text-sm font-semibold">{error}</div>}
 
-        {/* METRICS CARDS (8 grid items) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mt-6">
+        {/* METRICS CARDS (7 grid items) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mt-6">
           
           {/* Card 1: Total Candidates */}
           <Reveal className="os-card p-4 flex flex-col justify-between">
@@ -374,23 +394,7 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-          {/* Card 7: Average Days to Hire */}
-          <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.14}>
-            <div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span className="material-symbols-outlined text-base">schedule</span>
-                {renderSparkline(mockSparklines.days, "#f2994a")}
-              </div>
-              <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : `${overview?.metrics?.averageTimeToHireDays || 0}d`}
-              </div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Days to Hire</div>
-            </div>
-            <div className="text-[10px] font-bold mt-2 text-emerald-600 flex items-center gap-1">
-              <span>▼</span>
-              <span>-2.1d (Improved)</span>
-            </div>
-          </Reveal>
+
 
           {/* Card 8: Interviews This Month */}
           <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.16}>
@@ -540,16 +544,16 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-          {/* Section 6: Source Analysis */}
+          {/* Section 6: Pipeline Funnel Breakdown */}
           <Reveal className="os-card p-6 relative" ref={chartRefs.source}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold font-[Manrope] text-slate-800">Source Funnel Analysis</h3>
+              <h3 className="text-lg font-bold font-[Manrope] text-slate-800">Pipeline Funnel Analysis</h3>
               <div className="relative">
                 <button className="material-symbols-outlined text-slate-400 hover:text-slate-600" onClick={() => setActiveMenuId(activeMenuId === 'source' ? null : 'source')}>more_vert</button>
                 {activeMenuId === 'source' && (
                   <div className="absolute right-0 mt-1 z-30 w-32 bg-white border border-slate-200 rounded-xl shadow-lg p-1">
-                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsPng('source', 'source_analysis')}>Export PNG</button>
-                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsCsv(sourceData, 'source_analysis')}>Export CSV</button>
+                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsPng('source', 'pipeline_funnel_analysis')}>Export PNG</button>
+                    <button className="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-slate-50 rounded-lg" onClick={() => exportAsCsv(pipelineDistributionData, 'pipeline_funnel_analysis')}>Export CSV</button>
                   </div>
                 )}
               </div>
@@ -560,21 +564,20 @@ const Analytics = () => {
               <div className="h-[180px] relative flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Tooltip />
+                    <Tooltip formatter={(value, name) => [value, name]} />
                     <Pie
-                      data={sourceData}
-                      dataKey="count"
-                      nameKey="source"
+                      data={pipelineDistributionData}
+                      dataKey="value"
+                      nameKey="name"
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
                       outerRadius={80}
                       paddingAngle={3}
                     >
-                      {sourceData.map((entry, index) => {
-                        const colors = ['#1f52cc', '#3262db', '#4f7ff3', '#f2994a', '#a855f7'];
-                        return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
-                      })}
+                      {pipelineDistributionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
@@ -582,26 +585,23 @@ const Analytics = () => {
                 {/* Center text */}
                 <div className="absolute text-center flex flex-col items-center">
                   <span className="text-2xl font-bold font-[Manrope] text-slate-800">
-                    {sourceData.reduce((acc, curr) => acc + curr.count, 0)}
+                    {pipelineDistributionData.reduce((acc, curr) => acc + curr.value, 0)}
                   </span>
                   <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Total</span>
                 </div>
               </div>
 
               {/* Legend details Table */}
-              <div className="text-xs space-y-2">
-                {sourceData.map((s, idx) => {
-                  const colors = ['#1f52cc', '#3262db', '#4f7ff3', '#f2994a', '#a855f7'];
-                  return (
-                    <div key={s.source} className="flex justify-between items-center border-b border-slate-100 pb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }} />
-                        <span className="font-semibold text-slate-700">{s.source}</span>
-                      </div>
-                      <span className="font-mono text-slate-500 font-bold">{s.count} ({s.percentage}%)</span>
+              <div className="text-xs space-y-2 w-full">
+                {pipelineDistributionData.map((s) => (
+                  <div key={s.name} className="flex justify-between items-center border-b border-slate-100 pb-1.5 font-[Manrope]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                      <span className="font-semibold text-slate-700">{s.name}</span>
                     </div>
-                  );
-                })}
+                    <span className="font-mono text-slate-500 font-bold">{s.value} ({s.percentage}%)</span>
+                  </div>
+                ))}
               </div>
 
             </div>

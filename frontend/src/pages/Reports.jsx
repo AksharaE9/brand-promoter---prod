@@ -104,17 +104,23 @@ const Reports = () => {
   }, []);
 
   // Fetch report data
-  const fetchReport = async () => {
+  const fetchReport = async (useCache = true) => {
     try {
       setLoading(true);
       setError('');
-      
       let url = `/reports/candidates?sortBy=${sortBy}&sortOrder=${sortOrder}`;
-      if (selectedRole) url += `&role=${selectedRole}`;
-      if (selectedRecruiterId) url += `&recruiterId=${selectedRecruiterId}`;
-      if (createdFrom) url += `&createdFrom=${createdFrom}`;
-      if (createdTo) url += `&createdTo=${createdTo}`;
-      
+      if (selectedRole !== 'ALL') {
+        url += `&role=${encodeURIComponent(selectedRole)}`;
+      }
+      if (selectedRecruiterId) {
+        url += `&recruiterId=${encodeURIComponent(selectedRecruiterId)}`;
+      }
+      if (createdFrom) {
+        url += `&createdFrom=${encodeURIComponent(createdFrom)}`;
+      }
+      if (createdTo) {
+        url += `&createdTo=${encodeURIComponent(createdTo)}`;
+      }
       selectedStages.forEach(s => {
         url += `&stage=${encodeURIComponent(s)}`;
       });
@@ -122,7 +128,7 @@ const Reports = () => {
         url += `&source=${encodeURIComponent(s)}`;
       });
 
-      const res = await apiGet(url);
+      const res = await apiGet(url, useCache);
       if (res.success) {
         setCandidates(res.data || []);
       }
@@ -134,14 +140,15 @@ const Reports = () => {
   };
 
   useEffect(() => {
-    fetchReport();
+    const shouldBypass = reloadTrigger > 0;
+    fetchReport(!shouldBypass);
   }, [selectedRole, selectedRecruiterId, createdFrom, createdTo, selectedStages, selectedSources, sortBy, sortOrder, reloadTrigger]);
 
-  const fetchJobsReport = async () => {
+  const fetchJobsReport = async (useCache = true) => {
     try {
       setJobsLoading(true);
       setError('');
-      const res = await apiGet('/reports/hiring-progress');
+      const res = await apiGet('/reports/hiring-progress', useCache);
       if (res.success && Array.isArray(res.data)) {
         setJobsData(res.data);
       }
@@ -154,7 +161,8 @@ const Reports = () => {
 
   useEffect(() => {
     if (activeTab === 'JOBS') {
-      fetchJobsReport();
+      const shouldBypass = reloadTrigger > 0;
+      fetchJobsReport(!shouldBypass);
     }
   }, [activeTab, reloadTrigger]);
 
