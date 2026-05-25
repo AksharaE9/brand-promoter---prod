@@ -15,7 +15,7 @@ export function getStoredToken() {
   return localStorage.getItem('ats_token');
 }
 
-async function request(path, options = {}) {
+async function request(path, options = {}, retries = 2) {
   const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -44,40 +44,59 @@ async function request(path, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}${path}`, {
-        ...options,
-        headers,
-      });
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      // Exponential backoff: 0ms, 800ms, 1600ms
+      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 800));
 
-      let data = null;
+      // 15s timeout per attempt
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
       try {
-        data = await response.json();
-      } catch (_) {
-        data = null;
-      }
+        const response = await fetch(`${API_BASE_URL}${path}`, {
+          ...options,
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-      if (!response.ok) {
-        const message = data?.message || `Request failed (${response.status})`;
-        const error = new Error(message);
-        error.status = response.status;
-        error.payload = data;
-        throw error;
-      }
+        let data = null;
+        try { data = await response.json(); } catch (_) { data = null; }
 
-      // Store in cache if successful GET
-      if (isGet) {
-        apiCache.set(requestKey, { data, timestamp: Date.now() });
-      }
+        if (!response.ok) {
+          const message = data?.message || `Request failed (${response.status})`;
+          const error = new Error(message);
+          error.status = response.status;
+          error.payload = data;
+          // Don't retry 4xx errors (client errors)
+          if (response.status >= 400 && response.status < 500) throw error;
+          lastErr = error;
+          continue; // retry on 5xx
+        }
 
-      return data;
-    } finally {
-      if (isGet) inflightRequests.delete(requestKey);
+        if (isGet) {
+          apiCache.set(requestKey, { data, timestamp: Date.now() });
+        }
+        return data;
+      } catch (err) {
+        clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+          lastErr = new Error('Request timed out. Please check your connection.');
+          continue; // retry on timeout
+        }
+        if (err.status >= 400 && err.status < 500) throw err; // don't retry 4xx
+        lastErr = err;
+      } finally {
+        if (isGet && attempt === retries) inflightRequests.delete(requestKey);
+      }
     }
+    throw lastErr || new Error('Request failed after retries');
   })();
 
   if (isGet) {
     inflightRequests.set(requestKey, fetchPromise);
+    fetchPromise.finally(() => inflightRequests.delete(requestKey));
   }
 
   return fetchPromise;

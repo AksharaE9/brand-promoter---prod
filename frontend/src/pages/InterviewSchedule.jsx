@@ -92,40 +92,47 @@ const InterviewSchedule = () => {
   const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
 
   const loadAll = useCallback(async () => {
-    const [interviewsRes, applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/interviews?limit=500'),
-      apiGet('/applications?limit=500'),
-      apiGet('/candidates?limit=500'),
-      apiGet('/jobs?limit=100'),
-    ]);
-
-    let interviewerRows = [];
-    try {
-      const interviewerRes = await apiGet('/users/interviewers');
-      interviewerRows = interviewerRes.data || [];
-    } catch (_) {
-      interviewerRows = (interviewsRes.data || [])
-        .map((item) => item.interviewer)
-        .filter(Boolean);
-    }
-
+    // Step 1: Load interviews first — they include fully-populated candidate/job/feedback data
+    // This is what the user sees immediately. Get more than one page to cover the list.
+    const interviewsRes = await apiGet('/interviews?limit=200');
     const interviewRows = interviewsRes.data || [];
     setInterviews(interviewRows);
-    setApplications(applicationsRes.data || []);
-    setCandidates(candidatesRes.data || []);
-    setJobs(jobsRes.data || []);
-    setInterviewers(interviewerRows);
-    
-    // Fix: Ensure selectedId is a candidateId for grouping
+
+    // Auto-select first candidate
     const firstGroup = Array.from(
-      interviewsRes.data.reduce((map, iv) => {
+      interviewRows.reduce((map, iv) => {
         const cId = iv.application?.candidate?.id || iv.application?.candidateId;
         if (cId && !map.has(cId)) map.set(cId, iv);
         return map;
       }, new Map()).values()
     ).sort((a, b) => new Date(b.scheduledStart) - new Date(a.scheduledStart))[0];
+    setSelectedId(prev => prev || firstGroup?.applicationId || '');
 
-    setSelectedId((prev) => prev || firstGroup?.applicationId || '');
+    // Step 2: Load supporting data in background (needed for scheduling form only)
+    const [applicationsRes, candidatesRes, jobsRes] = await Promise.all([
+      apiGet('/applications?limit=300'),
+      apiGet('/candidates?limit=300'),
+      apiGet('/jobs?limit=100'),
+    ]);
+    setApplications(applicationsRes.data || []);
+    setCandidates(candidatesRes.data || []);
+    setJobs(jobsRes.data || []);
+
+    // Step 3: Load interviewers
+    try {
+      const interviewerRes = await apiGet('/users/interviewers');
+      setInterviewers(interviewerRes.data || []);
+    } catch (_) {
+      // Fall back to extracting from interviews data
+      const seen = new Set();
+      const fallback = [];
+      interviewRows.forEach(iv => {
+        (iv.interviewers || []).forEach(u => {
+          if (u?.id && !seen.has(u.id)) { seen.add(u.id); fallback.push(u); }
+        });
+      });
+      setInterviewers(fallback);
+    }
   }, []);
 
   useEffect(() => {
