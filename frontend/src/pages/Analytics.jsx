@@ -1,11 +1,12 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, apiGet } from '../lib/api';
+import { apiGet } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import html2canvas from 'html2canvas';
+import { subscribeSSE } from '../lib/sse';
 
 // Recharts components
 import {
@@ -53,12 +54,16 @@ const Analytics = () => {
   // Active Dropdown menu for export cards
   const [activeMenuId, setActiveMenuId] = useState(null);
 
-  const chartRefs = {
-    pipeline: useRef(null),
-    trends: useRef(null),
-    conversion: useRef(null),
-    source: useRef(null)
-  };
+  const pipelineRef = useRef(null);
+  const trendsRef  = useRef(null);
+  const conversionRef = useRef(null);
+  const sourceRef  = useRef(null);
+  const chartRefs = useMemo(() => ({
+    pipeline: pipelineRef,
+    trends: trendsRef,
+    conversion: conversionRef,
+    source: sourceRef,
+  }), []);
 
   const loadAnalytics = async () => {
     try {
@@ -97,39 +102,22 @@ const Analytics = () => {
     loadAnalytics();
   }, [startDate, endDate, reloadTrigger]);
 
-  // Real-time EventSource listener for SSE updates
+  // Singleton SSE — debounced reload (30s minimum between analytics refreshes)
+  const lastAnalyticsSSERef = useRef(0);
+  const ANALYTICS_SSE_DEBOUNCE = 30000;
+  const ANALYTICS_SSE_TYPES = [
+    'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
+    'PIPELINE_MOVED', 'INTERVIEW_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
+    'RECRUITER_UPDATED', 'RECRUITER_STATUS_UPDATED'
+  ];
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
-
-    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload.type === 'CANDIDATE_CREATED' || 
-          payload.type === 'CANDIDATE_UPDATED' || 
-          payload.type === 'APPLICATION_STATUS_UPDATED' ||
-          payload.type === 'PIPELINE_MOVED' ||
-          payload.type === 'INTERVIEW_UPDATED' ||
-          payload.type === 'INTERVIEW_FEEDBACK_SUBMITTED' ||
-          payload.type === 'RECRUITER_UPDATED' ||
-          payload.type === 'RECRUITER_STATUS_UPDATED'
-        ) {
-          console.log('[SSE] Analytics update triggered by event:', payload.type);
-          setReloadTrigger(prev => prev + 1);
-        }
-      } catch (err) {}
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    const unsub = subscribeSSE((payload) => {
+      const now = Date.now();
+      if (now - lastAnalyticsSSERef.current < ANALYTICS_SSE_DEBOUNCE) return;
+      lastAnalyticsSSERef.current = now;
+      setReloadTrigger(prev => prev + 1);
+    }, ANALYTICS_SSE_TYPES);
+    return unsub;
   }, []);
 
   const applyPreset = (days) => {

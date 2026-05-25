@@ -7,6 +7,9 @@ import NotificationBell from '../components/NotificationBell';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import EditInterviewModal from '../components/Interview/EditInterviewModal';
+import { subscribeSSE } from '../lib/sse';
+
+const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
 
 const emptyScheduleForm = {
   candidateId: '',
@@ -88,12 +91,12 @@ const InterviewSchedule = () => {
   const canScheduleInterview = true;
   const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     const [interviewsRes, applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/interviews?limit=10000'),
-      apiGet('/applications?limit=10000'),
-      apiGet('/candidates?limit=10000'),
-      apiGet('/jobs?limit=10000'),
+      apiGet('/interviews?limit=500'),
+      apiGet('/applications?limit=500'),
+      apiGet('/candidates?limit=500'),
+      apiGet('/jobs?limit=100'),
     ]);
 
     let interviewerRows = [];
@@ -123,7 +126,7 @@ const InterviewSchedule = () => {
     ).sort((a, b) => new Date(b.scheduledStart) - new Date(a.scheduledStart))[0];
 
     setSelectedId((prev) => prev || firstGroup?.applicationId || '');
-  };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -159,50 +162,24 @@ const InterviewSchedule = () => {
     }
   }, [jobIdParam, jobs]);
 
-  // REAL-TIME UPDATE LISTENER
+  // Singleton SSE — debounced reload
+  const lastSSEReloadRef = useRef(0);
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
-
-    // Use API base URL for SSE stream (with /api prefix)
-    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping') return;
-        
-        // Refresh if any relevant event happens
-        const relevantTypes = [
-          'INTERVIEW_PANELISTS_UPDATED',
-          'INTERVIEW_FEEDBACK_SUBMITTED',
-          'APPLICATION_STATUS_UPDATED',
-          'INTERVIEW_SCHEDULED',
-          'CANDIDATE_UPDATED',
-          'CANDIDATE_CREATED'
-        ];
-
-        if (relevantTypes.includes(data.type)) {
-          console.log('[SSE] Real-time update received:', data.type);
-          loadAll();
-          if (data.type === 'INTERVIEW_PANELISTS_UPDATED') {
-            setBanner('Interviewer transferred in real-time!');
-          }
-        }
-      } catch (err) {
-        console.error('[SSE] Failed to parse message:', err);
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error('[SSE] Connection error:', err);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+    const RELEVANT = [
+      'INTERVIEW_PANELISTS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
+      'APPLICATION_STATUS_UPDATED', 'INTERVIEW_SCHEDULED',
+      'CANDIDATE_UPDATED', 'CANDIDATE_CREATED'
+    ];
+    const unsub = subscribeSSE((data) => {
+      if (!RELEVANT.includes(data.type)) return;
+      const now = Date.now();
+      if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
+      lastSSEReloadRef.current = now;
+      loadAll().catch(() => {});
+      if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
+    }, RELEVANT);
+    return unsub;
+  }, [loadAll]);
 
   useEffect(() => {
     if (interviewIdParam && interviews.length > 0) {

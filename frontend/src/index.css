@@ -34,8 +34,8 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Hardware Accelerated Base Classes */
-.os-card, .glass-card, button, .app-sidebar, .main-content {
+/* Hardware Accelerated: only on elements that animate */
+.os-card, .glass-card, .app-sidebar {
   backface-visibility: hidden;
   transform: translateZ(0);
 }

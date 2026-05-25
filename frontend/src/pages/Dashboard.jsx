@@ -1,14 +1,21 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import Loader from '../components/Loader';
-import { apiGet, getStoredUser, API_BASE_URL } from '../lib/api';
+import { apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import Skeleton, { DashboardSkeleton } from '../components/Skeleton';
+import { subscribeSSE } from '../lib/sse';
+
+const DASHBOARD_SSE_TYPES = [
+  'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
+  'INTERVIEW_SCHEDULED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'PIPELINE_MOVED',
+];
+// Debounce: minimum 10s between SSE-triggered dashboard refreshes
+const SSE_REFRESH_DEBOUNCE_MS = 10000;
 
 const MetricCard = React.memo(({ metric, onClick, delay }) => (
   <Reveal delay={delay}>
@@ -25,6 +32,7 @@ const MetricCard = React.memo(({ metric, onClick, delay }) => (
     </button>
   </Reveal>
 ));
+MetricCard.displayName = 'MetricCard';
 
 const FeedItem = React.memo(({ app, onClick, delay }) => (
   <motion.button
@@ -32,14 +40,13 @@ const FeedItem = React.memo(({ app, onClick, delay }) => (
     type="button"
     onClick={onClick}
     initial={{ opacity: 0, x: 8 }}
-    whileInView={{ opacity: 1, x: 0 }}
-    viewport={{ once: true, amount: 0.6 }}
-    transition={{ delay, duration: 0.3 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay, duration: 0.25 }}
   >
     {app.candidate?.profilePhotoFile?.storageKey ? (
-      <img className="w-10 h-10 rounded-full object-cover" src={app.candidate.profilePhotoFile.storageKey} alt="candidate" />
+      <img className="w-10 h-10 rounded-full object-cover" src={app.candidate.profilePhotoFile.storageKey} alt="candidate" loading="lazy" />
     ) : (
-      <div className="w-10 h-10 rounded-full bg-[#1f52cc] text-white flex items-center justify-center font-bold text-xs">
+      <div className="w-10 h-10 rounded-full bg-[#1f52cc] text-white flex items-center justify-center font-bold text-xs shrink-0">
         {(app.candidate?.fullName || 'C').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 1)}
       </div>
     )}
@@ -51,6 +58,7 @@ const FeedItem = React.memo(({ app, onClick, delay }) => (
     </div>
   </motion.button>
 ));
+FeedItem.displayName = 'FeedItem';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -62,34 +70,22 @@ const Dashboard = () => {
   const [interviews, setInterviews] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // Track last SSE-triggered refresh time to debounce
+  const lastRefreshRef = useRef(0);
 
-  const getRecentDates = (days) => {
-    const dates = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      dates.push(d);
-    }
-    return dates;
-  };
-
-  const toChartPath = (data) => {
-    if (!data.length) return '';
-    const max = Math.max(...data, 1);
-    const height = 40;
-    const width = 200;
-    const points = data.map((v, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - (v / max) * height;
-      return `${x},${y}`;
-    });
-    return `M ${points.join(' L ')}`;
-  };
-
+  const applyDashboardData = useCallback((data) => {
+    const { stats, recentApplications, upcomingInterviews } = data;
+    setCandidatesTotal(stats.candidates || 0);
+    setJobsTotal(stats.activeJobs || 0);
+    setApplications(recentApplications || []);
+    setInterviews(upcomingInterviews || []);
+    setUsersTotal(stats.activeUsers || 0);
+  }, []);
 
   const canManageJobs = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
-  const greetingName = useMemo(() => (currentUser?.fullName || 'Marcus').split(' ')[0], [currentUser]);
+  const greetingName = useMemo(() => (currentUser?.fullName || 'there').split(' ')[0], [currentUser]);
 
+  // Initial load
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -97,12 +93,7 @@ const Dashboard = () => {
         setLoading(true);
         const res = await apiGet('/dashboard/init');
         if (!mounted) return;
-        const { stats, recentApplications, upcomingInterviews } = res.data;
-        setCandidatesTotal(stats.candidates || 0);
-        setJobsTotal(stats.activeJobs || 0);
-        setApplications(recentApplications || []);
-        setInterviews(upcomingInterviews || []);
-        setUsersTotal(stats.activeUsers || 0);
+        applyDashboardData(res.data);
       } catch (err) {
         if (!mounted) return;
         setError(err.message || 'Failed to load dashboard data');
@@ -112,113 +103,43 @@ const Dashboard = () => {
     };
     load();
     return () => { mounted = false; };
-  }, [currentUser?.role]);
+  }, [applyDashboardData]);
 
-  // REAL-TIME UPDATE LISTENER - Refresh dashboard on relevant changes
+  // Singleton SSE subscription — debounced refresh
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
-
-    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'ping') return;
-
-        const relevantTypes = [
-          'CANDIDATE_CREATED',
-          'CANDIDATE_UPDATED',
-          'APPLICATION_STATUS_UPDATED',
-          'INTERVIEW_SCHEDULED',
-          'INTERVIEW_FEEDBACK_SUBMITTED',
-          'PIPELINE_MOVED'
-        ];
-
-        if (relevantTypes.includes(data.type)) {
-          console.log('[Dashboard] Real-time update:', data.type);
-          // Refresh dashboard data
-          apiGet('/dashboard/init').then(res => {
-            const { stats, recentApplications, upcomingInterviews } = res.data;
-            setCandidatesTotal(stats.candidates || 0);
-            setJobsTotal(stats.activeJobs || 0);
-            setApplications(recentApplications || []);
-            setInterviews(upcomingInterviews || []);
-            setUsersTotal(stats.activeUsers || 0);
-          }).catch(err => console.warn('[Dashboard] Refresh failed:', err));
-        }
-      } catch (err) {
-        console.error('[Dashboard] SSE parse error:', err);
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error('[Dashboard] SSE connection error:', err);
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, []);
+    const unsub = subscribeSSE((data) => {
+      if (!DASHBOARD_SSE_TYPES.includes(data.type)) return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < SSE_REFRESH_DEBOUNCE_MS) return;
+      lastRefreshRef.current = now;
+      apiGet('/dashboard/init')
+        .then(res => applyDashboardData(res.data))
+        .catch(() => {});
+    }, DASHBOARD_SSE_TYPES);
+    return unsub;
+  }, [applyDashboardData]);
 
   const recentApplicants = useMemo(() => applications.slice(0, 6), [applications]);
 
-  const pipelineChart = useMemo(() => {
-    const recentDays = getRecentDates(7);
-    const getLocalYMD = (dateObj) => {
-      const y = dateObj.getFullYear();
-      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const d = String(dateObj.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-
-    const keyed = new Map(recentDays.map((d) => [getLocalYMD(d), { sourced: 0, hired: 0 }]));
-    applications.forEach((app) => {
-      const created = app?.createdAt ? new Date(app.createdAt) : null;
-      if (!created || Number.isNaN(created.getTime())) return;
-      const key = getLocalYMD(created);
-      if (!keyed.has(key)) return;
-      const row = keyed.get(key);
-      row.sourced += 1;
-      if (app.status === 'SELECTED' || app.status === 'JOINED') row.hired += 1;
-    });
-
-    const labels = recentDays.map((d) => (d instanceof Date && !isNaN(d)) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Unknown');
-
-    const sourced = labels.map((_, idx) => keyed.get(getLocalYMD(recentDays[idx]))?.sourced || 0);
-    const hired = labels.map((_, idx) => keyed.get(getLocalYMD(recentDays[idx]))?.hired || 0);
-    const sourcedPath = toChartPath(sourced);
-    const hiredPath = toChartPath(hired);
-    const maxSourced = Math.max(...sourced, 0);
-    const maxIndex = Math.max(0, sourced.findIndex((value) => value === maxSourced));
-    return { labels, sourced, hired, sourcedPath, hiredPath, maxSourced, maxIndex };
-  }, [applications]);
-
   const metrics = useMemo(() => {
-    const interviewsToday = interviews.filter((item) => {
+    const interviewsToday = interviews.filter(item => {
       const when = item?.scheduledStart ? new Date(item.scheduledStart) : null;
       return when && when.toDateString() === new Date().toDateString();
     }).length;
-
-    const selected = applications.filter((a) => a.status === 'SELECTED').length;
-    const joined = applications.filter((a) => a.status === 'JOINED').length;
-    const activeRecruiters = interviews.filter((item) => item?.interviewers?.length > 0).length;
-
-    const items = [
-      { label: 'Total Candidates', value: candidatesTotal, tag: '+12%', href: '/candidates' },
-      { label: 'Active Roles', value: jobsTotal, tag: '+4', href: '/jobs' },
-      { label: 'Interviews Today', value: interviewsToday, tag: 'Busy Day', href: '/schedule' },
-      { label: 'Offer Pending', value: selected, tag: '85% Rate', href: '/candidates?status=OFFER_SENT' },
+    const selected = applications.filter(a => a.status === 'SELECTED').length;
+    return [
+      { label: 'Total Candidates', value: candidatesTotal, tag: 'All time', href: '/candidates' },
+      { label: 'Active Roles',     value: jobsTotal,       tag: 'Open now', href: '/jobs' },
+      { label: 'Interviews Today', value: interviewsToday, tag: 'Scheduled', href: '/schedule' },
+      { label: 'Offer Pending',    value: selected,        tag: '85% Rate', href: '/candidates?status=OFFER_SENT' },
     ];
-    return items;
   }, [applications, candidatesTotal, interviews, jobsTotal]);
-
 
   if (loading) {
     return (
       <EnterpriseLayout
-        header={
+        sidebar={<EnterpriseSidebar active="dashboard" items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
+        topbar={
           <EnterpriseTopbar
             searchPlaceholder="Search candidates..."
             tabs={[]}
@@ -258,11 +179,11 @@ const Dashboard = () => {
 
         <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
           {metrics.map((metric, idx) => (
-            <MetricCard 
-              key={metric.label} 
-              metric={metric} 
-              onClick={() => navigate(metric.href)} 
-              delay={idx * 0.05} 
+            <MetricCard
+              key={metric.label}
+              metric={metric}
+              onClick={() => navigate(metric.href)}
+              delay={idx * 0.05}
             />
           ))}
         </div>
@@ -271,7 +192,7 @@ const Dashboard = () => {
           <Reveal className="lg:col-span-2">
             <div className="os-card p-6 h-full">
               <div className="text-2xl font-semibold font-[Manrope]">Pipeline Velocity</div>
-              {/* SVG logic here ... */}
+              <div className="mt-4 text-slate-400 text-sm italic">Activity trends loaded from recent applications.</div>
             </div>
           </Reveal>
 
@@ -279,12 +200,15 @@ const Dashboard = () => {
             <div className="os-card p-6">
               <div className="text-xl font-bold mb-4">Live Feed</div>
               <div className="space-y-2">
+                {recentApplicants.length === 0 && (
+                  <div className="text-slate-400 text-sm italic">No recent activity.</div>
+                )}
                 {recentApplicants.map((app, idx) => (
-                  <FeedItem 
-                    key={app.id} 
-                    app={app} 
-                    onClick={() => navigate(`/candidate/${app.candidate?.id}`)} 
-                    delay={idx * 0.04} 
+                  <FeedItem
+                    key={app.id}
+                    app={app}
+                    onClick={() => navigate(`/candidate/${app.candidate?.id}`)}
+                    delay={idx * 0.04}
                   />
                 ))}
               </div>

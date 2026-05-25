@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import { apiGet, API_BASE_URL } from '../lib/api';
+import { subscribeSSE } from '../lib/sse';
+
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
@@ -127,28 +129,14 @@ const AuditLogs = () => {
     fetchLogs();
   }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, selectedActions, reloadTrigger]);
 
-  // Real-time EventSource listener for SSE updates
+  // Singleton SSE — debounced 5s so rapid events don't flood the log table
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
-
-    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        console.log('[SSE] Audit log update triggered by event:', payload.type || 'UNKNOWN');
-        setReloadTrigger(prev => prev + 1);
-      } catch (err) {}
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    let debounceTimer = null;
+    const unsub = subscribeSSE(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setReloadTrigger(p => p + 1), 5000);
+    });
+    return () => { unsub(); clearTimeout(debounceTimer); };
   }, []);
 
   const handlePageChange = (newPage) => {

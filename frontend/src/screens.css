@@ -395,16 +395,12 @@
   border: 1px solid var(--ats-line);
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(15, 27, 61, 0.03);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .os-card:hover {
   box-shadow: 0 12px 24px rgba(15, 27, 61, 0.08);
   border-color: #d0dbe7;
-}
-
-.os-card {
-  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .os-btn-primary {
@@ -602,49 +598,9 @@
   }
 }
 
-/* Utility Classes */
-.w-full {
-  width: 100% !important;
-}
-
-.flex {
-  display: flex !important;
-}
-
-.items-center {
-  align-items: center !important;
-}
-
-.justify-center {
-  justify-content: center !important;
-}
-
-.gap-2 {
-  gap: 8px !important;
-}
-
+/* Non-Tailwind Utilities */
 .no-underline {
-  text-decoration: none !important;
-}
-
-.mb-3 {
-  margin-bottom: 12px !important;
-}
-
-.mt-3 {
-  margin-top: 12px !important;
-}
-
-.text-center {
-  text-align: center !important;
-}
-
-.h-11 {
-  height: 44px !important;
-}
-
-.text-white {
-  color: #ffffff !important;
+  text-decoration: none;
 }
 
 /* Calendar Grid Styles */
@@ -807,3 +763,14 @@
   gap: 16px;
   width: 100%;
 }
+
+/* ─── Reveal Fade Animation (replaces framer-motion whileInView) ──────────── */
+@keyframes revealFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.reveal-fade {
+  animation: revealFade 0.28s ease-out both;
+  will-change: opacity, transform;
+}

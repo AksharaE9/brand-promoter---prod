@@ -3,8 +3,9 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, apiGet, getStoredUser } from '../lib/api';
+import { apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import { subscribeSSE } from '../lib/sse';
 
 const recruiterRoles = [
   { value: 'RECRUITER', label: 'Recruiter' }
@@ -184,35 +185,15 @@ const Reports = () => {
     }
   };
 
-  // Real-time EventSource listener for SSE updates
+  // Singleton SSE — debounced 15s
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    if (!token) return;
-
-    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload.type === 'CANDIDATE_CREATED' || 
-          payload.type === 'CANDIDATE_UPDATED' || 
-          payload.type === 'APPLICATION_STATUS_UPDATED' ||
-          payload.type === 'PIPELINE_MOVED'
-        ) {
-          console.log('[SSE] Report update triggered by event:', payload.type);
-          setReloadTrigger(prev => prev + 1);
-        }
-      } catch (err) {}
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    const TYPES = ['CANDIDATE_CREATED','CANDIDATE_UPDATED','APPLICATION_STATUS_UPDATED','PIPELINE_MOVED'];
+    let debounceTimer = null;
+    const unsub = subscribeSSE(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setReloadTrigger(p => p + 1), 5000);
+    }, TYPES);
+    return () => { unsub(); clearTimeout(debounceTimer); };
   }, []);
 
   const toggleSort = (field) => {

@@ -13,16 +13,14 @@ router.get(
   "/init",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    // Use shorter cache for real-time feel
-    const cacheKey = `dashboard_init_${req.user.id}`;
+    // Shared org-level cache key — all users share same cached dashboard data
+    const cacheKey = `dashboard_init_org`;
     const data = await getCached(cacheKey, async () => {
-      // Helper to safely get count with fallback
       async function safeCount(collectionRef) {
         try {
           const snap = await collectionRef.count().get();
           return snap.data().count;
         } catch (err) {
-          console.warn("⚠️ Count query failed, using fallback:", err.message);
           const allSnap = await collectionRef.limit(1000).get();
           return allSnap.size;
         }
@@ -32,24 +30,20 @@ router.get(
         safeCount(firestore.collection("candidates")),
         safeCount(firestore.collection("jobs").where("isActive", "==", true)),
         safeCount(firestore.collection("users").where("status", "==", "ACTIVE")),
-        // Try orderBy with fallback
         (async () => {
           try {
             return await firestore.collection("applications").orderBy("createdAt", "desc").limit(10).get();
           } catch (e) {
-            console.warn("⚠️ Applications orderBy failed:", e.message);
             const snap = await firestore.collection("applications").limit(10).get();
             const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             docs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
             return { docs: docs.map(d => ({ id: d.id, data: () => d })) };
           }
         })(),
-        // Try interview orderBy with fallback
         (async () => {
           try {
             return await firestore.collection("interviews").where("scheduledStart", ">=", new Date().toISOString()).orderBy("scheduledStart", "asc").limit(5).get();
           } catch (e) {
-            console.warn("⚠️ Interviews orderBy failed:", e.message);
             const snap = await firestore.collection("interviews").limit(5).get();
             const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             docs.sort((a, b) => new Date(a.scheduledStart || 0) - new Date(b.scheduledStart || 0));
@@ -58,39 +52,40 @@ router.get(
         })()
       ]);
 
-      // Map applications and populate candidate/job data
       let applications = applicationSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Populate candidate and job data for recent applications
+      // Batch fetch candidates + jobs in 2 round-trips (not N individual fetches)
       if (applications.length > 0) {
         const candidateIds = [...new Set(applications.map(a => a.candidateId).filter(Boolean))];
         const jobIds = [...new Set(applications.map(a => a.jobId).filter(Boolean))];
 
-        const [candDocs, jobDocs] = await Promise.all([
-          Promise.all(candidateIds.map(id => firestore.collection("candidates").doc(id).get())),
-          Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get()))
+        const [candSnaps, jobSnaps] = await Promise.all([
+          candidateIds.length > 0
+            ? firestore.getAll(...candidateIds.map(id => firestore.collection("candidates").doc(id)))
+            : Promise.resolve([]),
+          jobIds.length > 0
+            ? firestore.getAll(...jobIds.map(id => firestore.collection("jobs").doc(id)))
+            : Promise.resolve([]),
         ]);
 
         const candMap = {};
-        candDocs.forEach(doc => { if (doc.exists) candMap[doc.id] = { id: doc.id, ...doc.data() }; });
+        candSnaps.forEach(doc => { if (doc.exists) candMap[doc.id] = { id: doc.id, ...doc.data() }; });
         const jobMap = {};
-        jobDocs.forEach(doc => { if (doc.exists) jobMap[doc.id] = { id: doc.id, ...doc.data() }; });
+        jobSnaps.forEach(doc => { if (doc.exists) jobMap[doc.id] = { id: doc.id, ...doc.data() }; });
 
-        applications = applications.map(app => ({
-          ...app,
-          candidate: candMap[app.candidateId] || null,
-          job: jobMap[app.jobId] || null
-        })).filter(app => app.candidate !== null); // Only show apps with existing candidates
+        applications = applications
+          .map(app => ({ ...app, candidate: candMap[app.candidateId] || null, job: jobMap[app.jobId] || null }))
+          .filter(app => app.candidate !== null);
       }
 
       const interviews = interviewSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      const funnel = {};
+      // Funnel counts in parallel
       const statuses = ['PENDING', 'SCREENING', 'INTERVIEWING', 'OFFER_SENT', 'JOINED', 'REJECTED'];
-
-      await Promise.all(statuses.map(async (s) => {
-        funnel[s] = await safeCount(firestore.collection("applications").where("status", "==", s));
-      }));
+      const funnelCounts = await Promise.all(
+        statuses.map(s => safeCount(firestore.collection("applications").where("status", "==", s)))
+      );
+      const funnel = Object.fromEntries(statuses.map((s, i) => [s, funnelCounts[i]]));
 
       return {
         stats: {
@@ -98,17 +93,14 @@ router.get(
           activeJobs: jobCount,
           activeUsers: userCount,
           totalApplications: Object.values(funnel).reduce((a, b) => a + b, 0),
-          funnel
+          funnel,
         },
         recentApplications: applications,
-        upcomingInterviews: interviews
+        upcomingInterviews: interviews,
       };
-    }, 30000); // 30 second TTL for more real-time feel
+    }, 60000); // 60s shared cache
 
-    res.json({
-      success: true,
-      data
-    });
+    res.json({ success: true, data });
   })
 );
 

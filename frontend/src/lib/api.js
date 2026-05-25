@@ -9,7 +9,7 @@ export const API_ROOT_URL = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0
 // Performance: Request Deduplication & Caching
 const inflightRequests = new Map();
 const apiCache = new Map();
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 60000; // 60 seconds
 
 export function getStoredToken() {
   return localStorage.getItem('ats_token');
