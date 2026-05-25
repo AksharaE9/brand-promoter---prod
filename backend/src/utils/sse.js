@@ -72,6 +72,9 @@ function broadcastNamedEvent(eventName, payload) {
       }
     });
   });
+
+  // Also broadcast as a standard message for clients that only use onmessage
+  broadcast({ ...payload, type: eventName });
 }
 
 module.exports = {
