@@ -203,6 +203,21 @@ const Team = () => {
     }
   };
 
+  // Approve a pending user
+  const handleApproveMember = async (userId) => {
+    try {
+      // Optimistic Update
+      setMembers(prev => prev.map(m => m.id === userId ? { ...m, status: 'ACTIVE', isActive: true } : m));
+
+      const res = await apiPatch(`/team/members/${userId}`, { status: 'ACTIVE', isActive: true });
+      if (!res.success) throw new Error(res.message || "Failed to approve user");
+      await loadAll();
+    } catch (err) {
+      alert(err.message || "Failed to approve user");
+      await loadAll();
+    }
+  };
+
   // Initiate Role Change Modal
   const initiateRoleChange = (member, targetRole) => {
     setRoleChangeTarget({ user: member, targetRole });
@@ -472,12 +487,24 @@ const Team = () => {
 
                     {/* Status */}
                     <td className="p-4 text-xs font-bold">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${
-                        member.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${member.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                        {member.status || 'ACTIVE'}
-                      </span>
+                      <div className="flex flex-col gap-1.5 items-start">
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${
+                          member.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${member.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                          {member.status || 'ACTIVE'}
+                        </span>
+                        {me?.role === 'SUPER_ADMIN' && member.status === 'PENDING' && (
+                          <button
+                            type="button"
+                            className="mt-1 text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline flex items-center gap-1 bg-emerald-50/50 hover:bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/50 transition-all"
+                            onClick={() => handleApproveMember(member.id)}
+                          >
+                            <span className="material-symbols-outlined !text-[12px] leading-none">check_circle</span>
+                            Approve
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Actions */}
