@@ -183,6 +183,8 @@ router.post(
       userAgent: req.headers["user-agent"],
     });
 
+    broadcast({ type: "INTERVIEW_UPDATED", data: { id: docRef.id, ...interviewData } });
+
     res.status(201).json({ success: true, data: { id: docRef.id, ...interviewData } });
   }),
 );

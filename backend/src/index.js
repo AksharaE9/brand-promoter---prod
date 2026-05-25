@@ -65,6 +65,9 @@ app.use("/api/auth", createRateLimiter({ max: 20, message: "Too many authenticat
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/team", require("./modules/team/routes"));
+app.use("/api/settings", require("./modules/settings/routes"));
+app.use("/api/files", require("./modules/files/routes"));
+app.use("/api/analytics", require("./modules/analytics/routes"));
 app.use("/api/candidates/bulk-upload", bulkUploadRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/jobs", jobRoutes);

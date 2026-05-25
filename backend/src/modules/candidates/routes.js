@@ -2,7 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
-const { db: firestore, uploadFileToFirebase } = require("../../config/firebase");
+const { db: firestore, uploadFileToFirebase, FieldPath } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
@@ -119,6 +119,7 @@ router.post(
 
     if (inserted > 0) {
       await batch.commit();
+      broadcast({ type: 'CANDIDATE_CREATED', count: inserted });
     }
 
     await logAudit({
@@ -195,6 +196,8 @@ router.post(
 
         importJobs.set(importJobId, { status: 'completed', progress: 100, total: rows.length, inserted, skipped });
         
+        broadcast({ type: 'CANDIDATE_CREATED', count: inserted });
+
         await firestore.collection("notifications").add({
           userId: req.user.id,
           title: "Bulk Import Complete",
@@ -417,7 +420,7 @@ router.get(
             for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
 
             await Promise.all(fileChunks.map(async (chunk) => {
-              const snaps = await firestore.collection("fileMetas").where(firestore.FieldPath.documentId(), "in", chunk).get();
+              const snaps = await firestore.collection("fileMetas").where(FieldPath.documentId(), "in", chunk).get();
               snaps.forEach(fs => { fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
             }));
           } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }

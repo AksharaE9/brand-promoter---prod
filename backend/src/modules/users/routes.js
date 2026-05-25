@@ -10,14 +10,16 @@ const router = express.Router();
 
 router.use(auth);
 
-const allowedRoles = ["SUPER_ADMIN", "RECRUITER", "INTERVIEWER"];
+const allowedRoles = ["SUPER_ADMIN", "RECRUITER"];
 
 router.get(
   "/",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
     const snapshot = await firestore.collection("users").orderBy("createdAt", "desc").get();
-    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const users = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(u => u.isDeleted !== true);
     res.json({ success: true, data: users });
   }),
 );
@@ -85,7 +87,7 @@ router.get(
   "/interviewers",
   asyncHandler(async (req, res) => {
     const snapshot = await firestore.collection("users")
-      .where("role", "in", ["SUPER_ADMIN", "RECRUITER", "INTERVIEWER"])
+      .where("role", "in", ["SUPER_ADMIN", "RECRUITER"])
       .get();
     const users = snapshot.docs.map(doc => ({ 
       id: doc.id, 

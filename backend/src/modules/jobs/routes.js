@@ -114,6 +114,9 @@ router.post(
       link: `/jobs/${job.id}`,
     });
 
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'JOB_CREATED', jobId: docRef.id, title });
+
     res.status(201).json({ success: true, data: job });
   }),
 );
@@ -138,6 +141,8 @@ router.patch(
     delete updateData.id;
 
     await firestore.collection("jobs").doc(id).update(updateData);
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'JOB_UPDATED', jobId: id });
     res.json({ success: true, message: "Job updated successfully" });
   }),
 );
@@ -156,6 +161,7 @@ router.patch(
     const doc = await docRef.get();
     if (!doc.exists) throw new ApiError(404, "Job not found");
 
+    const oldActive = doc.data().isActive;
     await docRef.update({ isActive, updatedAt: new Date().toISOString() });
     const updated = { id, ...doc.data(), isActive };
 
@@ -164,11 +170,14 @@ router.patch(
       action: "UPDATE_JOB_STATUS",
       entityType: "JOB",
       entityId: id,
-      oldData: { isActive: existing.isActive },
+      oldData: { isActive: oldActive },
       newData: { isActive: updated.isActive },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    const { broadcast } = require("../../utils/sse");
+    broadcast({ type: 'JOB_STATUS_UPDATED', jobId: id, isActive });
 
     res.json({ success: true, data: updated });
   }),

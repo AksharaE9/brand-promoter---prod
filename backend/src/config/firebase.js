@@ -246,4 +246,8 @@ async function uploadFileToFirebase(buffer, destination, contentType) {
   return null;
 }
 
-module.exports = { db, rtdb, admin, uploadFileToFirebase, usingAdmin };
+const FieldPath = (admin && admin.firestore && admin.firestore.FieldPath) || {
+  documentId: () => require("firebase/firestore").documentId()
+};
+
+module.exports = { db, rtdb, admin, uploadFileToFirebase, usingAdmin, FieldPath };

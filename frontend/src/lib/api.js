@@ -125,6 +125,11 @@ export function apiPost(path, body) {
   return request(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function apiPut(path, body) {
+  invalidateRelated(path);
+  return request(path, { method: 'PUT', body: JSON.stringify(body) });
+}
+
 export function apiPatch(path, body) {
   invalidateRelated(path);
   return request(path, { method: 'PATCH', body: JSON.stringify(body) });

@@ -4,7 +4,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiPatch, apiPost, getStoredUser } from '../lib/api';
+import { apiGet, apiPatch, apiPost, getStoredUser, API_BASE_URL } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const defaultJobForm = {
@@ -23,6 +23,7 @@ const JobsManager = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
+  const [reloadTrigger, setReloadTrigger] = useState(0);
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [showCreate, setShowCreate] = useState(false);
@@ -67,7 +68,40 @@ const JobsManager = () => {
     return () => {
       mounted = false;
     };
-  }, [statusFilter]);
+  }, [statusFilter, reloadTrigger]);
+
+  // Real-time EventSource listener for SSE updates
+  useEffect(() => {
+    const token = localStorage.getItem('ats_token');
+    if (!token) return;
+
+    const eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (
+          payload.type === 'JOB_CREATED' ||
+          payload.type === 'JOB_UPDATED' ||
+          payload.type === 'JOB_STATUS_UPDATED' ||
+          payload.type === 'APPLICATION_STATUS_UPDATED' ||
+          payload.type === 'CANDIDATE_CREATED' ||
+          payload.type === 'CANDIDATE_UPDATED'
+        ) {
+          console.log('[SSE] Jobs update triggered by event:', payload.type);
+          setReloadTrigger(prev => prev + 1);
+        }
+      } catch (err) {}
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, []);
 
   const onCreateJob = async (event) => {
     event.preventDefault();
@@ -231,7 +265,7 @@ const JobsManager = () => {
 
         <Reveal className="os-card mt-4 p-3 flex items-center justify-between">
           <div className="flex gap-2 text-sm">
-            <button className={`os-btn-outline !h-10 ${statusFilter === 'all' ? '!border-[#1f52cc] !text-[#1f52cc]' : ''}`} onClick={() => setStatusFilter('all')} type="button">All Roles</button>
+            <button className={`os-btn-outline !h-10 ${statusFilter === 'all' ? '!border-[#1f52cc] !text-[#1f52cc]' : ''}`} onClick={() => setStatusFilter('all')} type="button">All Jobs</button>
             <button className={`os-btn-outline !h-10 ${statusFilter === 'active' ? '!border-[#1f52cc] !text-[#1f52cc]' : ''}`} onClick={() => setStatusFilter('active')} type="button">Active</button>
             <button className={`os-btn-outline !h-10 ${statusFilter === 'closed' ? '!border-[#1f52cc] !text-[#1f52cc]' : ''}`} onClick={() => setStatusFilter('closed')} type="button">Closed</button>
           </div>
@@ -249,7 +283,7 @@ const JobsManager = () => {
           {loading ? <div className="os-card p-4 text-sm text-[#6f7d98]">Loading jobs...</div> : null}
           {jobs.map((row, idx) => (
             <Reveal key={row.id} delay={idx * 0.04}>
-              <div className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.62fr_.62fr_.72fr_.9fr] items-start md:items-center gap-4">
+              <div className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4">
                 <div>
                   <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/schedule?jobId=${row.id}`)}>
                     {row.title}
@@ -257,14 +291,6 @@ const JobsManager = () => {
                   <div className="text-sm text-[#6b7690] mt-1">{row.location}</div>
                 </div>
                 <div className="text-xs uppercase tracking-[.1em] text-[#8f98ad]">{row.status}</div>
-                <div>
-                  <div className="text-xs uppercase tracking-[.1em] text-[#8f98ad]">Applicants</div>
-                  <div className="text-lg mt-1 font-semibold">{row.applicants}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-[.1em] text-[#8f98ad]">Shortlisted</div>
-                  <div className="text-lg mt-1 font-semibold text-[#1f52cc]">{row.shortlisted}</div>
-                </div>
                 <div>
                   <div className="text-xs uppercase tracking-[.1em] text-[#8f98ad]">Hiring Lead</div>
                   <div className="text-sm mt-1">{row.lead}</div>
