@@ -269,6 +269,10 @@ await section('Firestore Connectivity (Live)', async () => {
     ok('applications collection readable', true);
     console.log(`     ℹ️  applications: ${appSnap.size > 0 ? '1+' : '0'} docs found`);
 
+    // Try auto-generated doc reference
+    const autoRef = firestore.collection('auditLogs').doc();
+    ok('doc() without args auto-generates ID reference', !!autoRef && typeof autoRef.id === 'string' && autoRef.id.length > 5);
+
     // Try orderBy on interviews (index check)
     try {
       await firestore.collection('interviews').orderBy('scheduledStart', 'desc').limit(1).get();

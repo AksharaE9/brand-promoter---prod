@@ -137,17 +137,22 @@ if (!usingAdmin) {
     },
     collection: (p) => ({
       ...createQueryWrapper(collection(webDb, p)),
-      doc: (id) => ({
-        get: async () => {
-          const s = await getDoc(doc(webDb, p, id));
-          return { exists: s.exists(), id: s.id, data: () => s.data(), ref: s.ref };
-        },
-        set: (data, opts) => setDoc(doc(webDb, p, id), sanitizeData(data), opts),
-        update: (data) => updateDoc(doc(webDb, p, id), sanitizeData(data)),
-        delete: () => deleteDoc(doc(webDb, p, id)),
-        collection: (subPath) => db.collection(`${p}/${id}/${subPath}`),
-        ref: doc(webDb, p, id)
-      }),
+      doc: (id) => {
+        const docRef = id ? doc(webDb, p, id) : doc(collection(webDb, p));
+        const actualId = id || docRef.id;
+        return {
+          get: async () => {
+            const s = await getDoc(docRef);
+            return { exists: s.exists(), id: actualId, data: () => s.data(), ref: docRef };
+          },
+          set: (data, opts) => setDoc(docRef, sanitizeData(data), opts),
+          update: (data) => updateDoc(docRef, sanitizeData(data)),
+          delete: () => deleteDoc(docRef),
+          collection: (subPath) => db.collection(`${p}/${actualId}/${subPath}`),
+          ref: docRef,
+          id: actualId
+        };
+      },
       add: (data) => addDoc(collection(webDb, p), sanitizeData(data)),
       batch: () => db.batch()
     }),
