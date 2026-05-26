@@ -25,6 +25,12 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
 
     const errors = [];
     
+    // Skip completely empty rows
+    const hasNoCandidateData = !mappedCandidate.fullName && !mappedCandidate.email && !mappedCandidate.phone;
+    if (hasNoCandidateData) {
+      continue;
+    }
+
     // Validation
     if (!mappedCandidate.fullName) errors.push("fullName is required");
     if (mappedCandidate.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mappedCandidate.email)) {

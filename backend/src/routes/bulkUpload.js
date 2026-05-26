@@ -60,7 +60,8 @@ router.post(
     let allRows = [];
     try {
       const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
-      for (const sheetName of workbook.SheetNames) {
+      if (workbook.SheetNames.length > 0) {
+        const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const sheetRows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
         sheetRows.forEach((row, idx) => {
