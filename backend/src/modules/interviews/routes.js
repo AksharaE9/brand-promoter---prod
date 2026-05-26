@@ -63,7 +63,7 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
-    const limit = Math.min(200, parseInt(req.query.limit, 10) || 50);
+    const limit = Math.min(5000, parseInt(req.query.limit, 10) || 50);
     const { getCached } = require("../../utils/cache");
 
     const cacheKey = `interviews_list_${req.user.role}_${req.user.id}_p${page}_l${limit}`;

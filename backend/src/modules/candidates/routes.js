@@ -364,16 +364,16 @@ router.get(
 
       // Total count will be determined after in-memory filtering
 
-      // Fetch candidates — limit to 1000 to ensure we have enough pool to filter from
+      // Fetch candidates — limit to 5000 to ensure we have enough pool to filter from
       let allDocs = [];
       try {
-        const snapshot = await query.limit(1000).get();
+        const snapshot = await query.limit(5000).get();
         allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (queryErr) {
         console.error("❌ Query failed:", queryErr.message);
         // Try simpler query without filters
         try {
-          const simpleSnap = await firestore.collection("candidates").limit(500).get();
+          const simpleSnap = await firestore.collection("candidates").limit(5000).get();
           allDocs = simpleSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         } catch (e3) {
           console.error("❌ Simple query also failed:", e3.message);

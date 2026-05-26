@@ -61,7 +61,7 @@ const Pipeline = () => {
 
   const loadAll = async () => {
     const appQuery = [
-      'limit=200',
+      'limit=3000',
       jobFilterId ? `jobId=${encodeURIComponent(jobFilterId)}` : '',
       candidateFilterId ? `candidateId=${encodeURIComponent(candidateFilterId)}` : '',
     ]
@@ -76,8 +76,8 @@ const Pipeline = () => {
     // Only fetch candidates and jobs if we don't have them yet or if we're doing a full reload
     const shouldFetchLists = candidates.length === 0 || jobs.length === 0;
     if (shouldFetchLists) {
-      fetchRequests.push(apiGet('/candidates?limit=200'));
-      fetchRequests.push(apiGet('/jobs?limit=200'));
+      fetchRequests.push(apiGet('/candidates?limit=3000'));
+      fetchRequests.push(apiGet('/jobs?limit=500'));
     }
 
     const results = await Promise.all(fetchRequests);

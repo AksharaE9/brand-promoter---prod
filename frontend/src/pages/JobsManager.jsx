@@ -37,7 +37,7 @@ const JobsManager = () => {
     const query = statusFilter === 'all' ? '' : `&isActive=${statusFilter === 'active'}`;
     const [jobsRes, applicationsRes] = await Promise.all([
       apiGet(`/jobs?limit=40${query}`, useCache),
-      apiGet('/applications?limit=400', useCache),
+      apiGet('/applications?limit=3000', useCache),
     ]);
     const shortlistMap = {};
     (applicationsRes.data || []).forEach((app) => {

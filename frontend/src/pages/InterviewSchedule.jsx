@@ -94,7 +94,7 @@ const InterviewSchedule = () => {
   const loadAll = useCallback(async () => {
     // Step 1: Load interviews first — they include fully-populated candidate/job/feedback data
     // This is what the user sees immediately. Get more than one page to cover the list.
-    const interviewsRes = await apiGet('/interviews?limit=200');
+    const interviewsRes = await apiGet('/interviews?limit=3000');
     const interviewRows = interviewsRes.data || [];
     setInterviews(interviewRows);
 
@@ -110,9 +110,9 @@ const InterviewSchedule = () => {
 
     // Step 2: Load supporting data in background (needed for scheduling form only)
     const [applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/applications?limit=300'),
-      apiGet('/candidates?limit=300'),
-      apiGet('/jobs?limit=100'),
+      apiGet('/applications?limit=3000'),
+      apiGet('/candidates?limit=3000'),
+      apiGet('/jobs?limit=500'),
     ]);
     setApplications(applicationsRes.data || []);
     setCandidates(candidatesRes.data || []);
