@@ -107,12 +107,11 @@ router.get(
       const appIds    = [...new Set(paginated.map(iv => iv.applicationId).filter(Boolean))];
       const userIds   = [...new Set(paginated.flatMap(iv => iv.interviewerIds || []).filter(Boolean))];
 
-      // Fetch applications individually (safe, no getAll limit issues)
+      // Fetch applications using getAll
       const appMap = {};
       if (appIds.length > 0) {
-        const appSnaps = await Promise.all(
-          appIds.map(id => firestore.collection("applications").doc(id).get())
-        );
+        const appRefs = appIds.map(id => firestore.collection("applications").doc(id));
+        const appSnaps = await firestore.getAll(...appRefs);
         appSnaps.forEach(snap => { if (snap.exists) appMap[snap.id] = { id: snap.id, ...snap.data() }; });
       }
 
@@ -120,11 +119,15 @@ router.get(
       const candIds = [...new Set(Object.values(appMap).map(a => a.candidateId).filter(Boolean))];
       const jobIds  = [...new Set(Object.values(appMap).map(a => a.jobId).filter(Boolean))];
 
-      // Fetch candidates, jobs, users individually (safe)
+      // Fetch candidates, jobs, users using getAll in parallel
+      const candRefs = candIds.map(id => firestore.collection("candidates").doc(id));
+      const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
+      const userRefs = userIds.map(id => firestore.collection("users").doc(id));
+
       const [candSnaps, jobSnaps, userSnaps] = await Promise.all([
-        Promise.all(candIds.map(id => firestore.collection("candidates").doc(id).get())),
-        Promise.all(jobIds.map(id  => firestore.collection("jobs").doc(id).get())),
-        Promise.all(userIds.map(id => firestore.collection("users").doc(id).get())),
+        candRefs.length > 0 ? firestore.getAll(...candRefs) : Promise.resolve([]),
+        jobRefs.length > 0 ? firestore.getAll(...jobRefs) : Promise.resolve([]),
+        userRefs.length > 0 ? firestore.getAll(...userRefs) : Promise.resolve([]),
       ]);
 
       const candMap = {};

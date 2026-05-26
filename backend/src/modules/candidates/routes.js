@@ -416,13 +416,9 @@ router.get(
         if (fileIds.length > 0) {
           const fileMap = {};
           try {
-            const fileChunks = [];
-            for (let i = 0; i < fileIds.length; i += 30) fileChunks.push(fileIds.slice(i, i + 30));
-
-            await Promise.all(fileChunks.map(async (chunk) => {
-              const snaps = await firestore.collection("fileMetas").where(FieldPath.documentId(), "in", chunk).get();
-              snaps.forEach(fs => { fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
-            }));
+            const fileRefs = fileIds.map(id => firestore.collection("fileMetas").doc(id));
+            const snaps = await firestore.getAll(...fileRefs);
+            snaps.forEach(fs => { if (fs.exists) fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
           } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
 
           paginatedItems.forEach(c => {

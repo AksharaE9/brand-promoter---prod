@@ -1572,7 +1572,7 @@ const InterviewSchedule = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Link (Optional)</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Link</label>
                     <input 
                       type="url" 
                       className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none" 
@@ -1582,7 +1582,7 @@ const InterviewSchedule = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Zoho Link (Optional)</label>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Zoho Link</label>
                     <input 
                       type="url" 
                       className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none" 

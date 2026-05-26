@@ -189,10 +189,14 @@ router.get(
       const jobIds = [...new Set(paginated.map(a => a.jobId))];
       const stageIds = [...new Set(paginated.map(a => a.currentStageId).filter(Boolean))];
 
+      const candRefs = candidateIds.map(id => firestore.collection("candidates").doc(id));
+      const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
+      const stageRefs = stageIds.map(id => firestore.collection("pipeline_stages").doc(id));
+
       const [candSnaps, jobSnaps, stageSnaps] = await Promise.all([
-        Promise.all(candidateIds.map(id => firestore.collection("candidates").doc(id).get())),
-        Promise.all(jobIds.map(id => firestore.collection("jobs").doc(id).get())),
-        Promise.all(stageIds.map(id => firestore.collection("pipeline_stages").doc(id).get()))
+        candRefs.length > 0 ? firestore.getAll(...candRefs) : Promise.resolve([]),
+        jobRefs.length > 0 ? firestore.getAll(...jobRefs) : Promise.resolve([]),
+        stageRefs.length > 0 ? firestore.getAll(...stageRefs) : Promise.resolve([])
       ]);
 
       const candMap = {};

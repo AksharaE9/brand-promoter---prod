@@ -128,7 +128,8 @@ router.get("/members/deleted", requireRoles("SUPER_ADMIN"), asyncHandler(async (
   const adminIds = [...new Set(items.map(u => u.deletedBy).filter(Boolean))];
   const adminMap = {};
   if (adminIds.length > 0) {
-    const adminSnaps = await Promise.all(adminIds.map(id => firestore.collection("users").doc(id).get()));
+    const adminRefs = adminIds.map(id => firestore.collection("users").doc(id));
+    const adminSnaps = await firestore.getAll(...adminRefs);
     adminSnaps.forEach(snap => {
       if (snap.exists) adminMap[snap.id] = snap.data().fullName;
     });
