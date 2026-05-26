@@ -57,11 +57,6 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
         
       if (!existingSnap.empty) {
         results.skipped++;
-        results.errors.push({
-          rowNumber: rawRow._rowIndex || (i + 2),
-          rawData: rawRow,
-          errors: ["Duplicate candidate found with same phone (SKIP)"]
-        });
       } else {
         try {
           // Insertion
