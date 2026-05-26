@@ -24,13 +24,39 @@ const { createRateLimiter, setSecurityHeaders } = require("./middleware/security
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-const allowedOrigin = process.env.CORS_ORIGIN || "*";
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
+  : [];
 
 
 app.use(compression());
 app.use(
   cors({
-    origin: allowedOrigin === "*" ? true : allowedOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      // If '*' is allowed, allow all
+      if (allowedOrigins.includes("*") || allowedOrigins.length === 0) {
+        return callback(null, true);
+      }
+
+      // Check if origin matches allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow vercel preview apps and localhost
+      if (
+        origin.endsWith(".vercel.app") ||
+        /^https:\/\/brand-promoter-prod-.*\.vercel\.app$/.test(origin) ||
+        /^http:\/\/localhost:\d+$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      callback(null, false);
+    },
     credentials: true,
     methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

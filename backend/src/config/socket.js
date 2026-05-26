@@ -5,7 +5,23 @@ let io;
 const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: (origin, callback) => {
+        const allowedOrigins = process.env.CORS_ORIGIN
+          ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+          : [];
+        if (
+          !origin ||
+          allowedOrigins.includes('*') ||
+          allowedOrigins.length === 0 ||
+          allowedOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          /^https:\/\/brand-promoter-prod-.*\.vercel\.app$/.test(origin) ||
+          /^http:\/\/localhost:\d+$/.test(origin)
+        ) {
+          return callback(null, true);
+        }
+        callback(null, false);
+      },
       methods: ['GET', 'POST'],
     },
   });
