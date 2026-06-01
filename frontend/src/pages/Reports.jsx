@@ -69,32 +69,37 @@ const Reports = () => {
   useEffect(() => {
     const loadBaselines = async () => {
       try {
-        const [usersRes, stagesRes, candsRes] = await Promise.all([
+        const [usersRes, stagesRes] = await Promise.all([
           apiGet('/users'),
-          apiGet('/pipeline/stages'), // fallback if stages api doesn't exist
-          apiGet('/candidates?limit=1000')
+          apiGet('/pipeline/stages')
         ]);
         
         if (usersRes.success && Array.isArray(usersRes.data)) {
           setRecruiters(usersRes.data.filter(u => u.role === 'RECRUITER'));
         }
 
-        // Parse stage counts from candidates
-        if (candsRes.success && Array.isArray(candsRes.data)) {
-          const counts = {};
-          const uniqueStages = new Set();
-          
-          candsRes.data.forEach(c => {
-            const app = c.applications?.[0];
-            const sName = app?.currentStage?.name || 'Pool';
-            counts[sName] = (counts[sName] || 0) + 1;
-            if (app?.currentStage) {
-              uniqueStages.add(JSON.stringify({ id: app.currentStageId, name: sName }));
-            }
-          });
+        if (stagesRes.success && Array.isArray(stagesRes.data)) {
+          setStages(stagesRes.data);
 
-          setStageCounts(counts);
-          setStages(Array.from(uniqueStages).map(s => JSON.parse(s)));
+          // Fetch stage counts from cached dashboard stats
+          const dashRes = await apiGet('/dashboard/init');
+          if (dashRes.success && dashRes.data) {
+            const counts = {};
+            stagesRes.data.forEach(s => {
+              counts[s.name] = 0;
+            });
+            counts['Pool'] = dashRes.data.candidateCount || 0;
+
+            if (Array.isArray(dashRes.data.stageCounts)) {
+              dashRes.data.stageCounts.forEach(sc => {
+                const match = stagesRes.data.find(s => s.id === sc.id);
+                if (match) {
+                  counts[match.name] = sc.count;
+                }
+              });
+            }
+            setStageCounts(counts);
+          }
         }
       } catch (err) {
         console.error(err);

@@ -2,6 +2,7 @@ const express = require("express");
 const { db: firestore } = require("../../config/firebase");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
+const { getCached } = require("../../utils/cache");
 
 const router = express.Router();
 router.use(auth);
@@ -39,77 +40,81 @@ function getPeriod(req) {
   return { start, end, prevStart, prevEnd };
 }
 
+// Helper to get active users (cached 60s)
+async function getUsersList() {
+  return getCached("users_list_analytics", async () => {
+    const snapshot = await firestore.collection("users").get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }, 60000);
+}
+
 // 1. GET /api/analytics/overview
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    firestore.collection("applications").get(),
-    firestore.collection("interviews").get()
-  ]);
+  const cacheKey = `analytics_overview_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
-  const candidates = candidatesSnap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
+  const data = await getCached(cacheKey, async () => {
+    const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+      firestore.collection("interviews").where("organizationId", "==", myOrg).get()
+    ]);
 
-  const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-  const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
+    const candidates = candidatesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.isDeleted !== true);
 
-  const filterByDate = (list, dateKey, s, e) => {
-    return list.filter(item => {
-      const dateStr = item[dateKey];
-      if (!dateStr) return false;
-      const d = new Date(dateStr);
-      return d >= s && d <= e;
-    });
-  };
+    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
+    const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
 
-  const currCands = filterByDate(candidates, "createdAt", start, end);
-  const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
+    const filterByDate = (list, dateKey, s, e) => {
+      return list.filter(item => {
+        const dateStr = item[dateKey];
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= s && d <= e;
+      });
+    };
 
-  const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
-  const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
+    const currCands = filterByDate(candidates, "createdAt", start, end);
+    const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
 
-  // Active is when status is not rejected/joined
-  const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
-  
-  // Count offers, joined, rejected based on the date the status change occurred (updatedAt || createdAt)
-  const currOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const prevOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
+    const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
+    const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
 
-  const currJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const prevJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
+    const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
+    
+    const currOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+    const prevOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
 
-  const currRejected = apps.filter(a => a.status === "REJECTED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+    const currJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+    const prevJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
 
-  // Monthly interviews count
-  const thisMonthStart = new Date();
-  thisMonthStart.setDate(1);
-  thisMonthStart.setHours(0,0,0,0);
-  const completedThisMonth = interviews.filter(i => {
-    const d = new Date(i.scheduledStart || i.createdAt || 0);
-    return d >= thisMonthStart && (i.status === "COMPLETED" || i.outcome === "COMPLETED");
-  }).length;
+    const currRejected = apps.filter(a => a.status === "REJECTED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
 
-  // Offer Acceptance Rate
-  const offersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const offerRate = currOffers > 0 ? Math.round((offersAccepted / currOffers) * 100) : 0;
-  const prevOffersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
-  const prevOfferRate = prevOffers > 0 ? Math.round((prevOffersAccepted / prevOffers) * 100) : 0;
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    thisMonthStart.setHours(0,0,0,0);
+    const completedThisMonth = interviews.filter(i => {
+      const d = new Date(i.scheduledStart || i.createdAt || 0);
+      return d >= thisMonthStart && (i.status === "COMPLETED" || i.outcome === "COMPLETED");
+    }).length;
 
-  // Mock Average Time to Hire
-  const avgTimeToHire = 21.4;
+    const offersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+    const offerRate = currOffers > 0 ? Math.round((offersAccepted / currOffers) * 100) : 0;
+    const prevOffersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
+    const prevOfferRate = prevOffers > 0 ? Math.round((prevOffersAccepted / prevOffers) * 100) : 0;
 
-  const getPct = (c, p) => {
-    if (p === 0) return c > 0 ? 100 : 0;
-    return Math.round(((c - p) / p) * 100);
-  };
+    const avgTimeToHire = 21.4;
 
-  res.json({
-    success: true,
-    data: {
+    const getPct = (c, p) => {
+      if (p === 0) return c > 0 ? 100 : 0;
+      return Math.round(((c - p) / p) * 100);
+    };
+
+    return {
       metrics: {
         totalCandidates: currCands.length,
         activeCandidates: activeCount,
@@ -124,61 +129,70 @@ router.get("/overview", asyncHandler(async (req, res) => {
       },
       trends: {
         totalCandidates: getPct(currCands.length, prevCands.length),
-        activeCandidates: getPct(activeCount, activeCount), // stable
+        activeCandidates: getPct(activeCount, activeCount),
         offersExtended: getPct(currOffers, prevOffers),
-        offerAcceptanceRate: offerRate - prevOfferRate, // absolute difference
-        averageTimeToHireDays: -2.1, // improved by 2 days
+        offerAcceptanceRate: offerRate - prevOfferRate,
+        averageTimeToHireDays: -2.1,
         interviewsThisMonth: getPct(currInterviews.length, prevInterviews.length)
       }
-    }
-  });
+    };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 2. GET /api/analytics/pipeline
 router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    firestore.collection("applications").get(),
-    firestore.collection("pipeline_stages").get()
-  ]);
 
-  const candidates = candidatesSnap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
-  const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-  const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const cacheKey = `analytics_pipeline_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
-  const stageMap = {};
-  stages.forEach(s => {
-    stageMap[s.id] = (s.name || "").toLowerCase();
-  });
+  const data = await getCached(cacheKey, async () => {
+    const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+      firestore.collection("pipeline_stages").get()
+    ]);
 
-  const currCands = candidates.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const candidates = candidatesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.isDeleted !== true);
+    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
+    const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const filteredApps = apps.filter(a => {
-    const d = new Date(a.updatedAt || a.createdAt);
-    return d >= start && d <= end;
-  });
+    const stageMap = {};
+    stages.forEach(s => {
+      stageMap[s.id] = (s.name || "").toLowerCase();
+    });
 
-  const screenedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
-  const interviewedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
-  const offeredCount = filteredApps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) || (stageMap[a.currentStageId] || "").includes("offer")).length;
-  const joinedCount = filteredApps.filter(a => a.status === 'JOINED' || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
+    const currCands = candidates.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  const funnel = [
-    { stage: 'APPLIED', label: 'Applied', count: currCands.length, percentage: 100 },
-    { stage: 'SCREENING', label: 'Screened', count: screenedCount, percentage: currCands.length > 0 ? Math.round((screenedCount / currCands.length) * 100) : 0 },
-    { stage: 'INTERVIEW', label: 'Interviewed', count: interviewedCount, percentage: currCands.length > 0 ? Math.round((interviewedCount / currCands.length) * 100) : 0 },
-    { stage: 'OFFER_SENT', label: 'Offered', count: offeredCount, percentage: currCands.length > 0 ? Math.round((offeredCount / currCands.length) * 100) : 0 },
-    { stage: 'JOINED', label: 'Joined', count: joinedCount, percentage: currCands.length > 0 ? Math.round((joinedCount / currCands.length) * 100) : 0 }
-  ];
+    const filteredApps = apps.filter(a => {
+      const d = new Date(a.updatedAt || a.createdAt);
+      return d >= start && d <= end;
+    });
 
-  res.json({ success: true, data: { funnel } });
+    const screenedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
+    const interviewedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
+    const offeredCount = filteredApps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) || (stageMap[a.currentStageId] || "").includes("offer")).length;
+    const joinedCount = filteredApps.filter(a => a.status === 'JOINED' || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
+
+    const funnel = [
+      { stage: 'APPLIED', label: 'Applied', count: currCands.length, percentage: 100 },
+      { stage: 'SCREENING', label: 'Screened', count: screenedCount, percentage: currCands.length > 0 ? Math.round((screenedCount / currCands.length) * 100) : 0 },
+      { stage: 'INTERVIEW', label: 'Interviewed', count: interviewedCount, percentage: currCands.length > 0 ? Math.round((interviewedCount / currCands.length) * 100) : 0 },
+      { stage: 'OFFER_SENT', label: 'Offered', count: offeredCount, percentage: currCands.length > 0 ? Math.round((offeredCount / currCands.length) * 100) : 0 },
+      { stage: 'JOINED', label: 'Joined', count: joinedCount, percentage: currCands.length > 0 ? Math.round((joinedCount / currCands.length) * 100) : 0 }
+    ];
+
+    return { funnel };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 3. GET /api/analytics/hiring-velocity
@@ -200,241 +214,270 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 
 // 4. GET /api/analytics/interviewer-load
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
-  const [interviewsSnap, usersSnap] = await Promise.all([
-    firestore.collection("interviews").get(),
-    firestore.collection("users").get()
-  ]);
+  const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_interviewer_load_${myOrg}`;
 
-  const interviewers = usersSnap.docs
-    .map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER") && u.isDeleted !== true);
+  const data = await getCached(cacheKey, async () => {
+    const [interviewsSnap, users] = await Promise.all([
+      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
+      getUsersList()
+    ]);
 
-  const load = interviewers.map((int, idx) => {
-    const list = interviewsSnap.docs.map(doc => doc.data()).filter(i => i.interviewerId === int.id);
-    
-    const weeklyLoad = [
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 1; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 2; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 3; }).length,
-    ];
+    const interviewers = users
+      .filter(u => (u.organizationId || "defaultOrg") === myOrg)
+      .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER") && u.isDeleted !== true);
 
-    return {
-      userId: int.id,
-      name: int.fullName,
-      userType: int.userType || "TECHNICAL",
-      totalInterviews: list.length,
-      completedInterviews: list.filter(i => i.status === "COMPLETED" || i.outcome === "COMPLETED").length,
-      cancelledInterviews: list.filter(i => i.status === "CANCELLED").length,
-      averageRating: parseFloat((4.2 + (idx * 0.1) % 0.8).toFixed(1)),
-      interviewsThisWeek: weeklyLoad[3],
-      interviewsThisMonth: list.length,
-      weeklyLoad
-    };
-  });
+    const load = interviewers.map((int, idx) => {
+      const list = interviewsSnap.docs.map(doc => doc.data()).filter(i => i.interviewerId === int.id);
+      
+      const weeklyLoad = [
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 1; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 2; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 3; }).length,
+      ];
 
-  res.json({ success: true, data: { interviewers: load } });
+      return {
+        userId: int.id,
+        name: int.fullName,
+        userType: int.userType || "TECHNICAL",
+        totalInterviews: list.length,
+        completedInterviews: list.filter(i => i.status === "COMPLETED" || i.outcome === "COMPLETED").length,
+        cancelledInterviews: list.filter(i => i.status === "CANCELLED").length,
+        averageRating: parseFloat((4.2 + (idx * 0.1) % 0.8).toFixed(1)),
+        interviewsThisWeek: weeklyLoad[3],
+        interviewsThisMonth: list.length,
+        weeklyLoad
+      };
+    });
+
+    return { interviewers: load };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 5. GET /api/analytics/recruiter-performance
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
-  const [candidatesSnap, appsSnap, usersSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    firestore.collection("applications").get(),
-    firestore.collection("users").get()
-  ]);
+  const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_recruiter_performance_${myOrg}`;
 
-  const recruiters = usersSnap.docs
-    .map(doc => ({ id: doc.id, ...doc.data() }))
-    .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
+  const data = await getCached(cacheKey, async () => {
+    const [candidatesSnap, appsSnap, users] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+      getUsersList()
+    ]);
 
-  const performance = recruiters.map((rec, idx) => {
-    const cands = candidatesSnap.docs.map(doc => doc.data()).filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
-    const recApps = appsSnap.docs.map(doc => doc.data()).filter(a => cands.some(c => c.fullName === a.candidateName || c.id === a.candidateId));
+    const recruiters = users
+      .filter(u => (u.organizationId || "defaultOrg") === myOrg)
+      .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
 
-    const totalHandled = cands.length;
-    const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
-    const joined = recApps.filter(a => a.status === "JOINED").length;
-    const rejected = recApps.filter(a => a.status === "REJECTED").length;
+    const performance = recruiters.map((rec, idx) => {
+      const cands = candidatesSnap.docs.map(doc => doc.data()).filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
+      const recApps = appsSnap.docs.map(doc => doc.data()).filter(a => cands.some(c => c.fullName === a.candidateName || c.id === a.candidateId));
 
-    return {
-      userId: rec.id,
-      name: rec.fullName,
-      userType: rec.userType || "TECHNICAL",
-      totalCandidatesHandled: totalHandled,
-      activeCandidates: active,
-      candidatesJoined: joined,
-      candidatesRejected: rejected,
-      offerConversionRate: parseFloat((totalHandled > 0 ? (joined / totalHandled) * 100 : 0.0).toFixed(1)),
-      averageDaysToClose: parseFloat((totalHandled > 0 ? 15.4 + (idx * 0.1) % 5 : 0.0).toFixed(1))
-    };
-  });
+      const totalHandled = cands.length;
+      const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
+      const joined = recApps.filter(a => a.status === "JOINED").length;
+      const rejected = recApps.filter(a => a.status === "REJECTED").length;
 
-  res.json({ success: true, data: { recruiters: performance } });
+      return {
+        userId: rec.id,
+        name: rec.fullName,
+        userType: rec.userType || "TECHNICAL",
+        totalCandidatesHandled: totalHandled,
+        activeCandidates: active,
+        candidatesJoined: joined,
+        candidatesRejected: rejected,
+        offerConversionRate: parseFloat((totalHandled > 0 ? (joined / totalHandled) * 100 : 0.0).toFixed(1)),
+        averageDaysToClose: parseFloat((totalHandled > 0 ? 15.4 + (idx * 0.1) % 5 : 0.0).toFixed(1))
+      };
+    });
+
+    return { recruiters: performance };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 6. GET /api/analytics/source-analysis
 router.get("/source-analysis", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const snapshot = await firestore.collection("candidates").get();
+  const cacheKey = `analytics_source_analysis_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
-  const cands = snapshot.docs
-    .map(d => d.data())
-    .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
+  const data = await getCached(cacheKey, async () => {
+    const snapshot = await firestore.collection("candidates").where("organizationId", "==", myOrg).get();
 
-  const currCands = cands.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const cands = snapshot.docs
+      .map(d => d.data())
+      .filter(c => c.isDeleted !== true);
 
-  const sourcesMap = {
-    "Direct": 0,
-    "Referral": 0,
-    "College Drive": 0,
-    "Bulk Upload": 0,
-    "Manual": 0
-  };
+    const currCands = cands.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  currCands.forEach(c => {
-    const s = c.source || "Direct";
-    if (s.includes("Referral")) sourcesMap["Referral"]++;
-    else if (s.includes("Drive") || s.includes("College")) sourcesMap["College Drive"]++;
-    else if (s.includes("Bulk") || s.includes("Excel")) sourcesMap["Bulk Upload"]++;
-    else if (s.includes("Manual")) sourcesMap["Manual"]++;
-    else sourcesMap["Direct"]++;
-  });
-
-  const total = currCands.length;
-  const sources = Object.keys(sourcesMap).map(name => {
-    const count = sourcesMap[name];
-    return {
-      source: name,
-      count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0,
-      conversionRate: name === "Referral" ? 22.4 : name === "Direct" ? 12.8 : 10.5
+    const sourcesMap = {
+      "Direct": 0,
+      "Referral": 0,
+      "College Drive": 0,
+      "Bulk Upload": 0,
+      "Manual": 0
     };
-  });
 
-  res.json({ success: true, data: { sources, total } });
+    currCands.forEach(c => {
+      const s = c.source || "Direct";
+      if (s.includes("Referral")) sourcesMap["Referral"]++;
+      else if (s.includes("Drive") || s.includes("College")) sourcesMap["College Drive"]++;
+      else if (s.includes("Bulk") || s.includes("Excel")) sourcesMap["Bulk Upload"]++;
+      else if (s.includes("Manual")) sourcesMap["Manual"]++;
+      else sourcesMap["Direct"]++;
+    });
+
+    const total = currCands.length;
+    const sources = Object.keys(sourcesMap).map(name => {
+      const count = sourcesMap[name];
+      return {
+        source: name,
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+        conversionRate: name === "Referral" ? 22.4 : name === "Direct" ? 12.8 : 10.5
+      };
+    });
+
+    return { sources, total };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 7. GET /api/analytics/stage-conversion
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    firestore.collection("applications").get(),
-    firestore.collection("pipeline_stages").get()
-  ]);
+  const cacheKey = `analytics_stage_conversion_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
-  const candidates = candidatesSnap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
-  const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-  const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const data = await getCached(cacheKey, async () => {
+    const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+      firestore.collection("pipeline_stages").get()
+    ]);
 
-  const stageMap = {};
-  stages.forEach(s => {
-    stageMap[s.id] = (s.name || "").toLowerCase();
-  });
+    const candidates = candidatesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.isDeleted !== true);
+    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
+    const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  const currCands = candidates.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const stageMap = {};
+    stages.forEach(s => {
+      stageMap[s.id] = (s.name || "").toLowerCase();
+    });
 
-  const filteredApps = apps.filter(a => {
-    const d = new Date(a.updatedAt || a.createdAt);
-    return d >= start && d <= end;
-  });
+    const currCands = candidates.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  const appliedCount = currCands.length;
-  const screeningCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
-  const interviewCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
-  const offerCount = filteredApps.filter(a => a.status === "OFFER_SENT" || a.status === "OFFER" || a.status === "SELECTED" || (stageMap[a.currentStageId] || "").includes("offer")).length;
-  const joinedCount = filteredApps.filter(a => a.status === "JOINED" || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
+    const filteredApps = apps.filter(a => {
+      const d = new Date(a.updatedAt || a.createdAt);
+      return d >= start && d <= end;
+    });
 
-  const stagesData = [
-    { stage: "Applied", count: appliedCount, color: "#1f52cc" },
-    { stage: "Screening", count: screeningCount, color: "#3262db" },
-    { stage: "Interview", count: interviewCount, color: "#4f7ff3" },
-    { stage: "Offer Sent", count: offerCount, color: "#a5bffa" },
-    { stage: "Joined", count: joinedCount, color: "#22c55e" }
-  ];
+    const appliedCount = currCands.length;
+    const screeningCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
+    const interviewCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
+    const offerCount = filteredApps.filter(a => a.status === "OFFER_SENT" || a.status === "OFFER" || a.status === "SELECTED" || (stageMap[a.currentStageId] || "").includes("offer")).length;
+    const joinedCount = filteredApps.filter(a => a.status === "JOINED" || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
 
-  const conversions = [];
-  for (let i = 0; i < stagesData.length - 1; i++) {
-    const curr = stagesData[i].count;
-    const next = stagesData[i + 1].count;
-    const conv = curr > 0 ? parseFloat(((next / curr) * 100).toFixed(1)) : 0.0;
-    conversions.push(conv);
-  }
+    const stagesData = [
+      { stage: "Applied", count: appliedCount, color: "#1f52cc" },
+      { stage: "Screening", count: screeningCount, color: "#3262db" },
+      { stage: "Interview", count: interviewCount, color: "#4f7ff3" },
+      { stage: "Offer Sent", count: offerCount, color: "#a5bffa" },
+      { stage: "Joined", count: joinedCount, color: "#22c55e" }
+    ];
 
-  res.json({
-    success: true,
-    data: {
+    const conversions = [];
+    for (let i = 0; i < stagesData.length - 1; i++) {
+      const curr = stagesData[i].count;
+      const next = stagesData[i + 1].count;
+      const conv = curr > 0 ? parseFloat(((next / curr) * 100).toFixed(1)) : 0.0;
+      conversions.push(conv);
+    }
+
+    return {
       stages: stagesData,
       conversions
-    }
-  });
+    };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 // 8. GET /api/analytics/monthly-trends
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    firestore.collection("applications").get(),
-    firestore.collection("interviews").get()
-  ]);
+  const cacheKey = `analytics_monthly_trends_${myOrg}`;
 
-  const candidates = candidatesSnap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .filter(c => c.isDeleted !== true && (c.organizationId || "defaultOrg") === myOrg);
-  const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-  const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
+  const data = await getCached(cacheKey, async () => {
+    const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+      firestore.collection("interviews").where("organizationId", "==", myOrg).get()
+    ]);
 
-  const months = [];
-  const now = new Date();
-  
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthName = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
-    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
-    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+    const candidates = candidatesSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.isDeleted !== true);
+    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
+    const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
 
-    const candsAdded = candidates.filter(c => {
-      const cd = new Date(c.createdAt);
-      return cd >= startOfMonth && cd <= endOfMonth;
-    }).length;
+    const months = [];
+    const now = new Date();
+    
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthName = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
+      const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+      const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
 
-    const intsSched = interviews.filter(int => {
-      const id = new Date(int.scheduledStart || int.createdAt);
-      return id >= startOfMonth && id <= endOfMonth;
-    }).length;
+      const candsAdded = candidates.filter(c => {
+        const cd = new Date(c.createdAt);
+        return cd >= startOfMonth && cd <= endOfMonth;
+      }).length;
 
-    const offersExt = apps.filter(a => {
-      const ad = new Date(a.createdAt || a.updatedAt);
-      return (a.status === "OFFER_SENT" || a.status === "OFFER") && ad >= startOfMonth && ad <= endOfMonth;
-    }).length;
+      const intsSched = interviews.filter(int => {
+        const id = new Date(int.scheduledStart || int.createdAt);
+        return id >= startOfMonth && id <= endOfMonth;
+      }).length;
 
-    const candsJoined = apps.filter(a => {
-      const ad = new Date(a.createdAt || a.updatedAt);
-      return a.status === "JOINED" && ad >= startOfMonth && ad <= endOfMonth;
-    }).length;
+      const offersExt = apps.filter(a => {
+        const ad = new Date(a.createdAt || a.updatedAt);
+        return (a.status === "OFFER_SENT" || a.status === "OFFER") && ad >= startOfMonth && ad <= endOfMonth;
+      }).length;
 
-    months.push({
-      month: monthName,
-      candidatesAdded: candsAdded,
-      interviewsScheduled: intsSched,
-      offersExtended: offersExt,
-      candidatesJoined: candsJoined
-    });
-  }
+      const candsJoined = apps.filter(a => {
+        const ad = new Date(a.createdAt || a.updatedAt);
+        return a.status === "JOINED" && ad >= startOfMonth && ad <= endOfMonth;
+      }).length;
 
-  res.json({ success: true, data: { months } });
+      months.push({
+        month: monthName,
+        candidatesAdded: candsAdded,
+        interviewsScheduled: intsSched,
+        offersExtended: offersExt,
+        candidatesJoined: candsJoined
+      });
+    }
+
+    return { months };
+  }, 30000);
+
+  res.json({ success: true, data });
 }));
 
 module.exports = router;

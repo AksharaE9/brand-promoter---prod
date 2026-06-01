@@ -134,15 +134,11 @@ const Team = () => {
     setDeletingActiveCandidatesCount(0);
     setIsDeletingLoading(false);
 
-    // Fetch active candidates count for this recruiter
+    // Fetch active candidates count for this recruiter via fast endpoint
     try {
-      const candidatesRes = await apiGet('/candidates?limit=1000');
-      if (candidatesRes.success && Array.isArray(candidatesRes.data)) {
-        const count = candidatesRes.data.filter(c => 
-          (c.assignedRecruiterId === member.id || c.createdById === member.id || c.mentorId === member.id) &&
-          !['REJECTED', 'JOINED', 'OFFER_DECLINED'].includes(c.status)
-        ).length;
-        setDeletingActiveCandidatesCount(count);
+      const res = await apiGet(`/team/members/${member.id}/active-candidates-count`);
+      if (res.success) {
+        setDeletingActiveCandidatesCount(res.count);
       }
     } catch (err) {
       console.error("Failed to check active candidates:", err);

@@ -502,9 +502,13 @@ router.patch(
     if (!doc.exists) throw new ApiError(404, "Candidate not found");
 
     if (data.phone) {
-      const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
-      if (!existingPhone.empty && existingPhone.docs[0].id !== id) {
-        throw new ApiError(409, "A candidate with this phone number already exists.");
+      const currentPhoneClean = (doc.data().phone || "").replace(/\D/g, "");
+      const newPhoneClean = data.phone.replace(/\D/g, "");
+      if (currentPhoneClean !== newPhoneClean) {
+        const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
+        if (!existingPhone.empty && existingPhone.docs[0].id !== id) {
+          throw new ApiError(409, "A candidate with this phone number already exists.");
+        }
       }
     }
 

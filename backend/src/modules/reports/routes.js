@@ -5,28 +5,33 @@ const { stringify } = require("csv-stringify/sync");
 const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
+const { getCached } = require("../../utils/cache");
 
 const router = express.Router();
 router.use(auth);
 
-// Helper to get all users
+// Helper to get all users (cached 60s)
 async function getUsersMap() {
-  const snapshot = await firestore.collection("users").get();
-  const map = {};
-  snapshot.docs.forEach(doc => {
-    map[doc.id] = { id: doc.id, ...doc.data() };
-  });
-  return map;
+  return getCached("users_map_reports", async () => {
+    const snapshot = await firestore.collection("users").get();
+    const map = {};
+    snapshot.docs.forEach(doc => {
+      map[doc.id] = { id: doc.id, ...doc.data() };
+    });
+    return map;
+  }, 60000);
 }
 
-// Helper to get all stages
+// Helper to get all stages (cached 60s)
 async function getStagesMap() {
-  const snapshot = await firestore.collection("pipeline_stages").get();
-  const map = {};
-  snapshot.docs.forEach(doc => {
-    map[doc.id] = { id: doc.id, ...doc.data() };
-  });
-  return map;
+  return getCached("stages_map_reports", async () => {
+    const snapshot = await firestore.collection("pipeline_stages").get();
+    const map = {};
+    snapshot.docs.forEach(doc => {
+      map[doc.id] = { id: doc.id, ...doc.data() };
+    });
+    return map;
+  }, 60000);
 }
 
 async function buildRecruiterActivity() {
@@ -99,73 +104,76 @@ router.get("/candidates", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const { role, recruiterId, createdFrom, createdTo, stage, source, sortBy, sortOrder = 'asc' } = req.query;
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [candidatesSnap, usersMap, stagesMap, appsSnap] = await Promise.all([
-    firestore.collection("candidates").get(),
-    getUsersMap(),
-    getStagesMap(),
-    firestore.collection("applications").get()
-  ]);
+  const cacheKey = `reports_candidates_${myOrg}_${role || ""}_${recruiterId || ""}_${createdFrom || ""}_${createdTo || ""}_${sortBy || ""}_${sortOrder}_${JSON.stringify(stage || "")}_${JSON.stringify(source || "")}`;
 
-  // Map candidates
-  let items = candidatesSnap.docs.map(doc => {
-    const c = doc.data();
-    if (c.isDeleted === true) return null;
-    const id = doc.id;
-    // Find recruiter
-    const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
-    const recruiter = usersMap[recId] || null;
-    // Find application
-    const app = appsSnap.docs.map(d => ({ id: d.id, ...d.data() })).find(a => a.candidateId === id) || null;
-    const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
+  const items = await getCached(cacheKey, async () => {
+    const [candidatesSnap, usersMap, stagesMap, appsSnap] = await Promise.all([
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+      getUsersMap(),
+      getStagesMap(),
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get())
+    ]);
 
-    return {
-      id,
-      fullName: c.fullName,
-      email: c.email || "N/A",
-      phone: c.phone || "N/A",
-      source: c.source || "Direct",
-      createdAt: c.createdAt,
-      status: c.status || "ACTIVE",
-      organizationId: c.organizationId || "defaultOrg",
-      recruiterName: recruiter ? recruiter.fullName : "System",
-      recruiterType: recruiter ? recruiter.userType : "N/A",
-      recruiterId: recId || null,
-      stageId: app ? app.currentStageId : null,
-      stageName: currentStage ? currentStage.name : "Pool"
-    };
-  }).filter(Boolean);
+    // Map candidates
+    let result = candidatesSnap.docs.map(doc => {
+      const c = doc.data();
+      if (c.isDeleted === true) return null;
+      const id = doc.id;
+      // Find recruiter
+      const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
+      const recruiter = usersMap[recId] || null;
+      // Find application
+      const app = appsSnap.docs.map(d => ({ id: d.id, ...d.data() })).find(a => a.candidateId === id) || null;
+      const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
 
-  // Filter organization
-  items = items.filter(c => c.organizationId === myOrg);
+      return {
+        id,
+        fullName: c.fullName,
+        email: c.email || "N/A",
+        phone: c.phone || "N/A",
+        source: c.source || "Direct",
+        createdAt: c.createdAt,
+        status: c.status || "ACTIVE",
+        organizationId: c.organizationId || "defaultOrg",
+        recruiterName: recruiter ? recruiter.fullName : "System",
+        recruiterType: recruiter ? recruiter.userType : "N/A",
+        recruiterId: recId || null,
+        stageId: app ? app.currentStageId : null,
+        stageName: currentStage ? currentStage.name : "Pool"
+      };
+    }).filter(Boolean);
 
-  // Apply filters
-  if (role) items = items.filter(c => c.recruiterType === role);
-  if (recruiterId) items = items.filter(c => c.recruiterId === recruiterId);
-  if (createdFrom) items = items.filter(c => new Date(c.createdAt) >= new Date(createdFrom));
-  if (createdTo) items = items.filter(c => new Date(c.createdAt) <= new Date(createdTo));
-  if (stage) {
-    const stagesArray = Array.isArray(stage) ? stage : [stage];
-    items = items.filter(c => stagesArray.includes(c.stageId) || stagesArray.includes(c.stageName));
-  }
-  if (source) {
-    const sourcesArray = Array.isArray(source) ? source : [source];
-    items = items.filter(c => sourcesArray.includes(c.source));
-  }
+    // Apply filters
+    if (role) result = result.filter(c => c.recruiterType === role);
+    if (recruiterId) result = result.filter(c => c.recruiterId === recruiterId);
+    if (createdFrom) result = result.filter(c => new Date(c.createdAt) >= new Date(createdFrom));
+    if (createdTo) result = result.filter(c => new Date(c.createdAt) <= new Date(createdTo));
+    if (stage) {
+      const stagesArray = Array.isArray(stage) ? stage : [stage];
+      result = result.filter(c => stagesArray.includes(c.stageId) || stagesArray.includes(c.stageName));
+    }
+    if (source) {
+      const sourcesArray = Array.isArray(source) ? source : [source];
+      result = result.filter(c => sourcesArray.includes(c.source));
+    }
 
-  // Sorting
-  if (sortBy) {
-    items.sort((a, b) => {
-      let av = a[sortBy] || '';
-      let bv = b[sortBy] || '';
-      if (sortBy === 'createdAt') {
-        av = new Date(av);
-        bv = new Date(bv);
-      }
-      if (av < bv) return sortOrder === 'desc' ? 1 : -1;
-      if (av > bv) return sortOrder === 'desc' ? -1 : 1;
-      return 0;
-    });
-  }
+    // Sorting
+    if (sortBy) {
+      result.sort((a, b) => {
+        let av = a[sortBy] || '';
+        let bv = b[sortBy] || '';
+        if (sortBy === 'createdAt') {
+          av = new Date(av);
+          bv = new Date(bv);
+        }
+        if (av < bv) return sortOrder === 'desc' ? 1 : -1;
+        if (av > bv) return sortOrder === 'desc' ? -1 : 1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, 30000);
 
   res.json({ success: true, data: items });
 }));
@@ -175,44 +183,47 @@ router.get("/interviews", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const { interviewerRole, scheduledFrom, scheduledTo, mode, outcome } = req.query;
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [interviewsSnap, usersMap, candidatesSnap] = await Promise.all([
-    firestore.collection("interviews").get(),
-    getUsersMap(),
-    firestore.collection("candidates").get()
-  ]);
+  const cacheKey = `reports_interviews_${myOrg}_${interviewerRole || ""}_${scheduledFrom || ""}_${scheduledTo || ""}_${mode || ""}_${outcome || ""}`;
 
-  const candidatesMap = {};
-  candidatesSnap.docs.forEach(doc => {
-    candidatesMap[doc.id] = doc.data();
-  });
+  const items = await getCached(cacheKey, async () => {
+    const [interviewsSnap, usersMap, candidatesSnap] = await Promise.all([
+      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
+      getUsersMap(),
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get()
+    ]);
 
-  let items = interviewsSnap.docs.map(doc => {
-    const data = doc.data();
-    const interviewer = usersMap[data.interviewerId] || null;
-    const candidate = candidatesMap[data.candidateId] || null;
+    const candidatesMap = {};
+    candidatesSnap.docs.forEach(doc => {
+      candidatesMap[doc.id] = doc.data();
+    });
 
-    return {
-      id: doc.id,
-      candidateName: candidate ? candidate.fullName : "Unknown Candidate",
-      interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
-      interviewerType: interviewer ? interviewer.userType : "N/A",
-      interviewerId: data.interviewerId || null,
-      scheduledStart: data.scheduledStart,
-      mode: data.mode || "ONLINE",
-      outcome: data.status || "SCHEDULED",
-      organizationId: data.organizationId || "defaultOrg"
-    };
-  });
+    let result = interviewsSnap.docs.map(doc => {
+      const data = doc.data();
+      const interviewer = usersMap[data.interviewerId] || null;
+      const candidate = candidatesMap[data.candidateId] || null;
 
-  // Filter organization
-  items = items.filter(i => i.organizationId === myOrg);
+      return {
+        id: doc.id,
+        candidateName: candidate ? candidate.fullName : "Unknown Candidate",
+        interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
+        interviewerType: interviewer ? interviewer.userType : "N/A",
+        interviewerId: data.interviewerId || null,
+        scheduledStart: data.scheduledStart,
+        mode: data.mode || "ONLINE",
+        outcome: data.status || "SCHEDULED",
+        organizationId: data.organizationId || "defaultOrg"
+      };
+    });
 
-  // Apply filters
-  if (interviewerRole) items = items.filter(i => i.interviewerType === interviewerRole);
-  if (scheduledFrom) items = items.filter(i => new Date(i.scheduledStart) >= new Date(scheduledFrom));
-  if (scheduledTo) items = items.filter(i => new Date(i.scheduledStart) <= new Date(scheduledTo));
-  if (mode) items = items.filter(i => i.mode === mode);
-  if (outcome) items = items.filter(i => i.outcome === outcome);
+    // Apply filters
+    if (interviewerRole) result = result.filter(i => i.interviewerType === interviewerRole);
+    if (scheduledFrom) result = result.filter(i => new Date(i.scheduledStart) >= new Date(scheduledFrom));
+    if (scheduledTo) result = result.filter(i => new Date(i.scheduledStart) <= new Date(scheduledTo));
+    if (mode) result = result.filter(i => i.mode === mode);
+    if (outcome) result = result.filter(i => i.outcome === outcome);
+
+    return result;
+  }, 30000);
 
   res.json({ success: true, data: items });
 }));
@@ -248,10 +259,10 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
   if (reportType === "candidates") {
     filename = `candidates_report_${Date.now()}`;
     const [candidatesSnap, usersMap, stagesMap, appsSnap] = await Promise.all([
-      firestore.collection("candidates").get(),
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
       getUsersMap(),
       getStagesMap(),
-      firestore.collection("applications").get()
+      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get())
     ]);
     
     data = candidatesSnap.docs.map(doc => {
@@ -303,9 +314,9 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
   } else if (reportType === "interviews") {
     filename = `interviews_report_${Date.now()}`;
     const [interviewsSnap, usersMap, candidatesSnap] = await Promise.all([
-      firestore.collection("interviews").get(),
+      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
       getUsersMap(),
-      firestore.collection("candidates").get()
+      firestore.collection("candidates").where("organizationId", "==", myOrg).get()
     ]);
     const candidatesMap = {};
     candidatesSnap.docs.forEach(doc => {

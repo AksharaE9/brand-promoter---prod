@@ -8,6 +8,46 @@ const { broadcast, broadcastNamedEvent } = require("../../utils/sse");
 const router = express.Router();
 router.use(auth);
 
+// Helper to get active candidates count for a user (recruiter/creator/mentor)
+async function getActiveCandidatesCount(userId, myOrg) {
+  const getActiveCountForField = async (field) => {
+    try {
+      const snap = await firestore.collection("candidates")
+        .where("organizationId", "==", myOrg)
+        .where(field, "==", userId)
+        .where("status", "not-in", ["REJECTED", "JOINED", "OFFER_DECLINED"])
+        .count()
+        .get();
+      return snap.data().count || 0;
+    } catch (e) {
+      // Fallback if not-in query fails or needs index
+      const snap = await firestore.collection("candidates")
+        .where("organizationId", "==", myOrg)
+        .where(field, "==", userId)
+        .get();
+      return snap.docs.filter(doc => {
+        const c = doc.data();
+        return !['REJECTED', 'JOINED', 'OFFER_DECLINED'].includes(c.status) && c.isDeleted !== true;
+      }).length;
+    }
+  };
+
+  const [c1, c2, c3] = await Promise.all([
+    getActiveCountForField("assignedRecruiterId"),
+    getActiveCountForField("createdById"),
+    getActiveCountForField("mentorId")
+  ]);
+  return c1 + c2 + c3;
+}
+
+// GET /api/team/members/:userId/active-candidates-count
+router.get("/members/:userId/active-candidates-count", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const myOrg = req.user.organizationId || "defaultOrg";
+  const count = await getActiveCandidatesCount(userId, myOrg);
+  res.json({ success: true, count });
+}));
+
 // RECRUITERS
 router.get("/recruiters/:id", asyncHandler(async (req, res) => {
   const doc = await firestore.collection("users").doc(req.params.id).get();
@@ -188,15 +228,7 @@ router.delete("/members/:userId", requireRoles("SUPER_ADMIN"), asyncHandler(asyn
   }
 
   // Check 4: Check if recruiter has active candidates
-  const candidatesSnapshot = await firestore.collection("candidates").get();
-  let activeCount = 0;
-  candidatesSnapshot.docs.forEach(doc => {
-    const c = doc.data();
-    if ((c.assignedRecruiterId === userId || c.createdById === userId || c.mentorId === userId) && 
-        !['REJECTED', 'JOINED', 'OFFER_DECLINED'].includes(c.status) && c.isDeleted !== true) {
-      activeCount++;
-    }
-  });
+  const activeCount = await getActiveCandidatesCount(userId, myOrg);
   if (activeCount > 0) {
     throw new ApiError(400, `This recruiter has ${activeCount} active candidates. Reassign them before deleting`, { count: activeCount });
   }
