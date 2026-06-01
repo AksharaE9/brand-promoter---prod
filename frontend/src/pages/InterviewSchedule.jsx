@@ -45,6 +45,10 @@ const InterviewSchedule = () => {
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [interviewers, setInterviewers] = useState([]);
+  const [candidateSuggestions, setCandidateSuggestions] = useState([]);
+  const [jobSuggestions, setJobSuggestions] = useState([]);
+  const [searchingCandidates, setSearchingCandidates] = useState(false);
+  const [searchingJobs, setSearchingJobs] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
@@ -94,7 +98,7 @@ const InterviewSchedule = () => {
   const loadAll = useCallback(async () => {
     // Step 1: Load interviews first — they include fully-populated candidate/job/feedback data
     // This is what the user sees immediately. Get more than one page to cover the list.
-    const interviewsRes = await apiGet('/interviews?limit=3000');
+    const interviewsRes = await apiGet('/interviews?limit=150');
     const interviewRows = interviewsRes.data || [];
     setInterviews(interviewRows);
 
@@ -110,13 +114,15 @@ const InterviewSchedule = () => {
 
     // Step 2: Load supporting data in background (needed for scheduling form only)
     const [applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/applications?limit=3000'),
-      apiGet('/candidates?limit=3000'),
-      apiGet('/jobs?limit=500'),
+      apiGet('/applications?limit=150'),
+      apiGet('/candidates?limit=150'),
+      apiGet('/jobs?limit=50'),
     ]);
     setApplications(applicationsRes.data || []);
     setCandidates(candidatesRes.data || []);
+    setCandidateSuggestions(candidatesRes.data || []);
     setJobs(jobsRes.data || []);
+    setJobSuggestions(jobsRes.data || []);
 
     // Step 3: Load interviewers
     try {
@@ -201,6 +207,50 @@ const InterviewSchedule = () => {
       }
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
+
+  // Dynamic search for candidate suggestions in schedule modal
+  useEffect(() => {
+    if (!showScheduleModal) return;
+    const delayDebounce = setTimeout(async () => {
+      if (!candidateSearch.trim()) {
+        setCandidateSuggestions(candidates);
+        return;
+      }
+      try {
+        setSearchingCandidates(true);
+        const res = await apiGet(`/candidates?search=${encodeURIComponent(candidateSearch)}&limit=150`);
+        setCandidateSuggestions(res.data || []);
+      } catch (err) {
+        console.error("Candidate search error:", err);
+      } finally {
+        setSearchingCandidates(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [candidateSearch, showScheduleModal, candidates]);
+
+  // Dynamic search for job suggestions in schedule modal
+  useEffect(() => {
+    if (!showScheduleModal) return;
+    const delayDebounce = setTimeout(async () => {
+      if (!jobSearch.trim()) {
+        setJobSuggestions(jobs);
+        return;
+      }
+      try {
+        setSearchingJobs(true);
+        const res = await apiGet(`/jobs?search=${encodeURIComponent(jobSearch)}&limit=50`);
+        setJobSuggestions(res.data || []);
+      } catch (err) {
+        console.error("Job search error:", err);
+      } finally {
+        setSearchingJobs(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounce);
+  }, [jobSearch, showScheduleModal, jobs]);
 
   const downloadDailyPdf = async () => {
     try {
@@ -1423,9 +1473,10 @@ const InterviewSchedule = () => {
                     </div>
                     {showCandidateList && (
                       <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                        {candidates
-                          .filter(c => c.fullName.toLowerCase().includes(candidateSearch.toLowerCase()))
-                          .map(c => (
+                        {searchingCandidates ? (
+                          <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
+                        ) : (
+                          candidateSuggestions.map(c => (
                             <div 
                               key={c.id} 
                               className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
@@ -1445,8 +1496,9 @@ const InterviewSchedule = () => {
                               <div className="font-medium text-slate-700">{c.fullName}</div>
                               <div className="text-[10px] text-slate-400">{c.email || 'No Email'}</div>
                             </div>
-                          ))}
-                        {candidates.filter(c => c.fullName.toLowerCase().includes(candidateSearch.toLowerCase())).length === 0 && (
+                          ))
+                        )}
+                        {!searchingCandidates && candidateSuggestions.length === 0 && (
                           <div className="p-4 text-center text-xs text-slate-400 italic">No candidates found</div>
                         )}
                       </div>
@@ -1467,9 +1519,10 @@ const InterviewSchedule = () => {
                     </div>
                     {showJobList && (
                       <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                        {jobs
-                          .filter(j => j.title.toLowerCase().includes(jobSearch.toLowerCase()))
-                          .map(j => (
+                        {searchingJobs ? (
+                          <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
+                        ) : (
+                          jobSuggestions.map(j => (
                             <div 
                               key={j.id} 
                               className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
@@ -1482,8 +1535,9 @@ const InterviewSchedule = () => {
                               <div className="font-medium text-slate-700">{j.title}</div>
                               <div className="text-[10px] text-slate-400">{j.location || 'Remote'}</div>
                             </div>
-                          ))}
-                        {jobs.filter(j => j.title.toLowerCase().includes(jobSearch.toLowerCase())).length === 0 && (
+                          ))
+                        )}
+                        {!searchingJobs && jobSuggestions.length === 0 && (
                           <div className="p-4 text-center text-xs text-slate-400 italic">No jobs found</div>
                         )}
                       </div>
