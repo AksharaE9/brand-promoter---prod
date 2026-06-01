@@ -49,7 +49,6 @@ const Referrals = () => {
         <EnterpriseTopbar
           searchPlaceholder="Search referrals..."
           tabs={[
-            { key: 'pipeline', label: 'Pipeline', href: '/pipeline' },
             { key: 'sourcing', label: 'Sourcing', href: '/sourcing' },
             { key: 'referrals', label: 'Referrals', href: '/referrals', active: true },
           ]}

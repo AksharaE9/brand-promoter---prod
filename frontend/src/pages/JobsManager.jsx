@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -7,6 +7,7 @@ import NotificationBell from '../components/NotificationBell';
 import { apiGet, apiPatch, apiPost, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
+import Skeleton from '../components/Skeleton';
 
 const defaultJobForm = {
   title: '',
@@ -33,31 +34,22 @@ const JobsManager = () => {
   const currentUser = getStoredUser();
   const canManageJobs = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
 
-  const loadJobs = async (useCache = true) => {
+  // ── Data loading ──────────────────────────────────────────────────────────
+  // Only fetches jobs — shortlist counts come from _count.applications on each job doc.
+  // Previously fetched /applications?limit=3000 just to count shortlists — removed.
+  const loadJobs = useCallback(async (useCache = true) => {
     const query = statusFilter === 'all' ? '' : `&isActive=${statusFilter === 'active'}`;
-    const [jobsRes, applicationsRes] = await Promise.all([
-      apiGet(`/jobs?limit=40${query}`, useCache),
-      apiGet('/applications?limit=3000', useCache),
-    ]);
-    const shortlistMap = {};
-    (applicationsRes.data || []).forEach((app) => {
-      if (!app.jobId) return;
-      if (!shortlistMap[app.jobId]) shortlistMap[app.jobId] = 0;
-      if (app.shortlisted) shortlistMap[app.jobId] += 1;
-    });
-    setShortlistByJob(shortlistMap);
-    setItems(jobsRes.data || []);
-  };
+    const res = await apiGet(`/jobs?limit=100${query}`, useCache);
+    setItems(res.data || []);
+  }, [statusFilter]);
 
   useEffect(() => {
     let mounted = true;
-
     const load = async () => {
       try {
         setLoading(true);
         setError('');
-        const shouldBypass = reloadTrigger > 0;
-        await loadJobs(!shouldBypass);
+        await loadJobs(reloadTrigger === 0);
       } catch (err) {
         if (!mounted) return;
         setError(err.message || 'Failed to load jobs');
@@ -65,12 +57,9 @@ const JobsManager = () => {
         if (mounted) setLoading(false);
       }
     };
-
     load();
-    return () => {
-      mounted = false;
-    };
-  }, [statusFilter, reloadTrigger]);
+    return () => { mounted = false; };
+  }, [statusFilter, reloadTrigger, loadJobs]);
 
   // Singleton SSE — debounced so rapid job events don't flood reloads
   useEffect(() => {
@@ -126,15 +115,16 @@ const JobsManager = () => {
     () =>
       items
         .map((job) => ({
-        id: job.id,
-        title: job.title,
-        location: job.location || '-',
-        status: job.isActive ? 'Active' : 'Closed',
-        lead: job.createdBy?.fullName || 'Assigned',
-        applicants: job._count?.applications || 0,
-        shortlisted: shortlistByJob[job.id] || 0,
-        isActive: Boolean(job.isActive),
-      }))
+          id: job.id,
+          title: job.title,
+          location: job.location || '-',
+          status: job.isActive ? 'Active' : 'Closed',
+          lead: job.createdBy?.fullName || 'Assigned',
+          applicants: job._count?.applications || 0,
+          // Shortlist count comes from the job document — no extra fetch needed
+          shortlisted: job._count?.shortlisted || shortlistByJob[job.id] || 0,
+          isActive: Boolean(job.isActive),
+        }))
         .sort((a, b) => {
           if (sortBy === 'title') return a.title.localeCompare(b.title);
           return b.applicants - a.applicants;
@@ -260,7 +250,31 @@ const JobsManager = () => {
         </Reveal>
 
         <div className="space-y-3 mt-4">
-          {loading ? <div className="os-card p-4 text-sm text-[#6f7d98]">Loading jobs...</div> : null}
+          {loading ? (
+            // Skeleton loading — feels instant
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] gap-4 animate-pulse" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="space-y-2">
+                  <Skeleton width="55%" height="20px" />
+                  <Skeleton width="35%" height="12px" />
+                </div>
+                <Skeleton width="60px" height="16px" />
+                <div className="space-y-2">
+                  <Skeleton width="50px" height="10px" />
+                  <Skeleton width="80px" height="14px" />
+                </div>
+                <div className="flex gap-2">
+                  <Skeleton width="80px" height="36px" />
+                  <Skeleton width="60px" height="36px" />
+                </div>
+              </div>
+            ))
+          ) : jobs.length === 0 ? (
+            <div className="os-card p-10 text-center">
+              <span className="material-symbols-outlined text-4xl text-slate-300">work_off</span>
+              <p className="text-slate-400 mt-2 text-sm">No jobs found. {canManageJobs && <button className="text-[#1f52cc] underline" onClick={() => setShowCreate(true)}>Post one now</button>}</p>
+            </div>
+          ) : null}
           {jobs.map((row, idx) => (
             <Reveal key={row.id} delay={idx * 0.04}>
               <div className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4">

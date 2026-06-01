@@ -1,53 +1,42 @@
 const { db: firestore } = require("../config/firebase");
 
 /**
- * Write an audit log entry.
- * Pass actorName + entityName at call-site to avoid extra Firestore reads
- * when displaying audit logs (denormalization pattern).
+ * Write an audit log entry — FIRE AND FORGET (non-blocking).
+ * The caller does NOT await this. It never blocks a request.
+ *
+ * actorName and entityName should be passed from the call-site (denormalized).
+ * We do NOT make a Firestore read here to resolve names — that would add
+ * a hidden N+1 read to every mutation endpoint.
  */
-async function logAudit({
+function logAudit({
   actorUserId = null,
-  actorName = null,       // Denormalized — pass at write time
+  actorName = null,
   action,
   entityType,
   entityId = null,
-  entityName = null,      // Denormalized — pass at write time
+  entityName = null,
   oldData = null,
   newData = null,
   ipAddress = null,
   userAgent = null,
 }) {
-  try {
-    // Auto-resolve actorName if not provided
-    let resolvedActorName = actorName;
-    if (!resolvedActorName && actorUserId) {
-      try {
-        const userDoc = await firestore.collection("users").doc(actorUserId).get();
-        if (userDoc.exists) {
-          const u = userDoc.data();
-          resolvedActorName = u.fullName || u.name || actorUserId;
-        }
-      } catch (_) {
-        resolvedActorName = actorUserId;
-      }
-    }
-
-    await firestore.collection("auditLogs").add({
-      actorUserId,
-      actorName: resolvedActorName || 'System',
-      action,
-      entityType,
-      entityId,
-      entityName: entityName || entityId,
-      oldData,
-      newData,
-      ipAddress,
-      userAgent,
-      createdAt: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error("Audit log failed:", error.message);
-  }
+  // Intentionally NOT awaited — fire and forget
+  firestore.collection("auditLogs").add({
+    actorUserId,
+    actorName: actorName || actorUserId || "System",
+    action,
+    entityType,
+    entityId,
+    entityName: entityName || entityId || null,
+    oldData,
+    newData,
+    ipAddress,
+    userAgent,
+    createdAt: new Date().toISOString(),
+  }).catch(err => {
+    // Never crash a request because audit logging failed
+    console.error("[Audit] Write failed:", err.message);
+  });
 }
 
 module.exports = { logAudit };

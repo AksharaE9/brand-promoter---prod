@@ -14,10 +14,12 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
   const [error, setError] = useState('');
   
   const systemFields = [
-    { key: 'fullName', label: 'Full Name' },
+    { key: 'fullName', label: 'Full Name ✱' },
     { key: 'email', label: 'Email Address' },
-    { key: 'phone', label: 'Phone Number' },
-    { key: 'ignore', label: '-- Ignore This Column --' }
+    { key: 'phone', label: 'Phone Number ✱' },
+    { key: 'location', label: 'Location / City' },
+    { key: 'role', label: 'Role / Designation' },
+    { key: 'ignore', label: '── Ignore This Column ──' }
   ];
 
   const handleFileDrop = async (e) => {
@@ -41,10 +43,12 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
       // Auto-suggest mappings
       const initialMapping = {};
       data.data.detectedColumns.forEach(col => {
-        const lowerCol = col.toLowerCase();
-        if (lowerCol.includes('name')) initialMapping[col] = 'fullName';
+        const lowerCol = col.toLowerCase().replace(/[^a-z]/g, '');
+        if (lowerCol.includes('name') || lowerCol === 'fullname') initialMapping[col] = 'fullName';
         else if (lowerCol.includes('mail')) initialMapping[col] = 'email';
-        else if (lowerCol.includes('phone') || lowerCol.includes('contact')) initialMapping[col] = 'phone';
+        else if (lowerCol.includes('phone') || lowerCol.includes('contact') || lowerCol.includes('mobile')) initialMapping[col] = 'phone';
+        else if (lowerCol.includes('location') || lowerCol.includes('city') || lowerCol.includes('place')) initialMapping[col] = 'location';
+        else if (lowerCol.includes('role') || lowerCol.includes('position') || lowerCol.includes('designation') || lowerCol.includes('title') || lowerCol.includes('job')) initialMapping[col] = 'role';
         else initialMapping[col] = 'ignore';
       });
       setColumnMapping(initialMapping);
@@ -120,7 +124,8 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
   if (!isOpen) return null;
 
-  const isMappingValid = Object.values(columnMapping).includes('fullName') && Object.values(columnMapping).includes('email');
+  // Only fullName is required — email, location, role are all optional
+  const isMappingValid = Object.values(columnMapping).includes('fullName');
 
   return (
     <AnimatePresence>
@@ -183,9 +188,9 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
                 <div className={`p-4 rounded-xl border ${isMappingValid ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
                   {isMappingValid ? (
-                    <div className="flex items-center gap-2 font-bold"><span className="material-symbols-outlined">check_circle</span> All required fields mapped</div>
+                    <div className="flex items-center gap-2 font-bold"><span className="material-symbols-outlined">check_circle</span> Ready to import — required fields mapped</div>
                   ) : (
-                    <div className="flex items-center gap-2 font-bold"><span className="material-symbols-outlined">warning</span> Missing required mappings: fullName, email</div>
+                    <div className="flex items-center gap-2 font-bold"><span className="material-symbols-outlined">warning</span> Map at least <strong>Full Name</strong> to continue</div>
                   )}
                 </div>
 

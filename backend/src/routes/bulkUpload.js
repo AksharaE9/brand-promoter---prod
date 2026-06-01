@@ -39,9 +39,13 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
     const headers = [
-      "Full Name", "Email", "Phone"
+      "Full Name", "Email", "Phone", "Location", "Role"
     ];
-    const csvContent = headers.join(',') + '\n';
+    // Add a sample row to guide users
+    const sampleRow = [
+      "John Doe", "john@example.com", "9876543210", "Bangalore", "Software Engineer"
+    ];
+    const csvContent = headers.join(',') + '\n' + sampleRow.join(',') + '\n';
     
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", 'attachment; filename="candidate_bulk_upload_template.csv"');
@@ -122,10 +126,10 @@ router.post(
       throw new ApiError(400, "sessionId and columnMapping are required");
     }
 
-    // Check required fields
+    // Only fullName is strictly required; email, location, role are optional
     const mappedValues = Object.values(columnMapping);
-    if (!mappedValues.includes("fullName") || !mappedValues.includes("email")) {
-      throw new ApiError(400, "fullName and email are required fields to map.");
+    if (!mappedValues.includes("fullName")) {
+      throw new ApiError(400, "fullName is a required field to map.");
     }
 
     // Verify session exists

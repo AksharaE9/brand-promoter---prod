@@ -7,7 +7,7 @@ async function main() {
   const keptEmails = ['admin@ats.local', 'recruiter2@ats.local', 'interviewer@ats.local'];
   
   const admin = await prisma.user.findFirst({ where: { email: 'admin@ats.local' } });
-  if (!admin) {
+  if (!admin) { 
     console.error('Super Admin not found!');
     return;
   }

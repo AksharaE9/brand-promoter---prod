@@ -5,6 +5,7 @@ const { auth, requireRoles } = require("../../middleware/auth");
 const { upload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
+const { getCached, invalidate } = require("../../utils/cache");
 
 const router = express.Router();
 
@@ -16,10 +17,12 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("users").orderBy("createdAt", "desc").get();
-    const users = snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(u => u.isDeleted !== true);
+    const users = await getCached("users_list", async () => {
+      const snapshot = await firestore.collection("users").orderBy("createdAt", "desc").get();
+      return snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(u => u.isDeleted !== true);
+    }, 60000);
     res.json({ success: true, data: users });
   }),
 );
@@ -79,6 +82,9 @@ router.post(
     const { broadcast } = require("../../utils/sse");
     broadcast({ type: 'USER_CREATED', userId: docRef.id, fullName: userData.fullName });
 
+    await invalidate("users_list");
+    await invalidate("users_interviewers");
+
     res.status(201).json({ success: true, data: newUser });
   }),
 );
@@ -86,14 +92,16 @@ router.post(
 router.get(
   "/interviewers",
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("users")
-      .where("role", "in", ["SUPER_ADMIN", "RECRUITER"])
-      .get();
-    const users = snapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      fullName: doc.data().fullName,
-      role: doc.data().role 
-    }));
+    const users = await getCached("users_interviewers", async () => {
+      const snapshot = await firestore.collection("users")
+        .where("role", "in", ["SUPER_ADMIN", "RECRUITER"])
+        .get();
+      return snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        fullName: doc.data().fullName,
+        role: doc.data().role 
+      }));
+    }, 60000);
     res.json({ success: true, data: users });
   }),
 );
@@ -147,6 +155,9 @@ router.patch(
     const { broadcast } = require("../../utils/sse");
     broadcast({ type: 'USER_UPDATED', userId: id, fullName });
 
+    await invalidate("users_list");
+    await invalidate("users_interviewers");
+
     res.json({ success: true, data: { id, ...existing, ...updateData } });
   }),
 );
@@ -187,6 +198,9 @@ router.patch(
 
     const { broadcast } = require("../../utils/sse");
     broadcast({ type: 'USER_STATUS_UPDATED', userId: id, status });
+
+    await invalidate("users_list");
+    await invalidate("users_interviewers");
 
     res.json({ success: true, data: { id, status } });
   }),
@@ -231,6 +245,9 @@ router.post(
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
+
+    await invalidate("users_list");
+    await invalidate("users_interviewers");
 
     res.status(201).json({
       success: true,

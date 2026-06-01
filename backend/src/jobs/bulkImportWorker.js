@@ -31,7 +31,7 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
       continue;
     }
 
-    // Validation
+    // Validation — only fullName and phone are required; email/location/role are optional
     if (!mappedCandidate.fullName) errors.push("fullName is required");
     if (mappedCandidate.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mappedCandidate.email)) {
       errors.push("Invalid email format");
@@ -54,7 +54,7 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
         errors
       });
     } else {
-      // Deduplication by phone
+      // Deduplication by phone (normalized to digits only)
       const phoneDigits = mappedCandidate.phone.replace(/\D/g, "");
       const existingSnap = await firestore.collection("candidates")
         .where("phone", "==", phoneDigits)
@@ -65,29 +65,35 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
         results.skipped++;
       } else {
         try {
-          // Insertion
-          await firestore.collection("candidates").add({
-            collegeName: "N/A",
-            graduationYear: "N/A",
-            location: "N/A",
-            area: "N/A",
-            course: "N/A",
-            jobId: "N/A",
-            linkedinUrl: "N/A",
-            currentCompany: "N/A",
-            currentRole: "N/A",
-            experienceYears: "N/A",
-            skills: "N/A",
-            notes: "N/A",
-            drive: "N/A",
-            email: mappedCandidate.email || "N/A",
-            ...mappedCandidate,
+          // Build candidate document — optional fields stored as null if not provided
+          const candidateDoc = {
+            fullName: mappedCandidate.fullName,
+            email: mappedCandidate.email || null,
+            phone: phoneDigits,
+            // Optional fields — null if not mapped or empty in the file
+            location: mappedCandidate.location || null,
+            preferredRole: mappedCandidate.role || mappedCandidate.preferredRole || null,
+            // Other optional fields default to null (not "N/A")
+            collegeName: null,
+            graduationYear: null,
+            area: null,
+            course: null,
+            jobId: null,
+            linkedinUrl: null,
+            currentCompany: null,
+            currentRole: null,
+            experienceYears: null,
+            skills: null,
+            notes: null,
+            drive: null,
             organizationId,
             source: "Bulk Import Wizard",
             createdById: userId,
             createdAt: new Date().toISOString(),
             status: "ACTIVE"
-          });
+          };
+
+          await firestore.collection("candidates").add(candidateDoc);
           results.imported++;
         } catch (err) {
           results.failed++;

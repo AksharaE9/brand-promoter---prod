@@ -137,23 +137,45 @@ router.get(
       const userMap = {};
       userSnaps.forEach(snap => { if (snap.exists) userMap[snap.id] = { id: snap.id, ...snap.data() }; });
 
-      // Fetch feedbacks for each interview in parallel
-      const feedbackSnaps = await Promise.all(
-        paginated.map(iv =>
-          firestore.collection("interviewFeedbacks")
-            .where("interviewId", "==", iv.id)
-            .get()
-            .catch(() => ({ docs: [] })) // never crash on missing feedback
-        )
-      );
+      // Fetch feedbacks in batched chunks of 30 to avoid N+1 queries
+      const interviewIds = paginated.map(iv => iv.id).filter(Boolean);
       const feedbackMap = {};
-      feedbackSnaps.forEach((snap, idx) => {
-        feedbackMap[paginated[idx].id] = snap.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-          submittedBy: userMap[d.data().submittedById] || { fullName: "Interviewer" },
-        }));
+      paginated.forEach(iv => {
+        feedbackMap[iv.id] = [];
       });
+
+      if (interviewIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < interviewIds.length; i += 30) {
+          chunks.push(interviewIds.slice(i, i + 30));
+        }
+
+        try {
+          const chunkSnaps = await Promise.all(
+            chunks.map(chunk =>
+              firestore.collection("interviewFeedbacks")
+                .where("interviewId", "in", chunk)
+                .get()
+            )
+          );
+
+          chunkSnaps.forEach(snap => {
+            snap.docs.forEach(doc => {
+              const data = doc.data();
+              if (data.interviewId) {
+                feedbackMap[data.interviewId].push({
+                  id: doc.id,
+                  ...data,
+                  submittedBy: userMap[data.submittedById] || { fullName: "Interviewer" },
+                });
+              }
+            });
+          });
+        } catch (fbErr) {
+          console.error("[interviews] feedback fetch error:", fbErr.message);
+          // Never crash the list view even if feedback fetch fails
+        }
+      }
 
       // Build populated response
       const populated = paginated.map(iv => {

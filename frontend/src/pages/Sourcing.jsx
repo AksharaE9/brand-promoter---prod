@@ -51,7 +51,6 @@ const Sourcing = () => {
         <EnterpriseTopbar
           searchPlaceholder="Search sourced profiles..."
           tabs={[
-            { key: 'pipeline', label: 'Pipeline', href: '/pipeline' },
             { key: 'sourcing', label: 'Sourcing', href: '/sourcing', active: true },
             { key: 'referrals', label: 'Referrals', href: '/referrals' },
           ]}
@@ -118,7 +117,7 @@ const Sourcing = () => {
                     key={job.id}
                     className="w-full text-left border border-[#e6ecf4] rounded-xl p-3 hover:border-[#cdd9eb] transition-colors"
                     type="button"
-                    onClick={() => navigate(`/pipeline?jobId=${job.id}`)}
+                    onClick={() => navigate(`/jobs/${job.id}`)}
                   >
                     <div className="font-semibold">{job.title}</div>
                     <div className="text-sm text-[#67748f] mt-1">{job.department || 'General'} • {job.location || 'Remote'}</div>
