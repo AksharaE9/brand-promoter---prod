@@ -22,25 +22,43 @@ async function getOrgAnalyticsData(orgId) {
   const promise = (async () => {
     // Fetch collections in parallel
     const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", orgId).get(),
+      firestore.collection("candidates").get(),
       firestore.collection("applications").get(),
       firestore.collection("interviews").get()
     ]);
 
     const candidates = candidatesSnap.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true);
+      .filter(c => c.isDeleted !== true)
+      .filter(c => {
+        const cOrg = c.organizationId || "defaultOrg";
+        return cOrg === orgId;
+      });
 
-    // Filter apps and interviews to only contain those belonging to candidates in this org
+    // Filter apps to only contain those belonging to candidates in this org
     const candidateIds = new Set(candidates.map(c => c.id));
-    
     const apps = appsSnap.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(a => candidateIds.has(a.candidateId));
 
+    // Create an apps map for quick lookup
+    const appsMap = {};
+    apps.forEach(a => {
+      appsMap[a.id] = a;
+    });
+
+    // Filter interviews to only contain those belonging to apps in this org
     const interviews = interviewsSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(i => candidateIds.has(i.candidateId));
+      .map(d => {
+        const data = d.data();
+        const app = appsMap[data.applicationId];
+        return {
+          id: d.id,
+          ...data,
+          candidateId: app ? app.candidateId : null
+        };
+      })
+      .filter(i => i.candidateId && candidateIds.has(i.candidateId));
 
     return { candidates, apps, interviews };
   })();

@@ -7,6 +7,7 @@ import { apiGet } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import html2canvas from 'html2canvas';
 import { subscribeSSE } from '../lib/sse';
+import { SkeletonBox } from '../components/Skeleton';
 
 // Recharts components
 import {
@@ -288,7 +289,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.candidates, "#1f52cc")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.totalCandidates || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.totalCandidates || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Total Candidates</div>
             </div>
@@ -308,7 +309,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.pipeline, "#4f7ff3")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.activeCandidates || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.activeCandidates || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Active in Pipeline</div>
             </div>
@@ -326,7 +327,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.offers, "#9cb4ed")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.offersExtended || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.offersExtended || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Offers Extended</div>
             </div>
@@ -346,7 +347,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.joined, "#10b981")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.candidatesJoined || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.candidatesJoined || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Joined Candidates</div>
             </div>
@@ -364,7 +365,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.rejected, "#f43f5e")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.candidatesRejected || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.candidatesRejected || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Rejected Candidates</div>
             </div>
@@ -382,7 +383,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.acceptance, "#22c55e")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : `${overview?.metrics?.offerAcceptanceRate || 0}%`}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : `${overview?.metrics?.offerAcceptanceRate || 0}%`}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Acceptance Rate</div>
             </div>
@@ -394,8 +395,6 @@ const Analytics = () => {
             </div>
           </Reveal>
 
-
-
           {/* Card 8: Interviews This Month */}
           <Reveal className="os-card p-4 flex flex-col justify-between" delay={0.16}>
             <div>
@@ -404,7 +403,7 @@ const Analytics = () => {
                 {renderSparkline(mockSparklines.interviews, "#a855f7")}
               </div>
               <div className="text-2xl font-bold font-[Manrope] text-slate-800 mt-2">
-                {loading ? '...' : overview?.metrics?.interviewsCompletedThisMonth || 0}
+                {loading ? <SkeletonBox width="60%" height={28} borderRadius={6} /> : overview?.metrics?.interviewsCompletedThisMonth || 0}
               </div>
               <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Interviews (Month)</div>
             </div>
@@ -431,13 +430,23 @@ const Analytics = () => {
                 </tr>
               </thead>
               <tbody>
-                {pipelineData.map((row, idx) => (
-                  <tr key={row.stage} className="border-b border-slate-100 last:border-b-0">
-                    <td className="py-3 font-semibold text-slate-700">{row.label}</td>
-                    <td className="py-3 text-slate-600 font-mono font-semibold">{row.count}</td>
-                    <td className="py-3 font-bold text-[#1f52cc]">{row.percentage}%</td>
-                  </tr>
-                ))}
+                {loading ? (
+                  [1, 2, 3, 4, 5].map(i => (
+                    <tr key={i} className="border-b border-slate-100 last:border-b-0">
+                      <td className="py-3"><SkeletonBox width="45%" height={16} /></td>
+                      <td className="py-3"><SkeletonBox width="25%" height={16} /></td>
+                      <td className="py-3"><SkeletonBox width="35%" height={16} /></td>
+                    </tr>
+                  ))
+                ) : (
+                  pipelineData.map((row, idx) => (
+                    <tr key={row.stage} className="border-b border-slate-100 last:border-b-0">
+                      <td className="py-3 font-semibold text-slate-700">{row.label}</td>
+                      <td className="py-3 text-slate-600 font-mono font-semibold">{row.count}</td>
+                      <td className="py-3 font-bold text-[#1f52cc]">{row.percentage}%</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </Reveal>

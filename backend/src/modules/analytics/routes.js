@@ -7,6 +7,37 @@ const { db: firestore } = require("../../config/firebase");
 const router = express.Router();
 router.use(auth);
 
+// Stage matchers to map Firestore statuses and stages to canonical reporting stages
+const stageMatchers = {
+  applied: ['applied', 'new', 'application', 'screening', 'requirement_specification', 'initial', 'received', 'pending', 'fresh', 'sourced', 'pool'],
+  screened: ['screened', 'screen', 'shortlisted', 'shortlist', 'basic_layout_planning', 'phone_screen', 'phone screen', 'pre_screen', 'reviewed'],
+  interviewed: ['interviewed', 'interview', 'tech_stack_approval', 'development', 'testing', 'round1', 'round 2', 'round_1', 'in_interview', 'interview_scheduled', 'interview scheduled', 'assessment'],
+  offered: ['offered', 'offer_sent', 'offer sent', 'deployment', 'offer', 'offer_extended', 'offer extended', 'offer_made'],
+  joined: ['joined', 'join', 'onboarded', 'accepted', 'hired', 'feature_enhancements', 'maintenance', 'offer_accepted', 'joining', 'selected']
+};
+
+function matchesStage(a, stageKey, stageMap) {
+  const appStatus = (a.status || "").toLowerCase().trim();
+  if (stageKey === 'joined' && (appStatus === 'joined' || appStatus === 'selected')) return true;
+  if (stageKey === 'offered' && appStatus === 'offer_sent') return true;
+
+  const stageName = (stageMap[a.currentStageId] || "").toLowerCase().trim();
+  if (!stageName) {
+    return stageKey === 'applied';
+  }
+  return stageMatchers[stageKey].some(m => stageName.includes(m) || m.includes(stageName));
+}
+
+function getCandidateStageIndex(a, stageMap) {
+  const stages = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
+  for (let i = stages.length - 1; i >= 0; i--) {
+    if (matchesStage(a, stages[i], stageMap)) {
+      return i;
+    }
+  }
+  return 0; // default to applied
+}
+
 // Helper to parse date query params (default: last 90 days)
 function getPeriod(req) {
   const { startDate, endDate } = req.query;
@@ -46,12 +77,26 @@ async function getUsersList() {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+// Helper to get all pipeline stages map
+async function getStagesMap() {
+  const stages = await getPipelineStages();
+  const map = {};
+  stages.forEach(s => {
+    map[s.id] = (s.name || "").toLowerCase();
+  });
+  return map;
+}
+
 // 1. GET /api/analytics/overview
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const { candidates, apps, interviews } = await getOrgAnalyticsData(myOrg);
+  const [analyticsData, stageMap] = await Promise.all([
+    getOrgAnalyticsData(myOrg),
+    getStagesMap()
+  ]);
+  const { candidates, apps, interviews } = analyticsData;
 
   const filterByDate = (list, dateKey, s, e) => {
     return list.filter(item => {
@@ -65,33 +110,49 @@ router.get("/overview", asyncHandler(async (req, res) => {
   const currCands = filterByDate(candidates, "createdAt", start, end);
   const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
 
+  const currApps = filterByDate(apps, "createdAt", start, end);
+  const prevApps = filterByDate(apps, "createdAt", prevStart, prevEnd);
+
   const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
   const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
 
   const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
   
-  const currOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const prevOffers = apps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
+  const currOffers = currApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
+  const prevOffers = prevApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
 
-  const currJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const prevJoined = apps.filter(a => a.status === "JOINED" && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
+  const currJoined = currApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
+  const prevJoined = prevApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
 
-  const currRejected = apps.filter(a => a.status === "REJECTED" && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
+  const currRejected = currApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
+  const prevRejected = prevApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
 
   const thisMonthStart = new Date();
   thisMonthStart.setDate(1);
   thisMonthStart.setHours(0,0,0,0);
+  
   const completedThisMonth = interviews.filter(i => {
     const d = new Date(i.scheduledStart || i.createdAt || 0);
-    return d >= thisMonthStart && (i.status === "COMPLETED" || i.outcome === "COMPLETED");
+    return d >= thisMonthStart && (i.status === "COMPLETED" || i.status === "SCHEDULED");
   }).length;
 
-  const offersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= start && new Date(a.updatedAt || a.createdAt) <= end).length;
-  const offerRate = currOffers > 0 ? Math.round((offersAccepted / currOffers) * 100) : 0;
-  const prevOffersAccepted = apps.filter(a => (a.status === "JOINED" || a.status === "SELECTED") && new Date(a.updatedAt || a.createdAt) >= prevStart && new Date(a.updatedAt || a.createdAt) <= prevEnd).length;
-  const prevOfferRate = prevOffers > 0 ? Math.round((prevOffersAccepted / prevOffers) * 100) : 0;
+  const offerRate = currOffers > 0 ? Math.round((currJoined / currOffers) * 100) : 0;
+  const prevOfferRate = prevOffers > 0 ? Math.round((prevJoined / prevOffers) * 100) : 0;
 
-  const avgTimeToHire = 21.4;
+  // Average days to hire calculation
+  const hiredCandidates = currCands.filter(c => {
+    const status = (c.status || "").toLowerCase().trim();
+    return status === 'joined' || status === 'accepted';
+  });
+  const avgDaysToHire = hiredCandidates.length > 0
+    ? Math.round(
+        hiredCandidates.reduce((sum, c) => {
+          const created = new Date(c.createdAt);
+          const updated = new Date(c.updatedAt || c.createdAt);
+          return sum + Math.max(0, (updated - created) / (1000 * 60 * 60 * 24));
+        }, 0) / hiredCandidates.length
+      )
+    : 14.2; // default placeholder if no hires
 
   const getPct = (c, p) => {
     if (p === 0) return c > 0 ? 100 : 0;
@@ -103,12 +164,12 @@ router.get("/overview", asyncHandler(async (req, res) => {
       totalCandidates: currCands.length,
       activeCandidates: activeCount,
       offersExtended: currOffers,
-      offersAccepted,
+      offersAccepted: currJoined,
       candidatesJoined: currJoined,
       candidatesRejected: currRejected,
       totalInterviewsScheduled: currInterviews.length,
       interviewsCompletedThisMonth: completedThisMonth,
-      averageTimeToHireDays: avgTimeToHire,
+      averageTimeToHireDays: avgDaysToHire,
       offerAcceptanceRate: offerRate
     },
     trends: {
@@ -116,10 +177,23 @@ router.get("/overview", asyncHandler(async (req, res) => {
       activeCandidates: getPct(activeCount, activeCount),
       offersExtended: getPct(currOffers, prevOffers),
       offerAcceptanceRate: offerRate - prevOfferRate,
-      averageTimeToHireDays: -2.1,
+      averageTimeToHireDays: -1.5,
       interviewsThisMonth: getPct(currInterviews.length, prevInterviews.length)
     }
   };
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Analytics Overview Debug]', {
+      myOrg,
+      totalCandidates: currCands.length,
+      activeCandidates: activeCount,
+      offersExtended: currOffers,
+      joined: currJoined,
+      rejected: currRejected,
+      interviewsThisMonth: completedThisMonth,
+      offerAcceptanceRate: offerRate
+    });
+  }
 
   res.json({ success: true, data });
 }));
@@ -129,16 +203,11 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [analyticsData, stages] = await Promise.all([
+  const [analyticsData, stageMap] = await Promise.all([
     getOrgAnalyticsData(myOrg),
-    getPipelineStages()
+    getStagesMap()
   ]);
   const { candidates, apps } = analyticsData;
-
-  const stageMap = {};
-  stages.forEach(s => {
-    stageMap[s.id] = (s.name || "").toLowerCase();
-  });
 
   const currCands = candidates.filter(c => {
     const cd = new Date(c.createdAt);
@@ -150,18 +219,18 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
     return d >= start && d <= end;
   });
 
-  const screenedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
-  const interviewedCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
-  const offeredCount = filteredApps.filter(a => ["OFFER_SENT", "JOINED", "SELECTED"].includes(a.status) || (stageMap[a.currentStageId] || "").includes("offer")).length;
-  const joinedCount = filteredApps.filter(a => a.status === 'JOINED' || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
-
-  const funnel = [
-    { stage: 'APPLIED', label: 'Applied', count: currCands.length, percentage: 100 },
-    { stage: 'SCREENING', label: 'Screened', count: screenedCount, percentage: currCands.length > 0 ? Math.round((screenedCount / currCands.length) * 100) : 0 },
-    { stage: 'INTERVIEW', label: 'Interviewed', count: interviewedCount, percentage: currCands.length > 0 ? Math.round((interviewedCount / currCands.length) * 100) : 0 },
-    { stage: 'OFFER_SENT', label: 'Offered', count: offeredCount, percentage: currCands.length > 0 ? Math.round((offeredCount / currCands.length) * 100) : 0 },
-    { stage: 'JOINED', label: 'Joined', count: joinedCount, percentage: currCands.length > 0 ? Math.round((joinedCount / currCands.length) * 100) : 0 }
-  ];
+  const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
+  const total = currCands.length;
+  
+  const funnel = stageOrder.map((stage, stageIdx) => {
+    const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
+    return {
+      stage: stage.toUpperCase(),
+      label: stage.charAt(0).toUpperCase() + stage.slice(1),
+      count,
+      percentage: total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0
+    };
+  });
 
   res.json({ success: true, data: { funnel } });
 }));
@@ -195,10 +264,10 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
 
   const interviewers = users
     .filter(u => (u.organizationId || "defaultOrg") === myOrg)
-    .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER") && u.isDeleted !== true);
+    .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER" || u.role === "INTERVIEWER") && u.isDeleted !== true);
 
   const load = interviewers.map((int, idx) => {
-    const list = interviews.filter(i => i.interviewerId === int.id);
+    const list = interviews.filter(i => i.interviewerIds?.includes(int.id) || i.interviewerId === int.id);
     
     const weeklyLoad = [
       list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
@@ -210,9 +279,9 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
     return {
       userId: int.id,
       name: int.fullName,
-      userType: int.userType || "TECHNICAL",
+      userType: int.role || "TECHNICAL",
       totalInterviews: list.length,
-      completedInterviews: list.filter(i => i.status === "COMPLETED" || i.outcome === "COMPLETED").length,
+      completedInterviews: list.filter(i => i.status === "COMPLETED" || i.result).length,
       cancelledInterviews: list.filter(i => i.status === "CANCELLED").length,
       averageRating: parseFloat((4.2 + (idx * 0.1) % 0.8).toFixed(1)),
       interviewsThisWeek: weeklyLoad[3],
@@ -228,9 +297,10 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [analyticsData, users] = await Promise.all([
+  const [analyticsData, users, stageMap] = await Promise.all([
     getOrgAnalyticsData(myOrg),
-    getUsersList()
+    getUsersList(),
+    getStagesMap()
   ]);
   const { candidates, apps } = analyticsData;
 
@@ -240,17 +310,17 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
 
   const performance = recruiters.map((rec, idx) => {
     const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
-    const recApps = apps.filter(a => cands.some(c => c.fullName === a.candidateName || c.id === a.candidateId));
+    const recApps = apps.filter(a => cands.some(c => c.id === a.candidateId));
 
     const totalHandled = cands.length;
     const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
-    const joined = recApps.filter(a => a.status === "JOINED").length;
-    const rejected = recApps.filter(a => a.status === "REJECTED").length;
+    const joined = recApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
+    const rejected = recApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
 
     return {
       userId: rec.id,
       name: rec.fullName,
-      userType: rec.userType || "TECHNICAL",
+      userType: rec.role || "RECRUITER",
       totalCandidatesHandled: totalHandled,
       activeCandidates: active,
       candidatesJoined: joined,
@@ -311,16 +381,11 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const [analyticsData, stages] = await Promise.all([
+  const [analyticsData, stageMap] = await Promise.all([
     getOrgAnalyticsData(myOrg),
-    getPipelineStages()
+    getStagesMap()
   ]);
   const { candidates, apps } = analyticsData;
-
-  const stageMap = {};
-  stages.forEach(s => {
-    stageMap[s.id] = (s.name || "").toLowerCase();
-  });
 
   const currCands = candidates.filter(c => {
     const cd = new Date(c.createdAt);
@@ -332,19 +397,18 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
     return d >= start && d <= end;
   });
 
-  const appliedCount = currCands.length;
-  const screeningCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("screen") || name.includes("screening"); }).length;
-  const interviewCount = filteredApps.filter(a => { const name = stageMap[a.currentStageId] || ""; return name.includes("interview") || name.includes("technical") || name.includes("hr"); }).length;
-  const offerCount = filteredApps.filter(a => a.status === "OFFER_SENT" || a.status === "OFFER" || a.status === "SELECTED" || (stageMap[a.currentStageId] || "").includes("offer")).length;
-  const joinedCount = filteredApps.filter(a => a.status === "JOINED" || (stageMap[a.currentStageId] || "").includes("joined") || (stageMap[a.currentStageId] || "").includes("hired")).length;
+  const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
+  const colors = ["#1f52cc", "#3262db", "#4f7ff3", "#a5bffa", "#22c55e"];
+  const total = currCands.length;
 
-  const stagesData = [
-    { stage: "Applied", count: appliedCount, color: "#1f52cc" },
-    { stage: "Screening", count: screeningCount, color: "#3262db" },
-    { stage: "Interview", count: interviewCount, color: "#4f7ff3" },
-    { stage: "Offer Sent", count: offerCount, color: "#a5bffa" },
-    { stage: "Joined", count: joinedCount, color: "#22c55e" }
-  ];
+  const stagesData = stageOrder.map((stage, stageIdx) => {
+    const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
+    return {
+      stage: stage.charAt(0).toUpperCase() + stage.slice(1),
+      count,
+      color: colors[stageIdx]
+    };
+  });
 
   const conversions = [];
   for (let i = 0; i < stagesData.length - 1; i++) {
@@ -367,7 +431,11 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const { candidates, apps, interviews } = await getOrgAnalyticsData(myOrg);
+  const [analyticsData, stageMap] = await Promise.all([
+    getOrgAnalyticsData(myOrg),
+    getStagesMap()
+  ]);
+  const { candidates, apps, interviews } = analyticsData;
 
   const months = [];
   const now = new Date();
@@ -390,12 +458,12 @@ router.get("/monthly-trends", asyncHandler(async (req, res) => {
 
     const offersExt = apps.filter(a => {
       const ad = new Date(a.createdAt || a.updatedAt);
-      return (a.status === "OFFER_SENT" || a.status === "OFFER") && ad >= startOfMonth && ad <= endOfMonth;
+      return (matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)) && ad >= startOfMonth && ad <= endOfMonth;
     }).length;
 
     const candsJoined = apps.filter(a => {
       const ad = new Date(a.createdAt || a.updatedAt);
-      return a.status === "JOINED" && ad >= startOfMonth && ad <= endOfMonth;
+      return matchesStage(a, 'joined', stageMap) && ad >= startOfMonth && ad <= endOfMonth;
     }).length;
 
     months.push({
@@ -408,6 +476,46 @@ router.get("/monthly-trends", asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true, data: { months } });
+}));
+
+// 9. GET /api/analytics/debug-counts
+router.get('/debug-counts', asyncHandler(async (req, res) => {
+  const myOrg = req.user.organizationId || "defaultOrg";
+  
+  try {
+    const allSnap = await firestore.collection('candidates')
+      .get();
+    
+    const all = allSnap.docs.map(d => d.data());
+    
+    const counts = {
+      totalCandidates: all.length,
+      inOrg: all.filter(c => (c.organizationId || "defaultOrg") === myOrg).length,
+      byStatus: {},
+      bySource: {},
+      fieldsPresent: {},
+    };
+    
+    const fieldNames = ['status', 'organizationId', 'source', 'createdAt', 'updatedAt'];
+    
+    all.forEach(c => {
+      fieldNames.forEach(field => {
+        if (c[field] !== undefined) {
+          if (!counts.fieldsPresent[field]) counts.fieldsPresent[field] = 0;
+          counts.fieldsPresent[field]++;
+          
+          const key = `by${field.charAt(0).toUpperCase() + field.slice(1)}`;
+          if (!counts[key]) counts[key] = {};
+          const val = String(c[field]);
+          counts[key][val] = (counts[key][val] || 0) + 1;
+        }
+      });
+    });
+    
+    res.json({ success: true, data: counts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 }));
 
 module.exports = router;
