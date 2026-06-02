@@ -3,6 +3,7 @@ const { asyncHandler, ApiError } = require('../../utils/errors');
 const { logAudit } = require('../../utils/audit');
 const { broadcastNamedEvent } = require('../../utils/sse');
 const { sendNotification, notifyAdmins } = require('../../utils/notifications');
+const { invalidateAll } = require('../../utils/cache');
 
 const VALID_OFFER_STATUSES = ['OFFER_SENT'];
 
@@ -66,6 +67,7 @@ async function markAsJoined(req, res) {
   };
 
   await firestore.collection('applications').doc(applicationId).update(updatePayload);
+  invalidateAll();
 
   // Sync candidate record status
   if (app.candidateId) {
@@ -161,6 +163,7 @@ async function markAsRejected(req, res) {
   };
 
   await firestore.collection('applications').doc(applicationId).update(updatePayload);
+  invalidateAll();
 
   // Sync candidate record status
   if (app.candidateId) {

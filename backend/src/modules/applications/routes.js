@@ -6,6 +6,7 @@ const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
 const { markAsJoined, markAsRejected } = require("./offerDecisionService");
+const { invalidateAll } = require("../../utils/cache");
 
 const router = express.Router();
 
@@ -97,6 +98,9 @@ router.post(
 
     const docRef = await firestore.collection("applications").add(applicationData);
     const applicationId = docRef.id;
+
+    // Invalidate cached reports and analytics lists
+    invalidateAll();
 
     // Record initial pipeline event
     await firestore.collection("pipeline_events").add({
@@ -249,6 +253,7 @@ router.patch(
     const existing = doc.data();
 
     await docRef.update({ shortlisted, updatedAt: new Date().toISOString() });
+    invalidateAll();
 
     await logAudit({
       actorUserId: req.user.id,
@@ -285,6 +290,7 @@ router.patch(
     if (joiningDate) updatePayload.joiningDate = joiningDate;
     
     await docRef.update(updatePayload);
+    invalidateAll();
 
     // Sync candidate status for sidebar views
     if (['JOINED', 'REJECTED', 'OFFER_SENT'].includes(status)) {

@@ -29,8 +29,8 @@ async function getOrgAnalyticsData(orgId) {
     // Fetch collections in parallel
     const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
       firestore.collection("candidates").where("organizationId", "==", orgId).get(),
-      firestore.collection("applications").where("organizationId", "==", orgId).get().catch(() => firestore.collection("applications").get()),
-      firestore.collection("interviews").where("organizationId", "==", orgId).get()
+      firestore.collection("applications").get(),
+      firestore.collection("interviews").get()
     ]);
 
     const candidates = candidatesSnap.docs

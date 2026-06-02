@@ -6,6 +6,7 @@ const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { getCached } = require("../../utils/cache");
+const { getOrgAnalyticsData } = require("../analytics/dataLoader");
 
 const router = express.Router();
 router.use(auth);
@@ -43,12 +44,14 @@ async function buildRecruiterActivity(myOrg) {
 
   if (users.length === 0) return [];
 
-  // Fetch all jobs, candidates, and interviews for this org in parallel to group counts in memory
-  const [jobsSnap, candidatesSnap, interviewsSnap] = await Promise.all([
-    firestore.collection("jobs").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("jobs").get()),
-    firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-    firestore.collection("interviews").where("organizationId", "==", myOrg).get()
+  const recruiterIds = new Set(users.map(u => u.id));
+
+  // Fetch collections in parallel
+  const [jobsSnap, analyticsData] = await Promise.all([
+    firestore.collection("jobs").get(),
+    getOrgAnalyticsData(myOrg)
   ]);
+  const { candidates, interviews } = analyticsData;
 
   const jobsCountMap = {};
   const candidatesCountMap = {};
@@ -56,17 +59,23 @@ async function buildRecruiterActivity(myOrg) {
 
   jobsSnap.docs.forEach(doc => {
     const createdById = doc.data().createdById;
-    if (createdById) jobsCountMap[createdById] = (jobsCountMap[createdById] || 0) + 1;
+    if (createdById && recruiterIds.has(createdById)) {
+      jobsCountMap[createdById] = (jobsCountMap[createdById] || 0) + 1;
+    }
   });
 
-  candidatesSnap.docs.forEach(doc => {
-    const createdById = doc.data().createdById;
-    if (createdById) candidatesCountMap[createdById] = (candidatesCountMap[createdById] || 0) + 1;
+  candidates.forEach(c => {
+    const createdById = c.createdById || c.assignedRecruiterId;
+    if (createdById && recruiterIds.has(createdById)) {
+      candidatesCountMap[createdById] = (candidatesCountMap[createdById] || 0) + 1;
+    }
   });
 
-  interviewsSnap.docs.forEach(doc => {
-    const createdById = doc.data().createdById;
-    if (createdById) interviewsCountMap[createdById] = (interviewsCountMap[createdById] || 0) + 1;
+  interviews.forEach(i => {
+    const createdById = i.createdById;
+    if (createdById && recruiterIds.has(createdById)) {
+      interviewsCountMap[createdById] = (interviewsCountMap[createdById] || 0) + 1;
+    }
   });
 
   const activity = users.map((user) => ({
@@ -83,39 +92,26 @@ async function buildRecruiterActivity(myOrg) {
 }
 
 async function buildHiringProgress(myOrg) {
-  let jobsSnap;
-  try {
-    jobsSnap = await firestore.collection("jobs")
-      .where("organizationId", "==", myOrg)
-      .orderBy("createdAt", "desc")
-      .limit(100)
-      .get();
-  } catch (err) {
-    jobsSnap = await firestore.collection("jobs")
-      .where("organizationId", "==", myOrg)
-      .get()
-      .catch(() => firestore.collection("jobs").get());
-  }
+  const usersMap = await getUsersMap();
+  const orgUserIds = new Set(Object.values(usersMap).filter(u => (u.organizationId || "defaultOrg") === myOrg).map(u => u.id));
 
+  // Fetch all jobs and filter by organization recruiters in-memory
+  const jobsSnap = await firestore.collection("jobs").get();
   let jobs = jobsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  jobs = jobs.filter(job => orgUserIds.has(job.createdById));
+
   if (jobs.length === 0) return [];
 
-  // Sort in memory if orderBy failed due to missing index
-  if (jobsSnap.query && !jobsSnap.query._query?.orderBy?.length) {
-    jobs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    jobs = jobs.slice(0, 100);
-  }
+  // Sort by date
+  jobs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  jobs = jobs.slice(0, 100);
 
-  // Fetch all applications for this org
-  const appsSnap = await firestore.collection("applications")
-    .where("organizationId", "==", myOrg)
-    .get()
-    .catch(() => firestore.collection("applications").get());
+  // Fetch all applications for this organization
+  const { apps } = await getOrgAnalyticsData(myOrg);
 
   // Group applications by jobId in-memory
   const appsByJobId = {};
-  appsSnap.docs.forEach(doc => {
-    const data = doc.data();
+  apps.forEach(data => {
     const jobId = data.jobId;
     if (jobId) {
       if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
@@ -167,23 +163,21 @@ router.get("/candidates", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const cacheKey = `reports_candidates_${myOrg}_${role || ""}_${recruiterId || ""}_${createdFrom || ""}_${createdTo || ""}_${sortBy || ""}_${sortOrder}_${JSON.stringify(stage || "")}_${JSON.stringify(source || "")}`;
 
   const items = await getCached(cacheKey, async () => {
-    const [candidatesSnap, usersMap, stagesMap, appsSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+    const [analyticsData, usersMap, stagesMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
       getUsersMap(),
-      getStagesMap(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get())
+      getStagesMap()
     ]);
+    const { candidates, apps } = analyticsData;
 
     // Map candidates
-    let result = candidatesSnap.docs.map(doc => {
-      const c = doc.data();
-      if (c.isDeleted === true) return null;
-      const id = doc.id;
+    let result = candidates.map(c => {
+      const id = c.id;
       // Find recruiter
       const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
       const recruiter = usersMap[recId] || null;
       // Find application
-      const app = appsSnap.docs.map(d => ({ id: d.id, ...d.data() })).find(a => a.candidateId === id) || null;
+      const app = apps.find(a => a.candidateId === id) || null;
       const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
 
       return {
@@ -201,7 +195,7 @@ router.get("/candidates", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
         stageId: app ? app.currentStageId : null,
         stageName: currentStage ? currentStage.name : "Pool"
       };
-    }).filter(Boolean);
+    });
 
     // Apply filters
     if (role) result = result.filter(c => c.recruiterType === role);
@@ -246,24 +240,23 @@ router.get("/interviews", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const cacheKey = `reports_interviews_${myOrg}_${interviewerRole || ""}_${scheduledFrom || ""}_${scheduledTo || ""}_${mode || ""}_${outcome || ""}`;
 
   const items = await getCached(cacheKey, async () => {
-    const [interviewsSnap, usersMap, candidatesSnap] = await Promise.all([
-      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
-      getUsersMap(),
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get()
+    const [analyticsData, usersMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getUsersMap()
     ]);
+    const { candidates, interviews } = analyticsData;
 
     const candidatesMap = {};
-    candidatesSnap.docs.forEach(doc => {
-      candidatesMap[doc.id] = doc.data();
+    candidates.forEach(c => {
+      candidatesMap[c.id] = c;
     });
 
-    let result = interviewsSnap.docs.map(doc => {
-      const data = doc.data();
+    let result = interviews.map(data => {
       const interviewer = usersMap[data.interviewerId] || null;
       const candidate = candidatesMap[data.candidateId] || null;
 
       return {
-        id: doc.id,
+        id: data.id,
         candidateName: candidate ? candidate.fullName : "Unknown Candidate",
         interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
         interviewerType: interviewer ? interviewer.userType : "N/A",
@@ -318,20 +311,18 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
 
   if (reportType === "candidates") {
     filename = `candidates_report_${Date.now()}`;
-    const [candidatesSnap, usersMap, stagesMap, appsSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
+    const [analyticsData, usersMap, stagesMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
       getUsersMap(),
-      getStagesMap(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get())
+      getStagesMap()
     ]);
+    const { candidates, apps } = analyticsData;
     
-    data = candidatesSnap.docs.map(doc => {
-      const c = doc.data();
-      if (c.isDeleted === true) return null;
-      const id = doc.id;
+    data = candidates.map(c => {
+      const id = c.id;
       const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
       const recruiter = usersMap[recId] || null;
-      const app = appsSnap.docs.map(d => ({ id: d.id, ...d.data() })).find(a => a.candidateId === id) || null;
+      const app = apps.find(a => a.candidateId === id) || null;
       const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
 
       return {
@@ -350,7 +341,7 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
         stageId: app ? app.currentStageId : null,
         stageName: currentStage ? currentStage.name : "Pool"
       };
-    }).filter(Boolean);
+    });
 
     data = data.filter(c => c.organizationId === myOrg);
 
@@ -373,18 +364,17 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
 
   } else if (reportType === "interviews") {
     filename = `interviews_report_${Date.now()}`;
-    const [interviewsSnap, usersMap, candidatesSnap] = await Promise.all([
-      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
-      getUsersMap(),
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get()
+    const [analyticsData, usersMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getUsersMap()
     ]);
+    const { candidates, interviews } = analyticsData;
     const candidatesMap = {};
-    candidatesSnap.docs.forEach(doc => {
-      candidatesMap[doc.id] = doc.data();
+    candidates.forEach(c => {
+      candidatesMap[c.id] = c;
     });
 
-    data = interviewsSnap.docs.map(doc => {
-      const d = doc.data();
+    data = interviews.map(d => {
       const interviewer = usersMap[d.interviewerId] || null;
       const candidate = candidatesMap[d.candidateId] || null;
 

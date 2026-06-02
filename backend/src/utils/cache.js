@@ -89,6 +89,31 @@ async function invalidatePattern(prefix) {
   await deleteCachePattern(`${prefix}*`);
 }
 
+async function invalidateOrgAnalyticsAndReports(orgId) {
+  try {
+    const org = orgId || "defaultOrg";
+    const keys = [
+      `analytics_data_loader:${org}`,
+      `analytics_overview_route_${org}`,
+      `analytics_pipeline_route_${org}`,
+      `analytics_interviewer_load_route_${org}`,
+      `analytics_recruiter_performance_route_${org}`,
+      `analytics_source_analysis_route_${org}`,
+      `analytics_stage_conversion_route_${org}`,
+      `analytics_monthly_trends_route_${org}`,
+      `reports_candidates_${org}`,
+      `reports_interviews_${org}`,
+      `reports_recruiter_activity_${org}`,
+      `reports_hiring_progress_${org}`
+    ];
+    for (const key of keys) {
+      await deleteCachePattern(key);
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
 module.exports = {
   // New explicit API
   getCache,
@@ -101,4 +126,5 @@ module.exports = {
   invalidate,
   invalidateAll,
   invalidatePattern,
+  invalidateOrgAnalyticsAndReports,
 };
