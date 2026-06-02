@@ -21,6 +21,7 @@ const notificationRoutes = require("./modules/notifications/routes");
 const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { createRateLimiter, setSecurityHeaders } = require("./middleware/security");
+const { timingMiddleware } = require("./middleware/timing");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -28,8 +29,27 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
   : [];
 
+// ── Performance: Compression (first middleware) ──────────────
+app.use(compression({
+  level: 6,               // best speed/size balance
+  threshold: 1024,        // only compress responses over 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
 
-app.use(compression());
+// ── Performance: Timing middleware ───────────────────────────
+app.use(timingMiddleware);
+
+// ── Security: Headers ────────────────────────────────────────
+app.disable('x-powered-by');
+
+// Trust proxy if behind nginx/load balancer/Render
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -77,13 +97,24 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Global Cache-Control middleware for read (GET) endpoints under /api
+// ── Refined Cache-Control headers ────────────────────────────
 app.use((req, res, next) => {
   if (req.method === "GET" && req.path.startsWith("/api/")) {
-    const skipCachePaths = ["/api/auth/me", "/api/auth/session", "/api/health"];
-    const shouldSkip = skipCachePaths.some(p => req.path.includes(p));
-    if (!shouldSkip) {
-      res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=120");
+    // Skip caching for auth, SSE streams, and health
+    const noCachePaths = ["/api/auth/", "/api/health", "/api/notifications/stream"];
+    const shouldNoCache = noCachePaths.some(p => req.path.includes(p));
+
+    // Dynamic data — no browser cache
+    const dynamicPaths = ["/api/notifications", "/api/candidates"];
+    const isDynamic = dynamicPaths.some(p => req.path.startsWith(p));
+
+    if (shouldNoCache) {
+      // No caching at all
+    } else if (isDynamic) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    } else {
+      // Static-ish data (jobs, team, analytics, dashboard)
+      res.setHeader("Cache-Control", "private, max-age=30, stale-while-revalidate=120");
     }
   }
   next();
@@ -121,6 +152,10 @@ async function bootstrap() {
       console.log(`[ATS-STABILIZED-V3.0] Server is running on port ${PORT}`);
     });
 
+    // ── Performance: Keep-alive optimization ─────────────────
+    server.keepAliveTimeout = 65000;   // prevents premature TCP close
+    server.headersTimeout = 66000;     // must be > keepAliveTimeout
+
     server.on("error", (err) => {
       if (err.code === "EADDRINUSE") {
         console.error(`[CRITICAL] Port ${PORT} is already in use. Please kill the existing process and try again.`);
@@ -145,4 +180,3 @@ process.on("uncaughtException", (err) => {
 });
 
 bootstrap();
- 

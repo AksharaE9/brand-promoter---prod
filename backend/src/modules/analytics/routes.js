@@ -1,8 +1,9 @@
 const express = require("express");
-const { db: firestore } = require("../../config/firebase");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 const { getCached } = require("../../utils/cache");
+const { getOrgAnalyticsData, getPipelineStages } = require("./dataLoader");
+const { db: firestore } = require("../../config/firebase");
 
 const router = express.Router();
 router.use(auth);
@@ -53,21 +54,11 @@ router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const cacheKey = `analytics_overview_${myOrg}_${start.getTime()}_${end.getTime()}`;
+  // Cache endpoint response at router layer as well
+  const cacheKey = `analytics_overview_route_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
-      firestore.collection("interviews").where("organizationId", "==", myOrg).get()
-    ]);
-
-    const candidates = candidatesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true);
-
-    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-    const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
+    const { candidates, apps, interviews } = await getOrgAnalyticsData(myOrg);
 
     const filterByDate = (list, dateKey, s, e) => {
       return list.filter(item => {
@@ -146,20 +137,14 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const cacheKey = `analytics_pipeline_${myOrg}_${start.getTime()}_${end.getTime()}`;
+  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
-      firestore.collection("pipeline_stages").get()
+    const [analyticsData, stages] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getPipelineStages()
     ]);
-
-    const candidates = candidatesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true);
-    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-    const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const { candidates, apps } = analyticsData;
 
     const stageMap = {};
     stages.forEach(s => {
@@ -215,20 +200,21 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 // 4. GET /api/analytics/interviewer-load
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_interviewer_load_${myOrg}`;
+  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [interviewsSnap, users] = await Promise.all([
-      firestore.collection("interviews").where("organizationId", "==", myOrg).get(),
+    const [analyticsData, users] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
       getUsersList()
     ]);
+    const { interviews } = analyticsData;
 
     const interviewers = users
       .filter(u => (u.organizationId || "defaultOrg") === myOrg)
       .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER") && u.isDeleted !== true);
 
     const load = interviewers.map((int, idx) => {
-      const list = interviewsSnap.docs.map(doc => doc.data()).filter(i => i.interviewerId === int.id);
+      const list = interviews.filter(i => i.interviewerId === int.id);
       
       const weeklyLoad = [
         list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
@@ -260,22 +246,22 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
 // 5. GET /api/analytics/recruiter-performance
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_recruiter_performance_${myOrg}`;
+  const cacheKey = `analytics_recruiter_performance_route_${myOrg}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [candidatesSnap, appsSnap, users] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
+    const [analyticsData, users] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
       getUsersList()
     ]);
+    const { candidates, apps } = analyticsData;
 
     const recruiters = users
       .filter(u => (u.organizationId || "defaultOrg") === myOrg)
       .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
 
     const performance = recruiters.map((rec, idx) => {
-      const cands = candidatesSnap.docs.map(doc => doc.data()).filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
-      const recApps = appsSnap.docs.map(doc => doc.data()).filter(a => cands.some(c => c.fullName === a.candidateName || c.id === a.candidateId));
+      const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
+      const recApps = apps.filter(a => cands.some(c => c.fullName === a.candidateName || c.id === a.candidateId));
 
       const totalHandled = cands.length;
       const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
@@ -305,16 +291,12 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
 router.get("/source-analysis", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_source_analysis_${myOrg}_${start.getTime()}_${end.getTime()}`;
+  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
   const data = await getCached(cacheKey, async () => {
-    const snapshot = await firestore.collection("candidates").where("organizationId", "==", myOrg).get();
+    const { candidates } = await getOrgAnalyticsData(myOrg);
 
-    const cands = snapshot.docs
-      .map(d => d.data())
-      .filter(c => c.isDeleted !== true);
-
-    const currCands = cands.filter(c => {
+    const currCands = candidates.filter(c => {
       const cd = new Date(c.createdAt);
       return cd >= start && cd <= end;
     });
@@ -357,20 +339,14 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_stage_conversion_${myOrg}_${start.getTime()}_${end.getTime()}`;
+  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.getTime()}_${end.getTime()}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [candidatesSnap, appsSnap, stagesSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
-      firestore.collection("pipeline_stages").get()
+    const [analyticsData, stages] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getPipelineStages()
     ]);
-
-    const candidates = candidatesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true);
-    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-    const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const { candidates, apps } = analyticsData;
 
     const stageMap = {};
     stages.forEach(s => {
@@ -421,20 +397,10 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
 // 8. GET /api/analytics/monthly-trends
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_monthly_trends_${myOrg}`;
+  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;
 
   const data = await getCached(cacheKey, async () => {
-    const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-      firestore.collection("candidates").where("organizationId", "==", myOrg).get(),
-      firestore.collection("applications").where("organizationId", "==", myOrg).get().catch(() => firestore.collection("applications").get()),
-      firestore.collection("interviews").where("organizationId", "==", myOrg).get()
-    ]);
-
-    const candidates = candidatesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true);
-    const apps = appsSnap.docs.map(d => d.data()).filter(a => candidates.some(c => c.id === a.candidateId));
-    const interviews = interviewsSnap.docs.map(d => d.data()).filter(i => candidates.some(c => c.id === i.candidateId));
+    const { candidates, apps, interviews } = await getOrgAnalyticsData(myOrg);
 
     const months = [];
     const now = new Date();

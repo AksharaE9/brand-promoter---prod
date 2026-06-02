@@ -53,27 +53,62 @@ const protectedElement = (element, allowedRoles = ALL_ROLES) => (
   <ProtectedRoute allowedRoles={allowedRoles}>{element}</ProtectedRoute>
 );
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000,        // 30 seconds — data considered fresh
-      gcTime: 5 * 60 * 1000,       // 5 minutes — keep in cache after unmount
-      retry: 1,                     // retry failed queries once
-      refetchOnWindowFocus: false,  // do not refetch on tab switch
-      refetchOnMount: false,        // use cache if within staleTime
+      staleTime: 30 * 1000,          // 30s — do not refetch if data is fresh
+      gcTime: 10 * 60 * 1000,        // 10min — keep unused data in cache
+      retry: 1,                       // retry once on failure
+      retryDelay: 1000,
+      refetchOnWindowFocus: false,    // CRITICAL — prevents refetch on tab switch
+      refetchOnReconnect: 'always',
+      refetchOnMount: false,          // use cache within staleTime
+      networkMode: 'online',
     },
     mutations: {
-      retry: 0
+      retry: 0,
+      networkMode: 'online',
     }
   }
 });
 
+// Custom lightweight LocalStorage persister (zero dependencies)
+const localPersister = {
+  persistClient: async (client) => {
+    try {
+      localStorage.setItem('REACT_QUERY_OFFLINE_CACHE', JSON.stringify(client));
+    } catch (e) {
+      console.warn('Failed to persist QueryClient:', e.message);
+    }
+  },
+  restoreClient: async () => {
+    try {
+      const cache = localStorage.getItem('REACT_QUERY_OFFLINE_CACHE');
+      return cache ? JSON.parse(cache) : undefined;
+    } catch (e) {
+      console.warn('Failed to restore QueryClient:', e.message);
+      return undefined;
+    }
+  },
+  removeClient: async () => {
+    try {
+      localStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
+    } catch (e) {
+      console.warn('Failed to remove QueryClient:', e.message);
+    }
+  }
+};
+
 const App = () => {
   const currentUser = getStoredUser();
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: localPersister, maxAge: 1000 * 60 * 60 * 24 }}
+    >
       <Router>
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
@@ -113,7 +148,7 @@ const App = () => {
         </Routes>
       </Suspense>
     </Router>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 };
 

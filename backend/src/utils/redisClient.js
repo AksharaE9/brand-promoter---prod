@@ -11,4 +11,9 @@ redisClient.on("connect", () => {
   console.log("Connected to Redis");
 });
 
+// Warm up the connection immediately
+redisClient.ping()
+  .then(() => console.log("⚡ Redis connection warmed up successfully (ping response received)"))
+  .catch((err) => console.warn("⚠️ Redis warmup failed (ping failed):", err.message));
+
 module.exports = redisClient;

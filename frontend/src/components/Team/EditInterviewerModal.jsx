@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api';
 
 const EditInterviewerModal = ({ isOpen, onClose, userId, onUpdate }) => {
@@ -48,68 +47,63 @@ const EditInterviewerModal = ({ isOpen, onClose, userId, onUpdate }) => {
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-        <motion.div
-          className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          onClick={onClose}
-        />
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="relative bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl p-6"
-        >
-          <h3 className="text-xl font-bold mb-6">Edit Interviewer Profile</h3>
-          
-          {isLoading ? (
-            <div className="flex justify-center p-8"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" /></div>
-          ) : (
-            <div className="space-y-4">
-              {error && <div className="text-red-600 bg-red-50 p-3 rounded-lg text-sm">{error}</div>}
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Full Name</label>
-                  <input type="text" name="fullName" value={formData.fullName || ''} onChange={handleChange} className="w-full os-input" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Work Email</label>
-                  <input type="email" name="email" value={formData.email || ''} onChange={handleChange} className="w-full os-input" />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Interviewer Type</label>
-                  <select name="interviewerType" value={formData.interviewerType || 'TECHNICAL'} onChange={handleChange} className="w-full os-input">
-                    <option value="TECHNICAL">Technical</option>
-                    <option value="HR">HR</option>
-                    <option value="MANAGERIAL">Managerial</option>
-                    <option value="CULTURAL_FIT">Cultural Fit</option>
-                    <option value="DOMAIN_EXPERT">Domain Expert</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Years of Experience</label>
-                  <input type="number" name="yearsOfExperience" value={formData.yearsOfExperience || 0} onChange={handleChange} className="w-full os-input" />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs font-bold text-slate-500 mb-1 block">Bio</label>
-                  <textarea name="bio" value={formData.bio || ''} onChange={handleChange} className="w-full os-input" rows="3" maxLength="500"></textarea>
-                </div>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm modal-overlay-fade"
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl p-6 modal-scale-up"
+      >
+        <h3 className="text-xl font-bold mb-6">Edit Interviewer Profile</h3>
+        
+        {isLoading ? (
+          <div className="flex justify-center p-8"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" /></div>
+        ) : (
+          <div className="space-y-4">
+            {error && <div className="text-red-600 bg-red-50 p-3 rounded-lg text-sm">{error}</div>}
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Full Name</label>
+                <input type="text" name="fullName" value={formData.fullName || ''} onChange={handleChange} className="w-full os-input" />
               </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-                <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                  {isSaving ? 'Saving...' : 'Save Changes'}
-                </button>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Work Email</label>
+                <input type="email" name="email" value={formData.email || ''} onChange={handleChange} className="w-full os-input" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Interviewer Type</label>
+                <select name="interviewerType" value={formData.interviewerType || 'TECHNICAL'} onChange={handleChange} className="w-full os-input">
+                  <option value="TECHNICAL">Technical</option>
+                  <option value="HR">HR</option>
+                  <option value="MANAGERIAL">Managerial</option>
+                  <option value="CULTURAL_FIT">Cultural Fit</option>
+                  <option value="DOMAIN_EXPERT">Domain Expert</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Years of Experience</label>
+                <input type="number" name="yearsOfExperience" value={formData.yearsOfExperience || 0} onChange={handleChange} className="w-full os-input" />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Bio</label>
+                <textarea name="bio" value={formData.bio || ''} onChange={handleChange} className="w-full os-input" rows="3" maxLength="500"></textarea>
               </div>
             </div>
-          )}
-        </motion.div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={onClose} className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
+              <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    </AnimatePresence>
+    </div>
   );
 };
+
 
 export default React.memo(EditInterviewerModal);

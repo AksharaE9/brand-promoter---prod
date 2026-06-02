@@ -1,0 +1,96 @@
+/* ══════════════════════════════════════════════════════════════
+   Responsive Breakpoints — Mobile-first approach
+   Import once in main.jsx
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Prevent horizontal overflow globally ───────────────────── */
+* { box-sizing: border-box; }
+body { overflow-x: hidden; }
+
+/* ── Grid responsive ────────────────────────────────────────── */
+@media (max-width: 1280px) {
+  .metric-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 1024px) {
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .project-card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .metric-grid { grid-template-columns: 1fr; }
+  .project-card-grid { grid-template-columns: 1fr; }
+
+  /* Tables scroll horizontally on mobile */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Modals go full screen on mobile */
+  .modal-container {
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  /* Kanban board scrolls horizontally */
+  .kanban-board {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kanban-column {
+    min-width: 85vw;
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+}
+
+/* ── Touch targets (WCAG 2.5.5) ─────────────────────────────── */
+@media (max-width: 768px) {
+  button, a, .clickable {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ── Three panel layout fix ─────────────────────────────────── */
+.three-panel-page {
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.panel-list {
+  flex: 0 0 280px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color, #e2e8f0);
+}
+
+.panel-detail {
+  flex: 1 1 0%;          /* fills all remaining space — no gap */
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 768px) {
+  .three-panel-page {
+    flex-direction: column;
+  }
+  .panel-list {
+    flex: none;
+    height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+  }
+  .panel-detail {
+    flex: 1;
+  }
+}

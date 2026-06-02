@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { PageEnter, Reveal } from '../../components/PageMotion';
 import { apiGet, apiPatch } from '../../lib/api';
 
@@ -117,142 +116,133 @@ const SalesTracker = () => {
                 )}
             </div>
 
-            <AnimatePresence>
-                {isModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-end">
-                        <motion.div
-                            className="absolute inset-0 bg-[#10193f]/20 backdrop-blur-sm"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsModalOpen(false)}
-                        />
-                        <motion.div
-                            className="relative bg-white w-full max-w-lg h-full shadow-2xl flex flex-col"
-                            initial={{ x: '100%' }}
-                            animate={{ x: 0 }}
-                            exit={{ x: '100%' }}
-                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                        >
-                            <div className="p-8 flex-1 overflow-y-auto">
-                                <div className="flex justify-between items-start mb-8">
-                                    <div>
-                                        <div className="os-eyebrow">Sales Detail</div>
-                                        <h2 className="text-3xl font-bold text-[#10193f]">{selectedProduct?.name}</h2>
-                                    </div>
-                                    <button className="os-icon-btn" onClick={() => setIsModalOpen(false)}>
-                                        <span className="material-symbols-outlined">close</span>
-                                    </button>
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-end">
+                    <div
+                        className="absolute inset-0 bg-[#10193f]/20 backdrop-blur-sm modal-overlay-fade"
+                        onClick={() => setIsModalOpen(false)}
+                    />
+                    <div
+                        className="relative bg-white w-full max-w-lg h-full shadow-2xl flex flex-col slide-in-right"
+                    >
+                        <div className="p-8 flex-1 overflow-y-auto">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <div className="os-eyebrow">Sales Detail</div>
+                                    <h2 className="text-3xl font-bold text-[#10193f]">{selectedProduct?.name}</h2>
                                 </div>
+                                <button className="os-icon-btn" onClick={() => setIsModalOpen(false)}>
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
 
-                                <div className="grid grid-cols-2 gap-4 mb-8">
-                                    <div className="os-card p-4 bg-[#f8fafc] border-none">
-                                        <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Current Status</div>
-                                        <div className="text-sm font-bold text-[#10193f]">{selectedProduct?.tracking?.status}</div>
-                                    </div>
-                                    <div className="os-card p-4 bg-[#f8fafc] border-none">
-                                        <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Price</div>
-                                        <div className="text-sm font-bold text-[#10193f]">
-                                            {selectedProduct?.price ? `₹${selectedProduct.price.toLocaleString()}` : 'N/A'}
-                                        </div>
+                            <div className="grid grid-cols-2 gap-4 mb-8">
+                                <div className="os-card p-4 bg-[#f8fafc] border-none">
+                                    <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Current Status</div>
+                                    <div className="text-sm font-bold text-[#10193f]">{selectedProduct?.tracking?.status}</div>
+                                </div>
+                                <div className="os-card p-4 bg-[#f8fafc] border-none">
+                                    <div className="text-[#8b95ad] uppercase font-bold text-[10px] mb-1">Price</div>
+                                    <div className="text-sm font-bold text-[#10193f]">
+                                        {selectedProduct?.price ? `₹${selectedProduct.price.toLocaleString()}` : 'N/A'}
                                     </div>
                                 </div>
+                            </div>
 
-                                {selectedProduct?.tags?.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mb-8">
-                                        {selectedProduct.tags.map(tag => (
-                                            <span key={tag} className="px-2 py-1 bg-[#f1f5f9] text-[#5c6a84] text-[9px] font-bold rounded-md uppercase border border-[#e2e8f0]">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
+                            {selectedProduct?.tags?.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-8">
+                                    {selectedProduct.tags.map(tag => (
+                                        <span key={tag} className="px-2 py-1 bg-[#f1f5f9] text-[#5c6a84] text-[9px] font-bold rounded-md uppercase border border-[#e2e8f0]">
+                                            {tag}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
 
-                                {selectedProduct?.candidateAssignments?.length > 0 && (
-                                    <div className="mb-8 p-4 bg-blue-50 rounded-2xl border border-blue-100">
-                                        <div className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Assigned Working Team</div>
-                                        <div className="space-y-2">
-                                            {selectedProduct.candidateAssignments.map(asgn => (
-                                                <div key={asgn.id} className="flex items-center gap-3">
-                                                    <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">
-                                                        {asgn.candidate.fullName.charAt(0)}
-                                                    </div>
-                                                    <span className="text-xs font-semibold text-[#10193f]">{asgn.candidate.fullName}</span>
-                                                    <span className="text-[9px] text-blue-400 font-bold uppercase ml-auto">Onboarding</span>
+                            {selectedProduct?.candidateAssignments?.length > 0 && (
+                                <div className="mb-8 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                                    <div className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3">Assigned Working Team</div>
+                                    <div className="space-y-2">
+                                        {selectedProduct.candidateAssignments.map(asgn => (
+                                            <div key={asgn.id} className="flex items-center gap-3">
+                                                <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] font-bold">
+                                                    {asgn.candidate.fullName.charAt(0)}
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <form onSubmit={handleUpdate} className="space-y-6">
-                                    <div>
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">Update Pipeline Status</label>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {statusOptions.map(opt => (
-                                                <button
-                                                    key={opt.value}
-                                                    type="button"
-                                                    onClick={() => setTrackingData({ ...trackingData, status: opt.value })}
-                                                    className={`p-3 rounded-xl border-2 text-left transition-all ${trackingData.status === opt.value
-                                                        ? 'border-[#1f52cc] bg-blue-50'
-                                                        : 'border-[#f1f5f9] hover:border-[#e2e8f0]'
-                                                        }`}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <div className={`w-2 h-2 rounded-full ${opt.dot}`}></div>
-                                                        <div className="text-xs font-bold text-[#10193f]">{opt.label}</div>
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">Follow-up Date</label>
-                                        <input
-                                            type="date"
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc]"
-                                            value={trackingData.followUpDate}
-                                            onChange={(e) => setTrackingData({ ...trackingData, followUpDate: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">New Note / Comment</label>
-                                        <textarea
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] resize-none"
-                                            rows={4}
-                                            placeholder="Add latest update or feedback from the lead..."
-                                            value={trackingData.notes}
-                                            onChange={(e) => setTrackingData({ ...trackingData, notes: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div className="pt-4">
-                                        <button type="submit" className="w-full os-btn-primary py-4 rounded-2xl shadow-lg shadow-blue-200">
-                                            Update tracking status
-                                        </button>
-                                    </div>
-                                </form>
-
-                                <div className="mt-12">
-                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-4 border-b border-[#f1f5f9] pb-2">Activity History</label>
-                                    <div className="space-y-6">
-                                        {selectedProduct?.activities?.map((act, i) => (
-                                            <div key={act.id} className="text-xs">
-                                                <div className="font-bold text-[#10193f]">{act.action.replace('_', ' ')}</div>
-                                                <div className="text-[#5c6a84] mt-1">{act.details}</div>
-                                                <div className="text-[10px] text-[#8b95ad] mt-1">{new Date(act.createdAt).toLocaleString()}</div>
+                                                <span className="text-xs font-semibold text-[#10193f]">{asgn.candidate.fullName}</span>
+                                                <span className="text-[9px] text-blue-400 font-bold uppercase ml-auto">Onboarding</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
+                            )}
+
+                            <form onSubmit={handleUpdate} className="space-y-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">Update Pipeline Status</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {statusOptions.map(opt => (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => setTrackingData({ ...trackingData, status: opt.value })}
+                                                className={`p-3 rounded-xl border-2 text-left transition-all ${trackingData.status === opt.value
+                                                    ? 'border-[#1f52cc] bg-blue-50'
+                                                    : 'border-[#f1f5f9] hover:border-[#e2e8f0]'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-2 h-2 rounded-full ${opt.dot}`}></div>
+                                                    <div className="text-xs font-bold text-[#10193f]">{opt.label}</div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">Follow-up Date</label>
+                                    <input
+                                        type="date"
+                                        className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc]"
+                                        value={trackingData.followUpDate}
+                                        onChange={(e) => setTrackingData({ ...trackingData, followUpDate: e.target.value })}
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-2">New Note / Comment</label>
+                                    <textarea
+                                        className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] resize-none"
+                                        rows={4}
+                                        placeholder="Add latest update or feedback from the lead..."
+                                        value={trackingData.notes}
+                                        onChange={(e) => setTrackingData({ ...trackingData, notes: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="pt-4">
+                                    <button type="submit" className="w-full os-btn-primary py-4 rounded-2xl shadow-lg shadow-blue-200">
+                                        Update tracking status
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div className="mt-12">
+                                <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider mb-4 border-b border-[#f1f5f9] pb-2">Activity History</label>
+                                <div className="space-y-6">
+                                    {selectedProduct?.activities?.map((act, i) => (
+                                        <div key={act.id} className="text-xs">
+                                            <div className="font-bold text-[#10193f]">{act.action.replace('_', ' ')}</div>
+                                            <div className="text-[#5c6a84] mt-1">{act.details}</div>
+                                            <div className="text-[10px] text-[#8b95ad] mt-1">{new Date(act.createdAt).toLocaleString()}</div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        </motion.div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
         </PageEnter>
     );
 };

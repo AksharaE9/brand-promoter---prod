@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     viteCompression({ algorithm: 'gzip', ext: '.gz' }),
     viteCompression({ algorithm: 'brotliCompress', ext: '.br' }),
-    visualizer({ open: false, filename: 'stats.html' }),
+    visualizer({ open: false, filename: 'stats.html', gzipSize: true }),
   ],
   server: {
     proxy: {
@@ -19,60 +19,52 @@ export default defineConfig({
     },
   },
   build: {
-    target: 'esnext',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-        pure_funcs: ['console.log', 'console.warn'],
-      },
-    },
+    target: 'es2020',
+    cssCodeSplit: true,
+    sourcemap: false,           // disable in production
+    reportCompressedSize: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          // Core React — load first
-          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
-            return 'vendor-react';
-          }
-          // Router
-          if (id.includes('node_modules/react-router')) {
-            return 'vendor-router';
-          }
-          // Charts — only loaded on Analytics page
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
-            return 'vendor-charts';
-          }
-          // Framer Motion — animations
-          if (id.includes('node_modules/framer-motion')) {
-            return 'vendor-motion';
-          }
-          // Firebase — auth/db
-          if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
-            return 'vendor-firebase';
-          }
-          // React Query
-          if (id.includes('node_modules/@tanstack')) {
-            return 'vendor-query';
-          }
-          // HTML2Canvas — only for Analytics export
-          if (id.includes('node_modules/html2canvas')) {
-            return 'vendor-html2canvas';
-          }
-          // Socket.io
-          if (id.includes('node_modules/socket.io-client') || id.includes('node_modules/engine.io')) {
-            return 'vendor-socket';
-          }
-          // Lucide icons
-          if (id.includes('node_modules/lucide-react')) {
-            return 'vendor-icons';
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('@tanstack/react-query')) {
+              return 'vendor-query';
+            }
+            if (id.includes('recharts')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('framer-motion')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('firebase')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('@tanstack/react-virtual')) {
+              return 'vendor-virtual';
+            }
+            return 'vendor';
           }
         },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
       },
     },
-    chunkSizeWarningLimit: 400,
-    cssCodeSplit: true,
-    reportCompressedSize: true,
-    sourcemap: false,
+    chunkSizeWarningLimit: 500,
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      '@tanstack/react-query',
+      'lucide-react',
+    ],
   },
 });

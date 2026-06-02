@@ -145,3 +145,28 @@ button:active {
   50% { opacity: .5; }
 }
 
+/* ── Skeleton Shimmer Animation ─────────────────────────────── */
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── GPU Acceleration: will-change for animated elements ───── */
+.modal-overlay    { will-change: opacity; }
+.modal-container  { will-change: transform; }
+.os-notify-menu   { will-change: transform, opacity; }
+.app-sidebar,
+.os-sidebar       { will-change: transform; }
+
+/* ── Content Visibility: skip rendering off-screen content ─── */
+.page-section:not(:first-child) {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 400px;
+}
+

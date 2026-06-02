@@ -10,9 +10,9 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-query-persist-client": "^5.100.14",
     "@tanstack/react-virtual": "^3.13.24",
     "firebase": "^12.13.0",
-    "framer-motion": "^12.4.10",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.479.0",
     "react": "^19.0.0",

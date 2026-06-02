@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import { PageEnter, Reveal } from '../../components/PageMotion';
 import { API_BASE_URL, apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import BulkImportModal from '../../components/BulkImportModal';
@@ -190,38 +189,33 @@ const ProductList = () => {
                                 <span className="material-symbols-outlined text-[16px] transition-transform duration-200" style={{ transform: isExportDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }}>expand_more</span>
                             </button>
 
-                            <AnimatePresence>
-                                {isExportDropdownOpen && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                        className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-[#f1f5f9] p-2 z-[60]"
+                            {isExportDropdownOpen && (
+                                <div
+                                    className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-[#f1f5f9] p-2 z-[60] modal-scale-up"
+                                >
+                                    <button
+                                        onClick={() => handleExport('csv')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-blue-50 hover:text-[#1f52cc] rounded-xl transition-all"
                                     >
-                                        <button
-                                            onClick={() => handleExport('csv')}
-                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-blue-50 hover:text-[#1f52cc] rounded-xl transition-all"
-                                        >
-                                            <span className="material-symbols-outlined text-sm">csv</span>
-                                            Export as CSV
-                                        </button>
-                                        <button
-                                            onClick={() => handleExport('excel')}
-                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-green-50 hover:text-green-600 rounded-xl transition-all"
-                                        >
-                                            <span className="material-symbols-outlined text-sm">grid_on</span>
-                                            Export as Excel
-                                        </button>
-                                        <button
-                                            onClick={() => handleExport('pdf')}
-                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-red-50 hover:text-red-600 rounded-xl transition-all"
-                                        >
-                                            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-                                            Export as PDF
-                                        </button>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
+                                        <span className="material-symbols-outlined text-sm">csv</span>
+                                        Export as CSV
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('excel')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-green-50 hover:text-green-600 rounded-xl transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">grid_on</span>
+                                        Export as Excel
+                                    </button>
+                                    <button
+                                        onClick={() => handleExport('pdf')}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-[#5c6a84] hover:bg-red-50 hover:text-red-600 rounded-xl transition-all"
+                                    >
+                                        <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                                        Export as PDF
+                                    </button>
+                                </div>
+                            )}
                         </div>
                         <button
                             onClick={() => {
@@ -323,152 +317,143 @@ const ProductList = () => {
                     )}
                 </div>
             </PageEnter>
+            {isModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-[#0f1b3e]/60 backdrop-blur-[8px] modal-overlay-fade"
+                        onClick={() => setIsModalOpen(false)}
+                    />
+                    <div
+                        className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden modal-scale-up"
+                    >
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-[#10193f]">{editingProduct ? 'Edit Product' : 'Add New Product'}</h2>
+                                    <p className="text-sm text-[#8b95ad] mt-1">Enter product details below to track its sales progress.</p>
+                                </div>
+                                <button onClick={() => setIsModalOpen(false)} className="os-icon-btn">
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
 
-            <AnimatePresence>
-                {isModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <motion.div
-                            className="absolute inset-0 bg-[#0f1b3e]/60 backdrop-blur-[8px]"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsModalOpen(false)}
-                        />
-                        <motion.div
-                            className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden"
-                            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                        >
-                            <div className="p-8">
-                                <div className="flex justify-between items-center mb-6">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-[#10193f]">{editingProduct ? 'Edit Product' : 'Add New Product'}</h2>
-                                        <p className="text-sm text-[#8b95ad] mt-1">Enter product details below to track its sales progress.</p>
-                                    </div>
-                                    <button onClick={() => setIsModalOpen(false)} className="os-icon-btn">
-                                        <span className="material-symbols-outlined">close</span>
-                                    </button>
+                            <form onSubmit={handleSave} className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Product Name</label>
+                                    <input
+                                        required
+                                        placeholder="e.g. Enterprise Cloud Suite"
+                                        className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    />
                                 </div>
 
-                                <form onSubmit={handleSave} className="space-y-5">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Product Name</label>
-                                        <input
-                                            required
-                                            placeholder="e.g. Enterprise Cloud Suite"
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                            value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between px-1">
-                                                <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider">Category</label>
-                                                <button
-                                                    type="button"
-                                                    className="text-[10px] font-bold text-[#1f52cc] hover:underline"
-                                                    onClick={() => setIsAddingNewCategory(!isAddingNewCategory)}
-                                                >
-                                                    {isAddingNewCategory ? 'Cancel' : '+ New'}
-                                                </button>
-                                            </div>
-                                            {isAddingNewCategory ? (
-                                                <input
-                                                    autoFocus
-                                                    placeholder="Category name"
-                                                    className="w-full h-11 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                                    value={newCategory}
-                                                    onChange={(e) => setNewCategory(e.target.value)}
-                                                />
-                                            ) : (
-                                                <select
-                                                    className="w-full h-11 px-4 py-0 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all cursor-pointer shadow-sm appearance-none"
-                                                    value={formData.category}
-                                                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                                                >
-                                                    {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                </select>
-                                            )}
+                                        <div className="flex items-center justify-between px-1">
+                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider">Category</label>
+                                            <button
+                                                type="button"
+                                                className="text-[10px] font-bold text-[#1f52cc] hover:underline"
+                                                onClick={() => setIsAddingNewCategory(!isAddingNewCategory)}
+                                            >
+                                                {isAddingNewCategory ? 'Cancel' : '+ New'}
+                                            </button>
                                         </div>
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Location</label>
+                                        {isAddingNewCategory ? (
                                             <input
-                                                placeholder="e.g. Remote / Bangalore"
+                                                autoFocus
+                                                placeholder="Category name"
                                                 className="w-full h-11 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                                value={formData.location}
-                                                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                                value={newCategory}
+                                                onChange={(e) => setNewCategory(e.target.value)}
                                             />
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Price (₹)</label>
-                                            <input
-                                                type="number"
-                                                placeholder="0.00"
-                                                className="w-full h-11 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                                value={formData.price}
-                                                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Coordinator</label>
+                                        ) : (
                                             <select
                                                 className="w-full h-11 px-4 py-0 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all cursor-pointer shadow-sm appearance-none"
-                                                value={formData.coordinatorId}
-                                                onChange={(e) => setFormData({ ...formData, coordinatorId: e.target.value })}
+                                                value={formData.category}
+                                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                                             >
-                                                <option value="">Select Coordinator</option>
-                                                {coordinators.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
+                                                {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
-                                        </div>
+                                        )}
                                     </div>
-
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Image URL</label>
+                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Location</label>
                                         <input
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors"
-                                            placeholder="https://images.unsplash.com/..."
-                                            value={formData.imageUrl}
-                                            onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                            placeholder="e.g. Remote / Bangalore"
+                                            className="w-full h-11 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
+                                            value={formData.location}
+                                            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                                         />
                                     </div>
+                                </div>
 
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Tags (comma separated)</label>
+                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Price (₹)</label>
                                         <input
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors"
-                                            placeholder="e.g. High Priority, Hot Lead"
-                                            value={formData.tags}
-                                            onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                                            type="number"
+                                            placeholder="0.00"
+                                            className="w-full h-11 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
+                                            value={formData.price}
+                                            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                                         />
                                     </div>
-
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Description</label>
-                                        <textarea
-                                            rows={3}
-                                            placeholder="Add relevant product details..."
-                                            className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors resize-none shadow-sm"
-                                            value={formData.description}
-                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                        />
+                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Coordinator</label>
+                                        <select
+                                            className="w-full h-11 px-4 py-0 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all cursor-pointer shadow-sm appearance-none"
+                                            value={formData.coordinatorId}
+                                            onChange={(e) => setFormData({ ...formData, coordinatorId: e.target.value })}
+                                        >
+                                            <option value="">Select Coordinator</option>
+                                            {coordinators.map(c => <option key={c.id} value={c.id}>{c.fullName}</option>)}
+                                        </select>
                                     </div>
+                                </div>
 
-                                    <div className="flex gap-4 pt-4">
-                                        <button type="button" className="flex-1 h-12 rounded-2xl border border-[#e2e8f0] text-sm font-bold text-[#5c6a84] hover:bg-gray-50 transition-all" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                                        <button type="submit" className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:bg-[#1a47b0] transition-all">Save Product</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </motion.div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Image URL</label>
+                                    <input
+                                        className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors"
+                                        placeholder="https://images.unsplash.com/..."
+                                        value={formData.imageUrl}
+                                        onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Tags (comma separated)</label>
+                                    <input
+                                        className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors"
+                                        placeholder="e.g. High Priority, Hot Lead"
+                                        value={formData.tags}
+                                        onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Description</label>
+                                    <textarea
+                                        rows={3}
+                                        placeholder="Add relevant product details..."
+                                        className="w-full px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] transition-colors resize-none shadow-sm"
+                                        value={formData.description}
+                                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    />
+                                </div>
+
+                                <div className="flex gap-4 pt-4">
+                                    <button type="button" className="flex-1 h-12 rounded-2xl border border-[#e2e8f0] text-sm font-bold text-[#5c6a84] hover:bg-gray-50 transition-all" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                                    <button type="submit" className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:bg-[#1a47b0] transition-all">Save Product</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
 
             <AssignTeamModal
                 productId={teamProductId}
@@ -528,7 +513,7 @@ const AssignTeamModal = ({ productId, isOpen, onClose, onSuccess }) => {
 
     return (
         <div className="fixed inset-0 bg-[#10193f]/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="relative bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden p-8 text-left">
+            <div className="relative bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden p-8 text-left modal-scale-up">
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h2 className="text-2xl font-bold text-[#10193f]">Assign Working Team</h2>
@@ -561,7 +546,7 @@ const AssignTeamModal = ({ productId, isOpen, onClose, onSuccess }) => {
                         </div>
                     )}
                 </div>
-            </motion.div>
+            </div>
         </div>
     );
 };

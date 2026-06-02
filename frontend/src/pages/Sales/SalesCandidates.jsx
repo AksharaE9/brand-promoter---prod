@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { apiGet, apiPost, apiDelete } from '../../lib/api';
 import { PageEnter } from '../../components/PageMotion';
 import BulkImportModal from '../../components/BulkImportModal';
@@ -82,11 +81,9 @@ const SalesCandidates = () => {
                         <div className="col-span-full py-20 text-center text-[#8b95ad]">No candidates in the pool yet. Add your first talent to get started.</div>
                     ) : (
                         candidates.map((c) => (
-                            <motion.div
+                            <div
                                 key={c.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="os-card p-6 group hover:border-[#1f52cc] transition-all"
+                                className="os-card p-6 group hover:border-[#1f52cc] transition-all reveal-fade"
                             >
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#1f52cc] flex items-center justify-center font-bold text-xl uppercase">
@@ -114,103 +111,95 @@ const SalesCandidates = () => {
                                     <div className="text-[10px] font-bold text-[#8b95ad] uppercase tracking-widest">Status</div>
                                     <span className="px-2.5 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold uppercase">{c.status}</span>
                                 </div>
-                            </motion.div>
+                            </div>
                         ))
                     )}
                 </div>
             </PageEnter>
 
-            <AnimatePresence>
-                {isModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <motion.div
-                            className="absolute inset-0 bg-[#0f1b3e]/60 backdrop-blur-[8px]"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsModalOpen(false)}
-                        />
-                        <motion.div
-                            className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden"
-                            initial={{ scale: 0.95, opacity: 0, y: 20 }}
-                            animate={{ scale: 1, opacity: 1, y: 0 }}
-                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                        >
-                            <form onSubmit={handleAddCandidate} className="p-8">
-                                <div className="flex justify-between items-center mb-6">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-[#10193f]">Add New Talent</h2>
-                                        <p className="text-sm text-[#8b95ad] mt-1">Create a new candidate record for your sales workspace pool.</p>
-                                    </div>
-                                    <button type="button" onClick={() => setIsModalOpen(false)} className="os-icon-btn">
-                                        <span className="material-symbols-outlined">close</span>
-                                    </button>
+            {isModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-[#0f1b3e]/60 backdrop-blur-[8px] modal-overlay-fade"
+                        onClick={() => setIsModalOpen(false)}
+                    />
+                    <div
+                        className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden modal-scale-up"
+                    >
+                        <form onSubmit={handleAddCandidate} className="p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-[#10193f]">Add New Talent</h2>
+                                    <p className="text-sm text-[#8b95ad] mt-1">Create a new candidate record for your sales workspace pool.</p>
                                 </div>
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="os-icon-btn">
+                                    <span className="material-symbols-outlined">close</span>
+                                </button>
+                            </div>
 
-                                <div className="space-y-5">
+                            <div className="space-y-5">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Full Name</label>
+                                    <input
+                                        required
+                                        placeholder="e.g. John Doe"
+                                        className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
+                                        value={formData.fullName}
+                                        onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Full Name</label>
+                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Email</label>
                                         <input
+                                            type="email"
                                             required
-                                            placeholder="e.g. John Doe"
+                                            placeholder="john@example.com"
                                             className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                            value={formData.fullName}
-                                            onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                                            value={formData.email}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Email</label>
-                                            <input
-                                                type="email"
-                                                required
-                                                placeholder="john@example.com"
-                                                className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                                value={formData.email}
-                                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                                            />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Phone</label>
-                                            <input
-                                                placeholder="+91 98765 43210"
-                                                className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                                value={formData.phone}
-                                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                            />
-                                        </div>
                                     </div>
                                     <div className="space-y-1.5">
-                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Skills (Comma Separated)</label>
+                                        <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Phone</label>
                                         <input
-                                            placeholder="e.g. Sales, CRM, Communication"
+                                            placeholder="+91 98765 43210"
                                             className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
-                                            value={formData.skills}
-                                            onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
+                                            value={formData.phone}
+                                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                         />
                                     </div>
                                 </div>
-
-                                <div className="mt-8 flex gap-4">
-                                    <button
-                                        type="button"
-                                        className="flex-1 h-12 rounded-2xl border border-[#e2e8f0] text-sm font-bold text-[#5c6a84] hover:bg-[#f8fafc] transition-all"
-                                        onClick={() => setIsModalOpen(false)}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:shadow-xl hover:bg-[#1a47b0] transition-all"
-                                    >
-                                        Create Record
-                                    </button>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">Skills (Comma Separated)</label>
+                                    <input
+                                        placeholder="e.g. Sales, CRM, Communication"
+                                        className="w-full h-12 px-4 py-3 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl text-sm outline-none focus:border-[#1f52cc] focus:bg-white transition-all shadow-sm"
+                                        value={formData.skills}
+                                        onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
+                                    />
                                 </div>
-                            </form>
-                        </motion.div>
+                            </div>
+
+                            <div className="mt-8 flex gap-4">
+                                <button
+                                    type="button"
+                                    className="flex-1 h-12 rounded-2xl border border-[#e2e8f0] text-sm font-bold text-[#5c6a84] hover:bg-[#f8fafc] transition-all"
+                                    onClick={() => setIsModalOpen(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:shadow-xl hover:bg-[#1a47b0] transition-all"
+                                >
+                                    Create Record
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
 
             <BulkImportModal
                 isOpen={isImportModalOpen}

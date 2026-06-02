@@ -1,6 +1,5 @@
 {
   "indexes": [
-    // Candidates indexes
     {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
@@ -34,7 +33,6 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-    // Jobs indexes
     {
       "collectionGroup": "jobs",
       "queryScope": "COLLECTION",
@@ -43,7 +41,6 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-    // Applications indexes
     {
       "collectionGroup": "applications",
       "queryScope": "COLLECTION",
@@ -76,7 +73,6 @@
         { "fieldPath": "jobId", "order": "ASCENDING" }
       ]
     },
-    // Interviews indexes
     {
       "collectionGroup": "interviews",
       "queryScope": "COLLECTION",
@@ -93,7 +89,6 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-    // Users indexes
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
@@ -102,7 +97,6 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
-    // Pipeline events indexes
     {
       "collectionGroup": "pipeline_events",
       "queryScope": "COLLECTION",

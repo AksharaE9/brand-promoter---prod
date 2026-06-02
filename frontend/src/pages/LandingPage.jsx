@@ -1,6 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, useScroll, useTransform } from 'framer-motion';
 import { PageEnter, Reveal } from '../components/PageMotion';
 
 const fallbackImage =
@@ -45,11 +44,36 @@ const LandingPage = () => {
     'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80',
   );
 
-  const { scrollYProgress } = useScroll();
-  const heroY = useTransform(scrollYProgress, [0, 0.22], [0, 120]);
-  const heroScale = useTransform(scrollYProgress, [0, 0.24], [1, 1.08]);
-  const glassY = useTransform(scrollYProgress, [0, 0.22], [0, -40]);
-  const progressX = useTransform(scrollYProgress, [0, 1], [0, 1]);
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+          if (totalHeight > 0) {
+            setScrollProgress(Math.min(Math.max(window.scrollY / totalHeight, 0), 1));
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const mapRange = (value, inMin, inMax, outMin, outMax) => {
+    if (value <= inMin) return outMin;
+    if (value >= inMax) return outMax;
+    return outMin + ((value - inMin) / (inMax - inMin)) * (outMax - outMin);
+  };
+
+  const heroY = mapRange(scrollProgress, 0, 0.22, 0, 120);
+  const heroScale = mapRange(scrollProgress, 0, 0.24, 1, 1.08);
+  const glassY = mapRange(scrollProgress, 0, 0.22, 0, -40);
 
   const noisyGradient = useMemo(
     () =>
@@ -59,7 +83,10 @@ const LandingPage = () => {
 
   return (
     <PageEnter className="min-h-screen bg-[#eef3f4] text-[#0f1f49]">
-      <motion.div className="fixed left-0 right-0 top-0 h-[2px] bg-[#1f52cc] origin-left z-[80]" style={{ scaleX: progressX }} />
+      <div
+        className="fixed left-0 right-0 top-0 h-[2px] bg-[#1f52cc] z-[80]"
+        style={{ transform: `scaleX(${scrollProgress})`, transformOrigin: 'left' }}
+      />
 
       <header className="relative min-h-[760px] overflow-hidden">
         <nav className="h-16 bg-white border-b border-[#e4ebf2] px-6 md:px-10 flex items-center justify-between sticky top-0 z-50 shadow-[0_1px_0_rgba(9,20,53,.05)]">
@@ -73,7 +100,10 @@ const LandingPage = () => {
           </div>
         </nav>
 
-        <motion.div className="absolute inset-0" style={{ y: heroY, scale: heroScale }}>
+        <div
+          className="absolute inset-0 transition-transform duration-75 ease-out"
+          style={{ transform: `translate3d(0, ${heroY}px, 0) scale(${heroScale})` }}
+        >
           <div
             className="absolute inset-0"
             style={{
@@ -84,12 +114,12 @@ const LandingPage = () => {
           />
           <div className="absolute inset-0 opacity-45" style={{ backgroundImage: noisyGradient }} />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,21,58,.07),rgba(8,21,58,.42))]" />
-        </motion.div>
+        </div>
 
         {floatingBits.map((bit) => (
-          <motion.span
+          <span
             key={`${bit.left}-${bit.top}`}
-            className="absolute rounded-full z-10"
+            className="absolute rounded-full z-10 floating-bit"
             style={{
               left: bit.left,
               top: bit.top,
@@ -97,16 +127,16 @@ const LandingPage = () => {
               height: bit.size,
               background: 'rgba(183, 207, 255, 0.55)',
               boxShadow: '0 0 14px rgba(153, 188, 255, 0.45)',
+              '--bit-duration': `${bit.duration}s`,
+              '--bit-delay': `${bit.delay}s`,
             }}
-            animate={{ y: [0, -12, 0], opacity: [0.55, 0.95, 0.55] }}
-            transition={{ repeat: Infinity, duration: bit.duration, ease: 'easeInOut', delay: bit.delay }}
           />
         ))}
 
         <div className="relative z-20 max-w-[1160px] mx-auto px-6 pt-14 pb-20">
-          <motion.div
-            style={{ y: glassY }}
-            className="mx-auto max-w-[940px] rounded-[30px] border border-white/28 bg-white/[0.05] backdrop-blur-[3px] px-8 md:px-12 py-10 text-center text-white shadow-[0_28px_58px_rgba(8,18,50,.36)]"
+          <div
+            style={{ transform: `translate3d(0, ${glassY}px, 0)` }}
+            className="mx-auto max-w-[940px] rounded-[30px] border border-white/28 bg-white/[0.05] backdrop-blur-[3px] px-8 md:px-12 py-10 text-center text-white shadow-[0_28px_58px_rgba(8,18,50,.36)] transition-transform duration-75 ease-out"
           >
             <div className="text-[11px] tracking-[.24em] uppercase text-[#dbe4ff] font-semibold">Next Generation Recruitment</div>
             <h1 className="mt-5 text-4xl md:text-6xl leading-[1.05] font-bold font-[Manrope]">
@@ -116,12 +146,18 @@ const LandingPage = () => {
               Deploy AI-driven workflows to identify, assess, and onboard top-tier talent in minutes, not months.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <motion.button whileHover={{ y: -2, scale: 1.02 }} whileTap={{ scale: 0.98 }} className="os-btn-primary h-12 px-8" onClick={() => { navigate('/signup'); }}>
+              <button
+                className="os-btn-primary h-12 px-8 transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98]"
+                onClick={() => { navigate('/signup'); }}
+              >
                 Start Free Trial
-              </motion.button>
-              <motion.button whileHover={{ y: -2, scale: 1.02 }} whileTap={{ scale: 0.98 }} className="os-btn-outline h-12 px-8 !bg-transparent border-white/35 text-white" onClick={() => { navigate('/login'); }}>
+              </button>
+              <button
+                className="os-btn-outline h-12 px-8 !bg-transparent border-white/35 text-white transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98]"
+                onClick={() => { navigate('/login'); }}
+              >
                 View Demo
-              </motion.button>
+              </button>
             </div>
 
             <div className="mt-8 flex flex-wrap justify-center gap-3 text-[11px] uppercase tracking-[.13em] text-[#c7d6ff]">
@@ -129,7 +165,7 @@ const LandingPage = () => {
               <span className="px-3 py-1 rounded-full bg-white/8 border border-white/20">12M+ Verified Profiles</span>
               <span className="px-3 py-1 rounded-full bg-white/8 border border-white/20">Enterprise Security</span>
             </div>
-          </motion.div>
+          </div>
         </div>
       </header>
 
@@ -147,12 +183,16 @@ const LandingPage = () => {
           <Reveal className="md:col-span-2">
             <article className="os-card p-6 overflow-hidden relative">
               {talentBits.map((bit, idx) => (
-                <motion.span
+                <span
                   key={idx}
-                  className="absolute rounded-sm bg-[#c5d7ff]/65"
-                  style={{ left: bit.x, top: bit.y, width: 6, height: 6 }}
-                  animate={{ y: [0, -10, 0], rotate: [0, 90, 180] }}
-                  transition={{ duration: bit.d, repeat: Infinity, ease: 'easeInOut' }}
+                  className="absolute rounded-sm bg-[#c5d7ff]/65 floating-talent-bit"
+                  style={{
+                    left: bit.x,
+                    top: bit.y,
+                    width: 6,
+                    height: 6,
+                    '--bit-duration': `${bit.d}s`,
+                  }}
                 />
               ))}
               <div className="h-full flex flex-col relative z-10">
@@ -162,10 +202,8 @@ const LandingPage = () => {
                 </p>
 
                 <div className="mt-6 grid md:grid-cols-[1.2fr_.8fr] gap-4 items-stretch">
-                  <motion.div
-                    whileHover={{ scale: 1.015 }}
-                    transition={{ type: 'spring', stiffness: 220, damping: 18 }}
-                    className="relative rounded-2xl w-full h-[260px] md:h-[300px] shadow-xl overflow-hidden border border-[#4d73dc]/30"
+                  <div
+                    className="relative rounded-2xl w-full h-[260px] md:h-[300px] shadow-xl overflow-hidden border border-[#4d73dc]/30 transition-transform duration-300 hover:scale-[1.015]"
                     style={{
                       background:
                         'linear-gradient(160deg, #173989 0%, #2451c6 46%, #4f78df 100%)',
@@ -174,76 +212,72 @@ const LandingPage = () => {
                     <div className="absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(255,255,255,.18),transparent_34%),radial-gradient(circle_at_84%_72%,rgba(161,203,255,.2),transparent_38%)]" />
 
                     {[0, 1, 2, 3, 4, 5].map((dot) => (
-                      <motion.span
+                      <span
                         key={dot}
-                        className="absolute rounded-full bg-white/35"
+                        className="absolute rounded-full bg-white/35 floating-dot"
                         style={{
                           width: dot % 2 === 0 ? 10 : 7,
                           height: dot % 2 === 0 ? 10 : 7,
                           left: `${12 + dot * 14}%`,
                           top: `${18 + (dot % 3) * 20}%`,
+                          '--dot-duration': `${5 + dot * 0.7}s`,
                         }}
-                        animate={{ y: [0, -12, 0], opacity: [0.45, 0.95, 0.45] }}
-                        transition={{ duration: 5 + dot * 0.7, repeat: Infinity, ease: 'easeInOut' }}
                       />
                     ))}
 
                     <svg viewBox="0 0 1000 260" className="absolute inset-x-0 bottom-0 w-full h-[58%] opacity-85">
-                      <motion.path
+                      <path
                         d="M0,160 C110,120 180,190 290,150 C390,114 470,188 585,152 C700,116 780,188 1000,132 L1000,260 L0,260 Z"
                         fill="rgba(175,205,255,0.22)"
-                        animate={{
-                          d: [
-                            'M0,160 C110,120 180,190 290,150 C390,114 470,188 585,152 C700,116 780,188 1000,132 L1000,260 L0,260 Z',
-                            'M0,146 C105,178 196,120 300,164 C395,200 500,126 610,160 C710,190 808,132 1000,152 L1000,260 L0,260 Z',
-                            'M0,160 C110,120 180,190 290,150 C390,114 470,188 585,152 C700,116 780,188 1000,132 L1000,260 L0,260 Z',
-                          ]
-                        }}
-                        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-                      />
-                      <motion.path
+                      >
+                        <animate
+                          attributeName="d"
+                          dur="9s"
+                          repeatCount="indefinite"
+                          values="M0,160 C110,120 180,190 290,150 C390,114 470,188 585,152 C700,116 780,188 1000,132 L1000,260 L0,260 Z; M0,146 C105,178 196,120 300,164 C395,200 500,126 610,160 C710,190 808,132 1000,152 L1000,260 L0,260 Z; M0,160 C110,120 180,190 290,150 C390,114 470,188 585,152 C700,116 780,188 1000,132 L1000,260 L0,260 Z"
+                        />
+                      </path>
+                      <path
                         d="M0,178 C130,148 206,212 318,180 C424,150 528,206 648,176 C768,145 844,208 1000,166"
                         fill="none"
                         stroke="rgba(214,231,255,0.68)"
                         strokeWidth="7"
-                        animate={{ pathLength: [0.15, 1, 0.15] }}
-                        transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-                      />
+                        strokeDasharray="1000"
+                      >
+                        <animate
+                          attributeName="stroke-dashoffset"
+                          dur="8s"
+                          repeatCount="indefinite"
+                          values="850;0;850"
+                        />
+                      </path>
                     </svg>
 
-                    <motion.div
-                      className="absolute left-[7%] top-[18%] rounded-xl bg-white/92 text-[#18439e] px-3 py-2 shadow-[0_8px_22px_rgba(8,26,72,.22)]"
-                      animate={{ y: [0, -8, 0], rotate: [0, -1.5, 0] }}
-                      transition={{ duration: 5.8, repeat: Infinity, ease: 'easeInOut' }}
+                    <div
+                      className="absolute left-[7%] top-[18%] rounded-xl bg-white/92 text-[#18439e] px-3 py-2 shadow-[0_8px_22px_rgba(8,26,72,.22)] float-widget-1"
                     >
                       <div className="text-[10px] tracking-[.14em] uppercase font-semibold text-[#6b7faa]">Status</div>
                       <div className="mt-1 text-sm font-bold">Got Hired</div>
-                    </motion.div>
+                    </div>
 
-                    <motion.div
-                      className="absolute right-[8%] top-[30%] rounded-xl bg-[#0e2f81]/88 text-white px-3 py-2 border border-[#9ab8ff]/35"
-                      animate={{ y: [0, -10, 0], x: [0, 2, 0] }}
-                      transition={{ duration: 6.4, repeat: Infinity, ease: 'easeInOut', delay: 0.6 }}
+                    <div
+                      className="absolute right-[8%] top-[30%] rounded-xl bg-[#0e2f81]/88 text-white px-3 py-2 border border-[#9ab8ff]/35 float-widget-2"
                     >
                       <div className="text-[10px] tracking-[.14em] uppercase text-[#c4d5ff]">Offer Sent</div>
                       <div className="mt-1 text-sm font-semibold">Accepted in 2h</div>
-                    </motion.div>
+                    </div>
 
-                    <motion.div
-                      className="absolute left-[18%] bottom-[17%] rounded-full bg-[#d8e6ff]/92 text-[#163d92] px-3 py-1.5 text-xs font-semibold"
-                      animate={{ x: [0, 14, 0], opacity: [0.8, 1, 0.8] }}
-                      transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut' }}
+                    <div
+                      className="absolute left-[18%] bottom-[17%] rounded-full bg-[#d8e6ff]/92 text-[#163d92] px-3 py-1.5 text-xs font-semibold float-widget-3"
                     >
                       +1 Hired
-                    </motion.div>
-                  </motion.div>
+                    </div>
+                  </div>
 
                   <div className="grid gap-4 h-full">
-                    <motion.img
-                      whileHover={{ scale: 1.015 }}
-                      transition={{ type: 'spring', stiffness: 220, damping: 18 }}
+                    <img
                       alt="Talent dashboard"
-                      className="rounded-2xl w-full h-[140px] object-cover shadow-lg"
+                      className="rounded-2xl w-full h-[140px] object-cover shadow-lg transition-transform duration-300 hover:scale-[1.015]"
                       src={secondaryImg}
                       onError={() => setSecondaryImg(fallbackImage)}
                     />
@@ -260,28 +294,26 @@ const LandingPage = () => {
 
           <div className="flex flex-col gap-5">
             <Reveal delay={0.04}>
-              <motion.article whileHover={{ y: -3 }} className="rounded-3xl bg-[#2555d9] text-white p-6 min-h-[240px] shadow-[0_20px_40px_rgba(32,79,208,.25)]">
-                <motion.span
-                  className="material-symbols-outlined text-3xl"
+              <article className="rounded-3xl bg-[#2555d9] text-white p-6 min-h-[240px] shadow-[0_20px_40px_rgba(32,79,208,.25)] transition-transform duration-300 hover:-translate-y-1">
+                <span
+                  className="material-symbols-outlined text-3xl float-rotate"
                   style={{ fontVariationSettings: "'FILL' 1" }}
-                  animate={{ rotate: [0, 8, -6, 0] }}
-                  transition={{ repeat: Infinity, duration: 6, ease: 'easeInOut' }}
                 >
                   verified
-                </motion.span>
+                </span>
                 <h4 className="text-3xl font-semibold font-[Manrope] mt-5">Automated Verification</h4>
                 <p className="text-sm mt-3 text-[#dce6ff]">Instant background checks and skill verification via secure verification flows.</p>
-              </motion.article>
+              </article>
             </Reveal>
             <Reveal delay={0.08}>
-              <motion.article whileHover={{ y: -3 }} className="os-card p-6 min-h-[200px]">
+              <article className="os-card p-6 min-h-[200px] transition-transform duration-300 hover:-translate-y-1">
                 <div className="text-sm">Active teams +12</div>
                 <h4 className="text-3xl font-semibold font-[Manrope] mt-4">Active Pipelines</h4>
                 <p className="text-sm mt-3 text-[#6f7894]">Real-time collaboration across hiring managers and sourcing teams.</p>
                 <div className="mt-5 h-2 rounded-full bg-[#edf2fb] overflow-hidden">
-                  <motion.div initial={{ width: 0 }} whileInView={{ width: '82%' }} viewport={{ once: true }} transition={{ duration: 1.1 }} className="h-full rounded-full bg-[#1f52cc]" />
+                  <div className="h-full rounded-full bg-[#1f52cc] grow-width-82" />
                 </div>
-              </motion.article>
+              </article>
             </Reveal>
           </div>
         </div>
@@ -295,10 +327,8 @@ const LandingPage = () => {
 
         <div className="mt-8 grid md:grid-cols-12 gap-5">
           <Reveal className="md:col-span-7">
-            <motion.img
-              whileHover={{ scale: 1.01 }}
-              transition={{ type: 'spring', stiffness: 210, damping: 18 }}
-              className="w-full h-[260px] md:h-[340px] rounded-3xl object-cover shadow-[0_20px_40px_rgba(13,35,91,.14)]"
+            <img
+              className="w-full h-[260px] md:h-[340px] rounded-3xl object-cover shadow-[0_20px_40px_rgba(13,35,91,.14)] transition-transform duration-300 hover:scale-[1.01]"
               src={galleryOne}
               onError={() => setGalleryOne(fallbackImage)}
               alt="Hiring collaboration"
@@ -306,18 +336,14 @@ const LandingPage = () => {
           </Reveal>
           <Reveal className="md:col-span-5" delay={0.05}>
             <div className="grid gap-5">
-              <motion.img
-                whileHover={{ scale: 1.01 }}
-                transition={{ type: 'spring', stiffness: 210, damping: 18 }}
-                className="w-full h-[160px] rounded-3xl object-cover shadow-[0_16px_32px_rgba(13,35,91,.12)]"
+              <img
+                className="w-full h-[160px] rounded-3xl object-cover shadow-[0_16px_32px_rgba(13,35,91,.12)] transition-transform duration-300 hover:scale-[1.01]"
                 src={galleryTwo}
                 onError={() => setGalleryTwo(fallbackImage)}
                 alt="Recruitment metrics"
               />
-              <motion.img
-                whileHover={{ scale: 1.01 }}
-                transition={{ type: 'spring', stiffness: 210, damping: 18 }}
-                className="w-full h-[160px] rounded-3xl object-cover shadow-[0_16px_32px_rgba(13,35,91,.12)]"
+              <img
+                className="w-full h-[160px] rounded-3xl object-cover shadow-[0_16px_32px_rgba(13,35,91,.12)] transition-transform duration-300 hover:scale-[1.01]"
                 src={galleryThree}
                 onError={() => setGalleryThree(fallbackImage)}
                 alt="Talent interviews"
@@ -326,40 +352,30 @@ const LandingPage = () => {
           </Reveal>
         </div>
 
-        <motion.div className="mt-6 rounded-2xl border border-[#dde6f2] bg-white overflow-hidden" whileHover={{ y: -2 }}>
-          <motion.div
-            className="flex gap-3 p-4 min-w-max"
-            animate={{ x: ['0%', '-50%'] }}
-            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-          >
+        <div className="mt-6 rounded-2xl border border-[#dde6f2] bg-white overflow-hidden transition-transform duration-300 hover:-translate-y-0.5">
+          <div className="marquee-inner p-4 min-w-max">
             {[...marqueeItems, ...marqueeItems].map((item, idx) => (
               <span key={`${item}-${idx}`} className="px-3 py-1 rounded-full text-xs font-semibold tracking-[.1em] uppercase bg-[#edf3ff] text-[#1e4ecc] border border-[#d8e6ff]">
                 {item}
               </span>
             ))}
-          </motion.div>
-        </motion.div>
+          </div>
+        </div>
       </section>
 
       <section className="bg-[#eaf0f1] py-20 overflow-hidden relative">
-        <motion.div
-          className="absolute -top-16 -left-16 w-64 h-64 rounded-full bg-[#dfe8ff]/70 blur-3xl"
-          animate={{ x: [0, 30, 0], y: [0, -18, 0] }}
-          transition={{ repeat: Infinity, duration: 16, ease: 'easeInOut' }}
+        <div
+          className="absolute -top-16 -left-16 w-64 h-64 rounded-full bg-[#dfe8ff]/70 blur-3xl float-blob-1"
         />
-        <motion.div
-          className="absolute -bottom-16 -right-16 w-72 h-72 rounded-full bg-[#cce6ff]/60 blur-3xl"
-          animate={{ x: [0, -28, 0], y: [0, 16, 0] }}
-          transition={{ repeat: Infinity, duration: 18, ease: 'easeInOut' }}
+        <div
+          className="absolute -bottom-16 -right-16 w-72 h-72 rounded-full bg-[#cce6ff]/60 blur-3xl float-blob-2"
         />
 
         <div className="max-w-[1160px] mx-auto px-6 grid lg:grid-cols-2 gap-10 items-center relative z-10">
           <Reveal>
             <div className="os-card p-4 overflow-hidden">
-              <motion.img
-                whileHover={{ scale: 1.02 }}
-                transition={{ type: 'spring', stiffness: 220, damping: 18 }}
-                className="w-full rounded-2xl h-[320px] object-cover"
+              <img
+                className="w-full rounded-2xl h-[320px] object-cover transition-transform duration-300 hover:scale-[1.02]"
                 src={heroImg}
                 onError={() => setHeroImg(fallbackImage)}
                 alt="Enterprise analytics view"

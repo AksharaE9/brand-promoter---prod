@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -44,14 +43,15 @@ MetricCard.displayName = 'MetricCard';
 const FeedItem = React.memo(({ app, onClick, delay }) => {
   const initial = (app.candidate?.fullName || 'C')[0].toUpperCase();
   return (
-    <motion.button
-      className="flex gap-3 w-full text-left p-2 rounded-xl"
-      style={{ background: 'transparent', cursor: 'pointer' }}
+    <button
+      className="flex gap-3 w-full text-left p-2 rounded-xl reveal-fade"
+      style={{
+        background: 'transparent',
+        cursor: 'pointer',
+        animationDelay: `${delay}s`
+      }}
       type="button"
       onClick={onClick}
-      initial={{ opacity: 0, x: 8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay, duration: 0.22 }}
     >
       <div className="w-10 h-10 rounded-full bg-[#1f52cc] text-white flex items-center justify-center font-bold text-sm shrink-0">
         {initial}
@@ -64,7 +64,7 @@ const FeedItem = React.memo(({ app, onClick, delay }) => {
           {app.status ? app.status.replace(/_/g, ' ') : 'Pipeline Update'}
         </div>
       </div>
-    </motion.button>
+    </button>
   );
 });
 FeedItem.displayName = 'FeedItem';

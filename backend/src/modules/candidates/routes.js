@@ -349,41 +349,68 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const page = Number.parseInt(req.query.page, 10) || 1;
-    const limit = Number.parseInt(req.query.limit, 10) || 10;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
     const search = req.query.search?.trim()?.toLowerCase();
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
     const assignedToMe = req.query.assignedToMe === 'true';
 
-    const cacheKey = `candidates_list_${page}_${limit}_${search}_${category}_${status}_${assignedToMe}_${req.user.id}`;
+    const cacheKeyStr = `candidates:list:${page}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
 
-    const data = await getCached(cacheKey, async () => {
-      // Fetch newest candidates first using single-field index, then filter in memory
-      let query = firestore.collection("candidates").orderBy("createdAt", "desc");
+    const data = await getCached(cacheKeyStr, async () => {
+      // Build Firestore query — apply server-side filters where possible
+      let query = firestore.collection("candidates");
 
-      // Total count will be determined after in-memory filtering
+      // Apply single-field Firestore filters (no composite index needed)
+      // We can only chain one inequality/orderBy, so pick the most selective filter
+      let needsInMemorySort = false;
 
-      // Fetch candidates — limit to 5000 to ensure we have enough pool to filter from
+      if (category && !status && !assignedToMe) {
+        // Single filter + orderBy — Firestore can handle this
+        try {
+          query = query.where("category", "==", category).orderBy("createdAt", "desc");
+        } catch {
+          query = query.orderBy("createdAt", "desc");
+        }
+      } else if (status && !category && !assignedToMe) {
+        try {
+          query = query.where("status", "==", status).orderBy("createdAt", "desc");
+        } catch {
+          query = query.orderBy("createdAt", "desc");
+        }
+      } else {
+        // Multiple filters or assignedToMe — must filter in memory
+        try {
+          query = query.orderBy("createdAt", "desc");
+        } catch {
+          needsInMemorySort = true;
+        }
+      }
+
+      // Fetch candidates — limit pool size for performance
+      // If we have no search filter, we can limit more aggressively
+      const poolSize = search ? 3000 : 2000;
       let allDocs = [];
       try {
-        const snapshot = await query.limit(5000).get();
+        const snapshot = await query.limit(poolSize).get();
         allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } catch (queryErr) {
         console.error("❌ Query failed:", queryErr.message);
-        // Try simpler query without filters
         try {
-          const simpleSnap = await firestore.collection("candidates").limit(5000).get();
+          const simpleSnap = await firestore.collection("candidates").limit(poolSize).get();
           allDocs = simpleSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          needsInMemorySort = true;
         } catch (e3) {
           console.error("❌ Simple query also failed:", e3.message);
           allDocs = [];
         }
       }
 
-      // Filter in memory to avoid missing composite index slowdowns
+      // Apply in-memory filters for combinations Firestore can't handle
       let items = allDocs;
-      
+
       if (category) {
         items = items.filter(c => c.category === category);
       }
@@ -401,51 +428,59 @@ router.get(
         );
       }
 
-      // Total items after all in-memory filtering
       const total = items.length;
 
-      // Sort by createdAt desc in memory
-      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      // Sort only if Firestore didn't sort
+      if (needsInMemorySort) {
+        items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      }
 
       // Apply pagination
-      const paginatedItems = items.slice((page - 1) * limit, page * limit);
+      const paginatedItems = items.slice(skip, skip + limit);
 
-      // Populate file and application data
+      // Populate file metadata and application data IN PARALLEL
       if (paginatedItems.length > 0) {
         const fileIds = [...new Set(paginatedItems.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
-        if (fileIds.length > 0) {
-          const fileMap = {};
-          try {
-            const fileRefs = fileIds.map(id => firestore.collection("fileMetas").doc(id));
-            const snaps = await firestore.getAll(...fileRefs);
-            snaps.forEach(fs => { if (fs.exists) fileMap[fs.id] = { id: fs.id, ...fs.data() }; });
-          } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
-
-          paginatedItems.forEach(c => {
-            if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
-            if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
-          });
-        }
-
         const candidateIds = paginatedItems.map(c => c.id);
-        const appMap = {};
-        try {
-          const appChunks = [];
-          for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
 
-          await Promise.all(appChunks.map(async (chunk) => {
-            const appSnap = await firestore.collection("applications")
-              .where("candidateId", "in", chunk)
-              .get();
-            appSnap.docs.forEach(doc => {
-              const app = { id: doc.id, ...doc.data() };
-              if (!appMap[app.candidateId]) appMap[app.candidateId] = [];
-              appMap[app.candidateId].push(app);
-            });
-          }));
-        } catch (e) { console.warn("⚠️ App fetch failed:", e.message); }
+        // Run file + app fetches concurrently
+        const [fileMap, appMap] = await Promise.all([
+          // File metadata fetch
+          (async () => {
+            const map = {};
+            if (fileIds.length > 0) {
+              try {
+                const fileRefs = fileIds.map(id => firestore.collection("fileMetas").doc(id));
+                const snaps = await firestore.getAll(...fileRefs);
+                snaps.forEach(fs => { if (fs.exists) map[fs.id] = { id: fs.id, ...fs.data() }; });
+              } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
+            }
+            return map;
+          })(),
+          // Application fetch
+          (async () => {
+            const map = {};
+            try {
+              const appChunks = [];
+              for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
+              await Promise.all(appChunks.map(async (chunk) => {
+                const appSnap = await firestore.collection("applications")
+                  .where("candidateId", "in", chunk)
+                  .get();
+                appSnap.docs.forEach(doc => {
+                  const app = { id: doc.id, ...doc.data() };
+                  if (!map[app.candidateId]) map[app.candidateId] = [];
+                  map[app.candidateId].push(app);
+                });
+              }));
+            } catch (e) { console.warn("⚠️ App fetch failed:", e.message); }
+            return map;
+          })(),
+        ]);
 
         paginatedItems.forEach(c => {
+          if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
+          if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
           c.applications = appMap[c.id] || [];
         });
       }
@@ -474,14 +509,24 @@ router.get(
     const applications = appSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     const timeline = [];
-    for (const app of applications) {
+    applications.forEach(app => {
       timeline.push({ type: "APPLICATION_CREATED", at: app.createdAt, applicationId: app.id });
-      
-      const eventSnap = await firestore.collection("pipeline_events").where("applicationId", "==", app.id).get();
-      eventSnap.docs.forEach(d => timeline.push({ type: "PIPELINE_MOVED", at: d.data().movedAt, ...d.data() }));
+    });
 
-      const interviewSnap = await firestore.collection("interviews").where("applicationId", "==", app.id).get();
-      interviewSnap.docs.forEach(d => timeline.push({ type: "INTERVIEW_SCHEDULED", at: d.data().scheduledStart, ...d.data() }));
+    const appIds = applications.map(app => app.id);
+    if (appIds.length > 0) {
+      const [eventsSnaps, interviewsSnaps] = await Promise.all([
+        Promise.all(appIds.map(appId => firestore.collection("pipeline_events").where("applicationId", "==", appId).get())),
+        Promise.all(appIds.map(appId => firestore.collection("interviews").where("applicationId", "==", appId).get()))
+      ]);
+
+      eventsSnaps.forEach(eventSnap => {
+        eventSnap.docs.forEach(d => timeline.push({ type: "PIPELINE_MOVED", at: d.data().movedAt, ...d.data() }));
+      });
+
+      interviewsSnaps.forEach(interviewSnap => {
+        interviewSnap.docs.forEach(d => timeline.push({ type: "INTERVIEW_SCHEDULED", at: d.data().scheduledStart, ...d.data() }));
+      });
     }
 
     timeline.sort((a, b) => new Date(b.at) - new Date(a.at));

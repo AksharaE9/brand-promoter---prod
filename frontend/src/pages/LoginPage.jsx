@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL, hasToken } from '../lib/api';
 
@@ -52,11 +51,8 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-white">
-      <motion.section
-        className="relative hidden lg:block overflow-hidden"
-        initial={{ backgroundPosition: 'center 42%' }}
-        animate={{ backgroundPosition: ['center 42%', 'center 56%', 'center 42%'] }}
-        transition={{ duration: 42, repeat: Infinity, ease: 'easeInOut' }}
+      <section
+        className="relative hidden lg:block overflow-hidden login-bg-pan"
         style={{
           backgroundImage:
             `linear-gradient(135deg, rgba(5, 29, 91, 0.96), rgba(20, 61, 182, 0.88)), url('${earthImage}')`,
@@ -68,12 +64,14 @@ const LoginPage = () => {
 
         <div className="absolute inset-0 pointer-events-none">
           {[0, 1, 2, 3, 4].map((idx) => (
-            <motion.span
+            <span
               key={idx}
-              className="absolute w-2 h-2 rounded-full bg-[#bdd2ff]/70"
-              style={{ left: `${15 + idx * 14}%`, top: `${24 + (idx % 3) * 18}%` }}
-              animate={{ y: [0, -10, 0], opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 7 + idx, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute w-2 h-2 rounded-full bg-[#bdd2ff]/70 floating-star"
+              style={{
+                left: `${15 + idx * 14}%`,
+                top: `${24 + (idx % 3) * 18}%`,
+                '--float-duration': `${7 + idx}s`
+              }}
             />
           ))}
         </div>
@@ -105,7 +103,7 @@ const LoginPage = () => {
             </div>
           </div>
         </div>
-      </motion.section>
+      </section>
 
       <section className="flex items-center justify-center p-6 md:p-12 relative">
         <button

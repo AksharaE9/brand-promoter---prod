@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import Reveal from './PageMotion';
+
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
 const DRIVE_STATUS_OPTIONS = ['PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
@@ -443,201 +443,199 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       </div>
 
       {/* MODALS */}
-      <AnimatePresence>
-        {showCollegeModal && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowCollegeModal(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold text-slate-900">Add New College</h2>
-                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowCollegeModal(false)}>
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
-                </div>
-                <form className="grid grid-cols-2 gap-4" onSubmit={handleAddCollege}>
-                  <div className="col-span-2 space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">College Name</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.name} onChange={e => setCollegeForm({...collegeForm, name: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Location</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.location} onChange={e => setCollegeForm({...collegeForm, location: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Area / Region</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={collegeForm.area} onChange={e => setCollegeForm({...collegeForm, area: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Batch Year</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. 2026" value={collegeForm.year} onChange={e => setCollegeForm({...collegeForm, year: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Target Role</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. Trainee" value={collegeForm.role} onChange={e => setCollegeForm({...collegeForm, role: e.target.value})} />
-                  </div>
-                  <div className="col-span-2 space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Preferred Course</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. B.Tech CSE" value={collegeForm.course} onChange={e => setCollegeForm({...collegeForm, course: e.target.value})} />
-                  </div>
-                  <button className="col-span-2 h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Adding...' : 'Create College Entry'}</button>
-                </form>
+      {showCollegeModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowCollegeModal(false)} />
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-slate-900">Add New College</h2>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowCollegeModal(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
-            </motion.div>
-          </div>
-        )}
-
-        {showStudentModal && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowStudentModal(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900">Add Student</h2>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedDrive?.title}</p>
-                  </div>
-                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowStudentModal(false)}>
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
+              <form className="grid grid-cols-2 gap-4" onSubmit={handleAddCollege}>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">College Name</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.name} onChange={e => setCollegeForm({...collegeForm, name: e.target.value})} />
                 </div>
-                <form className="space-y-4" onSubmit={handleAddStudent}>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Full Name</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.fullName} onChange={e => setStudentForm({...studentForm, fullName: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Email Address</label>
-                    <input type="email" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Phone Number (Required)</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} />
-                  </div>
-                  <button className="w-full h-14 rounded-2xl bg-emerald-600 text-white font-bold text-lg mt-4 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Saving...' : 'Add to Drive'}</button>
-                </form>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Location</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={collegeForm.location} onChange={e => setCollegeForm({...collegeForm, location: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Area / Region</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={collegeForm.area} onChange={e => setCollegeForm({...collegeForm, area: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Batch Year</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. 2026" value={collegeForm.year} onChange={e => setCollegeForm({...collegeForm, year: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Target Role</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. Trainee" value={collegeForm.role} onChange={e => setCollegeForm({...collegeForm, role: e.target.value})} />
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Preferred Course</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" placeholder="e.g. B.Tech CSE" value={collegeForm.course} onChange={e => setCollegeForm({...collegeForm, course: e.target.value})} />
+                </div>
+                <button className="col-span-2 h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Adding...' : 'Create College Entry'}</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStudentModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowStudentModal(false)} />
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Add Student</h2>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedDrive?.title}</p>
+                </div>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowStudentModal(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
-            </motion.div>
-          </div>
-        )}
-
-        {showBulkModal && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowBulkModal(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900">Bulk Upload Students</h2>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">Excel / CSV Supported</p>
-                  </div>
-                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
+              <form className="space-y-4" onSubmit={handleAddStudent}>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Full Name</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.fullName} onChange={e => setStudentForm({...studentForm, fullName: e.target.value})} />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Email Address</label>
+                  <input type="email" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Phone Number (Required)</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} />
+                </div>
+                <button className="w-full h-14 rounded-2xl bg-emerald-600 text-white font-bold text-lg mt-4 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Saving...' : 'Add to Drive'}</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
-                {!bulkResults ? (
-                  <form onSubmit={handleBulkUpload} className="space-y-6">
-                    <div className="p-10 border-2 border-dashed border-slate-200 rounded-[28px] bg-slate-50/50 flex flex-col items-center justify-center text-center">
-                      <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 mb-4">
-                        <span className="material-symbols-outlined text-3xl">cloud_upload</span>
-                      </div>
-                      <h4 className="font-bold text-slate-800 mb-1">Select Excel Template</h4>
-                      <p className="text-xs text-slate-500 mb-2 max-w-xs">Template columns: <b>NAME, CONTACT, email</b>.</p>
-                      <button 
-                        type="button" 
-                        onClick={downloadTemplate}
-                        className="text-[#1f52cc] text-[10px] font-bold uppercase tracking-wider hover:underline mb-6 flex items-center gap-1"
-                      >
-                        <span className="material-symbols-outlined text-sm">download</span>
-                        Download Sample Template
-                      </button>
-                      <input 
-                        type="file" 
-                        accept=".xlsx, .csv" 
-                        className="hidden" 
-                        id="bulk-file-input" 
-                        onChange={e => setBulkFile(e.target.files?.[0])}
-                      />
-                      <label htmlFor="bulk-file-input" className="h-11 px-6 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-all flex items-center gap-2">
-                        {bulkFile ? bulkFile.name : 'Choose File'}
-                      </label>
+      {showBulkModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowBulkModal(false)} />
+          <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Bulk Upload Students</h2>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">Excel / CSV Supported</p>
+                </div>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              {!bulkResults ? (
+                <form onSubmit={handleBulkUpload} className="space-y-6">
+                  <div className="p-10 border-2 border-dashed border-slate-200 rounded-[28px] bg-slate-50/50 flex flex-col items-center justify-center text-center">
+                    <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 mb-4">
+                      <span className="material-symbols-outlined text-3xl">cloud_upload</span>
                     </div>
-                    <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={!bulkFile || saving}>{saving ? 'Processing...' : 'Upload & Sync'}</button>
-                  </form>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-center">
-                        <div className="text-2xl font-black text-emerald-600">{bulkResults.inserted}</div>
-                        <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Inserted</div>
-                      </div>
-                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-center">
-                        <div className="text-2xl font-black text-amber-600">{bulkResults.skipped}</div>
-                        <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Skipped / Failed</div>
-                      </div>
-                    </div>
-
-                    {bulkResults.errors?.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">Detailed Error Report</div>
-                        <div className="max-h-48 overflow-y-auto bg-red-50/30 rounded-2xl border border-red-100 p-4 divide-y divide-red-100">
-                          {bulkResults.errors.map((err, i) => (
-                            <div key={i} className="py-2 text-[11px] text-red-700 font-medium flex items-start gap-2">
-                              <span className="material-symbols-outlined text-sm mt-0.5">error</span>
-                              {err}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <button className="w-full h-12 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-all" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>Done</button>
+                    <h4 className="font-bold text-slate-800 mb-1">Select Excel Template</h4>
+                    <p className="text-xs text-slate-500 mb-2 max-w-xs">Template columns: <b>NAME, CONTACT, email</b>.</p>
+                    <button 
+                      type="button" 
+                      onClick={downloadTemplate}
+                      className="text-[#1f52cc] text-[10px] font-bold uppercase tracking-wider hover:underline mb-6 flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-sm">download</span>
+                      Download Sample Template
+                    </button>
+                    <input 
+                      type="file" 
+                      accept=".xlsx, .csv" 
+                      className="hidden" 
+                      id="bulk-file-input" 
+                      onChange={e => setBulkFile(e.target.files?.[0])}
+                    />
+                    <label htmlFor="bulk-file-input" className="h-11 px-6 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-all flex items-center gap-2">
+                      {bulkFile ? bulkFile.name : 'Choose File'}
+                    </label>
                   </div>
-                )}
-              </div>
-            </motion.div>
-          </div>
-        )}
-
-        {showDriveModal && (
-          <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowDriveModal(false)} />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10">
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold text-slate-900">Create Hiring Drive</h2>
-                  <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowDriveModal(false)}>
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
-                </div>
-                <form className="space-y-4" onSubmit={handleAddDrive}>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
-                    <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.title} onChange={e => setDriveForm({...driveForm, title: e.target.value})} placeholder="e.g. Campus Recruitment 2026" />
-                  </div>
+                  <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={!bulkFile || saving}>{saving ? 'Processing...' : 'Upload & Sync'}</button>
+                </form>
+              ) : (
+                <div className="space-y-6">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Start Date</label>
-                      <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.dateFrom} onChange={e => setDriveForm({...driveForm, dateFrom: e.target.value})} />
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-center">
+                      <div className="text-2xl font-black text-emerald-600">{bulkResults.inserted}</div>
+                      <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Inserted</div>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">End Date (Optional)</label>
-                      <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={driveForm.dateTo} onChange={e => setDriveForm({...driveForm, dateTo: e.target.value})} />
+                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-center">
+                      <div className="text-2xl font-black text-amber-600">{bulkResults.skipped}</div>
+                      <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Skipped / Failed</div>
                     </div>
+                  </div>
+
+                  {bulkResults.errors?.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">Detailed Error Report</div>
+                      <div className="max-h-48 overflow-y-auto bg-red-50/30 rounded-2xl border border-red-100 p-4 divide-y divide-red-100">
+                        {bulkResults.errors.map((err, i) => (
+                          <div key={i} className="py-2 text-[11px] text-red-700 font-medium flex items-start gap-2">
+                            <span className="material-symbols-outlined text-sm mt-0.5">error</span>
+                            {err}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button className="w-full h-12 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-all" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>Done</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDriveModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowDriveModal(false)} />
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-slate-900">Create Hiring Drive</h2>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowDriveModal(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <form className="space-y-4" onSubmit={handleAddDrive}>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.title} onChange={e => setDriveForm({...driveForm, title: e.target.value})} placeholder="e.g. Campus Recruitment 2026" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Start Date</label>
+                    <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={driveForm.dateFrom} onChange={e => setDriveForm({...driveForm, dateFrom: e.target.value})} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Status</label>
-                    <select className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-bold" value={driveForm.status} onChange={e => setDriveForm({...driveForm, status: e.target.value})}>
-                      {DRIVE_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                    </select>
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">End Date (Optional)</label>
+                    <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={driveForm.dateTo} onChange={e => setDriveForm({...driveForm, dateTo: e.target.value})} />
                   </div>
-                  <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Creating...' : 'Launch Drive'}</button>
-                </form>
-              </div>
-            </motion.div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Status</label>
+                  <select className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-bold" value={driveForm.status} onChange={e => setDriveForm({...driveForm, status: e.target.value})}>
+                    {DRIVE_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Creating...' : 'Launch Drive'}</button>
+              </form>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

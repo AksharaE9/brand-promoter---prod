@@ -27,48 +27,49 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const page = Number.parseInt(req.query.page, 10) || 1;
-    const limit = Number.parseInt(req.query.limit, 10) || 20;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const { getCached } = require("../../utils/cache");
 
-    let query = firestore.collection("jobs");
-    
-    if (req.query.isActive === "true") query = query.where("isActive", "==", true);
-    if (req.query.isActive === "false") query = query.where("isActive", "==", false);
+    const cacheKeyStr = `jobs:list:${page}:${limit}:${req.query.isActive || ''}:${req.query.search || ''}`;
 
-    let snapshot;
-    let items = [];
-    try {
-      snapshot = await query.orderBy("createdAt", "desc").get();
-      items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (e) {
-      console.log("⚠️ Missing Index for Jobs Sort. Falling back to in-memory sort.");
-      snapshot = await query.get();
-      items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    }
+    const result = await getCached(cacheKeyStr, async () => {
+      let query = firestore.collection("jobs");
+      
+      if (req.query.isActive === "true") query = query.where("isActive", "==", true);
+      if (req.query.isActive === "false") query = query.where("isActive", "==", false);
 
-    if (req.query.search) {
-      const search = req.query.search.toLowerCase();
-      items = items.filter(item => 
-        item.title?.toLowerCase().includes(search) ||
-        item.department?.toLowerCase().includes(search) ||
-        item.location?.toLowerCase().includes(search)
-      );
-    }
+      let snapshot;
+      let items = [];
+      try {
+        snapshot = await query.orderBy("createdAt", "desc").get();
+        items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (e) {
+        console.log("⚠️ Missing Index for Jobs Sort. Falling back to in-memory sort.");
+        snapshot = await query.get();
+        items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      }
 
-    const total = items.length;
-    const paginated = items.slice((page - 1) * limit, page * limit);
+      if (req.query.search) {
+        const search = req.query.search.toLowerCase();
+        items = items.filter(item => 
+          item.title?.toLowerCase().includes(search) ||
+          item.department?.toLowerCase().includes(search) ||
+          item.location?.toLowerCase().includes(search)
+        );
+      }
 
-    res.json({
-      success: true,
-      data: paginated,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
+      const total = items.length;
+      const paginated = items.slice((page - 1) * limit, page * limit);
+
+      return {
+        data: paginated,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      };
+    }, 120000); // 120s cache
+
+    res.json({ success: true, ...result });
   }),
 );
 
@@ -107,6 +108,9 @@ router.post(
     const docRef = await firestore.collection("jobs").add(jobData);
     const job = { id: docRef.id, ...jobData };
 
+    const { invalidatePattern } = require("../../utils/cache");
+    await invalidatePattern("jobs:list:");
+
     await notifyAdmins({
       title: "New Job Posted",
       message: `A new job "${title}" has been posted by ${req.user.fullName}`,
@@ -141,6 +145,10 @@ router.patch(
     delete updateData.id;
 
     await firestore.collection("jobs").doc(id).update(updateData);
+    
+    const { invalidatePattern } = require("../../utils/cache");
+    await invalidatePattern("jobs:list:");
+
     const { broadcast } = require("../../utils/sse");
     broadcast({ type: 'JOB_UPDATED', jobId: id });
     res.json({ success: true, message: "Job updated successfully" });
@@ -164,6 +172,9 @@ router.patch(
     const oldActive = doc.data().isActive;
     await docRef.update({ isActive, updatedAt: new Date().toISOString() });
     const updated = { id, ...doc.data(), isActive };
+
+    const { invalidatePattern } = require("../../utils/cache");
+    await invalidatePattern("jobs:list:");
 
     await logAudit({
       actorUserId: req.user.id,
