@@ -5,34 +5,29 @@ const { stringify } = require("csv-stringify/sync");
 const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
-const { getCached } = require("../../utils/cache");
 const { getOrgAnalyticsData } = require("../analytics/dataLoader");
 
 const router = express.Router();
 router.use(auth);
 
-// Helper to get all users (cached 60s)
+// Helper to get all users directly from Firestore
 async function getUsersMap() {
-  return getCached("users_map_reports", async () => {
-    const snapshot = await firestore.collection("users").get();
-    const map = {};
-    snapshot.docs.forEach(doc => {
-      map[doc.id] = { id: doc.id, ...doc.data() };
-    });
-    return map;
-  }, 60000);
+  const snapshot = await firestore.collection("users").get();
+  const map = {};
+  snapshot.docs.forEach(doc => {
+    map[doc.id] = { id: doc.id, ...doc.data() };
+  });
+  return map;
 }
 
-// Helper to get all stages (cached 60s)
+// Helper to get all stages directly from Firestore
 async function getStagesMap() {
-  return getCached("stages_map_reports", async () => {
-    const snapshot = await firestore.collection("pipeline_stages").get();
-    const map = {};
-    snapshot.docs.forEach(doc => {
-      map[doc.id] = { id: doc.id, ...doc.data() };
-    });
-    return map;
-  }, 60000);
+  const snapshot = await firestore.collection("pipeline_stages").get();
+  const map = {};
+  snapshot.docs.forEach(doc => {
+    map[doc.id] = { id: doc.id, ...doc.data() };
+  });
+  return map;
 }
 
 async function buildRecruiterActivity(myOrg) {
@@ -160,76 +155,70 @@ router.get("/candidates", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const { role, recruiterId, createdFrom, createdTo, stage, source, sortBy, sortOrder = 'asc' } = req.query;
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const cacheKey = `reports_candidates_${myOrg}_${role || ""}_${recruiterId || ""}_${createdFrom || ""}_${createdTo || ""}_${sortBy || ""}_${sortOrder}_${JSON.stringify(stage || "")}_${JSON.stringify(source || "")}`;
+  const [analyticsData, usersMap, stagesMap] = await Promise.all([
+    getOrgAnalyticsData(myOrg),
+    getUsersMap(),
+    getStagesMap()
+  ]);
+  const { candidates, apps } = analyticsData;
 
-  const items = await getCached(cacheKey, async () => {
-    const [analyticsData, usersMap, stagesMap] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
-      getUsersMap(),
-      getStagesMap()
-    ]);
-    const { candidates, apps } = analyticsData;
+  // Map candidates
+  let result = candidates.map(c => {
+    const id = c.id;
+    // Find recruiter
+    const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
+    const recruiter = usersMap[recId] || null;
+    // Find application
+    const app = apps.find(a => a.candidateId === id) || null;
+    const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
 
-    // Map candidates
-    let result = candidates.map(c => {
-      const id = c.id;
-      // Find recruiter
-      const recId = c.assignedRecruiterId || c.createdById || c.mentorId;
-      const recruiter = usersMap[recId] || null;
-      // Find application
-      const app = apps.find(a => a.candidateId === id) || null;
-      const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
+    return {
+      id,
+      fullName: c.fullName,
+      email: c.email || "N/A",
+      phone: c.phone || "N/A",
+      source: c.source || "Direct",
+      createdAt: c.createdAt,
+      status: c.status || "ACTIVE",
+      organizationId: c.organizationId || "defaultOrg",
+      recruiterName: recruiter ? recruiter.fullName : "System",
+      recruiterType: recruiter ? recruiter.userType : "N/A",
+      recruiterId: recId || null,
+      stageId: app ? app.currentStageId : null,
+      stageName: currentStage ? currentStage.name : "Pool"
+    };
+  });
 
-      return {
-        id,
-        fullName: c.fullName,
-        email: c.email || "N/A",
-        phone: c.phone || "N/A",
-        source: c.source || "Direct",
-        createdAt: c.createdAt,
-        status: c.status || "ACTIVE",
-        organizationId: c.organizationId || "defaultOrg",
-        recruiterName: recruiter ? recruiter.fullName : "System",
-        recruiterType: recruiter ? recruiter.userType : "N/A",
-        recruiterId: recId || null,
-        stageId: app ? app.currentStageId : null,
-        stageName: currentStage ? currentStage.name : "Pool"
-      };
+  // Apply filters
+  if (role) result = result.filter(c => c.recruiterType === role);
+  if (recruiterId) result = result.filter(c => c.recruiterId === recruiterId);
+  if (createdFrom) result = result.filter(c => new Date(c.createdAt) >= new Date(createdFrom));
+  if (createdTo) result = result.filter(c => new Date(c.createdAt) <= new Date(createdTo));
+  if (stage) {
+    const stagesArray = Array.isArray(stage) ? stage : [stage];
+    result = result.filter(c => stagesArray.includes(c.stageId) || stagesArray.includes(c.stageName));
+  }
+  if (source) {
+    const sourcesArray = Array.isArray(source) ? source : [source];
+    result = result.filter(c => sourcesArray.includes(c.source));
+  }
+
+  // Sorting
+  if (sortBy) {
+    result.sort((a, b) => {
+      let av = a[sortBy] || '';
+      let bv = b[sortBy] || '';
+      if (sortBy === 'createdAt') {
+        av = new Date(av);
+        bv = new Date(bv);
+      }
+      if (av < bv) return sortOrder === 'desc' ? 1 : -1;
+      if (av > bv) return sortOrder === 'desc' ? -1 : 1;
+      return 0;
     });
+  }
 
-    // Apply filters
-    if (role) result = result.filter(c => c.recruiterType === role);
-    if (recruiterId) result = result.filter(c => c.recruiterId === recruiterId);
-    if (createdFrom) result = result.filter(c => new Date(c.createdAt) >= new Date(createdFrom));
-    if (createdTo) result = result.filter(c => new Date(c.createdAt) <= new Date(createdTo));
-    if (stage) {
-      const stagesArray = Array.isArray(stage) ? stage : [stage];
-      result = result.filter(c => stagesArray.includes(c.stageId) || stagesArray.includes(c.stageName));
-    }
-    if (source) {
-      const sourcesArray = Array.isArray(source) ? source : [source];
-      result = result.filter(c => sourcesArray.includes(c.source));
-    }
-
-    // Sorting
-    if (sortBy) {
-      result.sort((a, b) => {
-        let av = a[sortBy] || '';
-        let bv = b[sortBy] || '';
-        if (sortBy === 'createdAt') {
-          av = new Date(av);
-          bv = new Date(bv);
-        }
-        if (av < bv) return sortOrder === 'desc' ? 1 : -1;
-        if (av > bv) return sortOrder === 'desc' ? -1 : 1;
-        return 0;
-      });
-    }
-
-    return result;
-  }, 30000);
-
-  res.json({ success: true, data: items });
+  res.json({ success: true, data: result });
 }));
 
 // GET /api/reports/interviews
@@ -237,48 +226,42 @@ router.get("/interviews", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   const { interviewerRole, scheduledFrom, scheduledTo, mode, outcome } = req.query;
   const myOrg = req.user.organizationId || "defaultOrg";
 
-  const cacheKey = `reports_interviews_${myOrg}_${interviewerRole || ""}_${scheduledFrom || ""}_${scheduledTo || ""}_${mode || ""}_${outcome || ""}`;
+  const [analyticsData, usersMap] = await Promise.all([
+    getOrgAnalyticsData(myOrg),
+    getUsersMap()
+  ]);
+  const { candidates, interviews } = analyticsData;
 
-  const items = await getCached(cacheKey, async () => {
-    const [analyticsData, usersMap] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
-      getUsersMap()
-    ]);
-    const { candidates, interviews } = analyticsData;
+  const candidatesMap = {};
+  candidates.forEach(c => {
+    candidatesMap[c.id] = c;
+  });
 
-    const candidatesMap = {};
-    candidates.forEach(c => {
-      candidatesMap[c.id] = c;
-    });
+  let result = interviews.map(data => {
+    const interviewer = usersMap[data.interviewerId] || null;
+    const candidate = candidatesMap[data.candidateId] || null;
 
-    let result = interviews.map(data => {
-      const interviewer = usersMap[data.interviewerId] || null;
-      const candidate = candidatesMap[data.candidateId] || null;
+    return {
+      id: data.id,
+      candidateName: candidate ? candidate.fullName : "Unknown Candidate",
+      interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
+      interviewerType: interviewer ? interviewer.userType : "N/A",
+      interviewerId: data.interviewerId || null,
+      scheduledStart: data.scheduledStart,
+      mode: data.mode || "ONLINE",
+      outcome: data.status || "SCHEDULED",
+      organizationId: data.organizationId || "defaultOrg"
+    };
+  });
 
-      return {
-        id: data.id,
-        candidateName: candidate ? candidate.fullName : "Unknown Candidate",
-        interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
-        interviewerType: interviewer ? interviewer.userType : "N/A",
-        interviewerId: data.interviewerId || null,
-        scheduledStart: data.scheduledStart,
-        mode: data.mode || "ONLINE",
-        outcome: data.status || "SCHEDULED",
-        organizationId: data.organizationId || "defaultOrg"
-      };
-    });
+  // Apply filters
+  if (interviewerRole) result = result.filter(i => i.interviewerType === interviewerRole);
+  if (scheduledFrom) result = result.filter(i => new Date(i.scheduledStart) >= new Date(scheduledFrom));
+  if (scheduledTo) result = result.filter(i => new Date(i.scheduledStart) <= new Date(scheduledTo));
+  if (mode) result = result.filter(i => i.mode === mode);
+  if (outcome) result = result.filter(i => i.outcome === outcome);
 
-    // Apply filters
-    if (interviewerRole) result = result.filter(i => i.interviewerType === interviewerRole);
-    if (scheduledFrom) result = result.filter(i => new Date(i.scheduledStart) >= new Date(scheduledFrom));
-    if (scheduledTo) result = result.filter(i => new Date(i.scheduledStart) <= new Date(scheduledTo));
-    if (mode) result = result.filter(i => i.mode === mode);
-    if (outcome) result = result.filter(i => i.outcome === outcome);
-
-    return result;
-  }, 30000);
-
-  res.json({ success: true, data: items });
+  res.json({ success: true, data: result });
 }));
 
 // GET /api/reports/team
@@ -450,17 +433,13 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
 // Legacy routes
 router.get("/recruiter-activity", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const rows = await getCached(`reports_recruiter_activity_${myOrg}`, async () => {
-    return buildRecruiterActivity(myOrg);
-  }, 30000);
+  const rows = await buildRecruiterActivity(myOrg);
   res.json({ success: true, data: rows });
 }));
 
 router.get("/hiring-progress", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const rows = await getCached(`reports_hiring_progress_${myOrg}`, async () => {
-    return buildHiringProgress(myOrg);
-  }, 30000);
+  const rows = await buildHiringProgress(myOrg);
   res.json({ success: true, data: rows });
 }));
 
