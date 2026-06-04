@@ -9,10 +9,13 @@ const QUERY_KEYS = {
 
 // ── Fetch rounds list ──
 export function useRoundsList(filters = {}) {
+  const isSearch = !!(filters.search && filters.search.trim());
   return useQuery({
     queryKey: QUERY_KEYS.rounds(filters),
     queryFn: () => schedulingApi.getRounds(filters),
-    staleTime: 30_000,
+    // Search results must always be fresh — no caching. Normal list: 30s stale time.
+    staleTime: isSearch ? 0 : 30_000,
+    gcTime: isSearch ? 0 : 5 * 60_000, // don't keep search results in memory
     refetchOnWindowFocus: false,
     select: (data) => {
       // Direct array or data wrapper check
@@ -342,7 +345,7 @@ export function useSubmitFeedback() {
   });
 }
 
-// ── Create round (optimistic) ──
+// ── Create round (optimistic) — interview appears INSTANTLY, server syncs in background ──
 /**
  * @returns {import('@tanstack/react-query').UseMutationResult<any, any, any, any>}
  */
@@ -354,6 +357,7 @@ export function useCreateRound() {
     mutationFn: (roundData) => schedulingApi.createRound(roundData),
 
     onMutate: async (roundData) => {
+      // Cancel any in-flight refetches so they don't clobber our optimistic update
       await queryClient.cancelQueries({ queryKey: ['scheduling', 'rounds'] });
       const previousLists = queryClient.getQueriesData({ queryKey: ['scheduling', 'rounds'] });
 
@@ -366,6 +370,7 @@ export function useCreateRound() {
         createdAt: new Date().toISOString(),
       };
 
+      // Immediately inject into every rounds list in cache
       queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
         const list = old?.data ?? old;
         if (!Array.isArray(list)) return [tempRound];
@@ -377,11 +382,13 @@ export function useCreateRound() {
     },
 
     onError: (err, variables, context) => {
+      // Roll back the optimistic insert
       context?.previousLists?.forEach(([key, data]) => queryClient.setQueryData(key, data));
-      toast.error('Failed to schedule interview');
+      toast.error(`Failed to schedule interview: ${err.message}`);
     },
 
     onSuccess: (data, variables, context) => {
+      // Replace the temp entry with the real server data
       const realId = data?.data?.id || data?.tempId || data?.id;
       const responseData = data?.data ?? data;
       if (realId && context?.tempId) {
@@ -394,13 +401,18 @@ export function useCreateRound() {
           return old?.data ? { ...old, data: updated } : updated;
         });
       }
-      toast.success('Interview scheduled');
+      toast.success('Interview scheduled ✓');
     },
   });
 }
 
-// ── Delete round (optimistic) ──
+// ── Delete round — INSTANT optimistic remove, NO ghost-back on success ──
 /**
+ * The interview is removed from the UI the instant the user confirms.
+ * If the server call fails, it is restored.
+ * On success, we mark the query as stale (so next focus triggers a soft refresh)
+ * but we do NOT immediately refetch — preventing the 1-second "ghost back" effect.
+ *
  * @returns {import('@tanstack/react-query').UseMutationResult<any, any, any, any>}
  */
 export function useDeleteRound() {
@@ -411,9 +423,13 @@ export function useDeleteRound() {
     mutationFn: (roundId) => schedulingApi.deleteRound(roundId),
 
     onMutate: async (roundId) => {
+      // Stop any in-flight background refetch from restoring the item
       await queryClient.cancelQueries({ queryKey: ['scheduling', 'rounds'] });
+
+      // Snapshot current state for rollback
       const previousLists = queryClient.getQueriesData({ queryKey: ['scheduling', 'rounds'] });
 
+      // ✨ Instantly remove from every cached list — this is the "instant delete"
       queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
         const list = old?.data ?? old;
         if (!Array.isArray(list)) return old;
@@ -421,15 +437,26 @@ export function useDeleteRound() {
         return old?.data ? { ...old, data: updated } : updated;
       });
 
-      return { previousLists };
+      return { previousLists, deletedId: roundId };
     },
 
     onError: (err, variables, context) => {
+      // Server rejected the delete — restore previous state
       context?.previousLists?.forEach(([key, data]) => queryClient.setQueryData(key, data));
       toast.error(`Delete failed: ${err.message}`);
     },
 
-    onSuccess: () => {
+    onSuccess: (data, roundId) => {
+      // Also evict the single-round cache so a direct fetch won't return stale data
+      queryClient.removeQueries({ queryKey: QUERY_KEYS.round(roundId) });
+
+      // Mark the list as stale WITHOUT triggering an immediate refetch
+      // The next user action or focus event will fetch fresh data
+      queryClient.invalidateQueries({
+        queryKey: ['scheduling', 'rounds'],
+        refetchType: 'none', // ← KEY: marks stale but does NOT re-fetch now
+      });
+
       toast.success('Interview deleted');
     },
   });
@@ -479,7 +506,19 @@ export function useUpdateRound() {
       toast.error(`Update failed: ${err.message}`);
     },
 
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Reconcile with server data — clear optimistic flag
+      const realData = data?.data ?? data;
+      if (realData) {
+        queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
+          const list = old?.data ?? old;
+          if (!Array.isArray(list)) return old;
+          const updated = list.map((r) =>
+            r.id === variables.roundId ? { ...r, ...realData, _optimistic: false } : r
+          );
+          return old?.data ? { ...old, data: updated } : updated;
+        });
+      }
       toast.success('Interview updated');
     },
   });

@@ -78,14 +78,38 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "applicationId", "order": "ASCENDING" },
-        { "fieldPath": "scheduledStart", "order": "ASCENDING" }
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "interviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "scheduledStart", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "interviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "candidateId", "order": "ASCENDING" },
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "interviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "interviewerIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "interviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },

@@ -6,6 +6,7 @@ const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const sse = require("../../utils/sse");
 const inv = require("../../utils/cacheInvalidation");
+const { getCached } = require("../../utils/cache");
 
 const router = express.Router();
 
@@ -24,20 +25,23 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { jobId } = req.query;
+    const cacheKey = `pipeline:stages:${jobId || 'global'}`;
 
-    let snapshot;
-    if (jobId) {
-      snapshot = await firestore.collection("pipeline_stages")
-        .where("jobId", "in", [jobId, null])
-        .get();
-    } else {
-      snapshot = await firestore.collection("pipeline_stages")
-        .where("jobId", "==", null)
-        .get();
-    }
-
-    const stages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    stages.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const stages = await getCached(cacheKey, async () => {
+      let snapshot;
+      if (jobId) {
+        snapshot = await firestore.collection("pipeline_stages")
+          .where("jobId", "in", [jobId, null])
+          .get();
+      } else {
+        snapshot = await firestore.collection("pipeline_stages")
+          .where("jobId", "==", null)
+          .get();
+      }
+      const s = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      s.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+      return s;
+    }, 120000); // 2 min cache — stages rarely change
 
     res.json({ success: true, data: stages });
   }),
@@ -142,39 +146,35 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    // In a real Firestore app, you'd fetch the job and candidate for the notification
-    // For now, we assume the IDs are enough or fetch them if needed.
-    // To keep it simple and consistent with previous migration style:
-    const candidateDoc = await firestore.collection("candidates").doc(application.candidateId).get();
-    const candidateName = candidateDoc.exists ? candidateDoc.data().fullName : "Candidate";
-
-    await notifyAdmins({
-      title: 'Pipeline Update',
-      message: `${candidateName} moved to ${toStage.name}`,
-      link: `/candidates/${application.candidateId}`
-    });
-
-    await sendNotification({
-      userId: req.user.id,
-      title: 'Candidate Moved',
-      message: `You moved ${candidateName} to ${toStage.name}`,
-      link: `/candidates/${application.candidateId}`
-    });
-
-    const orgId = req.user.organizationId || "defaultOrg";
-    await inv.application(orgId, application.candidateId);
-    await inv.analytics(orgId);
-
-    sse.broadcastToOrg(orgId, 'APPLICATION_STAGE_CHANGED', {
-      applicationId,
-      candidateId: application.candidateId,
-      fromStage: application.currentStageId,
-      toStage: toStageId,
-      changedBy: req.user.id,
-      changedByName: req.user.fullName,
-    });
-
+    // ✨ Respond immediately — don't block on notifications/cache invalidation
     res.json({ success: true, data: { id: applicationId, ...application, ...updateData } });
+
+    // Fire side effects AFTER response
+    setImmediate(async () => {
+      try {
+        const candidateDoc = await firestore.collection("candidates").doc(application.candidateId).get();
+        const candidateName = candidateDoc.exists ? candidateDoc.data().fullName : "Candidate";
+        const orgId = req.user.organizationId || "defaultOrg";
+
+        await Promise.all([
+          notifyAdmins({ title: 'Pipeline Update', message: `${candidateName} moved to ${toStage.name}`, link: `/candidates/${application.candidateId}` }),
+          sendNotification({ userId: req.user.id, title: 'Candidate Moved', message: `You moved ${candidateName} to ${toStage.name}`, link: `/candidates/${application.candidateId}` }),
+          inv.application(orgId, application.candidateId),
+          inv.analytics(orgId),
+        ]);
+
+        sse.broadcastToOrg(orgId, 'APPLICATION_STAGE_CHANGED', {
+          applicationId,
+          candidateId: application.candidateId,
+          fromStage: application.currentStageId,
+          toStage: toStageId,
+          changedBy: req.user.id,
+          changedByName: req.user.fullName,
+        });
+      } catch (err) {
+        console.error('[Pipeline] Post-move side effects error:', err.message);
+      }
+    });
   }),
 );
 

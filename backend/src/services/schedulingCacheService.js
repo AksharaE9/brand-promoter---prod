@@ -8,7 +8,7 @@ const inv = require('../utils/cacheInvalidation');
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 const ROUND_TTL = 60 * 60 * 2;        // 2 hours — rounds stay in cache
-const LIST_TTL = 5;                    // 5 seconds — list cache
+const LIST_TTL = 60;                   // 60 seconds — list cache (was 5s, caused constant cold fetches)
 const DIRTY_TTL = 60 * 60;             // 1 hour — dirty queue entries
 
 // ─────────────────────────────────────────────
@@ -27,7 +27,7 @@ async function getEntitiesCached(collectionName, ids) {
     cachedVals = new Array(ids.length).fill(null);
   }
 
-  const resultMap = {};
+    const resultMap = {};
   const missingIds = [];
 
   cachedVals.forEach((val, index) => {
@@ -53,7 +53,7 @@ async function getEntitiesCached(collectionName, ids) {
         if (snap && snap.exists && isSafeKey(snap.id)) {
           const docData = { id: snap.id, ...snap.data() };
           resultMap[snap.id] = docData;
-          pipeline.setex(`entity:${collectionName}:${snap.id}`, 120, JSON.stringify(docData)); // 2 min TTL
+          pipeline.setex(`entity:${collectionName}:${snap.id}`, 600, JSON.stringify(docData)); // 10 min TTL
         }
       });
       await pipeline.exec();
@@ -258,8 +258,9 @@ async function getRoundsList(orgId, filters = {}) {
   const cacheKey = KEYS.roundsList(orgId, filterHash);
   
   try {
-    // 1. Try Redis list cache
-    const cached = await redis.get(cacheKey);
+    // 1. Try Redis list cache — skip cache entirely for search queries (must be fresh)
+    const isSearch = !!(filters.search && filters.search.trim());
+    const cached = isSearch ? null : await redis.get(cacheKey);
     if (cached) {
       return { source: 'cache', data: JSON.parse(cached) };
     }
@@ -293,15 +294,38 @@ async function getRoundsList(orgId, filters = {}) {
     // 4. Populate references
     const populated = await populateInterviews(activeRounds);
 
+    // Pre-warm individual round caches in Redis to speed up subsequent CRUD/detail operations
+    if (populated.length > 0) {
+      const prewarmPipeline = redis.pipeline();
+      populated.forEach(r => {
+        if (isSafeKey(r.id)) {
+          prewarmPipeline.setex(KEYS.round(r.id), ROUND_TTL, JSON.stringify(r));
+        }
+      });
+      prewarmPipeline.exec().catch(err => console.warn('[SchedulingCache] Pre-warm failed:', err.message));
+    }
+
     // Apply jobId filter in-memory if requested
     let finalData = populated;
     if (filters.jobId) {
       finalData = populated.filter(r => r.application && r.application.jobId === filters.jobId);
     }
 
+    // Apply search filter in-memory — searches candidate name and job title
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      finalData = finalData.filter(r => {
+        const candName = (r.application?.candidate?.fullName || '').toLowerCase();
+        const jobTitle = (r.application?.job?.title || '').toLowerCase();
+        return candName.includes(q) || jobTitle.includes(q);
+      });
+    }
+
     // Apply pagination in-memory
+    // Default limit is 5000 (effectively "all") because the frontend renders all at once.
+    // Callers that need true pagination can pass ?page=N&limit=N explicitly.
     const page = Math.max(1, parseInt(filters.page, 10) || 1);
-    const limit = Math.min(5000, parseInt(filters.limit, 10) || 50);
+    const limit = Math.min(5000, parseInt(filters.limit, 10) || 5000);
     const total = finalData.length;
     const paginated = finalData.slice((page - 1) * limit, page * limit);
     
@@ -325,10 +349,10 @@ async function getRoundsList(orgId, filters = {}) {
 // WRITE OPERATIONS — write to Redis, queue Firebase sync
 // ─────────────────────────────────────────────
 
-async function writeRound(roundId, updatePayload, performedBy, orgId) {
+async function writeRound(roundId, updatePayload, performedBy, orgId, currentData = null) {
   try {
     // 1. Get current state (from Redis or Firebase)
-    const { data: current } = await getRound(roundId);
+    const current = currentData || (await getRound(roundId)).data;
     if (!current) throw new Error(`Round ${roundId} not found`);
     
     // 2. Merge update into current state
@@ -357,8 +381,10 @@ async function writeRound(roundId, updatePayload, performedBy, orgId) {
     // Invalidate list caches synchronously to prevent race conditions on subsequent reads
     await invalidateListCaches(orgId);
     
-    // Invalidate other caches (analytics, dashboard) asynchronously
-    inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+    // Invalidate other caches (analytics, dashboard) ASYNCHRONOUSLY — do NOT block the response
+    setImmediate(() => {
+      inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+    });
     
     // 7. Broadcast real-time update via SSE to all connected clients
     sse.broadcastToOrg(orgId, 'SCHEDULING_UPDATE', {
@@ -406,8 +432,10 @@ async function createRound(roundData, orgId, createdBy) {
     // Invalidate list caches synchronously to prevent race conditions on subsequent reads
     await invalidateListCaches(orgId);
     
-    // Invalidate other caches (analytics, dashboard) asynchronously
-    inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+    // Invalidate other caches (analytics, dashboard) ASYNCHRONOUSLY — do NOT block the response
+    setImmediate(() => {
+      inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+    });
     
     // 5. SSE broadcast
     sse.broadcastToOrg(orgId, 'ROUND_CREATED', {
@@ -424,9 +452,9 @@ async function createRound(roundData, orgId, createdBy) {
   }
 }
 
-async function deleteRound(roundId, orgId, deletedBy) {
+async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
   try {
-    const { data: current } = await getRound(roundId, true);
+    const current = currentData || (await getRound(roundId, true)).data;
     if (!current) throw new Error(`Round ${roundId} not found`);
     
     const updated = {
@@ -552,15 +580,10 @@ async function invalidateListCaches(orgId) {
     const setKey = `scheduling:rounds:lists:${orgId}`;
     const keys = await redis.smembers(setKey);
     if (keys.length > 0) {
-      await Promise.all([
-        redis.del(...keys),
-        redis.del(setKey)
-      ]);
-    }
-    const pattern = `scheduling:rounds:list:${orgId}:*`;
-    const fallbackKeys = await redis.keys(pattern);
-    if (fallbackKeys.length > 0) {
-      await redis.del(...fallbackKeys);
+      const pipeline = redis.pipeline();
+      pipeline.del(...keys);
+      pipeline.del(setKey);
+      await pipeline.exec();
     }
   } catch (err) {
     console.error('[SchedulingCache] invalidateListCaches error:', err);

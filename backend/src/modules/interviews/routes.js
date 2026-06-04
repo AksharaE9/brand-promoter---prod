@@ -128,6 +128,7 @@ router.get(
       candidateId: req.query.candidateId,
       interviewerId: req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined),
       jobId: req.query.jobId,
+      search: req.query.search,   // ← server-side search by candidate name / job title
       page: req.query.page,
       limit: req.query.limit,
     };
@@ -244,7 +245,8 @@ router.post(
       roundId,
       updatePayload,
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
 
     await logAudit({
@@ -303,7 +305,8 @@ router.post(
         updatedAt: new Date().toISOString()
       },
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
 
     await logAudit({
@@ -332,7 +335,8 @@ router.delete(
     const result = await cache.deleteRound(
       roundId,
       req.user.organizationId || "defaultOrg",
-      req.user.id
+      req.user.id,
+      current
     );
 
     await logAudit({
@@ -371,7 +375,8 @@ router.patch(
         updatedAt: new Date().toISOString()
       },
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
 
     await logAudit({
@@ -456,12 +461,17 @@ router.put(
       roundId,
       updateData,
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
 
     if (data.scheduledStart !== current.scheduledStart || data.mode !== current.mode) {
       data.interviewerIds.forEach(id => {
-        sendNotification(id, "Interview Updated", `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`);
+        sendNotification({
+          userId: id,
+          title: "Interview Updated",
+          message: `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`
+        });
       });
     }
 
@@ -519,7 +529,8 @@ router.patch(
       roundId,
       updateData,
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
 
     res.json({ success: true, data: result.data });
@@ -595,7 +606,8 @@ router.patch(
         updatedAt: new Date().toISOString()
       },
       req.user.id,
-      req.user.organizationId || "defaultOrg"
+      req.user.organizationId || "defaultOrg",
+      current
     );
     res.json(result);
   })

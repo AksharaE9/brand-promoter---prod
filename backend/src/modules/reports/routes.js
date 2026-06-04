@@ -6,27 +6,38 @@ const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { getOrgAnalyticsData } = require("../analytics/dataLoader");
+const { getCached, getCache, setCache } = require("../../utils/cache");
+
+const REPORT_CACHE_TTL = 60; // 60 seconds cache for all report routes
 
 const router = express.Router();
 router.use(auth);
 
-// Helper to get all users directly from Firestore
+// Helper to get all users — cached for 60s
 async function getUsersMap() {
+  const cacheKey = 'reports:users_map';
+  const cached = await getCache(cacheKey);
+  if (cached) return cached;
   const snapshot = await firestore.collection("users").get();
   const map = {};
   snapshot.docs.forEach(doc => {
     map[doc.id] = { id: doc.id, ...doc.data() };
   });
+  await setCache(cacheKey, map, 60);
   return map;
 }
 
-// Helper to get all stages directly from Firestore
+// Helper to get all stages — cached for 2 minutes
 async function getStagesMap() {
+  const cacheKey = 'reports:stages_map';
+  const cached = await getCache(cacheKey);
+  if (cached) return cached;
   const snapshot = await firestore.collection("pipeline_stages").get();
   const map = {};
   snapshot.docs.forEach(doc => {
     map[doc.id] = { id: doc.id, ...doc.data() };
   });
+  await setCache(cacheKey, map, 120);
   return map;
 }
 
@@ -433,13 +444,15 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
 // Legacy routes
 router.get("/recruiter-activity", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const rows = await buildRecruiterActivity(myOrg);
+  const cacheKey = `reports_recruiter_activity_${myOrg}`;
+  const rows = await getCached(cacheKey, () => buildRecruiterActivity(myOrg), REPORT_CACHE_TTL * 1000);
   res.json({ success: true, data: rows });
 }));
 
 router.get("/hiring-progress", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const rows = await buildHiringProgress(myOrg);
+  const cacheKey = `reports_hiring_progress_${myOrg}`;
+  const rows = await getCached(cacheKey, () => buildHiringProgress(myOrg), REPORT_CACHE_TTL * 1000);
   res.json({ success: true, data: rows });
 }));
 

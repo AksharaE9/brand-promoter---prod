@@ -540,36 +540,57 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const candDoc = await firestore.collection("candidates").doc(id).get();
-    if (!candDoc.exists) throw new ApiError(404, "Candidate not found");
+    const cacheKey = `candidates:history:${id}`;
 
-    const appSnap = await firestore.collection("applications").where("candidateId", "==", id).get();
-    const applications = appSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    const timeline = [];
-    applications.forEach(app => {
-      timeline.push({ type: "APPLICATION_CREATED", at: app.createdAt, applicationId: app.id });
-    });
-
-    const appIds = applications.map(app => app.id);
-    if (appIds.length > 0) {
-      const [eventsSnaps, interviewsSnaps] = await Promise.all([
-        Promise.all(appIds.map(appId => firestore.collection("pipeline_events").where("applicationId", "==", appId).get())),
-        Promise.all(appIds.map(appId => firestore.collection("interviews").where("applicationId", "==", appId).get()))
+    const data = await getCached(cacheKey, async () => {
+      // Fetch candidate + applications in parallel
+      const [candDoc, appSnap] = await Promise.all([
+        firestore.collection("candidates").doc(id).get(),
+        firestore.collection("applications").where("candidateId", "==", id).get(),
       ]);
 
-      eventsSnaps.forEach(eventSnap => {
-        eventSnap.docs.forEach(d => timeline.push({ type: "PIPELINE_MOVED", at: d.data().movedAt, ...d.data() }));
-      });
+      if (!candDoc.exists) throw new ApiError(404, "Candidate not found");
 
-      interviewsSnaps.forEach(interviewSnap => {
-        interviewSnap.docs.forEach(d => timeline.push({ type: "INTERVIEW_SCHEDULED", at: d.data().scheduledStart, ...d.data() }));
-      });
-    }
+      const applications = appSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const timeline = applications.map(app => ({
+        type: "APPLICATION_CREATED",
+        at: app.createdAt,
+        applicationId: app.id,
+      }));
 
-    timeline.sort((a, b) => new Date(b.at) - new Date(a.at));
+      const appIds = applications.map(app => app.id);
 
-    res.json({ success: true, data: { candidate: candDoc.data(), applications, timeline } });
+      if (appIds.length > 0) {
+        // Batch into chunks of 30 (Firestore "in" limit)
+        const chunks = [];
+        for (let i = 0; i < appIds.length; i += 30) chunks.push(appIds.slice(i, i + 30));
+
+        // Run all event + interview batch queries in parallel
+        const [eventsSnaps, interviewsSnaps] = await Promise.all([
+          Promise.all(chunks.map(chunk =>
+            firestore.collection("pipeline_events")
+              .where("applicationId", "in", chunk).get()
+          )),
+          Promise.all(chunks.map(chunk =>
+            firestore.collection("interviews")
+              .where("applicationId", "in", chunk).get()
+          )),
+        ]);
+
+        eventsSnaps.forEach(snap =>
+          snap.docs.forEach(d => timeline.push({ type: "PIPELINE_MOVED", at: d.data().movedAt, ...d.data() }))
+        );
+        interviewsSnaps.forEach(snap =>
+          snap.docs.forEach(d => timeline.push({ type: "INTERVIEW_SCHEDULED", at: d.data().scheduledStart, ...d.data() }))
+        );
+      }
+
+      timeline.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+      return { candidate: candDoc.data(), applications, timeline };
+    }, 30000); // 30s cache
+
+    res.json({ success: true, data });
   }),
 );
 
@@ -612,16 +633,20 @@ router.patch(
     });
 
     const orgId = req.user.organizationId || "defaultOrg";
-    await inv.candidate(orgId, id);
 
-    sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
-      candidateId: id,
-      changes: data,
-      updatedBy: req.user.id,
-      updatedByName: req.user.fullName || req.user.email,
-    });
-
+    // ✨ Respond immediately — don't block on cache invalidation (was causing 5-19s delays)
     res.json({ success: true, data: { id, ...doc.data(), ...data } });
+
+    // Fire cache invalidation & SSE broadcast AFTER response is sent
+    setImmediate(async () => {
+      try { await inv.candidate(orgId, id); } catch (_) {}
+      sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
+        candidateId: id,
+        changes: data,
+        updatedBy: req.user.id,
+        updatedByName: req.user.fullName || req.user.email,
+      });
+    });
   }),
 );
 

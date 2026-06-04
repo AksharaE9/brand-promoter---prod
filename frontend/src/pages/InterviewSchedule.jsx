@@ -13,6 +13,7 @@ import { subscribeSSE } from '../lib/sse';
 
 import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
 import SyncIndicator from '../components/Interview/SyncIndicator';
+import { useDebounce } from '../hooks/useDebounce';
 
 const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
 
@@ -134,9 +135,13 @@ const InterviewSchedule = () => {
   const [viewDate, setViewDate] = useState(new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [calendarData, setCalendarData] = useState(() => new Map()); // New: Pre-calculated calendar data
-  const [candidateSearch, setCandidateSearch] = useState('');
+  const [calendarData, setCalendarData] = useState(() => new Map());
+  // Search: raw typed value (not yet debounced)
+  const [interviewListSearch, setInterviewListSearch] = useState('');
+  // Debounced version sent to the backend
+  const debouncedSearch = useDebounce(interviewListSearch, 300);
   const [jobSearch, setJobSearch] = useState('');
+  const [candidateSearch, setCandidateSearch] = useState('');
   const [interviewerSearch, setInterviewerSearch] = useState('');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -145,8 +150,10 @@ const InterviewSchedule = () => {
   const [editingInterviewId, setEditingInterviewId] = useState(null);
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
+  // Infinite scroll: how many items to show
+  const [visibleCount, setVisibleCount] = useState(30);
+  const listEndRef = useRef(null); // sentinel for IntersectionObserver
   const currentUser = getStoredUser();
-  const [interviewListSearch, setInterviewListSearch] = useState('');
   const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -171,15 +178,13 @@ const InterviewSchedule = () => {
     ).sort((a, b) => new Date(b.scheduledStart).getTime() - new Date(a.scheduledStart).getTime())[0];
     setSelectedId(prev => prev || firstGroup?.applicationId || '');
 
-    // Step 2: Load supporting data in background (needed for scheduling form only)
-    const [applicationsRes, candidatesRes, jobsRes] = await Promise.all([
-      apiGet('/applications?limit=150'),
-      apiGet('/candidates?limit=150'),
+    // Step 2: Load supporting data for scheduling form (lazy — only when needed)
+    // We load candidates/jobs/applications for the schedule modal but NOT for the list panel
+    const [applicationsRes, jobsRes] = await Promise.all([
+      apiGet('/applications?limit=500'),
       apiGet('/jobs?limit=50'),
     ]);
     setApplications(applicationsRes.data || []);
-    setCandidates(candidatesRes.data || []);
-    setCandidateSuggestions(candidatesRes.data || []);
     setJobs(jobsRes.data || []);
     setJobSuggestions(jobsRes.data || []);
 
@@ -188,7 +193,6 @@ const InterviewSchedule = () => {
       const interviewerRes = await apiGet('/users/interviewers');
       setInterviewers(interviewerRes.data || []);
     } catch (_) {
-      // Fall back to extracting from interviews data
       const seen = new Set();
       const fallback = [];
       interviewRows.forEach(iv => {
@@ -267,49 +271,79 @@ const InterviewSchedule = () => {
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
 
-  // Dynamic search for candidate suggestions in schedule modal
+  // ── Server-side search: re-fetch interviews when debounced search changes ──
+  const { data: searchedInterviews, isFetching: isSearching } = useRoundsList(
+    debouncedSearch ? { search: debouncedSearch, ...(filterMine ? { interviewerId: currentUser?.id } : {}) } : {}
+  );
+
+  // The actual list to render: if searching, use searched results; otherwise use base list
+  const displayInterviews = debouncedSearch ? (searchedInterviews || []) : interviews;
+
+  // ── groupedApplications: built purely from interviews data, no candidates limit ──
+  const groupedApplications = useMemo(() => {
+    const map = new Map();
+
+    const filteredInterviews = filterMine
+      ? displayInterviews.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
+      : displayInterviews;
+
+    filteredInterviews.forEach((interview) => {
+      const cId = interview.application?.candidate?.id || interview.application?.candidateId;
+      if (!cId) return;
+
+      if (!map.has(cId)) {
+        map.set(cId, {
+          candidateId: cId,
+          applicationId: interview.applicationId,
+          application: interview.application,
+          interviews: [],
+          latestInterview: null,
+          createdAt: 0,
+        });
+      }
+      const group = map.get(cId);
+      group.interviews.push(interview);
+      if (!group.latestInterview || new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
+        group.latestInterview = interview;
+        if (!group.application?.id) {
+          group.application = interview.application;
+          group.applicationId = interview.applicationId;
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      const dateA = a.latestInterview?.scheduledStart || a.createdAt;
+      const dateB = b.latestInterview?.scheduledStart || b.createdAt;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+  }, [displayInterviews, filterMine, currentUser?.id]);
+
+  // ── Infinite scroll: reset visible count when list changes ──
   useEffect(() => {
-    if (!showScheduleModal) return;
-    const delayDebounce = setTimeout(async () => {
-      if (!candidateSearch.trim()) {
-        setCandidateSuggestions(candidates);
-        return;
-      }
-      try {
-        setSearchingCandidates(true);
-        const res = await apiGet(`/candidates?search=${encodeURIComponent(candidateSearch)}&limit=150`);
-        setCandidateSuggestions(res.data || []);
-      } catch (err) {
-        console.error("Candidate search error:", err);
-      } finally {
-        setSearchingCandidates(false);
-      }
-    }, 300);
+    setVisibleCount(30);
+  }, [debouncedSearch, filterMine]);
 
-    return () => clearTimeout(delayDebounce);
-  }, [candidateSearch, showScheduleModal, candidates]);
-
-  // Dynamic search for job suggestions in schedule modal
+  // IntersectionObserver sentinel at the bottom of the list
   useEffect(() => {
-    if (!showScheduleModal) return;
-    const delayDebounce = setTimeout(async () => {
-      if (!jobSearch.trim()) {
-        setJobSuggestions(jobs);
-        return;
-      }
-      try {
-        setSearchingJobs(true);
-        const res = await apiGet(`/jobs?search=${encodeURIComponent(jobSearch)}&limit=50`);
-        setJobSuggestions(res.data || []);
-      } catch (err) {
-        console.error("Job search error:", err);
-      } finally {
-        setSearchingJobs(false);
-      }
-    }, 300);
+    if (!listEndRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount(prev => prev + 30);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(listEndRef.current);
+    return () => observer.disconnect();
+  }, [listEndRef.current]);
 
-    return () => clearTimeout(delayDebounce);
-  }, [jobSearch, showScheduleModal, jobs]);
+  // Visible slice for lazy rendering
+  const visibleGroups = useMemo(
+    () => groupedApplications.slice(0, visibleCount),
+    [groupedApplications, visibleCount]
+  );
 
   const downloadDailyPdf = async () => {
     try {
@@ -367,68 +401,7 @@ const InterviewSchedule = () => {
     return days;
   }, [viewDate]);
 
-  const groupedApplications = useMemo(() => {
-    const map = new Map();
-    
-    // If not strictly filtering by "My Interviews", show all candidates in the pool
-    if (!filterMine) {
-      candidates.forEach(candidate => {
-        map.set(candidate.id, {
-          candidateId: candidate.id,
-          applicationId: candidate.applications?.[0]?.id || null,
-          application: { ...(candidate.applications?.[0] || {}), candidate },
-          interviews: [],
-          latestInterview: null,
-          createdAt: candidate.createdAt || 0
-        });
-      });
-    }
 
-    const filteredInterviews = filterMine 
-      ? interviews.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
-      : interviews;
-
-    filteredInterviews.forEach((interview) => {
-      const cId = interview.application?.candidate?.id || interview.application?.candidateId;
-      if (!cId) return;
-
-      if (!map.has(cId)) {
-        map.set(cId, {
-          candidateId: cId,
-          applicationId: interview.applicationId,
-          application: interview.application,
-          interviews: [],
-          latestInterview: null,
-          createdAt: 0
-        });
-      }
-      const group = map.get(cId);
-      group.interviews.push(interview);
-      if (!group.latestInterview || new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
-        group.latestInterview = interview;
-        if (!group.application?.id) {
-          group.application = interview.application;
-          group.applicationId = interview.applicationId;
-        }
-      }
-    });
-    
-    let results = Array.from(map.values());
-
-    if (interviewListSearch) {
-      const q = interviewListSearch.toLowerCase();
-      results = results.filter(g => 
-        g.application?.candidate?.fullName?.toLowerCase().includes(q) ||
-        g.application?.job?.title?.toLowerCase().includes(q)
-      );
-    }
-
-      return results.sort((a, b) => {
-        const dateA = a.latestInterview?.scheduledStart || a.createdAt;
-        const dateB = b.latestInterview?.scheduledStart || b.createdAt;
-        return new Date(dateB).getTime() - new Date(dateA).getTime();
-      });
-  }, [interviews, candidates, filterMine, currentUser?.id, interviewListSearch]);
 
   // Optimization: Pre-calculate schedules per date to avoid filtering in render
   const scheduleData = useMemo(() => {
@@ -619,8 +592,9 @@ const InterviewSchedule = () => {
       }
 
       setScheduleForm(emptyScheduleForm);
+      setShowScheduleModal(false); // Close modal immediately
       setBanner('Interview scheduled successfully.');
-      refetchInterviews();
+      // No refetch needed — optimistic update already shows the new interview
     } catch (err) {
       setError(err.message || 'Failed to schedule interview');
     } finally {
@@ -682,8 +656,9 @@ const InterviewSchedule = () => {
 
       setFeedbackForm(emptyFeedbackForm);
       setOfferLetterFile(null);
+      setShowFeedbackModal(false); // Close modal immediately
       setBanner('Feedback submitted successfully.');
-      refetchInterviews();
+      // No refetch needed — optimistic update already shows the feedback
     } catch (err) {
       setError(err.message || 'Failed to submit feedback');
     } finally {
@@ -961,24 +936,55 @@ const InterviewSchedule = () => {
                 {loading ? <div className="text-xs text-[#a1acbd] animate-pulse">Syncing...</div> : null}
               </div>
               <div className="px-2">
-                <div className="relative group">
+              <div className="relative group">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#1f52cc] transition-colors">search</span>
                   <input 
-                    className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50/50 text-sm focus:border-[#1f52cc] focus:bg-white outline-none transition-all placeholder:text-slate-400"
+                    className="w-full h-11 pl-10 pr-10 rounded-xl border border-slate-200 bg-slate-50/50 text-sm focus:border-[#1f52cc] focus:bg-white outline-none transition-all placeholder:text-slate-400"
                     placeholder="Search candidate or job..."
                     value={interviewListSearch}
-                    onChange={e => setInterviewListSearch(e.target.value)}
+                    onChange={e => { setInterviewListSearch(e.target.value); }}
                   />
+                  {/* Spinner while server is fetching search results */}
+                  {isSearching && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <svg className="animate-spin h-4 w-4 text-[#1f52cc]" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                      </svg>
+                    </span>
+                  )}
+                  {interviewListSearch && !isSearching && (
+                    <button
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      onClick={() => setInterviewListSearch('')}
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-base">close</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
-            {groupedApplications.map((group) => {
+            {/* Member count indicator */}
+            {groupedApplications.length > 0 && (
+              <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium">
+                {debouncedSearch
+                  ? `${groupedApplications.length} result${groupedApplications.length !== 1 ? 's' : ''} for "${debouncedSearch}"`
+                  : `${groupedApplications.length} member${groupedApplications.length !== 1 ? 's' : ''}`
+                }
+              </div>
+            )}
+            {visibleGroups.map((group) => {
               const candidate = group.application?.candidate;
               const candidateId = group.candidateId;
               return (
                 <button
                   key={candidateId}
-                  className={`w-full text-left flex gap-3 p-3 rounded-xl mb-1 ${selectedGroupId === candidateId ? 'bg-[#eef3ff] border-l-4 border-[#1f4bc6]' : 'hover:bg-[#f6f9fc]'}`}
+                  className={`w-full text-left flex gap-3 p-3 rounded-xl mb-1 transition-all ${
+                    selectedGroupId === candidateId
+                      ? 'bg-[#eef3ff] border-l-4 border-[#1f4bc6]'
+                      : 'hover:bg-[#f6f9fc]'
+                  }`}
                   onClick={() => {
                     setSelectedId(candidateId);
                     if (group.latestInterview?.id) {
@@ -1009,7 +1015,24 @@ const InterviewSchedule = () => {
                 </button>
               );
             })}
-{interviews.length === 0 ? <div className="text-sm os-muted px-2">No interviews found.</div> : null}
+            {/* Infinite scroll sentinel */}
+            {visibleCount < groupedApplications.length && (
+              <div ref={listEndRef} className="flex justify-center py-3">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <svg className="animate-spin h-3.5 w-3.5 text-[#1f52cc]" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Loading more...
+                </div>
+              </div>
+            )}
+            {interviews.length === 0 && !isQueryLoading && (
+              <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No interviews found.</div>
+            )}
+            {debouncedSearch && groupedApplications.length === 0 && !isSearching && (
+              <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No results for "{debouncedSearch}"</div>
+            )}
           </Reveal>
         )}
 

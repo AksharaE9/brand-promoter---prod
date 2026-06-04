@@ -8,6 +8,7 @@ const {
   getDirtyQueue,
   removeFromDirtyQueue,
   getRound,
+  invalidateListCaches,
 } = require('../services/schedulingCacheService');
 
 const SYNC_QUEUE_NAME = 'scheduling-firebase-sync';
@@ -285,6 +286,10 @@ const worker = new Worker(
       
       // 4. Remove synced items from dirty queue
       await removeFromDirtyQueue(syncedRawKeys);
+
+      // Clear Redis list caches for all involved organizations to guarantee fresh reads after sync
+      const uniqueOrgs = [...new Set(dirtyItems.map(i => i.orgId || "defaultOrg"))];
+      await Promise.all(uniqueOrgs.map(orgId => invalidateListCaches(orgId)));
       
       // 5. Broadcast sync completion via SSE
       if (totalSynced > 0) {

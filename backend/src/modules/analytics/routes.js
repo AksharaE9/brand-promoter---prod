@@ -3,6 +3,9 @@ const { auth } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 const { getOrgAnalyticsData, getPipelineStages } = require("./dataLoader");
 const { db: firestore } = require("../../config/firebase");
+const { getCached, getCache, setCache } = require("../../utils/cache");
+
+const ROUTE_CACHE_TTL = 30; // 30s per-route cache on top of the data loader cache
 
 const router = express.Router();
 router.use(auth);
@@ -71,13 +74,18 @@ function getPeriod(req) {
   return { start, end, prevStart, prevEnd };
 }
 
-// Helper to get active users directly from Firestore (no cache)
+// Helper to get active users — cached for 60s
 async function getUsersList() {
+  const cacheKey = 'analytics:users_list';
+  const cached = await getCache(cacheKey);
+  if (cached) return cached;
   const snapshot = await firestore.collection("users").get();
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  await setCache(cacheKey, users, 60);
+  return users;
 }
 
-// Helper to get all pipeline stages map
+// Helper to get all pipeline stages map (backed by cached getPipelineStages)
 async function getStagesMap() {
   const stages = await getPipelineStages();
   const map = {};
@@ -91,7 +99,10 @@ async function getStagesMap() {
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
+  // Include date params in cache key so different ranges don't collide
+  const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
+  const data = await getCached(cacheKey, async () => {
   const [analyticsData, stageMap] = await Promise.all([
     getOrgAnalyticsData(myOrg),
     getStagesMap()
@@ -195,6 +206,9 @@ router.get("/overview", asyncHandler(async (req, res) => {
     });
   }
 
+  return data;
+  }, ROUTE_CACHE_TTL * 1000);
+
   res.json({ success: true, data });
 }));
 
@@ -202,37 +216,42 @@ router.get("/overview", asyncHandler(async (req, res) => {
 router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
-  const [analyticsData, stageMap] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getStagesMap()
-  ]);
-  const { candidates, apps } = analyticsData;
+  const data = await getCached(cacheKey, async () => {
+    const [analyticsData, stageMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getStagesMap()
+    ]);
+    const { candidates, apps } = analyticsData;
 
-  const currCands = candidates.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const currCands = candidates.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  const filteredApps = apps.filter(a => {
-    const d = new Date(a.updatedAt || a.createdAt);
-    return d >= start && d <= end;
-  });
+    const filteredApps = apps.filter(a => {
+      const d = new Date(a.updatedAt || a.createdAt);
+      return d >= start && d <= end;
+    });
 
-  const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
-  const total = currCands.length;
-  
-  const funnel = stageOrder.map((stage, stageIdx) => {
-    const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
-    return {
-      stage: stage.toUpperCase(),
-      label: stage.charAt(0).toUpperCase() + stage.slice(1),
-      count,
-      percentage: total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0
-    };
-  });
+    const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
+    const total = currCands.length;
 
-  res.json({ success: true, data: { funnel } });
+    const funnel = stageOrder.map((stage, stageIdx) => {
+      const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
+      return {
+        stage: stage.toUpperCase(),
+        label: stage.charAt(0).toUpperCase() + stage.slice(1),
+        count,
+        percentage: total > 0 ? Math.min(100, Math.round((count / total) * 100)) : 0
+      };
+    });
+
+    return { funnel };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 3. GET /api/analytics/hiring-velocity
@@ -255,42 +274,47 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 // 4. GET /api/analytics/interviewer-load
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;
 
-  const [analyticsData, users] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getUsersList()
-  ]);
-  const { interviews } = analyticsData;
+  const data = await getCached(cacheKey, async () => {
+    const [analyticsData, users] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getUsersList()
+    ]);
+    const { interviews } = analyticsData;
 
-  const interviewers = users
-    .filter(u => (u.organizationId || "defaultOrg") === myOrg)
-    .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER" || u.role === "INTERVIEWER") && u.isDeleted !== true);
+    const interviewers = users
+      .filter(u => (u.organizationId || "defaultOrg") === myOrg)
+      .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER" || u.role === "INTERVIEWER") && u.isDeleted !== true);
 
-  const load = interviewers.map((int, idx) => {
-    const list = interviews.filter(i => i.interviewerIds?.includes(int.id) || i.interviewerId === int.id);
-    
-    const weeklyLoad = [
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 1; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 2; }).length,
-      list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 3; }).length,
-    ];
+    const load = interviewers.map((int, idx) => {
+      const list = interviews.filter(i => i.interviewerIds?.includes(int.id) || i.interviewerId === int.id);
 
-    return {
-      userId: int.id,
-      name: int.fullName,
-      userType: int.role || "TECHNICAL",
-      totalInterviews: list.length,
-      completedInterviews: list.filter(i => i.status === "COMPLETED" || i.result).length,
-      cancelledInterviews: list.filter(i => i.status === "CANCELLED").length,
-      averageRating: parseFloat((4.2 + (idx * 0.1) % 0.8).toFixed(1)),
-      interviewsThisWeek: weeklyLoad[3],
-      interviewsThisMonth: list.length,
-      weeklyLoad
-    };
-  });
+      const weeklyLoad = [
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 1; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 2; }).length,
+        list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 3; }).length,
+      ];
 
-  res.json({ success: true, data: { interviewers: load } });
+      return {
+        userId: int.id,
+        name: int.fullName,
+        userType: int.role || "TECHNICAL",
+        totalInterviews: list.length,
+        completedInterviews: list.filter(i => i.status === "COMPLETED" || i.result).length,
+        cancelledInterviews: list.filter(i => i.status === "CANCELLED").length,
+        averageRating: parseFloat((4.2 + (idx * 0.1) % 0.8).toFixed(1)),
+        interviewsThisWeek: weeklyLoad[3],
+        interviewsThisMonth: list.length,
+        weeklyLoad
+      };
+    });
+
+    return { interviewers: load };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 5. GET /api/analytics/recruiter-performance
@@ -380,102 +404,106 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
-  const [analyticsData, stageMap] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getStagesMap()
-  ]);
-  const { candidates, apps } = analyticsData;
+  const data = await getCached(cacheKey, async () => {
+    const [analyticsData, stageMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getStagesMap()
+    ]);
+    const { candidates, apps } = analyticsData;
 
-  const currCands = candidates.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const currCands = candidates.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  const filteredApps = apps.filter(a => {
-    const d = new Date(a.updatedAt || a.createdAt);
-    return d >= start && d <= end;
-  });
+    const filteredApps = apps.filter(a => {
+      const d = new Date(a.updatedAt || a.createdAt);
+      return d >= start && d <= end;
+    });
 
-  const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
-  const colors = ["#1f52cc", "#3262db", "#4f7ff3", "#a5bffa", "#22c55e"];
-  const total = currCands.length;
+    const stageOrder = ['applied', 'screened', 'interviewed', 'offered', 'joined'];
+    const colors = ["#1f52cc", "#3262db", "#4f7ff3", "#a5bffa", "#22c55e"];
+    const total = currCands.length;
 
-  const stagesData = stageOrder.map((stage, stageIdx) => {
-    const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
-    return {
-      stage: stage.charAt(0).toUpperCase() + stage.slice(1),
-      count,
-      color: colors[stageIdx]
-    };
-  });
+    const stagesData = stageOrder.map((stage, stageIdx) => {
+      const count = filteredApps.filter(a => getCandidateStageIndex(a, stageMap) >= stageIdx).length;
+      return {
+        stage: stage.charAt(0).toUpperCase() + stage.slice(1),
+        count,
+        color: colors[stageIdx]
+      };
+    });
 
-  const conversions = [];
-  for (let i = 0; i < stagesData.length - 1; i++) {
-    const curr = stagesData[i].count;
-    const next = stagesData[i + 1].count;
-    const conv = curr > 0 ? parseFloat(((next / curr) * 100).toFixed(1)) : 0.0;
-    conversions.push(conv);
-  }
-
-  res.json({
-    success: true,
-    data: {
-      stages: stagesData,
-      conversions
+    const conversions = [];
+    for (let i = 0; i < stagesData.length - 1; i++) {
+      const curr = stagesData[i].count;
+      const next = stagesData[i + 1].count;
+      const conv = curr > 0 ? parseFloat(((next / curr) * 100).toFixed(1)) : 0.0;
+      conversions.push(conv);
     }
-  });
+
+    return { stages: stagesData, conversions };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 8. GET /api/analytics/monthly-trends
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;
 
-  const [analyticsData, stageMap] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getStagesMap()
-  ]);
-  const { candidates, apps, interviews } = analyticsData;
+  const data = await getCached(cacheKey, async () => {
+    const [analyticsData, stageMap] = await Promise.all([
+      getOrgAnalyticsData(myOrg),
+      getStagesMap()
+    ]);
+    const { candidates, apps, interviews } = analyticsData;
 
-  const months = [];
-  const now = new Date();
-  
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthName = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
-    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
-    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+    const months = [];
+    const now = new Date();
 
-    const candsAdded = candidates.filter(c => {
-      const cd = new Date(c.createdAt);
-      return cd >= startOfMonth && cd <= endOfMonth;
-    }).length;
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthName = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear();
+      const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+      const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
 
-    const intsSched = interviews.filter(int => {
-      const id = new Date(int.scheduledStart || int.createdAt);
-      return id >= startOfMonth && id <= endOfMonth;
-    }).length;
+      const candsAdded = candidates.filter(c => {
+        const cd = new Date(c.createdAt);
+        return cd >= startOfMonth && cd <= endOfMonth;
+      }).length;
 
-    const offersExt = apps.filter(a => {
-      const ad = new Date(a.createdAt || a.updatedAt);
-      return (matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)) && ad >= startOfMonth && ad <= endOfMonth;
-    }).length;
+      const intsSched = interviews.filter(int => {
+        const id = new Date(int.scheduledStart || int.createdAt);
+        return id >= startOfMonth && id <= endOfMonth;
+      }).length;
 
-    const candsJoined = apps.filter(a => {
-      const ad = new Date(a.createdAt || a.updatedAt);
-      return matchesStage(a, 'joined', stageMap) && ad >= startOfMonth && ad <= endOfMonth;
-    }).length;
+      const offersExt = apps.filter(a => {
+        const ad = new Date(a.createdAt || a.updatedAt);
+        return (matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)) && ad >= startOfMonth && ad <= endOfMonth;
+      }).length;
 
-    months.push({
-      month: monthName,
-      candidatesAdded: candsAdded,
-      interviewsScheduled: intsSched,
-      offersExtended: offersExt,
-      candidatesJoined: candsJoined
-    });
-  }
+      const candsJoined = apps.filter(a => {
+        const ad = new Date(a.createdAt || a.updatedAt);
+        return matchesStage(a, 'joined', stageMap) && ad >= startOfMonth && ad <= endOfMonth;
+      }).length;
 
-  res.json({ success: true, data: { months } });
+      months.push({
+        month: monthName,
+        candidatesAdded: candsAdded,
+        interviewsScheduled: intsSched,
+        offersExtended: offersExt,
+        candidatesJoined: candsJoined
+      });
+    }
+
+    return { months };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 9. GET /api/analytics/debug-counts
