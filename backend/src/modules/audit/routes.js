@@ -16,8 +16,8 @@ const { getCached } = require('../../utils/cache');
 router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
   try {
     const {
-      page = 1,
       limit = 50,
+      cursor,
       entityType,
       action,
       userId,
@@ -27,76 +27,94 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
     } = req.query;
 
     const parsedLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200
-    const parsedPage  = Math.max(parseInt(page)  || 1,  1);
+    const orgId = req.user.organizationId || "defaultOrg";
 
-    // Build Firestore query — equality filters only (no composite index needed)
-    let query = firestore.collection("auditLogs").orderBy("createdAt", "desc");
+    // Build Firestore query — equality filters only
+    let query = firestore.collection("auditLogs")
+      .where("organizationId", "==", orgId)
+      .where("isDeleted", "==", false);
+
     if (entityType) query = query.where("entityType", "==", entityType);
     if (action)     query = query.where("action",     "==", action);
     if (userId)     query = query.where("actorUserId","==", userId);
 
-    // Date range filters — Firestore supports range on same field as orderBy
+    // Date range filters
     if (startDate) query = query.where("createdAt", ">=", new Date(startDate).toISOString());
     if (endDate)   query = query.where("createdAt", "<=", new Date(endDate).toISOString());
 
-    // For search we must fetch a larger slice and filter in-memory (no full-text in Firestore)
-    // Fetch enough records to paginate from (max 5000 for search, else just what we need)
-    const fetchLimit = search ? 5000 : parsedPage * parsedLimit;
+    query = query.orderBy("createdAt", "desc");
 
-    let snapshot;
-    try {
-      snapshot = await query.limit(fetchLimit).get();
-    } catch (indexErr) {
-      // orderBy + where composite fallback — fetch without orderBy
-      console.warn("[Audit] orderBy fallback:", indexErr.message);
-      let fallbackQuery = firestore.collection("auditLogs");
-      if (entityType) fallbackQuery = fallbackQuery.where("entityType", "==", entityType);
-      if (action)     fallbackQuery = fallbackQuery.where("action",     "==", action);
-      if (userId)     fallbackQuery = fallbackQuery.where("actorUserId","==", userId);
-      snapshot = await fallbackQuery.limit(fetchLimit).get();
-    }
-
-    let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    // Sort newest-first (fallback path already has no orderBy)
-    logs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-    // In-memory search filter (only over fetched slice)
+    let useCursorPagination = true;
     if (search) {
-      const s = search.toLowerCase();
-      logs = logs.filter(log =>
-        (log.actorName   || "").toLowerCase().includes(s) ||
-        (log.entityName  || "").toLowerCase().includes(s) ||
-        (log.action      || "").toLowerCase().includes(s) ||
-        (log.entityType  || "").toLowerCase().includes(s)
-      );
+      useCursorPagination = false;
     }
 
-    const total = logs.length;
-    const offset = (parsedPage - 1) * parsedLimit;
-    const paginated = logs.slice(offset, offset + parsedLimit);
+    if (useCursorPagination) {
+      const { paginateFirestore } = require("../../utils/pagination");
+      const result = await paginateFirestore({ query, limit: parsedLimit, cursor });
+      const logs = result.data;
 
-    // Normalize each log for the frontend — use denormalized fields stored at write time
-    const normalized = paginated.map(log => ({
-      ...log,
-      actor: {
-        fullName: log.actorName || log.actorUserId || "System",
-        email:    log.actorEmail || "",
-        role:     log.actorRole  || "Admin",
-      },
-      entityName: log.entityName || log.entityId || "N/A",
-    }));
+      const normalized = logs.map(log => ({
+        ...log,
+        actor: {
+          fullName: log.actorName || log.actorUserId || "System",
+          email:    log.actorEmail || "",
+          role:     log.actorRole  || "Admin",
+        },
+        entityName: log.entityName || log.entityId || "N/A",
+      }));
 
-    res.json({
-      success: true,
-      data: normalized,
-      pagination: {
-        total,
-        page: parsedPage,
-        limit: parsedLimit,
-        totalPages: Math.ceil(total / parsedLimit),
+      res.json({
+        success: true,
+        data: normalized,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore
+      });
+    } else {
+      // In-memory search fallback
+      const fetchLimit = 5000;
+      const snapshot = await query.limit(fetchLimit).get();
+      let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      if (search) {
+        const s = search.toLowerCase();
+        logs = logs.filter(log =>
+          (log.actorName   || "").toLowerCase().includes(s) ||
+          (log.entityName  || "").toLowerCase().includes(s) ||
+          (log.action      || "").toLowerCase().includes(s) ||
+          (log.entityType  || "").toLowerCase().includes(s)
+        );
       }
-    });
+
+      let startIndex = 0;
+      if (cursor) {
+        const idx = logs.findIndex(item => item.id === cursor);
+        if (idx !== -1) {
+          startIndex = idx + 1;
+        }
+      }
+
+      const paginated = logs.slice(startIndex, startIndex + parsedLimit);
+      const nextCursor = (startIndex + parsedLimit < logs.length) ? paginated[paginated.length - 1].id : null;
+      const hasMore = startIndex + parsedLimit < logs.length;
+
+      const normalized = paginated.map(log => ({
+        ...log,
+        actor: {
+          fullName: log.actorName || log.actorUserId || "System",
+          email:    log.actorEmail || "",
+          role:     log.actorRole  || "Admin",
+        },
+        entityName: log.entityName || log.entityId || "N/A",
+      }));
+
+      res.json({
+        success: true,
+        data: normalized,
+        nextCursor,
+        hasMore
+      });
+    }
   } catch (error) {
     console.error('[Audit] Query failed:', error.message);
     res.status(500).json({ success: false, message: error.message });

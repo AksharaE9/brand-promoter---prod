@@ -1,54 +1,64 @@
 'use strict';
 const Redis = require('ioredis');
 
-const redisConfig = {
-  maxRetriesPerRequest: 3,
+const sharedConfig = {
+  enableOfflineQueue:     true,
+  connectTimeout:         8000,
+  commandTimeout:         4000,
+  keepAlive:              30000,
+  lazyConnect:            false,
+  enableReadyCheck:       true,
+  maxRetriesPerRequest:   3,
   retryStrategy: (times) => {
-    if (times > 20) return null; // stop retrying after 20 attempts
-    return Math.min(times * 200, 5000);
+    if (times > 10) {
+      console.error('[Redis] Too many retries, giving up');
+      return null;
+    }
+    return Math.min(times * 300, 5000);
   },
   reconnectOnError: (err) => {
-    const retry = ['READONLY', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT'];
-    return retry.some(e => err.message.includes(e));
+    const targets = ['READONLY','ECONNRESET','ETIMEDOUT','ENOTFOUND'];
+    return targets.some(t => err.message.includes(t)) ? 1 : false;
   },
-  enableOfflineQueue: true,
-  keepAlive: 30000,
-  connectTimeout: 10000,
-  commandTimeout: 5000,
-  lazyConnect: false,
-  enableReadyCheck: true,
 };
 
-let redis;
+const redisUrl = process.env.REDIS_URL;
 
-function getRedisClient() {
-  if (!redis) {
-    if (process.env.REDIS_URL) {
-      redis = new Redis(process.env.REDIS_URL, redisConfig);
-    } else {
-      redis = new Redis({
-        host: process.env.REDIS_HOST || '127.0.0.1',
-        port: parseInt(process.env.REDIS_PORT) || 6379,
-        password: process.env.REDIS_PASSWORD || undefined,
-        tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-        ...redisConfig
-      });
-    }
-    redis.on('connect',      () => console.log('[Redis] Connected'));
-    redis.on('ready',        () => console.log('[Redis] Ready'));
-    redis.on('error',        (e) => console.error('[Redis] Error:', e.message));
-    redis.on('close',        () => console.warn('[Redis] Connection closed'));
-    redis.on('reconnecting', () => console.log('[Redis] Reconnecting...'));
-  }
-  return redis;
+// Primary client for reads, writes, pipelines
+const client = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
+  host:                   process.env.REDIS_HOST     || '127.0.0.1',
+  port:               parseInt(process.env.REDIS_PORT) || 6379,
+  password:               process.env.REDIS_PASSWORD || undefined,
+  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
+  ...sharedConfig
+});
+
+// Subscriber client ONLY for SSE or pub/sub — never share with regular commands
+// because a subscribed client cannot run other commands
+const subscriberClient = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
+  host:                   process.env.REDIS_HOST     || '127.0.0.1',
+  port:               parseInt(process.env.REDIS_PORT) || 6379,
+  password:               process.env.REDIS_PASSWORD || undefined,
+  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
+  ...sharedConfig
+});
+
+client.on('connect',      () => console.log('[Redis:primary] Connected'));
+client.on('ready',        () => console.log('[Redis:primary] Ready'));
+client.on('error',        e  => console.error('[Redis:primary] Error:', e.message));
+client.on('reconnecting', () => console.warn('[Redis:primary] Reconnecting'));
+
+subscriberClient.on('connect', () => console.log('[Redis:subscriber] Connected'));
+subscriberClient.on('error',   e  => console.error('[Redis:subscriber] Error:', e.message));
+
+// Warmup — verify connection before server accepts traffic
+async function warmup() {
+  const result = await client.ping();
+  if (result !== 'PONG') throw new Error('Redis warmup failed');
+  console.log('[Redis] Warmup OK');
 }
 
-const client = getRedisClient();
-
-/**
- * Check if Redis connection is healthy
- * @returns {Promise<boolean>}
- */
+// Keep health methods on client for compatibility
 async function isHealthy() {
   try {
     const result = await client.ping();
@@ -58,10 +68,6 @@ async function isHealthy() {
   }
 }
 
-/**
- * Get Redis connection info for monitoring
- * @returns {{ status: string, isReady: boolean }}
- */
 function getConnectionInfo() {
   return {
     status: client.status || 'unknown',
@@ -69,8 +75,9 @@ function getConnectionInfo() {
   };
 }
 
-// Attach health methods to the client instance
 client.isHealthy = isHealthy;
 client.getConnectionInfo = getConnectionInfo;
 
 module.exports = client;
+module.exports.subscriber = subscriberClient;
+module.exports.warmup = warmup;

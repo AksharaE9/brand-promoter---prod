@@ -86,6 +86,7 @@ router.post(
       stageId = defaultStage.id;
     }
 
+    const orgId = req.user.organizationId || "defaultOrg";
     const applicationData = {
       candidateId,
       jobId,
@@ -93,14 +94,15 @@ router.post(
       shortlisted,
       status: "IN_PIPELINE",
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      organizationId: orgId,
+      isDeleted: false
     };
 
     const docRef = await firestore.collection("applications").add(applicationData);
     const applicationId = docRef.id;
 
     // Invalidate cached reports and analytics lists
-    const orgId = req.user.organizationId || "defaultOrg";
     await inv.application(orgId, candidateId);
 
     // SSE broadcast
@@ -149,55 +151,23 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const page = Number.parseInt(req.query.page, 10) || 1;
-    const limit = Number.parseInt(req.query.limit, 10) || 20;
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const cursor = req.query.cursor?.trim();
+    const orgId = req.user.organizationId || "defaultOrg";
 
-    let query = firestore.collection("applications");
+    let query = firestore.collection("applications")
+      .where("organizationId", "==", orgId)
+      .where("isDeleted", "==", false);
+
     if (req.query.jobId) query = query.where("jobId", "==", req.query.jobId);
     if (req.query.candidateId) query = query.where("candidateId", "==", req.query.candidateId);
     if (req.query.stageId) query = query.where("currentStageId", "==", req.query.stageId);
 
-    // Try orderBy, fallback if no index
-    let hasOrderBy = false;
-    try {
-      query = query.orderBy("createdAt", "desc");
-      hasOrderBy = true;
-    } catch (e) {
-      console.warn("⚠️ orderBy skipped - no index:", e.message);
-    }
+    query = query.orderBy("createdAt", "desc");
 
-    // Get data
-    let snapshot;
-    try {
-      snapshot = await query.limit(page * limit).get();
-    } catch (queryErr) {
-      console.error("❌ Query failed:", queryErr.message);
-      // Fallback: simple query without order
-      snapshot = await firestore.collection("applications").limit(page * limit).get();
-    }
-    let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    // Sort in memory if no orderBy
-    if (!hasOrderBy) {
-      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    }
-
-    // Page-based slicing
-    const paginated = items.slice((page - 1) * limit, page * limit);
-
-    // Get total count - with fallback
-    let total = paginated.length;
-    try {
-      const totalSnap = await query.count().get();
-      total = totalSnap.data().count;
-    } catch (countErr) {
-      console.warn("⚠️ Count query failed:", countErr.message);
-      // Count all documents
-      try {
-        const allSnap = await firestore.collection("applications").limit(1000).get();
-        total = allSnap.size;
-      } catch (e) { total = paginated.length; }
-    }
+    const { paginateFirestore } = require("../../utils/pagination");
+    const result = await paginateFirestore({ query, limit, cursor });
+    const paginated = result.data;
 
     // Populate relations
     if (paginated.length > 0) {
@@ -232,7 +202,8 @@ router.get(
     res.json({
       success: true,
       data: paginated,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore
     });
   }),
 );

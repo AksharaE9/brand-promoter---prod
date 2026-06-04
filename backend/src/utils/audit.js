@@ -21,6 +21,7 @@ function logAudit({
   userAgent = null,
   orgId = null,
 }) {
+  const targetOrg = orgId || "defaultOrg";
   const payload = {
     actorUserId,
     actorName: actorName || actorUserId || "System",
@@ -33,10 +34,9 @@ function logAudit({
     ipAddress,
     userAgent,
     createdAt: new Date().toISOString(),
+    organizationId: targetOrg,
+    isDeleted: false
   };
-  if (orgId) {
-    payload.organizationId = orgId;
-  }
   
   // Intentionally NOT awaited — fire and forget
   firestore.collection("auditLogs").add(payload)

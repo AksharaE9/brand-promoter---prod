@@ -1,11 +1,11 @@
 const express = require("express");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
-const { getOrgAnalyticsData, getPipelineStages } = require("./dataLoader");
+const { loadAnalyticsBase, getPipelineStages } = require("./dataLoader");
 const { db: firestore } = require("../../config/firebase");
 const { getCached, getCache, setCache } = require("../../utils/cache");
 
-const ROUTE_CACHE_TTL = 30; // 30s per-route cache on top of the data loader cache
+const ROUTE_CACHE_TTL = 30; // 30s per-route cache
 
 const router = express.Router();
 router.use(auth);
@@ -85,7 +85,7 @@ async function getUsersList() {
   return users;
 }
 
-// Helper to get all pipeline stages map (backed by cached getPipelineStages)
+// Helper to get all pipeline stages map
 async function getStagesMap() {
   const stages = await getPipelineStages();
   const map = {};
@@ -99,114 +99,97 @@ async function getStagesMap() {
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  // Include date params in cache key so different ranges don't collide
   const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
   const data = await getCached(cacheKey, async () => {
-  const [analyticsData, stageMap] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getStagesMap()
-  ]);
-  const { candidates, apps, interviews } = analyticsData;
+    const [analyticsData, stageMap] = await Promise.all([
+      loadAnalyticsBase(myOrg, start, end),
+      getStagesMap()
+    ]);
+    const { candidates, applications: apps, interviews } = analyticsData;
 
-  const filterByDate = (list, dateKey, s, e) => {
-    return list.filter(item => {
-      const dateStr = item[dateKey];
-      if (!dateStr) return false;
-      const d = new Date(dateStr);
-      return d >= s && d <= e;
+    const filterByDate = (list, dateKey, s, e) => {
+      return list.filter(item => {
+        const dateStr = item[dateKey];
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        return d >= s && d <= e;
+      });
+    };
+
+    const currCands = filterByDate(candidates, "createdAt", start, end);
+    const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
+
+    const currApps = filterByDate(apps, "createdAt", start, end);
+    const prevApps = filterByDate(apps, "createdAt", prevStart, prevEnd);
+
+    const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
+    const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
+
+    const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
+    
+    const currOffers = currApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
+    const prevOffers = prevApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
+
+    const currJoined = currApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
+    const prevJoined = prevApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
+
+    const currRejected = currApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
+    const prevRejected = prevApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
+
+    const thisMonthStart = new Date();
+    thisMonthStart.setDate(1);
+    thisMonthStart.setHours(0,0,0,0);
+    
+    const completedThisMonth = interviews.filter(i => {
+      const d = new Date(i.scheduledStart || i.createdAt || 0);
+      return d >= thisMonthStart && (i.status === "COMPLETED" || i.status === "SCHEDULED");
+    }).length;
+
+    const offerRate = currOffers > 0 ? Math.round((currJoined / currOffers) * 100) : 0;
+    const prevOfferRate = prevOffers > 0 ? Math.round((prevJoined / prevOffers) * 100) : 0;
+
+    const hiredCandidates = currCands.filter(c => {
+      const status = (c.status || "").toLowerCase().trim();
+      return status === 'joined' || status === 'accepted';
     });
-  };
+    const avgDaysToHire = hiredCandidates.length > 0
+      ? Math.round(
+          hiredCandidates.reduce((sum, c) => {
+            const created = new Date(c.createdAt);
+            const updated = new Date(c.updatedAt || c.createdAt);
+            return sum + Math.max(0, (updated - created) / (1000 * 60 * 60 * 24));
+          }, 0) / hiredCandidates.length
+        )
+      : 14.2;
 
-  const currCands = filterByDate(candidates, "createdAt", start, end);
-  const prevCands = filterByDate(candidates, "createdAt", prevStart, prevEnd);
+    const getPct = (c, p) => {
+      if (p === 0) return c > 0 ? 100 : 0;
+      return Math.round(((c - p) / p) * 100);
+    };
 
-  const currApps = filterByDate(apps, "createdAt", start, end);
-  const prevApps = filterByDate(apps, "createdAt", prevStart, prevEnd);
-
-  const currInterviews = filterByDate(interviews, "scheduledStart", start, end);
-  const prevInterviews = filterByDate(interviews, "scheduledStart", prevStart, prevEnd);
-
-  const activeCount = candidates.filter(c => !["REJECTED", "JOINED", "OFFER_DECLINED"].includes(c.status)).length;
-  
-  const currOffers = currApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
-  const prevOffers = prevApps.filter(a => matchesStage(a, 'offered', stageMap) || matchesStage(a, 'joined', stageMap)).length;
-
-  const currJoined = currApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
-  const prevJoined = prevApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
-
-  const currRejected = currApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
-  const prevRejected = prevApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
-
-  const thisMonthStart = new Date();
-  thisMonthStart.setDate(1);
-  thisMonthStart.setHours(0,0,0,0);
-  
-  const completedThisMonth = interviews.filter(i => {
-    const d = new Date(i.scheduledStart || i.createdAt || 0);
-    return d >= thisMonthStart && (i.status === "COMPLETED" || i.status === "SCHEDULED");
-  }).length;
-
-  const offerRate = currOffers > 0 ? Math.round((currJoined / currOffers) * 100) : 0;
-  const prevOfferRate = prevOffers > 0 ? Math.round((prevJoined / prevOffers) * 100) : 0;
-
-  // Average days to hire calculation
-  const hiredCandidates = currCands.filter(c => {
-    const status = (c.status || "").toLowerCase().trim();
-    return status === 'joined' || status === 'accepted';
-  });
-  const avgDaysToHire = hiredCandidates.length > 0
-    ? Math.round(
-        hiredCandidates.reduce((sum, c) => {
-          const created = new Date(c.createdAt);
-          const updated = new Date(c.updatedAt || c.createdAt);
-          return sum + Math.max(0, (updated - created) / (1000 * 60 * 60 * 24));
-        }, 0) / hiredCandidates.length
-      )
-    : 14.2; // default placeholder if no hires
-
-  const getPct = (c, p) => {
-    if (p === 0) return c > 0 ? 100 : 0;
-    return Math.round(((c - p) / p) * 100);
-  };
-
-  const data = {
-    metrics: {
-      totalCandidates: currCands.length,
-      activeCandidates: activeCount,
-      offersExtended: currOffers,
-      offersAccepted: currJoined,
-      candidatesJoined: currJoined,
-      candidatesRejected: currRejected,
-      totalInterviewsScheduled: currInterviews.length,
-      interviewsCompletedThisMonth: completedThisMonth,
-      averageTimeToHireDays: avgDaysToHire,
-      offerAcceptanceRate: offerRate
-    },
-    trends: {
-      totalCandidates: getPct(currCands.length, prevCands.length),
-      activeCandidates: getPct(activeCount, activeCount),
-      offersExtended: getPct(currOffers, prevOffers),
-      offerAcceptanceRate: offerRate - prevOfferRate,
-      averageTimeToHireDays: -1.5,
-      interviewsThisMonth: getPct(currInterviews.length, prevInterviews.length)
-    }
-  };
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('[Analytics Overview Debug]', {
-      myOrg,
-      totalCandidates: currCands.length,
-      activeCandidates: activeCount,
-      offersExtended: currOffers,
-      joined: currJoined,
-      rejected: currRejected,
-      interviewsThisMonth: completedThisMonth,
-      offerAcceptanceRate: offerRate
-    });
-  }
-
-  return data;
+    return {
+      metrics: {
+        totalCandidates: currCands.length,
+        activeCandidates: activeCount,
+        offersExtended: currOffers,
+        offersAccepted: currJoined,
+        candidatesJoined: currJoined,
+        candidatesRejected: currRejected,
+        totalInterviewsScheduled: currInterviews.length,
+        interviewsCompletedThisMonth: completedThisMonth,
+        averageTimeToHireDays: avgDaysToHire,
+        offerAcceptanceRate: offerRate
+      },
+      trends: {
+        totalCandidates: getPct(currCands.length, prevCands.length),
+        activeCandidates: getPct(activeCount, activeCount),
+        offersExtended: getPct(currOffers, prevOffers),
+        offerAcceptanceRate: offerRate - prevOfferRate,
+        averageTimeToHireDays: -1.5,
+        interviewsThisMonth: getPct(currInterviews.length, prevInterviews.length)
+      }
+    };
   }, ROUTE_CACHE_TTL * 1000);
 
   res.json({ success: true, data });
@@ -220,10 +203,10 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
 
   const data = await getCached(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
+      loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
     ]);
-    const { candidates, apps } = analyticsData;
+    const { candidates, applications: apps } = analyticsData;
 
     const currCands = candidates.filter(c => {
       const cd = new Date(c.createdAt);
@@ -273,12 +256,13 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 
 // 4. GET /api/analytics/interviewer-load
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
+  const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
   const cacheKey = `analytics_interviewer_load_route_${myOrg}`;
 
   const data = await getCached(cacheKey, async () => {
     const [analyticsData, users] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
+      loadAnalyticsBase(myOrg, start, end),
       getUsersList()
     ]);
     const { interviews } = analyticsData;
@@ -319,85 +303,96 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
 
 // 5. GET /api/analytics/recruiter-performance
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
+  const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_recruiter_performance_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
-  const [analyticsData, users, stageMap] = await Promise.all([
-    getOrgAnalyticsData(myOrg),
-    getUsersList(),
-    getStagesMap()
-  ]);
-  const { candidates, apps } = analyticsData;
+  const data = await getCached(cacheKey, async () => {
+    const [analyticsData, users, stageMap] = await Promise.all([
+      loadAnalyticsBase(myOrg, start, end),
+      getUsersList(),
+      getStagesMap()
+    ]);
+    const { candidates, applications: apps } = analyticsData;
 
-  const recruiters = users
-    .filter(u => (u.organizationId || "defaultOrg") === myOrg)
-    .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
+    const recruiters = users
+      .filter(u => (u.organizationId || "defaultOrg") === myOrg)
+      .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
 
-  const performance = recruiters.map((rec, idx) => {
-    const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
-    const recApps = apps.filter(a => cands.some(c => c.id === a.candidateId));
+    const performance = recruiters.map((rec, idx) => {
+      const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
+      const recApps = apps.filter(a => cands.some(c => c.id === a.candidateId));
 
-    const totalHandled = cands.length;
-    const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
-    const joined = recApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
-    const rejected = recApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
+      const totalHandled = cands.length;
+      const active = cands.filter(c => !["REJECTED", "JOINED"].includes(c.status)).length;
+      const joined = recApps.filter(a => matchesStage(a, 'joined', stageMap)).length;
+      const rejected = recApps.filter(a => (a.status || "").toLowerCase().trim() === 'rejected').length;
 
-    return {
-      userId: rec.id,
-      name: rec.fullName,
-      userType: rec.role || "RECRUITER",
-      totalCandidatesHandled: totalHandled,
-      activeCandidates: active,
-      candidatesJoined: joined,
-      candidatesRejected: rejected,
-      offerConversionRate: parseFloat((totalHandled > 0 ? (joined / totalHandled) * 100 : 0.0).toFixed(1)),
-      averageDaysToClose: parseFloat((totalHandled > 0 ? 15.4 + (idx * 0.1) % 5 : 0.0).toFixed(1))
-    };
-  });
+      return {
+        userId: rec.id,
+        name: rec.fullName,
+        userType: rec.role || "RECRUITER",
+        totalCandidatesHandled: totalHandled,
+        activeCandidates: active,
+        candidatesJoined: joined,
+        candidatesRejected: rejected,
+        offerConversionRate: parseFloat((totalHandled > 0 ? (joined / totalHandled) * 100 : 0.0).toFixed(1)),
+        averageDaysToClose: parseFloat((totalHandled > 0 ? 15.4 + (idx * 0.1) % 5 : 0.0).toFixed(1))
+      };
+    });
 
-  res.json({ success: true, data: { recruiters: performance } });
+    return { recruiters: performance };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 6. GET /api/analytics/source-analysis
 router.get("/source-analysis", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
 
-  const { candidates } = await getOrgAnalyticsData(myOrg);
+  const data = await getCached(cacheKey, async () => {
+    const { candidates } = await loadAnalyticsBase(myOrg, start, end);
 
-  const currCands = candidates.filter(c => {
-    const cd = new Date(c.createdAt);
-    return cd >= start && cd <= end;
-  });
+    const currCands = candidates.filter(c => {
+      const cd = new Date(c.createdAt);
+      return cd >= start && cd <= end;
+    });
 
-  const sourcesMap = {
-    "Direct": 0,
-    "Referral": 0,
-    "College Drive": 0,
-    "Bulk Upload": 0,
-    "Manual": 0
-  };
-
-  currCands.forEach(c => {
-    const s = c.source || "Direct";
-    if (s.includes("Referral")) sourcesMap["Referral"]++;
-    else if (s.includes("Drive") || s.includes("College")) sourcesMap["College Drive"]++;
-    else if (s.includes("Bulk") || s.includes("Excel")) sourcesMap["Bulk Upload"]++;
-    else if (s.includes("Manual")) sourcesMap["Manual"]++;
-    else sourcesMap["Direct"]++;
-  });
-
-  const total = currCands.length;
-  const sources = Object.keys(sourcesMap).map(name => {
-    const count = sourcesMap[name];
-    return {
-      source: name,
-      count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0,
-      conversionRate: name === "Referral" ? 22.4 : name === "Direct" ? 12.8 : 10.5
+    const sourcesMap = {
+      "Direct": 0,
+      "Referral": 0,
+      "College Drive": 0,
+      "Bulk Upload": 0,
+      "Manual": 0
     };
-  });
 
-  res.json({ success: true, data: { sources, total } });
+    currCands.forEach(c => {
+      const s = c.source || "Direct";
+      if (s.includes("Referral")) sourcesMap["Referral"]++;
+      else if (s.includes("Drive") || s.includes("College")) sourcesMap["College Drive"]++;
+      else if (s.includes("Bulk") || s.includes("Excel")) sourcesMap["Bulk Upload"]++;
+      else if (s.includes("Manual")) sourcesMap["Manual"]++;
+      else sourcesMap["Direct"]++;
+    });
+
+    const total = currCands.length;
+    const sources = Object.keys(sourcesMap).map(name => {
+      const count = sourcesMap[name];
+      return {
+        source: name,
+        count,
+        percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+        conversionRate: name === "Referral" ? 22.4 : name === "Direct" ? 12.8 : 10.5
+      };
+    });
+
+    return { sources, total };
+  }, ROUTE_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 // 7. GET /api/analytics/stage-conversion
@@ -408,10 +403,10 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
 
   const data = await getCached(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
+      loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
     ]);
-    const { candidates, apps } = analyticsData;
+    const { candidates, applications: apps } = analyticsData;
 
     const currCands = candidates.filter(c => {
       const cd = new Date(c.createdAt);
@@ -456,11 +451,14 @@ router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const cacheKey = `analytics_monthly_trends_route_${myOrg}`;
 
   const data = await getCached(cacheKey, async () => {
+    const end = new Date();
+    const start = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000); // last 6 months
+
     const [analyticsData, stageMap] = await Promise.all([
-      getOrgAnalyticsData(myOrg),
+      loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
     ]);
-    const { candidates, apps, interviews } = analyticsData;
+    const { candidates, applications: apps, interviews } = analyticsData;
 
     const months = [];
     const now = new Date();
@@ -511,9 +509,7 @@ router.get('/debug-counts', asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
   
   try {
-    const allSnap = await firestore.collection('candidates')
-      .get();
-    
+    const allSnap = await firestore.collection('candidates').get();
     const all = allSnap.docs.map(d => d.data());
     
     const counts = {

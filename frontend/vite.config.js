@@ -3,9 +3,23 @@ import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 import viteCompression from 'vite-plugin-compression';
 
+const stripAttributesPlugin = () => ({
+  name: 'strip-attributes',
+  transform(code, id) {
+    if (/\.(jsx|tsx|js|ts)$/.test(id)) {
+      const cleanCode = code
+        .replace(/data-testid\s*=\s*({[^}]+}|"[^"]*"|'[^']*')/g, '')
+        .replace(/data-cy\s*=\s*({[^}]+}|"[^"]*"|'[^']*')/g, '');
+      return { code: cleanCode, map: null };
+    }
+    return null;
+  }
+});
+
 export default defineConfig({
   plugins: [
     react(),
+    stripAttributesPlugin(),
     viteCompression({ algorithm: 'gzip', ext: '.gz' }),
     viteCompression({ algorithm: 'brotliCompress', ext: '.br' }),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true }),

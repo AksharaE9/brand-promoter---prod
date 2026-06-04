@@ -1,107 +1,81 @@
-const { db: firestore } = require("../../config/firebase");
-const { getCache, setCache } = require("../../utils/cache");
+// src/modules/analytics/dataLoader.js
+'use strict';
+const { db } = require('../../config/firebase');
+const { getCache, setCache, TTL } = require('../../utils/cache');
 
 const activePromises = new Map();
+const STAGES_CACHE_TTL   = 120; // 2 minutes
 
-const ANALYTICS_CACHE_TTL = 30;      // 30 seconds for analytics data
-const STAGES_CACHE_TTL   = 120;      // 2 minutes for pipeline stages (changes rarely)
+async function loadAnalyticsBase(orgId, startDate, endDate) {
+  const cKey = `analytics:base:${orgId}:${startDate.toISOString().slice(0,10)}:${endDate.toISOString().slice(0,10)}`;
 
-/**
- * Shared data loader for analytics endpoints.
- * Fetches candidates, applications, and interviews for an organization,
- * caches them in Redis for 30s, and deduplicates parallel requests in memory.
- *
- * @param {string} orgId - Organization ID
- * @returns {Promise<{candidates: Array, apps: Array, interviews: Array}>}
- */
-async function getOrgAnalyticsData(orgId) {
-  const cacheKey = `analytics_data_loader:${orgId}`;
+  const cached = await getCache(cKey);
+  if (cached) return cached;
 
-  // 1. Check Redis first (fast path)
-  try {
-    const cached = await getCache(cacheKey);
-    if (cached !== null) return cached;
-  } catch (_) { /* fall through to Firestore */ }
-
-  // 2. Promise deduplication — if another request is already fetching, share it
-  if (activePromises.has(cacheKey)) {
-    return activePromises.get(cacheKey);
+  if (activePromises.has(cKey)) {
+    return activePromises.get(cKey);
   }
 
   const promise = (async () => {
-    // Fetch all three collections in parallel
-    const [candidatesSnap, appsSnap, interviewsSnap] = await Promise.all([
-      firestore.collection("candidates").get(),
-      firestore.collection("applications").get(),
-      firestore.collection("interviews").get(),
+    // Fire all queries in parallel
+    const [candSnap, intSnap, appSnap, userSnap] = await Promise.all([
+      db.collection('candidates')
+        .where('organizationId', '==', orgId)
+        .where('isDeleted',      '==', false)
+        .where('createdAt',      '>=', startDate.toISOString())
+        .where('createdAt',      '<=', endDate.toISOString())
+        .get(),
+      db.collection('interviews')
+        .where('organizationId', '==', orgId)
+        .where('isDeleted',      '==', false)
+        .get(),
+      db.collection('applications')
+        .where('organizationId', '==', orgId)
+        .where('isDeleted',      '==', false)
+        .where('createdAt',      '>=', startDate.toISOString())
+        .where('createdAt',      '<=', endDate.toISOString())
+        .get(),
+      db.collection('users')
+        .where('organizationId', '==', orgId)
+        .where('isDeleted',      '==', false)
+        .where('status',         '==', 'ACTIVE')
+        .get(),
     ]);
 
-    const candidates = candidatesSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted !== true)
-      .filter(c => (c.organizationId || "defaultOrg") === orgId);
+    const data = {
+      candidates:   candSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      interviews:   intSnap.docs.map(d  => ({ id: d.id, ...d.data() })),
+      applications: appSnap.docs.map(d  => ({ id: d.id, ...d.data() })),
+      users:        userSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+    };
 
-    // Filter apps to only those belonging to candidates in this org
-    const candidateIds = new Set(candidates.map(c => c.id));
-    const apps = appsSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(a => candidateIds.has(a.candidateId));
-
-    // Build apps map for interview lookup
-    const appsMap = {};
-    apps.forEach(a => { appsMap[a.id] = a; });
-
-    // Filter interviews to those belonging to apps in this org
-    const interviews = interviewsSnap.docs
-      .map(d => {
-        const data = d.data();
-        const app = appsMap[data.applicationId];
-        return {
-          id: d.id,
-          ...data,
-          candidateId: app ? app.candidateId : null,
-        };
-      })
-      .filter(i => i.candidateId && candidateIds.has(i.candidateId));
-
-    const result = { candidates, apps, interviews };
-
-    // 3. Persist to Redis cache
-    try {
-      await setCache(cacheKey, result, ANALYTICS_CACHE_TTL);
-    } catch (_) { /* non-fatal */ }
-
-    return result;
+    await setCache(cKey, data, TTL.ANALYTICS);
+    return data;
   })();
 
-  activePromises.set(cacheKey, promise);
+  activePromises.set(cKey, promise);
 
   try {
     return await promise;
   } finally {
-    activePromises.delete(cacheKey);
+    activePromises.delete(cKey);
   }
 }
 
-/**
- * Helper to get pipeline stages — cached for 2 minutes.
- */
 async function getPipelineStages() {
   const cacheKey = "global:pipeline_stages";
 
-  // 1. Try Redis
   try {
     const cached = await getCache(cacheKey);
     if (cached !== null) return cached;
   } catch (_) { /* fall through */ }
 
-  // 2. Promise deduplication
   if (activePromises.has(cacheKey)) {
     return activePromises.get(cacheKey);
   }
 
   const promise = (async () => {
-    const stagesSnap = await firestore.collection("pipeline_stages").get();
+    const stagesSnap = await db.collection("pipeline_stages").get();
     const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     try {
@@ -121,6 +95,6 @@ async function getPipelineStages() {
 }
 
 module.exports = {
-  getOrgAnalyticsData,
+  loadAnalyticsBase,
   getPipelineStages,
 };

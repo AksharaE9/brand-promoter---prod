@@ -27,11 +27,11 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const cursor = req.query.cursor?.trim();
     const { getCached } = require("../../utils/cache");
 
-    const cacheKeyStr = `jobs:list:${page}:${limit}:${req.query.isActive || ''}:${req.query.search || ''}`;
+    const cacheKeyStr = `jobs:list:${cursor || 'start'}:${limit}:${req.query.isActive || ''}:${req.query.search || ''}`;
 
     const result = await getCached(cacheKeyStr, async () => {
       let query = firestore.collection("jobs");
@@ -60,12 +60,22 @@ router.get(
         );
       }
 
-      const total = items.length;
-      const paginated = items.slice((page - 1) * limit, page * limit);
+      let startIndex = 0;
+      if (cursor) {
+        const idx = items.findIndex(item => item.id === cursor);
+        if (idx !== -1) {
+          startIndex = idx + 1;
+        }
+      }
+
+      const paginated = items.slice(startIndex, startIndex + limit);
+      const nextCursor = (startIndex + limit < items.length) ? paginated[paginated.length - 1].id : null;
+      const hasMore = startIndex + limit < items.length;
 
       return {
         data: paginated,
-        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+        nextCursor,
+        hasMore,
       };
     }, 120000); // 120s cache
 

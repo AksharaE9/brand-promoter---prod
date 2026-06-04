@@ -326,6 +326,8 @@ const worker = new Worker(
     connection: workerConnection,
     concurrency: 1,  // only one sync at a time
     lockDuration: 60000,
+    stalledInterval: 15000,
+    maxStalledCount: 2,
   }
 );
 

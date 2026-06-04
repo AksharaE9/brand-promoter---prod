@@ -40,79 +40,21 @@ const SalesTeam = lazy(() => import('./pages/Sales/SalesTeam'));
 const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'];
 const ADMIN_RECRUITER = ['SUPER_ADMIN', 'RECRUITER'];
 
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center min-h-screen bg-slate-50">
-    <div className="flex flex-col items-center gap-4">
-      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      <p className="text-slate-500 font-medium animate-pulse">Loading ATS Tracker...</p>
-    </div>
-  </div>
-);
+import PageSkeleton from './components/PageSkeleton';
 
 const protectedElement = (element, allowedRoles = ALL_ROLES) => (
   <ProtectedRoute allowedRoles={allowedRoles}>{element}</ProtectedRoute>
 );
 
-import { QueryClient } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import ToastContainer from './components/ToastContainer';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30 * 1000,          // 30s — do not refetch if data is fresh
-      gcTime: 10 * 60 * 1000,        // 10min — keep unused data in cache
-      retry: 1,                       // retry once on failure
-      retryDelay: 1000,
-      refetchOnWindowFocus: false,    // CRITICAL — prevents refetch on tab switch
-      refetchOnReconnect: 'always',
-      refetchOnMount: false,          // use cache within staleTime
-      networkMode: 'online',
-    },
-    mutations: {
-      retry: 0,
-      networkMode: 'online',
-    }
-  }
-});
-
-// Custom lightweight LocalStorage persister (zero dependencies)
-const localPersister = {
-  persistClient: async (client) => {
-    try {
-      localStorage.setItem('REACT_QUERY_OFFLINE_CACHE', JSON.stringify(client));
-    } catch (e) {
-      console.warn('Failed to persist QueryClient:', e.message);
-    }
-  },
-  restoreClient: async () => {
-    try {
-      const cache = localStorage.getItem('REACT_QUERY_OFFLINE_CACHE');
-      return cache ? JSON.parse(cache) : undefined;
-    } catch (e) {
-      console.warn('Failed to restore QueryClient:', e.message);
-      return undefined;
-    }
-  },
-  removeClient: async () => {
-    try {
-      localStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
-    } catch (e) {
-      console.warn('Failed to remove QueryClient:', e.message);
-    }
-  }
-};
 
 const App = () => {
   const currentUser = getStoredUser();
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister: localPersister, maxAge: 1000 * 60 * 60 * 24 }}
-    >
+    <>
       <ToastContainer />
       <Router>
-        <Suspense fallback={<LoadingFallback />}>
+        <Suspense fallback={<PageSkeleton />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
@@ -148,9 +90,9 @@ const App = () => {
             <Route path="settings" element={<SalesSettings />} />
           </Route>
         </Routes>
-      </Suspense>
-    </Router>
-    </PersistQueryClientProvider>
+        </Suspense>
+      </Router>
+    </>
   );
 };
 

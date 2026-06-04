@@ -4,96 +4,86 @@
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "category", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "mentorId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId",    "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",         "order": "ASCENDING" },
+        { "fieldPath": "currentStageId",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt",         "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "category", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId",      "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",           "order": "ASCENDING" },
+        { "fieldPath": "assignedRecruiterId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt",           "order": "DESCENDING" }
       ]
     },
     {
-      "collectionGroup": "jobs",
+      "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "isActive", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "applications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "candidateId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "offerDecision",  "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "applications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "jobId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "applications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "applications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "candidateId", "order": "ASCENDING" },
-        { "fieldPath": "jobId", "order": "ASCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "candidateId",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "interviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "applicationId", "order": "ASCENDING" },
-        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "scheduledStart", "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" }
       ]
     },
     {
       "collectionGroup": "interviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "interviews",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "candidateId", "order": "ASCENDING" },
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "candidateId",    "order": "ASCENDING" },
         { "fieldPath": "scheduledStart", "order": "DESCENDING" }
       ]
     },
@@ -102,31 +92,70 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "interviewerIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+        { "fieldPath": "scheduledStart", "order": "ASCENDING" }
       ]
     },
     {
-      "collectionGroup": "interviews",
+      "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "scheduledStart", "order": "DESCENDING" },
+        { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "isRead",    "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "action",         "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "actorUserId",     "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "role",           "order": "ASCENDING" }
       ]
     },
     {
-      "collectionGroup": "pipeline_events",
+      "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "applicationId", "order": "ASCENDING" },
-        { "fieldPath": "movedAt", "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dailyLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "projectId",  "order": "ASCENDING" },
+        { "fieldPath": "createdBy",  "order": "ASCENDING" },
+        { "fieldPath": "date",       "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "collegeDrives",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "dateFrom",       "order": "DESCENDING" }
       ]
     }
   ],

@@ -30,6 +30,7 @@
     "csv-stringify": "^6.7.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.9.0",
     "ioredis": "^5.10.1",
@@ -38,6 +39,7 @@
     "multer-storage-cloudinary": "^4.0.0",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
+    "rate-limit-redis": "^5.0.0",
     "redis": "^5.12.1",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"

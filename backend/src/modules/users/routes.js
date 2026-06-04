@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const { db: firestore } = require("../../config/firebase");
-const { auth, requireRoles } = require("../../middleware/auth");
+const { auth, requireRoles, invalidateUserCache } = require("../../middleware/auth");
 const { upload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
@@ -163,6 +163,7 @@ router.patch(
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, id);
+    await invalidateUserCache(id);
 
     const sse = require("../../utils/sse");
     sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
@@ -216,6 +217,7 @@ router.patch(
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, id);
+    await invalidateUserCache(id);
 
     const sse = require("../../utils/sse");
     if (status === 'INACTIVE') {
@@ -282,6 +284,7 @@ router.post(
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, req.user.id);
+    await invalidateUserCache(req.user.id);
 
     const sse = require("../../utils/sse");
     sse.sendToUser(req.user.id, 'PROFILE_UPDATED', {

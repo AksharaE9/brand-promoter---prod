@@ -3,12 +3,27 @@ const redis = require('./redisClient');
 
 const DEFAULT_TTL = 60;
 
+// ── Metrics tracking ──
+const metrics = {
+  hits:   0,
+  misses: 0,
+  errors: 0,
+  sets:   0,
+  dels:   0,
+};
+
 // ── Core operations ──
 async function getCache(key) {
   try {
     const val = await redis.get(key);
-    return val ? JSON.parse(val) : null;
+    if (val) {
+      metrics.hits++;
+      return JSON.parse(val);
+    }
+    metrics.misses++;
+    return null;
   } catch (err) {
+    metrics.errors++;
     console.error('[Cache] getCache error:', key, err.message);
     return null;
   }
@@ -17,39 +32,48 @@ async function getCache(key) {
 async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
   try {
     if (data === null || data === undefined) return;
+    metrics.sets++;
     await redis.setex(key, ttlSeconds, JSON.stringify(data));
   } catch (err) {
+    metrics.errors++;
     console.error('[Cache] setCache error:', key, err.message);
   }
 }
 
 async function deleteCache(key) {
   try {
+    metrics.dels++;
     await redis.del(key);
   } catch (err) {
+    metrics.errors++;
     console.error('[Cache] deleteCache error:', key, err.message);
   }
 }
 
 async function deleteCachePattern(pattern) {
   try {
-    // Use SCAN instead of KEYS for production safety
     let cursor = '0';
-    const keysToDelete = [];
+    const toDelete = [];
     do {
-      const [newCursor, keys] = await redis.scan(
-        cursor, 'MATCH', pattern, 'COUNT', 100
+      const [next, keys] = await redis.scan(
+        cursor, 'MATCH', pattern, 'COUNT', '200'
       );
-      cursor = newCursor;
-      keysToDelete.push(...keys);
+      cursor = next;
+      if (keys.length) toDelete.push(...keys);
     } while (cursor !== '0');
 
-    if (keysToDelete.length > 0) {
+    if (toDelete.length === 0) return;
+
+    // Delete in batches of 100 to avoid blocking Redis
+    for (let i = 0; i < toDelete.length; i += 100) {
+      const batch = toDelete.slice(i, i + 100);
+      metrics.dels += batch.length;
       const pipeline = redis.pipeline();
-      keysToDelete.forEach(k => pipeline.del(k));
+      batch.forEach(k => pipeline.del(k));
       await pipeline.exec();
     }
   } catch (err) {
+    metrics.errors++;
     console.error('[Cache] deleteCachePattern error:', pattern, err.message);
   }
 }
@@ -70,10 +94,12 @@ async function setCacheMany(entries, ttlSeconds = DEFAULT_TTL) {
   try {
     const pipeline = redis.pipeline();
     entries.forEach(({ key, data }) => {
+      metrics.sets++;
       pipeline.setex(key, ttlSeconds, JSON.stringify(data));
     });
     await pipeline.exec();
   } catch (err) {
+    metrics.errors++;
     console.error('[Cache] setCacheMany error:', err.message);
   }
 }
@@ -88,18 +114,37 @@ async function pingCache() {
   }
 }
 
+function getCacheMetrics() {
+  const total = metrics.hits + metrics.misses;
+  const hitRate = total > 0 ? ((metrics.hits / total) * 100).toFixed(1) : '0.0';
+  return { ...metrics, total, hitRate: `${hitRate}%` };
+}
+
 // ── TTL constants ──
 const TTL = {
-  DASHBOARD:    60,
-  CANDIDATES:   30,
-  JOBS:        120,
-  TEAM:        120,
-  ANALYTICS:   120,
-  AUDIT:        30,
-  DRIVES:       60,
-  ROUND:      7200,
-  ROUND_LIST:    5,
-  DIRTY:      3600,
+  // High volatility — changes many times per day
+  CANDIDATES:       30,   // 30 seconds
+  APPLICATIONS:     30,
+  SCHEDULING_LIST:  30,
+  NOTIFICATIONS:    15,   // 15 seconds — near real-time
+  DASHBOARD:        45,
+  AUDIT:            20,
+
+  // Medium volatility — changes a few times per day
+  ANALYTICS:       120,   // 2 minutes
+  JOBS:            120,
+  TEAM:            180,   // 3 minutes
+  DRIVES:          120,
+
+  // Low volatility — changes rarely
+  ORG_SETTINGS:   600,   // 10 minutes
+  PANEL_MEMBERS:  300,   // 5 minutes
+  JOB_ROLES:      600,
+
+  // Scheduling write-through cache
+  ROUND:         7200,   // 2 hours — rounds stay warm
+  ROUND_DETAIL:  7200,
+  DIRTY:         3600,   // 1 hour — dirty queue entries
 };
 
 // ── Backward-compatible API ──
@@ -116,15 +161,11 @@ async function getCached(key, fetcher, ttlMs = 60000) {
 
 /**
  * Cache-aside with mutex to prevent stampede.
- * On cache miss, acquires a short lock before calling the fetcher.
- * Other concurrent requests wait and retry instead of all hitting Firestore.
  */
 async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
-  // 1. Check cache
   const cached = await getCache(key);
   if (cached !== null) return cached;
 
-  // 2. Try to acquire a mutex lock
   const lockKey = `mutex:${key}`;
   const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
 
@@ -132,7 +173,6 @@ async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
     const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
 
     if (lockAcquired) {
-      // We hold the lock — fetch and populate cache
       try {
         const data = await fetcher();
         await setCache(key, data, ttlSec);
@@ -142,18 +182,15 @@ async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
       }
     }
 
-    // Lock held by another request — wait and retry up to 3 times
     for (let attempt = 0; attempt < 3; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
       const retryCache = await getCache(key);
       if (retryCache !== null) return retryCache;
     }
 
-    // All retries failed — fall through to direct fetch (no caching to avoid stale)
     return await fetcher();
   } catch (err) {
     console.error('[Cache] getCachedWithMutex error:', key, err.message);
-    // Fallback: bypass cache entirely
     return await fetcher();
   }
 }
@@ -190,7 +227,7 @@ async function invalidateOrgAnalyticsAndReports(orgId) {
       `reports_hiring_progress_${org}`
     ];
     for (const key of keys) {
-      await deleteCachePattern(key);
+      await deleteCache(key);
     }
   } catch (e) { /* silent */ }
 }
@@ -198,6 +235,7 @@ async function invalidateOrgAnalyticsAndReports(orgId) {
 module.exports = {
   getCache, setCache, deleteCache, deleteCachePattern,
   deleteManyPatterns, cacheKey, setCacheMany, pingCache, TTL,
+  getCacheMetrics,
   // Backward-compatible API
   getCached,
   getCachedWithMutex,

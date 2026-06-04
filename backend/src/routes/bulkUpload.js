@@ -4,7 +4,7 @@ const XLSX = require("xlsx");
 const { v4: uuidv4 } = require("uuid");
 const { auth, requireRoles } = require("../middleware/auth");
 const { asyncHandler, ApiError } = require("../utils/errors");
-const { runBulkImport } = require("../jobs/bulkImportWorker");
+const { bulkImportQueue } = require("../jobs/bulkImportWorker");
 
 const router = express.Router();
 router.use(auth);
@@ -138,67 +138,18 @@ router.post(
       throw new ApiError(404, "Session expired or not found. Please upload the file again.");
     }
 
-    // Add to in-memory Jobs
+    // Add to BullMQ Queue
     const jobId = uuidv4();
-    jobsData.set(jobId, { id: jobId, state: "active", progress: 0, result: null });
-    
-    // Process asynchronously
-    let lastEmitAt = 0;
-    runBulkImport(
-      sessionData, 
-      columnMapping, 
-      req.user.id, 
-      req.user.organizationId || "defaultOrg",
-      (progress, stats) => {
-        const job = jobsData.get(jobId);
-        if (job) {
-          job.progress = progress;
-          job.stats = stats;
-        }
-        const now = Date.now();
-        const processed = stats.imported + stats.skipped + stats.failed;
-        if (processed % 25 === 0 || processed === stats.total || (now - lastEmitAt > 800)) {
-          lastEmitAt = now;
-          const sse = require('../utils/sse');
-          sse.broadcastToOrg(sessionData.organizationId, 'BULK_IMPORT_PROGRESS', {
-            jobId,
-            processed,
-            total: stats.total,
-            percent: progress,
-            imported: stats.imported,
-            failed: stats.failed,
-            skipped: stats.skipped,
-          });
-        }
-      }
-    ).then(async (result) => {
-      const job = jobsData.get(jobId);
-      if (job) {
-        job.state = "completed";
-        job.result = result;
-      }
-
-      // Invalidate candidate list cache after bulk import
-      const inv = require('../utils/cacheInvalidation');
-      await inv.candidateList(sessionData.organizationId);
-
-      // Broadcast completion
-      const sse = require('../utils/sse');
-      sse.broadcastToOrg(sessionData.organizationId, 'BULK_IMPORT_COMPLETE', {
-        jobId,
-        total: result.total,
-        imported: result.imported,
-        failed: result.failed,
-        skipped: result.skipped,
-        hasErrors: result.failed > 0,
-      });
-    }).catch((err) => {
-      const job = jobsData.get(jobId);
-      if (job) {
-        job.state = "failed";
-      }
-      console.error("Bulk import failed:", err);
-    });
+    await bulkImportQueue.add(
+      "import",
+      {
+        sessionData,
+        columnMapping,
+        userId: req.user.id,
+        organizationId: req.user.organizationId || "defaultOrg",
+      },
+      { jobId }
+    );
 
     res.json({
       success: true,
@@ -215,16 +166,20 @@ router.get(
   "/jobs/:jobId/status",
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const job = jobsData.get(req.params.jobId);
+    const job = await bulkImportQueue.getJob(req.params.jobId);
     if (!job) throw new ApiError(404, "Job not found");
+
+    const state = await job.getState();
+    const progress = job.progress || 0;
+    const result = job.returnvalue || null;
 
     res.json({
       success: true,
       data: {
         jobId: job.id,
-        state: job.state,
-        progress: job.progress,
-        result: job.result
+        state,
+        progress,
+        result
       }
     });
   })
@@ -237,10 +192,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const { format, page = 1, limit = 50 } = req.query;
     
-    const job = jobsData.get(req.params.jobId);
-    if (!job || !job.result) throw new ApiError(404, "Job results not found");
+    const job = await bulkImportQueue.getJob(req.params.jobId);
+    if (!job || !job.returnvalue) throw new ApiError(404, "Job results not found");
     
-    const errors = job.result.errors || [];
+    const errors = job.returnvalue.errors || [];
 
     if (format === "csv") {
       const headers = ["Row Number", "Name", "Email", "Error Reasons"];
