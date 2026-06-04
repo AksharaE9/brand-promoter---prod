@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import * as React from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -8,6 +10,9 @@ import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser 
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import EditInterviewModal from '../components/Interview/EditInterviewModal';
 import { subscribeSSE } from '../lib/sse';
+
+import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
+import SyncIndicator from '../components/Interview/SyncIndicator';
 
 const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
 
@@ -34,13 +39,69 @@ const emptyFeedbackForm = {
   overallComments: '',
 };
 
+/**
+ * @param {object} props
+ * @param {Date} props.date
+ * @param {boolean} props.isCurrentMonth
+ * @param {boolean} props.isToday
+ * @param {Function} props.onSelectDate
+ * @param {any} props.data
+ */
+function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, data }) {
+  const { interviews: cellInterviews = [], joinings: cellJoinings = [] } = data || {};
+
+  return (
+    <div
+      className={`relative min-h-[110px] p-2 border-r border-b border-[#e4ebf1] transition-all hover:bg-[#f8fafc] cursor-pointer group ${
+        !isCurrentMonth ? 'bg-[#fcfdfe] opacity-40' : 'bg-white'
+      } ${isToday ? 'ring-2 ring-inset ring-[#1f52cc] z-10 shadow-lg' : ''}`}
+      onClick={() => onSelectDate(date)}
+    >
+      <div className="flex justify-between items-start">
+        <span className={`text-sm font-semibold ${isToday ? 'text-[#1f52cc]' : 'text-[#64748b]'}`}>
+          {date.getDate()}
+        </span>
+        <div className="flex flex-col gap-1">
+          {cellInterviews.length > 0 && (
+            <div className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded flex items-center gap-1">
+              <span className="material-symbols-outlined text-[10px]">event</span>
+              {cellInterviews.length}
+            </div>
+          )}
+          {cellJoinings.length > 0 && (
+            <div className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded flex items-center gap-1">
+              <span className="material-symbols-outlined text-[10px]">celebration</span>
+              {cellJoinings.length}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const MemoizedCalendarCell = React.memo(CalendarCell);
+
 const InterviewSchedule = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const jobIdParam = searchParams.get('jobId');
   const interviewIdParam = searchParams.get('interviewId');
   const shouldSubmitFeedback = searchParams.get('submitFeedback') === 'true';
-  const [interviews, setInterviews] = useState([]);
+  const [activeInterviewId, setActiveInterviewId] = useState('');
+
+  const { data: queryInterviews = [], isLoading: isQueryLoading, refetch: refetchInterviews } = useRoundsList();
+  const createRoundMutation = useCreateRound();
+  const submitFeedbackMutation = useSubmitFeedback();
+  const rescheduleMutation = useRescheduleRound();
+  const updatePanelMutation = useUpdatePanel();
+  const saveMeetLinkMutation = useSaveMeetLink();
+  const transferCandidateMutation = useTransferCandidate();
+  const deleteRoundMutation = useDeleteRound();
+
+  const interviews = queryInterviews;
+
   const [applications, setApplications] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -73,7 +134,7 @@ const InterviewSchedule = () => {
   const [viewDate, setViewDate] = useState(new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [calendarData, setCalendarData] = useState({}); // New: Pre-calculated calendar data
+  const [calendarData, setCalendarData] = useState(() => new Map()); // New: Pre-calculated calendar data
   const [candidateSearch, setCandidateSearch] = useState('');
   const [jobSearch, setJobSearch] = useState('');
   const [interviewerSearch, setInterviewerSearch] = useState('');
@@ -96,11 +157,9 @@ const InterviewSchedule = () => {
   const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
 
   const loadAll = useCallback(async () => {
-    // Step 1: Load interviews first — they include fully-populated candidate/job/feedback data
-    // This is what the user sees immediately. Get more than one page to cover the list.
-    const interviewsRes = await apiGet('/interviews?limit=150');
-    const interviewRows = interviewsRes.data || [];
-    setInterviews(interviewRows);
+    // Refresh the queries list
+    refetchInterviews();
+    const interviewRows = queryInterviews;
 
     // Auto-select first candidate
     const firstGroup = Array.from(
@@ -109,7 +168,7 @@ const InterviewSchedule = () => {
         if (cId && !map.has(cId)) map.set(cId, iv);
         return map;
       }, new Map()).values()
-    ).sort((a, b) => new Date(b.scheduledStart) - new Date(a.scheduledStart))[0];
+    ).sort((a, b) => new Date(b.scheduledStart).getTime() - new Date(a.scheduledStart).getTime())[0];
     setSelectedId(prev => prev || firstGroup?.applicationId || '');
 
     // Step 2: Load supporting data in background (needed for scheduling form only)
@@ -191,7 +250,7 @@ const InterviewSchedule = () => {
       loadAll().catch(() => {});
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
     }, RELEVANT);
-    return unsub;
+    return () => { unsub(); };
   }, [loadAll]);
 
   useEffect(() => {
@@ -364,26 +423,26 @@ const InterviewSchedule = () => {
       );
     }
 
-    return results.sort((a, b) => {
-      const dateA = a.latestInterview?.scheduledStart || a.createdAt;
-      const dateB = b.latestInterview?.scheduledStart || b.createdAt;
-      return new Date(dateB) - new Date(dateA);
-    });
+      return results.sort((a, b) => {
+        const dateA = a.latestInterview?.scheduledStart || a.createdAt;
+        const dateB = b.latestInterview?.scheduledStart || b.createdAt;
+        return new Date(dateB).getTime() - new Date(dateA).getTime();
+      });
   }, [interviews, candidates, filterMine, currentUser?.id, interviewListSearch]);
 
   // Optimization: Pre-calculate schedules per date to avoid filtering in render
   const scheduleData = useMemo(() => {
-    const data = {};
+    const data = new Map();
     interviews.forEach(iv => {
       const dateKey = new Date(iv.scheduledStart).toDateString();
-      if (!data[dateKey]) data[dateKey] = { interviews: [], joinings: [] };
-      data[dateKey].interviews.push(iv);
+      if (!data.has(dateKey)) data.set(dateKey, { interviews: [], joinings: [] });
+      data.get(dateKey).interviews.push(iv);
     });
     applications.forEach(app => {
       if (app.doj) {
         const dateKey = new Date(app.doj).toDateString();
-        if (!data[dateKey]) data[dateKey] = { interviews: [], joinings: [] };
-        data[dateKey].joinings.push(app);
+        if (!data.has(dateKey)) data.set(dateKey, { interviews: [], joinings: [] });
+        data.get(dateKey).joinings.push(app);
       }
     });
     return data;
@@ -399,12 +458,16 @@ const InterviewSchedule = () => {
   const latestInterview = selectedGroup?.latestInterview;
 
   // For the individual interview context (e.g. feedback submission), default to latest
-  const [activeInterviewId, setActiveInterviewId] = useState('');
   useEffect(() => {
     if (latestInterview) {
-      setActiveInterviewId(latestInterview.id);
+      const list = selectedGroup?.interviews || [];
+      if (!activeInterviewId || !list.find(i => i.id === activeInterviewId)) {
+        setActiveInterviewId(latestInterview.id);
+      }
+    } else {
+      setActiveInterviewId('');
     }
-  }, [latestInterview]);
+  }, [latestInterview, selectedGroup?.interviews, activeInterviewId]);
 
   const selectedInterview = useMemo(
     () => {
@@ -512,13 +575,11 @@ const InterviewSchedule = () => {
       setSavingSchedule(true);
 
       let targetApplicationId = '';
-      // Find if an application already exists for this candidate + job
       const existingApp = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
 
       if (existingApp) {
         targetApplicationId = existingApp.id;
       } else {
-        // Create a new application on the fly
         const newAppRes = await apiPost('/applications', {
           candidateId: scheduleForm.candidateId,
           jobId: scheduleForm.jobId
@@ -526,12 +587,10 @@ const InterviewSchedule = () => {
         targetApplicationId = newAppRes.data.id;
       }
 
-      // Determine round number from label
-      // Determine round number dynamically
-      let roundNo = parseInt(scheduleForm.roundNo) || 1;
+      let roundNo = typeof scheduleForm.roundNo === 'number' ? scheduleForm.roundNo : (parseInt(scheduleForm.roundNo) || 1);
       if (scheduleForm.round === 'Final Round' || scheduleForm.round === 'Final') roundNo = 99;
 
-      const createdInterview = await apiPost('/interviews', {
+      const result = await createRoundMutation.mutateAsync({
         applicationId: targetApplicationId,
         roundNo,
         round: scheduleForm.round,
@@ -543,14 +602,15 @@ const InterviewSchedule = () => {
         zohoLink: scheduleForm.zohoLink.trim() || null,
       });
 
-      // Handle optional recording file upload during scheduling
-      if (scheduleRecordingFile && createdInterview.data?.id) {
+      const newRoundId = result?.data?.id || result?.tempId || result?.id;
+
+      if (scheduleRecordingFile && newRoundId) {
         setUploadingRecording(true);
         const token = localStorage.getItem('ats_token');
         const formData = new FormData();
         formData.append('file', scheduleRecordingFile);
 
-        await fetch(`${API_BASE_URL}/interviews/${createdInterview.data.id}/voice-recording`, {
+        await fetch(`${API_BASE_URL}/interviews/${newRoundId}/recording`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData,
@@ -558,13 +618,14 @@ const InterviewSchedule = () => {
         setScheduleRecordingFile(null);
       }
 
-      await loadAll();
       setScheduleForm(emptyScheduleForm);
       setBanner('Interview scheduled successfully.');
+      refetchInterviews();
     } catch (err) {
       setError(err.message || 'Failed to schedule interview');
     } finally {
       setSavingSchedule(false);
+      setUploadingRecording(false);
     }
   };
 
@@ -581,36 +642,48 @@ const InterviewSchedule = () => {
     try {
       setSavingFeedback(true);
       
-      // CALL THE FEEDBACK API (Was missing!)
-      const formData = new FormData();
-      Object.keys(feedbackForm).forEach(key => {
-        formData.append(key, feedbackForm[key]);
-      });
+      let offerFileUrl = null;
+      let offerFileName = null;
+
       if (offerLetterFile) {
+        const formData = new FormData();
         formData.append('offerFile', offerLetterFile);
+        const res = await fetch(`${API_BASE_URL}/interviews/${selectedInterview.id}/feedback`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
+          },
+          body: formData,
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) throw new Error(json.message || 'Failed to submit feedback file');
+        offerFileUrl = json.data?.offerFileUrl;
+        offerFileName = json.data?.offerFileName;
       }
 
-      const res = await fetch(`${API_BASE_URL}/interviews/${selectedInterview.id}/feedback`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
-        },
-        body: formData,
+      const feedbackPayload = {
+        technicalRating: typeof feedbackForm.technicalRating === 'number' ? feedbackForm.technicalRating : (parseInt(feedbackForm.technicalRating) || 0),
+        communicationRating: typeof feedbackForm.communicationRating === 'number' ? feedbackForm.communicationRating : (parseInt(feedbackForm.communicationRating) || 0),
+        cultureFitRating: typeof feedbackForm.cultureFitRating === 'number' ? feedbackForm.cultureFitRating : (parseInt(feedbackForm.cultureFitRating) || 0),
+        strengths: feedbackForm.strengths || "",
+        weaknesses: feedbackForm.weaknesses || "",
+        overallComments: feedbackForm.overallComments || "",
+        recommendation: feedbackForm.recommendation || "PENDING",
+      };
+      if (offerFileUrl) {
+        feedbackPayload.offerFileUrl = offerFileUrl;
+        feedbackPayload.offerFileName = offerFileName;
+      }
+
+      await submitFeedbackMutation.mutateAsync({
+        roundId: selectedInterview.id,
+        feedback: feedbackPayload
       });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || 'Failed to submit feedback');
-
-      // Update application status based on recommendation
-      if (feedbackForm.recommendation === 'REJECTED') {
-        await onUpdateStatus(selectedInterview.applicationId, 'REJECTED');
-      } else if (feedbackForm.recommendation === 'OFFER_LETTER' || feedbackForm.recommendation === 'SELECTED' || feedbackForm.recommendation === 'OFFER_SENT') {
-        await onUpdateStatus(selectedInterview.applicationId, 'OFFER_SENT');
-      }
 
       setFeedbackForm(emptyFeedbackForm);
       setOfferLetterFile(null);
       setBanner('Feedback submitted successfully.');
-      await loadAll();
+      refetchInterviews();
     } catch (err) {
       setError(err.message || 'Failed to submit feedback');
     } finally {
@@ -632,7 +705,7 @@ const InterviewSchedule = () => {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || 'Failed to update status');
       setBanner(`Application status updated to ${status}.`);
-      await loadAll();
+      refetchInterviews();
     } catch (err) {
       setError(err.message || 'Failed to update application status');
     } finally {
@@ -665,7 +738,7 @@ const InterviewSchedule = () => {
         throw new Error(json?.message || 'Recording upload failed');
       }
 
-      await loadAll();
+      refetchInterviews();
       setRecordingFile(null);
       setRecordedBlob(null);
       setRecordedUrl('');
@@ -677,56 +750,49 @@ const InterviewSchedule = () => {
       setUploadingRecording(false);
     }
   };
-  const onDeleteInterview = async (interviewId, roundLabel) => {
+  const onDeleteInterview = (interviewId, roundLabel) => {
     if (!window.confirm(`Are you sure you want to delete "${roundLabel}" and all associated feedback?`)) {
       return;
     }
 
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/interviews/${interviewId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
-        },
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Failed to delete interview');
+    setError('');
+    deleteRoundMutation.mutate(interviewId, {
+      onSuccess: () => {
+        setBanner('Interview deleted successfully.');
+      },
+      onError: (err) => {
+        setError(err.message || 'Failed to delete interview');
       }
-      setBanner('Interview deleted successfully.');
-      await loadAll();
-    } catch (err) {
-      setError(err.message || 'Failed to delete interview');
-    } finally {
-      setLoading(false);
+    });
+
+    if (activeInterviewId === interviewId) {
+      const remaining = (selectedGroup?.interviews || []).filter(i => i.id !== interviewId);
+      if (remaining.length > 0) {
+        setActiveInterviewId(remaining[0].id);
+      } else {
+        setActiveInterviewId('');
+      }
     }
   };
 
-  const onTransferPanelist = async (interviewerId) => {
+  const onTransferPanelist = (interviewerId) => {
     if (!transferringInterview) return;
-    try {
-      setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/interviews/${transferringInterview.id}/panelists`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
-        },
-        body: JSON.stringify({ interviewerIds: [interviewerId] }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || 'Failed to transfer panelist');
-      
-      setBanner('Panelist transferred successfully.');
-      setShowTransferModal(false);
-      setTransferringInterview(null);
-      await loadAll();
-    } catch (err) {
-      setError(err.message || 'Failed to transfer panelist');
-    } finally {
-      setLoading(false);
-    }
+    
+    setError('');
+    updatePanelMutation.mutate({
+      roundId: transferringInterview.id,
+      panelMembers: [interviewerId]
+    }, {
+      onSuccess: () => {
+        setBanner('Panelist transferred successfully.');
+      },
+      onError: (err) => {
+        setError(err.message || 'Failed to transfer panelist');
+      }
+    });
+
+    setShowTransferModal(false);
+    setTransferringInterview(null);
   };
 
   const clearRecordingTimer = () => {
@@ -796,21 +862,26 @@ const InterviewSchedule = () => {
 
   // Optimization: Pre-calculate calendar counts to avoid filtering in render loop
   useEffect(() => {
-    const counts = {};
+    const counts = new Map();
     interviews.forEach(item => {
       const d = new Date(item.scheduledStart);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!counts[key]) counts[key] = { r1: 0, r2: 0, pass: 0, doj: 0 };
-      if (item.roundNo === 1) counts[key].r1++;
-      if (item.roundNo === 2) counts[key].r2++;
-      if (item.result === 'PASS') counts[key].pass++;
+      if (!counts.has(key)) {
+        counts.set(key, { r1: 0, r2: 0, pass: 0, doj: 0 });
+      }
+      const val = counts.get(key);
+      if (item.roundNo === 1) val.r1++;
+      if (item.roundNo === 2) val.r2++;
+      if (item.result === 'PASS') val.pass++;
     });
     applications.forEach(app => {
       if (!app.doj) return;
       const d = new Date(app.doj);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!counts[key]) counts[key] = { r1: 0, r2: 0, pass: 0, doj: 0 };
-      counts[key].doj++;
+      if (!counts.has(key)) {
+        counts.set(key, { r1: 0, r2: 0, pass: 0, doj: 0 });
+      }
+      counts.get(key).doj++;
     });
     setCalendarData(counts);
   }, [interviews, applications]);
@@ -820,38 +891,6 @@ const InterviewSchedule = () => {
     setShowActivityModal(true);
   }, []);
 
-  const CalendarCell = React.memo(({ date, isCurrentMonth, isToday, onSelectDate, data }) => {
-    const { interviews: cellInterviews = [], joinings: cellJoinings = [] } = data || {};
-
-    return (
-      <div
-        className={`relative min-h-[110px] p-2 border-r border-b border-[#e4ebf1] transition-all hover:bg-[#f8fafc] cursor-pointer group ${
-          !isCurrentMonth ? 'bg-[#fcfdfe] opacity-40' : 'bg-white'
-        } ${isToday ? 'ring-2 ring-inset ring-[#1f52cc] z-10 shadow-lg' : ''}`}
-        onClick={() => onSelectDate(date)}
-      >
-        <div className="flex justify-between items-start">
-          <span className={`text-sm font-semibold ${isToday ? 'text-[#1f52cc]' : 'text-[#64748b]'}`}>
-            {date.getDate()}
-          </span>
-          <div className="flex flex-col gap-1">
-            {cellInterviews.length > 0 && (
-              <div className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded flex items-center gap-1">
-                <span className="material-symbols-outlined text-[10px]">event</span>
-                {cellInterviews.length}
-              </div>
-            )}
-            {cellJoinings.length > 0 && (
-              <div className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded flex items-center gap-1">
-                <span className="material-symbols-outlined text-[10px]">celebration</span>
-                {cellJoinings.length}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  });
 
   return (
     <EnterpriseLayout
@@ -958,8 +997,13 @@ const InterviewSchedule = () => {
                   <div className="min-w-0">
                     <div className="text-sm font-medium truncate">{candidate?.fullName || 'Candidate'}</div>
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
-                    <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded inline-block mt-1">
-                      {group.latestInterview ? `Round ${group.latestInterview.roundNo || 1}` : 'Not Scheduled'}
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded inline-block">
+                        {group.latestInterview ? `Round ${group.latestInterview.roundNo || 1}` : 'Not Scheduled'}
+                      </div>
+                      {group.latestInterview && (
+                        <SyncIndicator isPending={group.latestInterview._pendingSync || group.latestInterview._optimistic} />
+                      )}
                     </div>
                   </div>
                 </button>
@@ -976,13 +1020,13 @@ const InterviewSchedule = () => {
                 <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
               ))}
               {calendarDays.map((cell, idx) => (
-                <CalendarCell 
+                <MemoizedCalendarCell 
                   key={`${cell.month}-${cell.day}-${idx}`}
                   date={cell.date}
                   isCurrentMonth={cell.month === 'current'}
                   isToday={new Date().toDateString() === cell.date.toDateString()}
                   onSelectDate={handleSelectDate}
-                  data={scheduleData[cell.date.toDateString()]}
+                  data={scheduleData.get(cell.date.toDateString())}
                 />
               ))}
             </div>
@@ -1009,75 +1053,84 @@ const InterviewSchedule = () => {
 
                     <div className="space-y-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                       {/* Interviews Section */}
-                      {(scheduleData[selectedCalendarDate.toDateString()]?.interviews || []).length > 0 && (
-                        <div>
-                          <h3 className="text-[11px] uppercase tracking-[.15em] text-[#1f52cc] font-bold mb-4 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-sm">event</span>
-                            Scheduled Interviews
-                          </h3>
-                          <div className="grid gap-3">
-                            {(scheduleData[selectedCalendarDate.toDateString()]?.interviews || [])
-                              .sort((a, b) => new Date(a.scheduledStart) - new Date(b.scheduledStart))
-                              .map((iv) => (
-                                <div key={iv.id} className="os-card p-5 flex items-center justify-between border-blue-100 bg-blue-50/20">
-                                  <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-2xl bg-white border border-[#e2e8f0] flex flex-col items-center justify-center text-[#1f52cc]">
-                                      <div className="text-[10px] font-bold leading-none">{new Date(iv.scheduledStart).getHours() % 12 || 12}</div>
-                                      <div className="text-[9px] uppercase font-black">{new Date(iv.scheduledStart).getHours() >= 12 ? 'PM' : 'AM'}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-base font-bold text-[#10193f]">{iv.application?.candidate?.fullName}</div>
-                                      <div className="text-xs text-[#6f7d98] mt-0.5">{iv.round} • {iv.mode}</div>
-                                    </div>
-                                  </div>
-                                  <button className="os-btn-outline !h-9 !px-5" onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}>
-                                    Profile
-                                  </button>
-                                </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
+                      {(() => {
+                        const dayData = scheduleData.get(selectedCalendarDate.toDateString()) || { interviews: [], joinings: [] };
+                        const dayInterviews = dayData.interviews || [];
+                        const dayJoinings = dayData.joinings || [];
+                        const hasInterviews = dayInterviews.length > 0;
+                        const hasJoinings = dayJoinings.length > 0;
 
-                      {/* Joinings Section */}
-                      {(scheduleData[selectedCalendarDate.toDateString()]?.joinings || []).length > 0 && (
-                        <div>
-                          <h3 className="text-[11px] uppercase tracking-[.15em] text-[#10b981] font-bold mb-4 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-sm">celebration</span>
-                            New Joinings
-                          </h3>
-                          <div className="grid gap-3">
-                            {(scheduleData[selectedCalendarDate.toDateString()]?.joinings || [])
-                              .map(app => (
-                                <div key={app.id} className="os-card p-5 flex items-center justify-between border-emerald-100 bg-emerald-50/20">
-                                  <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-                                      <span className="material-symbols-outlined text-2xl">person_add</span>
-                                    </div>
-                                    <div>
-                                      <div className="text-base font-bold text-[#10193f]">{app.candidate?.fullName}</div>
-                                      <div className="text-xs text-emerald-600 font-medium mt-0.5">Joining as {app.job?.title}</div>
-                                    </div>
-                                  </div>
-                                  <button className="os-btn-primary !h-9 !bg-emerald-600 !px-5" onClick={() => navigate(`/candidate/${app.candidateId}`)}>
-                                    Onboard
-                                  </button>
+                        return (
+                          <>
+                            {hasInterviews && (
+                              <div>
+                                <h3 className="text-[11px] uppercase tracking-[.15em] text-[#1f52cc] font-bold mb-4 flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-sm">event</span>
+                                  Scheduled Interviews
+                                </h3>
+                                <div className="grid gap-3">
+                                  {[...dayInterviews]
+                                    .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
+                                    .map((iv) => (
+                                      <div key={iv.id} className="os-card p-5 flex items-center justify-between border-blue-100 bg-blue-50/20">
+                                        <div className="flex items-center gap-4">
+                                          <div className="w-12 h-12 rounded-2xl bg-white border border-[#e2e8f0] flex flex-col items-center justify-center text-[#1f52cc]">
+                                            <div className="text-[10px] font-bold leading-none">{new Date(iv.scheduledStart).getHours() % 12 || 12}</div>
+                                            <div className="text-[9px] uppercase font-black">{new Date(iv.scheduledStart).getHours() >= 12 ? 'PM' : 'AM'}</div>
+                                          </div>
+                                          <div>
+                                            <div className="text-base font-bold text-[#10193f]">{iv.application?.candidate?.fullName}</div>
+                                            <div className="text-xs text-[#6f7d98] mt-0.5">{iv.round} • {iv.mode}</div>
+                                          </div>
+                                        </div>
+                                        <button className="os-btn-outline !h-9 !px-5" onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}>
+                                          Profile
+                                        </button>
+                                      </div>
+                                    ))}
                                 </div>
-                              ))}
-                          </div>
-                        </div>
-                      )}
+                              </div>
+                            )}
 
-                      {!(scheduleData[selectedCalendarDate.toDateString()]?.interviews?.length > 0) && 
-                       !(scheduleData[selectedCalendarDate.toDateString()]?.joinings?.length > 0) && (
-                        <div className="py-16 text-center">
-                          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 mb-4">
-                            <span className="material-symbols-outlined text-3xl">event_busy</span>
-                          </div>
-                          <div className="text-lg font-semibold text-[#64748b]">No schedules found</div>
-                          <div className="text-sm text-[#94a3b8] mt-1">This day is completely clear from the calendar.</div>
-                        </div>
-                      )}
+                            {hasJoinings && (
+                              <div>
+                                <h3 className="text-[11px] uppercase tracking-[.15em] text-[#10b981] font-bold mb-4 flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-sm">celebration</span>
+                                  New Joinings
+                                </h3>
+                                <div className="grid gap-3">
+                                  {dayJoinings.map(app => (
+                                    <div key={app.id} className="os-card p-5 flex items-center justify-between border-emerald-100 bg-emerald-50/20">
+                                      <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                                          <span className="material-symbols-outlined text-2xl">person_add</span>
+                                        </div>
+                                        <div>
+                                          <div className="text-base font-bold text-[#10193f]">{app.candidate?.fullName}</div>
+                                          <div className="text-xs text-emerald-600 font-medium mt-0.5">Joining as {app.job?.title}</div>
+                                        </div>
+                                      </div>
+                                      <button className="os-btn-primary !h-9 !bg-emerald-600 !px-5" onClick={() => navigate(`/candidate/${app.candidateId}`)}>
+                                        Onboard
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {!hasInterviews && !hasJoinings && (
+                              <div className="py-16 text-center">
+                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 mb-4">
+                                  <span className="material-symbols-outlined text-3xl">event_busy</span>
+                                </div>
+                                <div className="text-lg font-semibold text-[#64748b]">No schedules found</div>
+                                <div className="text-sm text-[#94a3b8] mt-1">This day is completely clear from the calendar.</div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </Reveal>
@@ -1166,6 +1219,9 @@ const InterviewSchedule = () => {
                     <div className="flex-0 flex flex-col gap-2">
                       <div className="flex items-center gap-2">
                         <div className="font-semibold text-[#142651]">Interview Details ({selectedInterview?.round || `Round ${selectedInterview?.roundNo}`})</div>
+                        {selectedInterview && (
+                          <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
+                        )}
                         {canScheduleInterview && (
                           <>
                             <button
@@ -1232,19 +1288,19 @@ const InterviewSchedule = () => {
                       <div className="grid grid-cols-3 gap-4">
                         <div className="space-y-1 text-center">
                           <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: e.target.value}))}>
+                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
                             {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
                           </select>
                         </div>
                         <div className="space-y-1 text-center">
                           <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: e.target.value}))}>
+                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
                             {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
                           </select>
                         </div>
                         <div className="space-y-1 text-center">
                           <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: e.target.value}))}>
+                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
                             {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
                           </select>
                         </div>
@@ -1686,10 +1742,10 @@ const InterviewSchedule = () => {
                       className="w-full text-left p-4 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all group flex items-center gap-4"
                     >
                       <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
-                        {person.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                        {(person.fullName || 'I').split(' ').map(n => n[0]).join('').toUpperCase()}
                       </div>
                       <div className="flex-1">
-                        <div className="font-bold text-slate-700 text-sm">{person.fullName}</div>
+                        <div className="font-bold text-slate-700 text-sm">{person.fullName || 'Interviewer'}</div>
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">{person.role}</div>
                       </div>
                       <span className="material-symbols-outlined text-blue-400 opacity-0 group-hover:opacity-100 transition-all translate-x-[-10px] group-hover:translate-x-0">

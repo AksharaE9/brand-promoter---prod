@@ -11,11 +11,26 @@ const inflightRequests = new Map();
 const apiCache = new Map();
 const CACHE_TTL = 60000; // 60 seconds
 
+// ── Keep-Alive: ping Render every 10 minutes to prevent cold starts ──────────
+const HEALTH_URL = API_ROOT_URL + '/api/health';
+let _keepAlivePing = null;
+export function startKeepAlive() {
+  if (_keepAlivePing) return; // already running
+  const ping = () => {
+    fetch(HEALTH_URL, { method: 'GET', cache: 'no-store' }).catch(() => {});
+  };
+  ping(); // immediate first ping
+  _keepAlivePing = setInterval(ping, 10 * 60 * 1000); // every 10 minutes
+}
+export function stopKeepAlive() {
+  if (_keepAlivePing) { clearInterval(_keepAlivePing); _keepAlivePing = null; }
+}
+
 export function getStoredToken() {
   return localStorage.getItem('ats_token');
 }
 
-async function request(path, options = {}, retries = 2) {
+async function request(path, options = {}, retries = 1) {
   const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -26,10 +41,10 @@ async function request(path, options = {}, retries = 2) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  // Deduplication for GET requests
   const isGet = !options.method || options.method === 'GET';
   const requestKey = `${options.method || 'GET'}:${path}`;
 
+  // Deduplication for GET requests
   if (isGet && !options.bypassCache && inflightRequests.has(requestKey)) {
     return inflightRequests.get(requestKey);
   }
@@ -43,15 +58,17 @@ async function request(path, options = {}, retries = 2) {
     apiCache.delete(requestKey);
   }
 
+  // Mutations get 60s, GETs get 20s (Render cold starts can take 30s)
+  const TIMEOUT_MS = isGet ? 20000 : 60000;
+
   const fetchPromise = (async () => {
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
-      // Exponential backoff: 0ms, 800ms, 1600ms
-      if (attempt > 0) await new Promise(r => setTimeout(r, attempt * 800));
+      // Backoff: 0ms first, 1000ms on retry
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
 
-      // 15s timeout per attempt
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
       try {
         const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -82,8 +99,9 @@ async function request(path, options = {}, retries = 2) {
       } catch (err) {
         clearTimeout(timeout);
         if (err.name === 'AbortError') {
-          lastErr = new Error('Request timed out. Please check your connection.');
-          continue; // retry on timeout
+          lastErr = new Error('Request timed out. Server may be waking up — please try again.');
+          if (!isGet) continue; // retry mutations on timeout
+          continue;
         }
         if (err.status >= 400 && err.status < 500) throw err; // don't retry 4xx
         lastErr = err;

@@ -8,8 +8,11 @@ const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
-const { broadcast } = require("../../utils/sse");
-const { getCached, invalidate, invalidateAll, invalidatePattern } = require("../../utils/cache");
+const sse = require("../../utils/sse");
+const { getCache, setCache, TTL, getCached } = require("../../utils/cache");
+const inv = require("../../utils/cacheInvalidation");
+
+const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 const router = express.Router();
 
@@ -61,6 +64,7 @@ router.post(
     let allRows = [];
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     for (const sheetName of workbook.SheetNames) {
+      if (!isSafeKey(sheetName)) continue;
       const sheet = workbook.Sheets[sheetName];
       const sheetRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
       sheetRows.forEach((row, idx) => {
@@ -81,7 +85,7 @@ router.post(
     const existingPhones = new Set();
 
     for (let i = 0; i < allRows.length; i += 1) {
-      const raw = allRows[i];
+      const raw = allRows[Number(i)];
       const fullName = String(raw.fullName || raw.name || "").trim();
       const email = String(raw.email || "").trim().toLowerCase() || null;
       const phone = String(raw.phone || "").trim() || null;
@@ -119,7 +123,9 @@ router.post(
 
     if (inserted > 0) {
       await batch.commit();
-      broadcast({ type: 'CANDIDATE_CREATED', count: inserted });
+      const orgId = req.user.organizationId || "defaultOrg";
+      await inv.candidateList(orgId);
+      sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', { count: inserted });
     }
 
     await logAudit({
@@ -158,7 +164,7 @@ router.post(
       
       try {
         for (let i = 0; i < rows.length; i++) {
-          const raw = rows[i];
+          const raw = rows[Number(i)];
           const fullName = String(raw.fullName || raw.name || "").trim();
           const email = String(raw.email || "").trim().toLowerCase() || null;
           const phone = String(raw.phone || "").trim() || null;
@@ -259,11 +265,16 @@ router.post(
     });
 
     // Invalidate cache to ensure dashboard and lists are updated
-    invalidateAll();
-    invalidate("dashboard_init_");
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.candidate(orgId, docRef.id);
 
     // Broadcast to notify frontend to refresh
-    broadcast({ type: 'CANDIDATE_CREATED', candidateId: docRef.id, fullName: candidateData.fullName });
+    sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
+      candidateId: docRef.id,
+      candidate: { id: docRef.id, ...candidateData },
+      createdBy: req.user.id,
+      createdByName: req.user.fullName || req.user.email,
+    });
 
     res.status(201).json({ success: true, data: { id: docRef.id, ...candidateData } });
   }),
@@ -335,8 +346,15 @@ router.post(
       userAgent: req.headers["user-agent"],
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'CANDIDATE_CREATED', candidateId: docRef.id, fullName: candidateData.fullName });
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.candidate(orgId, docRef.id);
+
+    sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
+      candidateId: docRef.id,
+      candidate: { id: docRef.id, ...candidateData },
+      createdBy: req.user.id,
+      createdByName: req.user.fullName || req.user.email,
+    });
 
     res.status(201).json({ 
       success: true, 
@@ -422,9 +440,9 @@ router.get(
       }
       if (search) {
         items = items.filter(c =>
-          c.fullName?.toLowerCase().includes(search) ||
-          c.email?.toLowerCase().includes(search) ||
-          c.phone?.includes(search)
+          (c.fullName && c.fullName.toLowerCase().includes(search)) ||
+          (c.email && c.email.toLowerCase().includes(search)) ||
+          (c.phone && c.phone.includes(search))
         );
       }
 
@@ -452,7 +470,7 @@ router.get(
               try {
                 const fileRefs = fileIds.map(id => firestore.collection("fileMetas").doc(id));
                 const snaps = await firestore.getAll(...fileRefs);
-                snaps.forEach(fs => { if (fs.exists) map[fs.id] = { id: fs.id, ...fs.data() }; });
+                snaps.forEach(fs => { if (fs.exists && isSafeKey(fs.id)) map[fs.id] = { id: fs.id, ...fs.data() }; });
               } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
             }
             return map;
@@ -463,25 +481,45 @@ router.get(
             try {
               const appChunks = [];
               for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
+              
+              const allApps = [];
               await Promise.all(appChunks.map(async (chunk) => {
                 const appSnap = await firestore.collection("applications")
                   .where("candidateId", "in", chunk)
                   .get();
                 appSnap.docs.forEach(doc => {
                   const app = { id: doc.id, ...doc.data() };
-                  if (!map[app.candidateId]) map[app.candidateId] = [];
-                  map[app.candidateId].push(app);
+                  allApps.push(app);
                 });
               }));
+
+              // Fetch jobs in parallel for these applications
+              const jobIds = [...new Set(allApps.map(a => a.jobId).filter(Boolean))];
+              const jobMap = {};
+              if (jobIds.length > 0) {
+                try {
+                  const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
+                  const jobSnaps = await firestore.getAll(...jobRefs);
+                  jobSnaps.forEach(js => { if (js.exists && isSafeKey(js.id)) jobMap[js.id] = { id: js.id, ...js.data() }; });
+                } catch (je) { console.warn("⚠️ Job fetch failed inside candidates list:", je.message); }
+              }
+
+              allApps.forEach(app => {
+                app.job = (isSafeKey(app.jobId) && jobMap[app.jobId]) || null;
+                if (isSafeKey(app.candidateId)) {
+                  if (!map[app.candidateId]) map[app.candidateId] = [];
+                  map[app.candidateId].push(app);
+                }
+              });
             } catch (e) { console.warn("⚠️ App fetch failed:", e.message); }
             return map;
           })(),
         ]);
 
         paginatedItems.forEach(c => {
-          if (c.resumeFileId) c.resumeFile = fileMap[c.resumeFileId] || null;
-          if (c.profilePhotoFileId) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
-          c.applications = appMap[c.id] || [];
+          if (c.resumeFileId && isSafeKey(c.resumeFileId)) c.resumeFile = fileMap[c.resumeFileId] || null;
+          if (c.profilePhotoFileId && isSafeKey(c.profilePhotoFileId)) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
+          c.applications = (isSafeKey(c.id) && appMap[c.id]) || [];
         });
       }
 
@@ -573,11 +611,15 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    broadcast({ type: 'CANDIDATE_UPDATED', candidateId: id, fullName: data.fullName });
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.candidate(orgId, id);
 
-    // Invalidate cache
-    invalidateAll();
-    invalidate("dashboard_init_");
+    sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
+      candidateId: id,
+      changes: data,
+      updatedBy: req.user.id,
+      updatedByName: req.user.fullName || req.user.email,
+    });
 
     res.json({ success: true, data: { id, ...doc.data(), ...data } });
   }),
@@ -674,9 +716,14 @@ router.delete(
       userAgent: req.headers["user-agent"],
     });
 
-    // Invalidate cache
-    invalidateAll();
-    invalidate("dashboard_init_");
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.candidate(orgId, id);
+
+    sse.broadcastToOrg(orgId, 'CANDIDATE_DELETED', {
+      candidateId: id,
+      deletedBy: req.user.id,
+      deletedByName: req.user.fullName || req.user.email,
+    });
 
     res.json({ success: true, message: "Candidate deleted successfully" });
   }),
@@ -743,11 +790,7 @@ router.post(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { toJobId } = req.body;
-
-    const candDoc = await firestore.collection("candidates").doc(id).get();
-    if (!candDoc.exists) throw new ApiError(404, "Candidate not found");
-
+    const orgId = req.user.organizationId || "defaultOrg";
     const appRef = await firestore.collection("applications").add({
       candidateId: id,
       jobId: toJobId,
@@ -755,7 +798,20 @@ router.post(
       createdAt: new Date().toISOString()
     });
 
-    broadcast({ type: 'PIPELINE_MOVED', candidateId: id, toJobId });
+    await inv.application(orgId, id);
+
+    // Fetch job details
+    const jobDoc = await firestore.collection("jobs").doc(toJobId).get();
+    const toJobTitle = jobDoc.exists ? jobDoc.data().title : "New Job";
+
+    sse.broadcastToOrg(orgId, 'APPLICATION_TRANSFERRED', {
+      applicationId: appRef.id,
+      candidateId: id,
+      toJobId,
+      toJobTitle,
+      transferredBy: req.user.id,
+      transferredByName: req.user.fullName || req.user.email,
+    });
 
     res.json({ success: true, data: { id: appRef.id } });
   })

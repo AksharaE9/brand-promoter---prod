@@ -95,7 +95,7 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
         await api.put(`/interviews/${interviewId}`, payload);
       }
 
-      queryClient.invalidateQueries({ queryKey: ['interviews'] });
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
       if (onUpdate) onUpdate();
       onClose();
     } catch (err) {

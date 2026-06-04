@@ -171,10 +171,16 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-bold font-[Manrope] text-[#0f1b3d] leading-tight truncate pr-6">{candidate.name}</h3>
+            <h3 className="text-base font-bold font-[Manrope] text-[#0f1b3d] leading-tight truncate pr-6" title={candidate.name}>{candidate.name}</h3>
             <p className="text-sm text-[#1f52cc] font-semibold mt-0.5 truncate">{candidate.role}</p>
+            {candidate.location && (
+              <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6f7d98] font-semibold truncate">
+                <span className="material-symbols-outlined text-[11px] text-slate-400">location_on</span>
+                <span className="truncate">{candidate.location}</span>
+              </div>
+            )}
             {candidate.source && (
-              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[#6f7d98] font-bold uppercase tracking-wider">
+              <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6f7d98] font-bold uppercase tracking-wider">
                 <span className="material-symbols-outlined text-[12px] text-[#1f52cc]">hub</span>
                 {candidate.source}
               </div>
@@ -277,6 +283,9 @@ const Candidates = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
+  const [roleFilter, setRoleFilter] = useState('All');
+  const [locationFilter, setLocationFilter] = useState('All');
+  const [globalJobs, setGlobalJobs] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
@@ -343,6 +352,25 @@ const Candidates = () => {
   useEffect(() => {
     setStatusFilter(statusParam || 'All');
   }, [statusParam]);
+
+  useEffect(() => {
+    setRoleFilter('All');
+    setLocationFilter('All');
+  }, [statusFilter]);
+
+  useEffect(() => {
+    const loadJobs = async () => {
+      try {
+        const res = await apiGet('/jobs?limit=100');
+        if (res && res.success && res.data) {
+          setGlobalJobs(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to load global jobs:", err);
+      }
+    };
+    loadJobs();
+  }, []);
 
   useEffect(() => {
     loadCandidates(debouncedSearch, statusFilter);
@@ -482,12 +510,14 @@ const Candidates = () => {
     loadCandidates(debouncedSearch, statusFilter);
   }, [debouncedSearch, statusFilter, loadCandidates]);
 
-  const visibleCandidates = useMemo(() => items.map(c => {
+  const allMapped = useMemo(() => items.map(c => {
     const matchedApp = c.applications?.find(a => a.status === statusFilter) || c.applications?.[0];
+    const jobTitle = matchedApp?.job?.title;
     return {
       id: c.id,
       name: c.fullName,
-      role: c.preferredRole || 'Candidate',
+      role: jobTitle || c.preferredRole || 'Candidate',
+      location: c.location || c.area || '',
       profilePhotoUrl: c.profilePhotoFile?.storageKey || null,
       resumeUrl: c.resumeFile?.storageKey || null,
       status: matchedApp?.status || 'POOL',
@@ -500,6 +530,26 @@ const Candidates = () => {
       rejectionReason: matchedApp?.rejectionReason || null,
     };
   }), [items, statusFilter]);
+
+  // Unique roles and locations for filter dropdowns
+  const uniqueRoles = useMemo(() => {
+    const rolesFromCandidates = allMapped.map(c => c.role).filter(r => r && r !== 'Candidate');
+    const rolesFromJobs = globalJobs.map(j => j.title).filter(Boolean);
+    return [...new Set([...rolesFromCandidates, ...rolesFromJobs])].sort();
+  }, [allMapped, globalJobs]);
+
+  const uniqueLocations = useMemo(() => {
+    const locsFromCandidates = allMapped.map(c => c.location).filter(Boolean);
+    const locsFromJobs = globalJobs.map(j => j.location).filter(Boolean);
+    return [...new Set([...locsFromCandidates, ...locsFromJobs])].sort();
+  }, [allMapped, globalJobs]);
+
+  const visibleCandidates = useMemo(() => {
+    let list = allMapped;
+    if (roleFilter !== 'All') list = list.filter(c => c.role === roleFilter);
+    if (locationFilter !== 'All') list = list.filter(c => c.location === locationFilter);
+    return list;
+  }, [allMapped, roleFilter, locationFilter]);
 
   const pageTitle = useMemo(() => {
     if (statusFilter === 'OFFER_SENT') return 'Offer Sent Registry';
@@ -611,6 +661,60 @@ const Candidates = () => {
         {banner && <div className="os-card p-3 mb-4 text-blue-600 bg-blue-50 border-blue-100 text-sm animate-in fade-in slide-in-from-top-2">{banner}</div>}
         {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 border-red-100 text-sm animate-in fade-in slide-in-from-top-2">{error}</div>}
 
+        {/* Role & Location filters (available across all candidate registries) */}
+        {(uniqueRoles.length > 0 || uniqueLocations.length > 0) && (
+          <div className="flex flex-wrap items-center gap-3 mb-5 p-3.5 bg-white border border-[#e9eef4] rounded-2xl shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter by</span>
+
+            {/* Role filter */}
+            {uniqueRoles.length > 0 && (
+              <div className="relative flex items-center">
+                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">work</span>
+                <select
+                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                  value={roleFilter}
+                  onChange={e => { setRoleFilter(e.target.value); }}
+                >
+                  <option value="All">All Roles</option>
+                  {uniqueRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+              </div>
+            )}
+
+            {/* Location filter */}
+            {uniqueLocations.length > 0 && (
+              <div className="relative flex items-center">
+                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">location_on</span>
+                <select
+                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                  value={locationFilter}
+                  onChange={e => { setLocationFilter(e.target.value); }}
+                >
+                  <option value="All">All Places</option>
+                  {uniqueLocations.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+              </div>
+            )}
+
+            {/* Clear filters */}
+            {(roleFilter !== 'All' || locationFilter !== 'All') && (
+              <button
+                className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all flex items-center gap-1"
+                onClick={() => { setRoleFilter('All'); setLocationFilter('All'); }}
+              >
+                <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
+                Clear
+              </button>
+            )}
+
+            <span className="ml-auto text-[10px] text-slate-400 font-semibold">
+              {visibleCandidates.length} candidate{visibleCandidates.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        )}
+
         {loading && items.length === 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <CardSkeleton key={i} />)}
@@ -718,8 +822,14 @@ const Candidates = () => {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-[#142651] truncate">{c.name}</p>
+                        <p className="text-sm font-bold text-[#142651] truncate" title={c.name}>{c.name}</p>
                         <p className="text-xs text-[#1f52cc] font-semibold truncate">{c.role}</p>
+                        {c.location && (
+                          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-[#6f7d98] font-semibold truncate">
+                            <span className="material-symbols-outlined text-[11px] text-slate-400">location_on</span>
+                            <span className="truncate">{c.location}</span>
+                          </div>
+                        )}
                       </div>
                       <button
                         onClick={() => handleNavigate(c.id)}

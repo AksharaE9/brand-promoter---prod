@@ -117,7 +117,7 @@ router.get(
 
     // Filter by search and location in-memory for complexity
     if (search) {
-      products = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+      products = products.filter(p => p.name && p.name.toLowerCase().includes(search.toLowerCase()));
     }
     if (location && location !== "All") {
       products = products.filter(p => p.location && p.location.toLowerCase().includes(location.toLowerCase()));

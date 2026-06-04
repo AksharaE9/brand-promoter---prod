@@ -4,8 +4,22 @@ const { db: firestore } = require("../../config/firebase");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { signAccessToken } = require("../../utils/jwt");
 const { auth } = require("../../middleware/auth");
+const { logAudit } = require("../../utils/audit");
 
 const router = express.Router();
+
+function parseUserAgent(ua) {
+  if (!ua) return "Unknown Device";
+  if (ua.includes("Mobi") || ua.includes("Android") || ua.includes("iPhone")) {
+    const os = ua.includes("iPhone") ? "iPhone" : "Android Mobile";
+    const browser = ua.includes("Chrome") ? "Chrome" : ua.includes("Safari") ? "Safari" : "Mobile Browser";
+    return `${os} (${browser})`;
+  } else {
+    const os = ua.includes("Windows") ? "Windows PC" : ua.includes("Macintosh") ? "macOS" : ua.includes("Linux") ? "Linux PC" : "Desktop";
+    const browser = ua.includes("Chrome") ? "Chrome" : ua.includes("Firefox") ? "Firefox" : ua.includes("Safari") ? "Safari" : "Web Browser";
+    return `${os} (${browser})`;
+  }
+}
 
 router.post(
   "/register",
@@ -55,19 +69,6 @@ router.post(
   }),
 );
 
-function parseUserAgent(ua) {
-  if (!ua) return "Unknown Device";
-  if (ua.includes("Mobi") || ua.includes("Android") || ua.includes("iPhone")) {
-    const os = ua.includes("iPhone") ? "iPhone" : "Android Mobile";
-    const browser = ua.includes("Chrome") ? "Chrome" : ua.includes("Safari") ? "Safari" : "Mobile Browser";
-    return `${os} (${browser})`;
-  } else {
-    const os = ua.includes("Windows") ? "Windows PC" : ua.includes("Macintosh") ? "macOS" : ua.includes("Linux") ? "Linux PC" : "Desktop";
-    const browser = ua.includes("Chrome") ? "Chrome" : ua.includes("Firefox") ? "Firefox" : ua.includes("Safari") ? "Safari" : "Web Browser";
-    return `${os} (${browser})`;
-  }
-}
-
 router.post(
   "/login",
   asyncHandler(async (req, res) => {
@@ -78,17 +79,31 @@ router.post(
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+    let snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+
+    // Fallback: search with raw email (in case database has uppercase letters)
+    if (snapshot.empty && email.trim() !== normalizedEmail) {
+      snapshot = await firestore.collection("users").where("email", "==", email.trim()).limit(1).get();
+    }
 
     if (snapshot.empty) {
-      throw new ApiError(401, "Invalid credentials");
+      throw new ApiError(401, "Email not found. Please register or contact your administrator.");
     }
 
     const userDoc = snapshot.docs[0];
     const user = { id: userDoc.id, ...userDoc.data() };
 
-    if (user.status !== "ACTIVE" || user.isDeleted === true) {
-      throw new ApiError(403, "User is inactive or deleted");
+    if (user.isDeleted === true) {
+      throw new ApiError(401, "This account has been deleted.");
+    }
+    if (user.status !== "ACTIVE") {
+      if (user.status === "INACTIVE") {
+        throw new ApiError(403, "Your account has been deactivated. Please contact your administrator.");
+      }
+      if (user.status === "PENDING") {
+        throw new ApiError(403, "Your account is pending approval. Please contact your administrator.");
+      }
+      throw new ApiError(403, "Your account is not active. Please contact your administrator.");
     }
 
     const hashToCompare = user.passwordHash || user.password;
@@ -97,7 +112,7 @@ router.post(
     }
     const isValidPassword = await bcrypt.compare(password, hashToCompare);
     if (!isValidPassword) {
-      throw new ApiError(401, "Invalid credentials");
+      throw new ApiError(401, "Incorrect password. Please try again.");
     }
 
     const sessionRef = await firestore.collection("sessions").add({

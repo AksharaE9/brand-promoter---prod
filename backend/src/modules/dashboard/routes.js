@@ -30,7 +30,8 @@ router.get(
   asyncHandler(async (req, res) => {
     // Use bypass flag from frontend SSE refresh to skip cache
     const skipCache = req.query._t ? true : false;
-    const cacheKey = "dashboard_init_org";
+    const orgId = req.user.organizationId || 'default';
+    const cacheKey = `dashboard_init_org:${orgId}`;
 
     if (skipCache) await invalidate(cacheKey);
 

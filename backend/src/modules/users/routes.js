@@ -17,11 +17,12 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
-    const users = await getCached("users_list", async () => {
+    const orgId = req.user.organizationId || "defaultOrg";
+    const users = await getCached(`users:list:${orgId}:all`, async () => {
       const snapshot = await firestore.collection("users").orderBy("createdAt", "desc").get();
       return snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(u => u.isDeleted !== true);
+        .filter(u => u.isDeleted !== true && (u.organizationId || "defaultOrg") === orgId);
     }, 60000);
     res.json({ success: true, data: users });
   }),
@@ -79,11 +80,17 @@ router.post(
       userAgent: req.headers["user-agent"],
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'USER_CREATED', userId: docRef.id, fullName: userData.fullName });
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, docRef.id);
 
-    await invalidate("users_list");
-    await invalidate("users_interviewers");
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_INVITED', {
+      email: userData.email,
+      role: userData.role,
+      invitedBy: req.user.id,
+      invitedByName: req.user.fullName || req.user.email,
+    });
 
     res.status(201).json({ success: true, data: newUser });
   }),
@@ -120,10 +127,11 @@ router.patch(
     }
 
     const existing = doc.data();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
 
     // Check email uniqueness
     const dupSnapshot = await firestore.collection("users")
-      .where("email", "==", email)
+      .where("email", "==", normalizedEmail)
       .get();
     
     const duplicates = dupSnapshot.docs.filter(d => d.id !== id);
@@ -132,9 +140,9 @@ router.patch(
     }
 
     const updateData = {
-      fullName,
-      email,
-      phone,
+      fullName: String(fullName || "").trim(),
+      email: normalizedEmail,
+      phone: phone ? String(phone).trim() : null,
       role,
       updatedAt: new Date().toISOString()
     };
@@ -152,11 +160,20 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'USER_UPDATED', userId: id, fullName });
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, id);
 
-    await invalidate("users_list");
-    await invalidate("users_interviewers");
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
+      userId: id,
+      changes: updateData,
+      updatedBy: req.user.id,
+    });
+    sse.sendToUser(id, 'PROFILE_UPDATED', {
+      userId: id,
+      changes: updateData,
+    });
 
     res.json({ success: true, data: { id, ...existing, ...updateData } });
   }),
@@ -196,11 +213,27 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'USER_STATUS_UPDATED', userId: id, status });
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, id);
 
-    await invalidate("users_list");
-    await invalidate("users_interviewers");
+    const sse = require("../../utils/sse");
+    if (status === 'INACTIVE') {
+      sse.broadcastToOrg(orgId, 'TEAM_MEMBER_DELETED', {
+        userId: id,
+        deletedBy: req.user.id,
+        deletedByName: req.user.fullName || req.user.email,
+      });
+      sse.sendToUser(id, 'ACCOUNT_DEACTIVATED', {
+        message: 'Your account has been deactivated',
+      });
+    } else {
+      sse.broadcastToOrg(orgId, 'TEAM_MEMBER_RESTORED', {
+        userId: id,
+        restoredBy: req.user.id,
+        restoredByName: req.user.fullName || req.user.email,
+      });
+    }
 
     res.json({ success: true, data: { id, status } });
   }),
@@ -246,8 +279,15 @@ router.post(
       userAgent: req.headers["user-agent"],
     });
 
-    await invalidate("users_list");
-    await invalidate("users_interviewers");
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, req.user.id);
+
+    const sse = require("../../utils/sse");
+    sse.sendToUser(req.user.id, 'PROFILE_UPDATED', {
+      userId: req.user.id,
+      changes: { profilePhotoFileId: fileRef.id },
+    });
 
     res.status(201).json({
       success: true,

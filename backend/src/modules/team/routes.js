@@ -3,7 +3,8 @@ const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
-const { broadcast, broadcastNamedEvent } = require("../../utils/sse");
+const sse = require("../../utils/sse");
+const inv = require("../../utils/cacheInvalidation");
 
 const router = express.Router();
 router.use(auth);
@@ -82,7 +83,18 @@ router.put("/recruiters/:id", asyncHandler(async (req, res) => {
   await firestore.collection("users").doc(id).update(payload);
   
   const doc = await firestore.collection("users").doc(id).get();
-  broadcast({ type: "RECRUITER_UPDATED", userId: id });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, id);
+
+  sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
+    userId: id,
+    changes: payload,
+    updatedBy: req.user.id,
+  });
+  sse.sendToUser(id, 'PROFILE_UPDATED', {
+    userId: id,
+    changes: payload,
+  });
 
   res.json({ success: true, data: { id, ...doc.data() } });
 }));
@@ -92,7 +104,25 @@ router.patch("/recruiters/:id/status", requireRoles("SUPER_ADMIN"), asyncHandler
   await firestore.collection("users").doc(req.params.id).update({ 
     status, isActive: status === "ACTIVE", updatedAt: new Date().toISOString() 
   });
-  broadcast({ type: "RECRUITER_STATUS_UPDATED", userId: req.params.id, status });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, req.params.id);
+
+  if (status === 'INACTIVE') {
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_DELETED', {
+      userId: req.params.id,
+      deletedBy: req.user.id,
+      deletedByName: req.user.fullName || req.user.email,
+    });
+    sse.sendToUser(req.params.id, 'ACCOUNT_DEACTIVATED', {
+      message: 'Your account has been deactivated',
+    });
+  } else {
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_RESTORED', {
+      userId: req.params.id,
+      restoredBy: req.user.id,
+      restoredByName: req.user.fullName || req.user.email,
+    });
+  }
   res.json({ success: true, data: { status } });
 }));
 
@@ -128,7 +158,18 @@ router.put("/interviewers/:id", asyncHandler(async (req, res) => {
   await firestore.collection("users").doc(id).update(payload);
   
   const doc = await firestore.collection("users").doc(id).get();
-  broadcast({ type: "INTERVIEWER_UPDATED", userId: id });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, id);
+
+  sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
+    userId: id,
+    changes: payload,
+    updatedBy: req.user.id,
+  });
+  sse.sendToUser(id, 'PROFILE_UPDATED', {
+    userId: id,
+    changes: payload,
+  });
 
   res.json({ success: true, data: { id, ...doc.data() } });
 }));
@@ -138,7 +179,25 @@ router.patch("/interviewers/:id/status", requireRoles("SUPER_ADMIN"), asyncHandl
   await firestore.collection("users").doc(req.params.id).update({ 
     status, isActive: status === "ACTIVE", updatedAt: new Date().toISOString() 
   });
-  broadcast({ type: "INTERVIEWER_STATUS_UPDATED", userId: req.params.id, status });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, req.params.id);
+
+  if (status === 'INACTIVE') {
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_DELETED', {
+      userId: req.params.id,
+      deletedBy: req.user.id,
+      deletedByName: req.user.fullName || req.user.email,
+    });
+    sse.sendToUser(req.params.id, 'ACCOUNT_DEACTIVATED', {
+      message: 'Your account has been deactivated',
+    });
+  } else {
+    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_RESTORED', {
+      userId: req.params.id,
+      restoredBy: req.user.id,
+      restoredByName: req.user.fullName || req.user.email,
+    });
+  }
   res.json({ success: true, data: { status } });
 }));
 
@@ -159,8 +218,8 @@ router.get("/members/deleted", requireRoles("SUPER_ADMIN"), asyncHandler(async (
   if (search) {
     const s = search.toLowerCase();
     items = items.filter(u => 
-      u.fullName?.toLowerCase().includes(s) || 
-      u.email?.toLowerCase().includes(s)
+      (u.fullName && u.fullName.toLowerCase().includes(s)) || 
+      (u.email && u.email.toLowerCase().includes(s))
     );
   }
 
@@ -284,7 +343,17 @@ router.delete("/members/:userId", requireRoles("SUPER_ADMIN"), asyncHandler(asyn
 
   await batch.commit();
 
-  broadcastNamedEvent("TEAM_UPDATE", { type: "MEMBER_DELETED", userId });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, userId);
+
+  sse.broadcastToOrg(orgId, 'TEAM_MEMBER_DELETED', {
+    userId,
+    deletedBy: req.user.id,
+    deletedByName: req.user.fullName || req.user.email,
+  });
+  sse.sendToUser(userId, 'ACCOUNT_DEACTIVATED', {
+    message: 'Your account has been deactivated',
+  });
 
   res.json({ success: true, message: `${targetUser.fullName} has been removed from the team` });
 }));
@@ -332,7 +401,14 @@ router.patch("/members/:userId/restore", requireRoles("SUPER_ADMIN"), asyncHandl
 
   await batch.commit();
 
-  broadcastNamedEvent("TEAM_UPDATE", { type: "MEMBER_RESTORED", userId });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, userId);
+
+  sse.broadcastToOrg(orgId, 'TEAM_MEMBER_RESTORED', {
+    userId,
+    restoredBy: req.user.id,
+    restoredByName: req.user.fullName || req.user.email,
+  });
 
   res.json({ success: true, message: `${targetUser.fullName} has been restored successfully` });
 }));
@@ -408,7 +484,20 @@ router.patch("/members/:userId/role", requireRoles("SUPER_ADMIN"), asyncHandler(
 
   await batch.commit();
 
-  broadcastNamedEvent("TEAM_UPDATE", { type: "ROLE_CHANGED", userId, role: targetRole });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, userId);
+
+  sse.broadcastToOrg(orgId, 'TEAM_ROLE_CHANGED', {
+    userId,
+    previousRole: targetUser.role,
+    newRole: targetRole,
+    changedBy: req.user.id,
+    changedByName: req.user.fullName || req.user.email,
+  });
+  sse.sendToUser(userId, 'YOUR_ROLE_CHANGED', {
+    previousRole: targetUser.role,
+    newRole: targetRole,
+  });
 
   res.json({ success: true, message: `${targetUser.fullName}'s role has been updated to ${targetRole}` });
 }));
@@ -451,6 +540,12 @@ router.patch("/members/:userId", requireRoles("SUPER_ADMIN"), asyncHandler(async
   const userRef = firestore.collection("users").doc(userId);
   batch.update(userRef, finalUpdates);
 
+  // If deactivating, revoke all sessions immediately
+  if (finalUpdates.status === "INACTIVE" || finalUpdates.isActive === false) {
+    const sessionsSnap = await firestore.collection("sessions").where("userId", "==", userId).get();
+    sessionsSnap.docs.forEach(doc => batch.delete(doc.ref));
+  }
+
   const auditRef = firestore.collection("auditLogs").doc();
   batch.set(auditRef, {
     actorUserId: req.user.id,
@@ -472,7 +567,33 @@ router.patch("/members/:userId", requireRoles("SUPER_ADMIN"), asyncHandler(async
 
   await batch.commit();
 
-  broadcastNamedEvent("TEAM_UPDATE", { type: "MEMBER_UPDATED", userId, updates: finalUpdates });
+  const orgId = req.user.organizationId || "defaultOrg";
+  await inv.user(orgId, userId);
+
+  sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
+    userId,
+    changes: finalUpdates,
+    updatedBy: req.user.id,
+  });
+
+  if (finalUpdates.role) {
+    sse.broadcastToOrg(orgId, 'TEAM_ROLE_CHANGED', {
+      userId,
+      previousRole: targetUser.role,
+      newRole: finalUpdates.role,
+      changedBy: req.user.id,
+    });
+    sse.sendToUser(userId, 'YOUR_ROLE_CHANGED', {
+      previousRole: targetUser.role,
+      newRole: finalUpdates.role,
+    });
+  }
+
+  if (finalUpdates.status === "INACTIVE" || finalUpdates.isActive === false) {
+    sse.sendToUser(userId, 'ACCOUNT_DEACTIVATED', {
+      message: 'Your account has been deactivated',
+    });
+  }
 
   res.json({ success: true, data: { ...targetUser, ...finalUpdates } });
 }));

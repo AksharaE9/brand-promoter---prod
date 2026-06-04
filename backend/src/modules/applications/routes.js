@@ -4,9 +4,9 @@ const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
-const { broadcast } = require("../../utils/sse");
+const sse = require("../../utils/sse");
 const { markAsJoined, markAsRejected } = require("./offerDecisionService");
-const { invalidateAll } = require("../../utils/cache");
+const inv = require("../../utils/cacheInvalidation");
 
 const router = express.Router();
 
@@ -100,7 +100,19 @@ router.post(
     const applicationId = docRef.id;
 
     // Invalidate cached reports and analytics lists
-    invalidateAll();
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.application(orgId, candidateId);
+
+    // SSE broadcast
+    sse.broadcastToOrg(orgId, 'APPLICATION_CREATED', {
+      applicationId,
+      candidateId,
+      candidateName: candidate.fullName,
+      jobId,
+      jobTitle: job.title,
+      createdBy: req.user.id,
+      createdByName: req.user.fullName,
+    });
 
     // Record initial pipeline event
     await firestore.collection("pipeline_events").add({
@@ -252,8 +264,15 @@ router.patch(
     if (!doc.exists) throw new ApiError(404, "Application not found");
     const existing = doc.data();
 
-    await docRef.update({ shortlisted, updatedAt: new Date().toISOString() });
-    invalidateAll();
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.application(orgId, existing.candidateId);
+
+    sse.broadcastToOrg(orgId, 'APPLICATION_UPDATED', {
+      applicationId: id,
+      candidateId: existing.candidateId,
+      changes: { shortlisted },
+      updatedBy: req.user.id,
+    });
 
     await logAudit({
       actorUserId: req.user.id,
@@ -290,7 +309,8 @@ router.patch(
     if (joiningDate) updatePayload.joiningDate = joiningDate;
     
     await docRef.update(updatePayload);
-    invalidateAll();
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.application(orgId, oldData.candidateId);
 
     // Sync candidate status for sidebar views
     if (['JOINED', 'REJECTED', 'OFFER_SENT'].includes(status)) {
@@ -315,7 +335,12 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    broadcast({ type: 'APPLICATION_STATUS_UPDATED', applicationId: id, status });
+    sse.broadcastToOrg(orgId, 'APPLICATION_STATUS_CHANGED', {
+      applicationId: id,
+      candidateId: oldData.candidateId,
+      status,
+      changedBy: req.user.id,
+    });
 
     res.json({ success: true, data: { id, status } });
   }),

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { API_BASE_URL } from '../lib/api';
 
 /**
@@ -10,6 +11,7 @@ import { API_BASE_URL } from '../lib/api';
  *  - Cleans up on unmount
  */
 export const useRealtime = (onUpdate, relevantTypes = []) => {
+  const queryClient = useQueryClient();
   const throttleRef = useRef(null);
   const eventSourceRef = useRef(null);
   const reconnectTimerRef = useRef(null);
@@ -38,6 +40,88 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
       `${API_BASE_URL}/notifications/stream?token=${token}`
     );
     eventSourceRef.current = eventSource;
+
+    // Listen for scheduling changes from other clients
+    eventSource.addEventListener('SCHEDULING_UPDATE', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const { type, roundId, round } = payload;
+
+        if (type === 'ROUND_UPDATED' || type === 'ROUND_CREATED') {
+          // Update individual round cache
+          queryClient.setQueryData(['scheduling', 'round', roundId], (old) => {
+            if (!old) return old;
+            const currentData = old.data ?? old;
+            return {
+              ...old,
+              data: { ...currentData, ...round, _optimistic: false },
+            };
+          });
+
+          // Update lists
+          queryClient.setQueriesData(
+            { queryKey: ['scheduling', 'rounds'] },
+            (old) => {
+              const list = old?.data ?? old;
+              if (!Array.isArray(list)) return old;
+              
+              const exists = list.some(r => r.id === roundId);
+              let updated;
+              if (exists) {
+                updated = list.map(r => r.id === roundId ? { ...r, ...round, _optimistic: false } : r);
+              } else if (type === 'ROUND_CREATED') {
+                updated = [round, ...list];
+              } else {
+                updated = list;
+              }
+              return old?.data ? { ...old, data: updated } : updated;
+            }
+          );
+        }
+
+        if (type === 'ROUND_DELETED') {
+          queryClient.setQueriesData(
+            { queryKey: ['scheduling', 'rounds'] },
+            (old) => {
+              const list = old?.data ?? old;
+              if (!Array.isArray(list)) return old;
+              const updated = list.filter(r => r.id !== roundId);
+              return old?.data ? { ...old, data: updated } : updated;
+            }
+          );
+        }
+      } catch (err) {
+        console.error('[SSE] SCHEDULING_UPDATE parse error:', err);
+      }
+    });
+
+    // Handle sync completion — swap temporary IDs with real IDs
+    eventSource.addEventListener('SCHEDULING_SYNC_COMPLETE', (e) => {
+      try {
+        const { tempIdMap } = JSON.parse(e.data);
+        if (!tempIdMap || Object.keys(tempIdMap).length === 0) return;
+
+        const tempIdLookup = new Map(Object.entries(tempIdMap));
+
+        queryClient.setQueriesData(
+          { queryKey: ['scheduling', 'rounds'] },
+          (old) => {
+            const list = old?.data ?? old;
+            if (!Array.isArray(list)) return old;
+            const updated = list.map(r => {
+              const realId = tempIdLookup.get(r.id);
+              return realId ? { ...r, id: realId, _pendingSync: false, _optimistic: false } : r;
+            });
+            return old?.data ? { ...old, data: updated } : updated;
+          }
+        );
+
+        // Invalidate to guarantee latest fresh data
+        queryClient.invalidateQueries({ queryKey: ['scheduling', 'rounds'] });
+      } catch (err) {
+        console.error('[SSE] SCHEDULING_SYNC_COMPLETE parse error:', err);
+      }
+    });
 
     eventSource.onmessage = (event) => {
       try {

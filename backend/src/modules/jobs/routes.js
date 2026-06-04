@@ -54,9 +54,9 @@ router.get(
       if (req.query.search) {
         const search = req.query.search.toLowerCase();
         items = items.filter(item => 
-          item.title?.toLowerCase().includes(search) ||
-          item.department?.toLowerCase().includes(search) ||
-          item.location?.toLowerCase().includes(search)
+          (item.title && item.title.toLowerCase().includes(search)) ||
+          (item.department && item.department.toLowerCase().includes(search)) ||
+          (item.location && item.location.toLowerCase().includes(search))
         );
       }
 
@@ -108,8 +108,9 @@ router.post(
     const docRef = await firestore.collection("jobs").add(jobData);
     const job = { id: docRef.id, ...jobData };
 
-    const { invalidatePattern } = require("../../utils/cache");
-    await invalidatePattern("jobs:list:");
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.job(orgId, docRef.id);
 
     await notifyAdmins({
       title: "New Job Posted",
@@ -118,8 +119,14 @@ router.post(
       link: `/jobs/${job.id}`,
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'JOB_CREATED', jobId: docRef.id, title });
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'JOB_CREATED', {
+      jobId: docRef.id,
+      title,
+      status: 'ACTIVE',
+      createdBy: req.user.id,
+      createdByName: req.user.fullName,
+    });
 
     res.status(201).json({ success: true, data: job });
   }),
@@ -146,11 +153,16 @@ router.patch(
 
     await firestore.collection("jobs").doc(id).update(updateData);
     
-    const { invalidatePattern } = require("../../utils/cache");
-    await invalidatePattern("jobs:list:");
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.job(orgId, id);
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'JOB_UPDATED', jobId: id });
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'JOB_UPDATED', {
+      jobId: id,
+      changes: updateData,
+      updatedBy: req.user.id,
+    });
     res.json({ success: true, message: "Job updated successfully" });
   }),
 );
@@ -173,8 +185,9 @@ router.patch(
     await docRef.update({ isActive, updatedAt: new Date().toISOString() });
     const updated = { id, ...doc.data(), isActive };
 
-    const { invalidatePattern } = require("../../utils/cache");
-    await invalidatePattern("jobs:list:");
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.job(orgId, id);
 
     await logAudit({
       actorUserId: req.user.id,
@@ -187,8 +200,13 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    const { broadcast } = require("../../utils/sse");
-    broadcast({ type: 'JOB_STATUS_UPDATED', jobId: id, isActive });
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'JOB_STATUS_CHANGED', {
+      jobId: id,
+      status: isActive ? 'ACTIVE' : 'INACTIVE',
+      changedBy: req.user.id,
+      changedByName: req.user.fullName,
+    });
 
     res.json({ success: true, data: updated });
   }),

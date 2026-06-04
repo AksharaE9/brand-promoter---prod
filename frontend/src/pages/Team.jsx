@@ -8,6 +8,7 @@ import { apiGet, apiPatch, apiPost, apiDelete, API_BASE_URL } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import EditRecruiterModal from '../components/Team/EditRecruiterModal';
 import EditInterviewerModal from '../components/Team/EditInterviewerModal';
+import { useToast } from '../hooks/useToast';
 
 const userTypes = [
   { value: 'RECRUITER', label: 'Recruiter', color: 'bg-blue-100 text-blue-800' }
@@ -15,6 +16,7 @@ const userTypes = [
 
 const Team = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [members, setMembers] = useState([]);
   const [deletedMembers, setDeletedMembers] = useState([]);
   const [me, setMe] = useState(null);
@@ -37,6 +39,9 @@ const Team = () => {
   const [roleChangeTarget, setRoleChangeTarget] = useState(null); // { user, targetRole }
   const [roleChangeError, setRoleChangeError] = useState('');
   const [isRoleChangeLoading, setIsRoleChangeLoading] = useState(false);
+
+  // Active / Deactivate toggle
+  const [updatingStatusUserIds, setUpdatingStatusUserIds] = useState({});
 
   // Inline UserType dropdown
   const [activeTypeDropdownUserId, setActiveTypeDropdownUserId] = useState(null);
@@ -73,21 +78,40 @@ const Team = () => {
 
     const token = localStorage.getItem('ats_token');
     let eventSource;
+    
+    const handleTeamUpdate = () => {
+      if (mounted) loadAll();
+    };
+
     if (token) {
       eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'USER_CREATED' || data.type === 'USER_UPDATED' || data.type === 'USER_STATUS_UPDATED' || data.type === 'TEAM_UPDATE') {
-            if (mounted) loadAll();
+            handleTeamUpdate();
           }
         } catch (err) {}
       };
+
+      // Listen for named team sync events
+      eventSource.addEventListener('TEAM_MEMBER_UPDATED', handleTeamUpdate);
+      eventSource.addEventListener('TEAM_MEMBER_DELETED', handleTeamUpdate);
+      eventSource.addEventListener('TEAM_MEMBER_RESTORED', handleTeamUpdate);
+      eventSource.addEventListener('TEAM_ROLE_CHANGED', handleTeamUpdate);
+      eventSource.addEventListener('TEAM_MEMBER_INVITED', handleTeamUpdate);
     }
 
     return () => {
       mounted = false;
-      if (eventSource) eventSource.close();
+      if (eventSource) {
+        eventSource.removeEventListener('TEAM_MEMBER_UPDATED', handleTeamUpdate);
+        eventSource.removeEventListener('TEAM_MEMBER_DELETED', handleTeamUpdate);
+        eventSource.removeEventListener('TEAM_MEMBER_RESTORED', handleTeamUpdate);
+        eventSource.removeEventListener('TEAM_ROLE_CHANGED', handleTeamUpdate);
+        eventSource.removeEventListener('TEAM_MEMBER_INVITED', handleTeamUpdate);
+        eventSource.close();
+      }
     };
   }, []);
 
@@ -161,8 +185,10 @@ const Team = () => {
         throw new Error(res.message || "Failed to delete member");
       }
       
+      const deletedName = deleteTarget.fullName;
       setDeleteTarget(null);
       await loadAll();
+      toast.success(`Member ${deletedName} has been deleted successfully.`);
     } catch (err) {
       setDeleteConfirmError(err.message || "Failed to delete user");
       // Revert members list
@@ -178,6 +204,7 @@ const Team = () => {
       const res = await apiPatch(`/team/members/${memberId}/restore`, {});
       if (res.success) {
         await loadAll();
+        toast.success("Member has been restored successfully.");
       }
     } catch (err) {
       alert(err.message || "Failed to restore member");
@@ -194,6 +221,7 @@ const Team = () => {
       const res = await apiPatch(`/team/members/${userId}`, { userType });
       if (!res.success) throw new Error("Failed to update user type");
       await loadAll();
+      toast.success("User Type has been updated successfully.");
     } catch (err) {
       alert(err.message || "Failed to update User Type");
       await loadAll();
@@ -209,8 +237,43 @@ const Team = () => {
       const res = await apiPatch(`/team/members/${userId}`, { status: 'ACTIVE', isActive: true });
       if (!res.success) throw new Error(res.message || "Failed to approve user");
       await loadAll();
+      toast.success("Member account has been approved successfully.");
     } catch (err) {
       alert(err.message || "Failed to approve user");
+      await loadAll();
+    }
+  };
+
+  // Toggle Active / Deactivate — Optimized for screen (inline, optimistic update)
+  const handleStatusToggle = async (member) => {
+    const userId = member.id;
+    const currentStatus = member.status;
+    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const targetName = member.fullName;
+
+    // Track status updating for this user
+    setUpdatingStatusUserIds(prev => ({ ...prev, [userId]: true }));
+
+    // Optimistic local state update
+    setMembers(prev => prev.map(m => m.id === userId ? { ...m, status: newStatus, isActive: newStatus === 'ACTIVE' } : m));
+
+    try {
+      const res = await apiPatch(`/team/members/${userId}`, { status: newStatus, isActive: newStatus === 'ACTIVE' });
+      if (!res.success) {
+        throw new Error(res.message || `Failed to update status`);
+      }
+      toast.success(`Account for ${targetName} has been ${newStatus === 'ACTIVE' ? 'activated' : 'deactivated'} successfully.`);
+    } catch (err) {
+      toast.error(err.message || `Failed to update status`);
+      // Revert optimistic update
+      setMembers(prev => prev.map(m => m.id === userId ? { ...m, status: currentStatus, isActive: currentStatus === 'ACTIVE' } : m));
+    } finally {
+      setUpdatingStatusUserIds(prev => {
+        const copy = { ...prev };
+        delete copy[userId];
+        return copy;
+      });
+      // Synchronize in the background
       await loadAll();
     }
   };
@@ -239,6 +302,7 @@ const Team = () => {
       
       setRoleChangeTarget(null);
       await loadAll();
+      toast.success(`Role for ${user.fullName} has been updated to ${targetRole === 'SUPER_ADMIN' ? 'SUPER ADMIN' : targetRole} successfully.`);
     } catch (err) {
       setRoleChangeError(err.message || "Failed to change role");
       await loadAll();
@@ -296,7 +360,7 @@ const Team = () => {
                 await apiPost('/users', { fullName, email, role, userType, password });
                 await loadAll();
                 setShowAddMember(false);
-                alert(`Member ${fullName} added successfully.`);
+                toast.success(`Member ${fullName} added successfully.`);
               } catch (err) {
                 alert(err.message || 'Failed to add member');
               } finally {
@@ -421,7 +485,7 @@ const Team = () => {
                             {(member.fullName || 'T').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                           </div>
                         )}
-                        <span className="font-semibold text-slate-900">{member.fullName}</span>
+                        <span className="font-semibold text-slate-900" title={member.fullName}>{member.fullName}</span>
                       </div>
                     </td>
 
@@ -489,10 +553,16 @@ const Team = () => {
                     <td className="p-4 text-xs font-bold">
                       <div className="flex flex-col gap-1.5 items-start">
                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${
-                          member.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                          member.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700'
+                          : member.status === 'INACTIVE' ? 'bg-red-50 text-red-600'
+                          : 'bg-amber-50 text-amber-700'
                         }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${member.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                          {member.status || 'ACTIVE'}
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            member.status === 'ACTIVE' ? 'bg-emerald-500'
+                            : member.status === 'INACTIVE' ? 'bg-red-400'
+                            : 'bg-amber-500'
+                          }`} />
+                          {member.status === 'INACTIVE' ? 'DEACTIVATED' : (member.status || 'ACTIVE')}
                         </span>
                         {me?.role === 'SUPER_ADMIN' && member.status === 'PENDING' && (
                           <button
@@ -509,16 +579,40 @@ const Team = () => {
 
                     {/* Actions */}
                     <td className="p-4">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <button className="os-btn-outline !h-8 !px-2.5" onClick={() => { window.location.href = `mailto:${member.email}`; }} title="Email">
                           <span className="material-symbols-outlined text-sm">mail</span>
                         </button>
                         <button className="os-btn-outline !h-8 !px-2.5" onClick={() => { if (member.phone) window.location.href = `tel:${member.phone}`; }} title="Call" disabled={!member.phone}>
                           <span className="material-symbols-outlined text-sm">call</span>
                         </button>
-                        {(me?.role === 'SUPER_ADMIN' || me?.id === member.id) && member.role === 'RECRUITER' && (
+                        {(me?.role === 'SUPER_ADMIN' || me?.id === member.id) && (member.role === 'RECRUITER' || member.role === 'SUPER_ADMIN') && (
                           <button className="os-btn-outline !h-8 !px-2.5" onClick={() => handleEditMember(member)} title="Edit Profile">
                             <span className="material-symbols-outlined text-sm">edit</span>
+                          </button>
+                        )}
+                        {/* Active / Deactivate toggle — SUPER_ADMIN only, not for self */}
+                        {me?.role === 'SUPER_ADMIN' && member.id !== me.id && (member.status === 'ACTIVE' || member.status === 'INACTIVE') && (
+                          <button
+                            title={member.status === 'ACTIVE' ? 'Deactivate Account' : 'Activate Account'}
+                            className={`os-btn-outline !h-8 !px-2.5 flex items-center gap-1 text-xs font-bold transition-all ${
+                              updatingStatusUserIds[member.id]
+                                ? '!text-slate-400 !border-slate-200 bg-slate-50 cursor-not-allowed'
+                                : member.status === 'ACTIVE'
+                                ? '!text-amber-600 !border-amber-200 hover:!bg-amber-50'
+                                : '!text-emerald-600 !border-emerald-200 hover:!bg-emerald-50'
+                            }`}
+                            onClick={() => handleStatusToggle(member)}
+                            disabled={!!updatingStatusUserIds[member.id]}
+                          >
+                            <span className={`material-symbols-outlined text-sm ${updatingStatusUserIds[member.id] ? 'animate-spin' : ''}`}>
+                              {updatingStatusUserIds[member.id] ? 'sync' : member.status === 'ACTIVE' ? 'block' : 'check_circle'}
+                            </span>
+                            <span className="hidden sm:inline">
+                              {updatingStatusUserIds[member.id]
+                                ? 'Updating...'
+                                : member.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
+                            </span>
                           </button>
                         )}
                         {me?.role === 'SUPER_ADMIN' && member.id !== me.id && (
@@ -553,7 +647,7 @@ const Team = () => {
               <tbody>
                 {deletedMembers.map((member) => (
                   <tr key={member.id} className="border-b border-[#ebeff4] hover:bg-slate-50/50">
-                    <td className="p-4 font-semibold text-slate-900">{member.fullName}</td>
+                    <td className="p-4 font-semibold text-slate-900" title={member.fullName}>{member.fullName}</td>
                     <td className="p-4 text-sm text-slate-600">{member.email}</td>
                     <td className="p-4 text-xs font-bold text-slate-600">{member.role}</td>
                     <td className="p-4 text-sm text-slate-500">{member.deletedAt ? new Date(member.deletedAt).toLocaleDateString() : 'N/A'}</td>
@@ -576,12 +670,14 @@ const Team = () => {
         </Reveal>
 
         {/* MODALS */}
-        
+
+        {/* Active / Deactivate Confirmation Modal removed for inline screen optimization */}
+
         {/* Soft Delete Confirmation Modal */}
         {deleteTarget && (
           <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setDeleteTarget(null)} />
-            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md modal-overlay-fade" onClick={() => setDeleteTarget(null)} />
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-50 modal-scale-up" onClick={(e) => e.stopPropagation()}>
               <div className="text-center">
                 <span className="material-symbols-outlined text-red-500 text-5xl mb-3">warning</span>
                 <h3 className="text-lg font-bold text-[#0f1b3d] font-[Manrope]">Delete Team Member</h3>
@@ -628,8 +724,8 @@ const Team = () => {
         {/* Role Change Confirmation Modal (Upgrade/Downgrade) */}
         {roleChangeTarget && (
           <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setRoleChangeTarget(null)} />
-            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md modal-overlay-fade" onClick={() => setRoleChangeTarget(null)} />
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-50 modal-scale-up" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-bold text-[#0f1b3d] font-[Manrope]">
                 {roleChangeTarget.targetRole === 'SUPER_ADMIN' ? 'Upgrade to Super Admin' : 'Downgrade to User'}
               </h3>
@@ -666,7 +762,7 @@ const Team = () => {
 
         {/* Edit Modals (Preserved) */}
         <EditRecruiterModal
-          isOpen={editingUserId !== null && editingUserRole === 'RECRUITER'}
+          isOpen={editingUserId !== null && (editingUserRole === 'RECRUITER' || editingUserRole === 'SUPER_ADMIN')}
           userId={editingUserId}
           onClose={() => { setEditingUserId(null); setEditingUserRole(null); }}
           onUpdate={loadAll}

@@ -109,7 +109,7 @@ async function runBulkImport(sessionData, columnMapping, userId, organizationId,
     // Update progress
     const progress = Math.round(((i + 1) / rows.length) * 100);
     if (updateProgress) {
-      updateProgress(progress);
+      updateProgress(progress, results);
     }
   }
 

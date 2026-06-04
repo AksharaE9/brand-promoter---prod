@@ -98,6 +98,21 @@ router.post(
     };
 
     const docRef = await firestore.collection("collegeDrives").add(driveData);
+    
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.drive(orgId, docRef.id);
+
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'DRIVE_CREATED', {
+      driveId: docRef.id,
+      collegeName: driveData.title,
+      driveDate: driveData.dateFrom,
+      city: driveData.notes || "",
+      createdBy: req.user.id,
+      createdByName: req.user.fullName || req.user.email,
+    });
+
     res.status(201).json({ success: true, data: { id: docRef.id, ...driveData } });
   }),
 );
@@ -144,9 +159,18 @@ router.post(
       driveId, candidateId, fullName, email, phone, status: "ADDED", createdAt: new Date().toISOString()
     });
 
-    // Real-time broadcast
-    broadcast({ type: 'CANDIDATE_CREATED', data: { fullName, phone, email, source: "College Drive" } });
-    broadcast({ type: 'DRIVE_CANDIDATE_ADDED', driveId, candidateId, fullName });
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.drive(orgId, driveId);
+
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
+      driveId,
+      count: 1,
+      collegeName: fullName,
+      addedBy: req.user.id,
+      addedByName: req.user.fullName || req.user.email,
+    });
 
     res.json({ success: true });
   }),
@@ -242,7 +266,19 @@ router.post(
       }
     }
     if (results.inserted > 0) {
-      broadcast({ type: 'CANDIDATE_CREATED', count: results.inserted });
+      const orgId = req.user.organizationId || "defaultOrg";
+      const inv = require("../../utils/cacheInvalidation");
+      await inv.drive(orgId, driveId);
+      await inv.candidateList(orgId);
+
+      const sse = require("../../utils/sse");
+      sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
+        driveId,
+        count: results.inserted,
+        collegeName: "Bulk Upload",
+        addedBy: req.user.id,
+        addedByName: req.user.fullName || req.user.email,
+      });
     }
     res.json({ success: true, data: results });
   }),
@@ -292,12 +328,17 @@ router.patch("/drives/:id/candidates/:candidateId/status", requireRoles(...CAN_A
     const doc = snap.docs[0];
     await doc.ref.update({ status: req.body.status, updatedAt: new Date().toISOString() });
     
-    // Real-time broadcast
-    broadcast({ 
-      type: 'CANDIDATE_UPDATED', 
-      candidateId: req.params.candidateId, 
-      driveId: req.params.id, 
-      status: req.body.status 
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.drive(orgId, req.params.id);
+
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, 'DRIVE_STATUS_CHANGED', {
+      driveId: req.params.id,
+      status: req.body.status,
+      collegeName: doc.data().fullName,
+      changedBy: req.user.id,
+      changedByName: req.user.fullName || req.user.email,
     });
   }
   res.json({ success: true });

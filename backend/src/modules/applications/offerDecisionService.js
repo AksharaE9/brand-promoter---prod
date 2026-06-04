@@ -1,9 +1,9 @@
 const { db: firestore } = require('../../config/firebase');
 const { asyncHandler, ApiError } = require('../../utils/errors');
 const { logAudit } = require('../../utils/audit');
-const { broadcastNamedEvent } = require('../../utils/sse');
+const sse = require('../../utils/sse');
 const { sendNotification, notifyAdmins } = require('../../utils/notifications');
-const { invalidateAll } = require('../../utils/cache');
+const inv = require('../../utils/cacheInvalidation');
 
 const VALID_OFFER_STATUSES = ['OFFER_SENT'];
 
@@ -67,7 +67,8 @@ async function markAsJoined(req, res) {
   };
 
   await firestore.collection('applications').doc(applicationId).update(updatePayload);
-  invalidateAll();
+  const orgId = req.user.organizationId || 'defaultOrg';
+  await inv.application(orgId, app.candidateId);
 
   // Sync candidate record status
   if (app.candidateId) {
@@ -109,8 +110,14 @@ async function markAsJoined(req, res) {
     dateOfJoining: dateOfJoining || null,
   };
 
-  // Broadcast named SSE event to ALL connected clients
-  broadcastNamedEvent('OFFER_DECISION', ssePayload);
+  // Broadcast named SSE event to org
+  sse.broadcastToOrg(orgId, 'CANDIDATE_JOINED', {
+    candidateId: app.candidateId,
+    decision: 'JOINED',
+    dateOfJoining: dateOfJoining || null,
+    decidedBy: decidedByUserId,
+    decidedByName: req.user.fullName || req.user.email,
+  });
 
   // Notify admins (non-blocking)
   try {
@@ -163,7 +170,8 @@ async function markAsRejected(req, res) {
   };
 
   await firestore.collection('applications').doc(applicationId).update(updatePayload);
-  invalidateAll();
+  const orgId = req.user.organizationId || 'defaultOrg';
+  await inv.application(orgId, app.candidateId);
 
   // Sync candidate record status
   if (app.candidateId) {
@@ -204,7 +212,14 @@ async function markAsRejected(req, res) {
     rejectionReason,
   };
 
-  broadcastNamedEvent('OFFER_DECISION', ssePayload);
+  // Broadcast named SSE event to org
+  sse.broadcastToOrg(orgId, 'CANDIDATE_REJECTED', {
+    candidateId: app.candidateId,
+    decision: 'REJECTED',
+    rejectionReason,
+    decidedBy: decidedByUserId,
+    decidedByName: req.user.fullName || req.user.email,
+  });
 
   try {
     await notifyAdmins({

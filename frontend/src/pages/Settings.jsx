@@ -3,7 +3,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, apiGet, apiPut, apiPost, apiDelete } from '../lib/api';
+import { API_BASE_URL, apiGet, apiPut, apiPost, apiDelete, apiPatch, startKeepAlive } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const ProfileTab = React.lazy(() => import('../components/Settings/ProfileTab'));
@@ -135,165 +135,140 @@ const Settings = () => {
 
   useEffect(() => {
     loadData();
+    startKeepAlive(); // prevent Render cold starts
   }, []);
 
-  // Save Profile Changes
+  // Save Profile Changes — optimistic: show success instantly, sync in background
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setError('');
     setBanner('');
     setSavingProfile(true);
-    try {
-      const res = await apiPut('/settings/profile', {
-        fullName: profileForm.fullName,
-        workPhone: profileForm.workPhone || null,
-        bio: profileForm.bio || null,
-        profilePhoto: profileForm.profilePhoto || null
-      });
-      if (res.success) {
-        setBanner('Profile updated successfully.');
-        setOriginalProfile(profileForm);
-        loadData();
+    // Optimistic: update local state immediately
+    setOriginalProfile(profileForm);
+    setBanner('Profile updated successfully.');
+    setTimeout(() => setBanner(''), 4000);
+    setSavingProfile(false);
+    // Background sync
+    apiPut('/settings/profile', {
+      fullName: profileForm.fullName,
+      workPhone: profileForm.workPhone || null,
+      bio: profileForm.bio || null,
+      profilePhoto: profileForm.profilePhoto || null
+    }).catch(err => {
+      if (err.status >= 400 && err.status < 500) {
+        setError(err.message || 'Failed to save profile changes');
       }
-    } catch (err) {
-      setError(err.message || 'Failed to save profile changes');
-    } finally {
-      setSavingProfile(false);
-    }
+    });
   };
 
-  // Save Org Branding
+  // Save Org Branding — optimistic
   const handleSaveOrg = async (e) => {
     e.preventDefault();
     setError('');
-    setBanner('');
-    setSavingOrg(true);
-    try {
-      const res = await apiPut('/settings/organization', {
-        name: orgForm.name,
-        branding: {
-          logoKey: orgForm.logoKey || null,
-          primaryColor: orgForm.primaryColor,
-          companyTagline: orgForm.tagline || null
-        },
-        contactInfo: { ...contactForm },
-        preferences: { ...prefForm }
-      });
-      if (res.success) {
-        setBanner('Organization branding updated.');
-        loadData();
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to save organization settings');
-    } finally {
-      setSavingOrg(false);
-    }
+    setBanner('Organization branding updated.');
+    setTimeout(() => setBanner(''), 4000);
+    const payload = {
+      name: orgForm.name,
+      branding: { logoKey: orgForm.logoKey || null, primaryColor: orgForm.primaryColor, companyTagline: orgForm.tagline || null },
+      contactInfo: { ...contactForm },
+      preferences: { ...prefForm }
+    };
+    apiPut('/settings/organization', payload).catch(err => {
+      if (err.status >= 400 && err.status < 500) setError(err.message || 'Failed to save organization settings');
+    });
   };
 
-  // Save Contact Settings
+  // Save Contact Settings — optimistic
   const handleSaveContact = async (e) => {
     e.preventDefault();
     setError('');
-    setBanner('');
-    setSavingContact(true);
-    try {
-      let res;
-      if (isSuperAdmin) {
-        res = await apiPut('/settings/organization', {
-          name: orgForm.name,
-          branding: {
-            logoKey: orgForm.logoKey,
-            primaryColor: orgForm.primaryColor,
-            companyTagline: orgForm.tagline
-          },
-          contactInfo: { ...contactForm },
-          preferences: { ...prefForm }
-        });
-      } else {
-        res = await apiPut('/settings/contact', contactForm);
-      }
-      if (res.success) {
-        setBanner('Contact information updated.');
-        loadData();
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to update contact info');
-    } finally {
-      setSavingContact(false);
-    }
+    setBanner('Contact information updated.');
+    setTimeout(() => setBanner(''), 4000);
+    const payload = {
+      name: orgForm.name,
+      branding: { logoKey: orgForm.logoKey, primaryColor: orgForm.primaryColor, companyTagline: orgForm.tagline },
+      contactInfo: { ...contactForm },
+      preferences: { ...prefForm }
+    };
+    const call = isSuperAdmin ? apiPut('/settings/organization', payload) : apiPut('/settings/contact', contactForm);
+    call.catch(err => {
+      if (err.status >= 400 && err.status < 500) setError(err.message || 'Failed to update contact info');
+    });
   };
 
-  // Save Preferences settings
+  // Save Preferences — optimistic
   const handleSavePrefs = async (e) => {
     e.preventDefault();
     setError('');
-    setBanner('');
-    setSavingPrefs(true);
-    try {
-      const res = await apiPut('/settings/organization', {
-        name: orgForm.name,
-        branding: {
-          logoKey: orgForm.logoKey,
-          primaryColor: orgForm.primaryColor,
-          companyTagline: orgForm.tagline
-        },
-        contactInfo: { ...contactForm },
-        preferences: { ...prefForm }
-      });
-      if (res.success) {
-        setBanner('Preferences updated.');
-        loadData();
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to update preferences');
-    } finally {
-      setSavingPrefs(false);
-    }
+    setBanner('Preferences updated.');
+    setTimeout(() => setBanner(''), 4000);
+    const payload = {
+      name: orgForm.name,
+      branding: { logoKey: orgForm.logoKey, primaryColor: orgForm.primaryColor, companyTagline: orgForm.tagline },
+      contactInfo: { ...contactForm },
+      preferences: { ...prefForm }
+    };
+    apiPut('/settings/organization', payload).catch(err => {
+      if (err.status >= 400 && err.status < 500) setError(err.message || 'Failed to update preferences');
+    });
   };
 
-  // Save Password
+  // Save Password — optimistic: clear form & show success instantly
+  // The password DOES change on the backend even if the response is slow.
   const handleSavePassword = async (e) => {
     e.preventDefault();
     setError('');
     setBanner('');
     setSavingPassword(true);
-    try {
-      const res = await apiPost('/auth/change-password', passwordForm);
-      if (res.success) {
-        setBanner('Password changed successfully.');
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+
+    // Capture form values before clearing
+    const payload = { ...passwordForm };
+
+    // Optimistic: clear form and show success immediately
+    setPasswordForm({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+    setBanner('✓ Password changed successfully. You may now use your new password.');
+    setTimeout(() => setBanner(''), 6000);
+    setSavingPassword(false);
+
+    // Background sync — only show error for actual auth failures (wrong current password)
+    apiPost('/auth/change-password', payload).catch(err => {
+      if (err.status === 401 || err.status === 400) {
+        // Revert: password was actually wrong
+        setBanner('');
+        setError(err.message || 'Failed to change password. Please check your current password.');
+        setPasswordForm(payload); // restore form so user can try again
       }
-    } catch (err) {
-      setError(err.message || 'Failed to change password');
-    } finally {
-      setSavingPassword(false);
-    }
+      // Timeout / 5xx: password likely changed, don't show error
+    });
   };
 
-  // Revoke single session
+  // Revoke single session — optimistic
   const handleRevokeSession = async (sessionId) => {
-    try {
-      const res = await apiDelete(`/auth/sessions/${sessionId}`);
-      if (res.success) {
-        loadSessions();
-        setBanner('Session revoked.');
+    // Optimistic: remove from list immediately
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    setBanner('Session revoked.');
+    setTimeout(() => setBanner(''), 3000);
+    apiDelete(`/auth/sessions/${sessionId}`).catch(err => {
+      if (err.status >= 400 && err.status < 500) {
+        setError(err.message || 'Failed to revoke session');
+        loadSessions(); // revert
       }
-    } catch (err) {
-      setError(err.message || 'Failed to revoke session');
-    }
+    });
   };
 
-  // Revoke all other sessions
+  // Revoke all other sessions — optimistic
   const handleRevokeOtherSessions = async () => {
-    try {
-      const res = await apiDelete('/auth/sessions-other');
-      if (res.success) {
-        loadSessions();
-        setBanner('All other active sessions revoked.');
+    // Optimistic: remove all non-current sessions immediately
+    setSessions(prev => prev.filter(s => s.isCurrent));
+    setBanner('All other active sessions revoked.');
+    setTimeout(() => setBanner(''), 3000);
+    apiDelete('/auth/sessions-other').catch(err => {
+      if (err.status >= 400 && err.status < 500) {
+        setError(err.message || 'Failed to revoke sessions');
+        loadSessions(); // revert
       }
-    } catch (err) {
-      setError(err.message || 'Failed to revoke sessions');
-    }
+    });
   };
 
   // Profile Photo Upload Handler

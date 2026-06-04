@@ -55,6 +55,7 @@ const protectedElement = (element, allowedRoles = ALL_ROLES) => (
 
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import ToastContainer from './components/ToastContainer';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,6 +110,7 @@ const App = () => {
       client={queryClient}
       persistOptions={{ persister: localPersister, maxAge: 1000 * 60 * 60 * 24 }}
     >
+      <ToastContainer />
       <Router>
         <Suspense fallback={<LoadingFallback />}>
           <Routes>

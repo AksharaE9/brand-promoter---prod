@@ -44,16 +44,16 @@ await section('Cache Module', async () => {
 
   // Basic set + get
   let callCount = 0;
-  const val1 = await getCached('test_key', async () => { callCount++; return { x: 42 }; }, 5000);
+  const val1 = await getCached('dashboard:test_key', async () => { callCount++; return { x: 42 }; }, 5000);
   ok('getCached returns data', val1?.x === 42);
 
   // Cache hit — should NOT call fetcher again
-  const val2 = await getCached('test_key', async () => { callCount++; return { x: 99 }; }, 5000);
+  const val2 = await getCached('dashboard:test_key', async () => { callCount++; return { x: 99 }; }, 5000);
   ok('getCached returns cached value (no refetch)', val2?.x === 42 && callCount === 1);
 
   // Invalidate
-  await invalidate('test_key');
-  const val3 = await getCached('test_key', async () => { callCount++; return { x: 77 }; }, 5000);
+  await invalidate('dashboard:test_key');
+  const val3 = await getCached('dashboard:test_key', async () => { callCount++; return { x: 77 }; }, 5000);
   ok('invalidate clears cache, fetcher called again', val3?.x === 77 && callCount === 2);
 
   // Pattern invalidate
@@ -69,7 +69,7 @@ await section('Cache Module', async () => {
   // invalidateAll
   await invalidateAll();
   let hitAfterAll = 0;
-  await getCached('test_key', async () => { hitAfterAll++; return {}; }, 5000);
+  await getCached('dashboard:test_key', async () => { hitAfterAll++; return {}; }, 5000);
   ok('invalidateAll clears everything', hitAfterAll === 1);
 });
 

@@ -4,6 +4,8 @@ const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
+const sse = require("../../utils/sse");
+const inv = require("../../utils/cacheInvalidation");
 
 const router = express.Router();
 
@@ -157,6 +159,19 @@ router.patch(
       title: 'Candidate Moved',
       message: `You moved ${candidateName} to ${toStage.name}`,
       link: `/candidates/${application.candidateId}`
+    });
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.application(orgId, application.candidateId);
+    await inv.analytics(orgId);
+
+    sse.broadcastToOrg(orgId, 'APPLICATION_STAGE_CHANGED', {
+      applicationId,
+      candidateId: application.candidateId,
+      fromStage: application.currentStageId,
+      toStage: toStageId,
+      changedBy: req.user.id,
+      changedByName: req.user.fullName,
     });
 
     res.json({ success: true, data: { id: applicationId, ...application, ...updateData } });

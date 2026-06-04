@@ -15,14 +15,15 @@ router.get('/stream', (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  const orgId = req.user.organizationId || 'defaultOrg';
   const userId = req.user.id;
-  addClient(userId, res);
+  addClient(orgId, userId, res);
 
   // Send initial ping
   res.write('data: {"type": "ping"}\n\n');
 
   req.on('close', () => {
-    removeClient(userId, res);
+    removeClient(orgId, userId, res);
   });
 });
 
@@ -55,8 +56,15 @@ router.post('/', asyncHandler(async (req, res) => {
   };
   await docRef.set(notif);
   
-  const { broadcast } = require('../../utils/sse');
-  broadcast(notif.userId, { type: 'NOTIFICATION', data: notif });
+  const sse = require('../../utils/sse');
+  sse.sendToUser(notif.userId, 'NOTIFICATION', {
+    notificationId: docRef.id,
+    type: notif.type,
+    title: notif.title,
+    message: notif.message,
+    createdAt: notif.createdAt,
+    isRead: false,
+  });
 
   res.json({ success: true, data: { id: docRef.id, ...notif } });
 }));

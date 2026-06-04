@@ -129,7 +129,11 @@ export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', s
 });
 EnterpriseTopbar.displayName = 'EnterpriseTopbar';
 
+import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
+
 export default React.memo(function EnterpriseLayout({ sidebar, topbar, children, contentClassName = '' }) {
+  useRealtimeUpdates();
+
   return (
     <div className="app-layout os-shell page-transition">
       {sidebar}

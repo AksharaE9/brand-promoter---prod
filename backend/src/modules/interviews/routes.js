@@ -9,11 +9,15 @@ const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
+const cache = require("../../services/schedulingCacheService");
+const redis = require("../../utils/redisClient");
+const KEYS = require("../../utils/schedulingCacheKeys");
 
 const router = express.Router();
 
 router.use(auth);
 
+// ── GET export day (Keep PDF export functioning) ──
 router.get(
   "/export-day",
   requireRoles("SUPER_ADMIN", "RECRUITER"),
@@ -58,208 +62,137 @@ router.get(
   }),
 );
 
+// ── GET sync status (for debug/monitoring) ──
 router.get(
-  "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
-  asyncHandler(async (req, res) => {
-    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
-    const limit = Math.min(5000, parseInt(req.query.limit, 10) || 50);
-    const { getCached } = require("../../utils/cache");
-
-    const cacheKey = `interviews_list_${req.user.role}_${req.user.id}_p${page}_l${limit}`;
-
-    const result = await getCached(cacheKey, async () => {
-      // Fetch all interviews — try sorted, fall back to unsorted
-      let allDocs = [];
-      try {
-        let query = firestore.collection("interviews");
-        if (req.user.role === "INTERVIEWER") {
-          query = query.where("interviewerIds", "array-contains", req.user.id);
-        }
-        const snapshot = await query.orderBy("scheduledStart", "desc").get();
-        allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (indexErr) {
-        // Firestore index not created — fallback: fetch without orderBy, sort in JS
-        console.warn("[interviews] orderBy fallback:", indexErr.message);
-        try {
-          let query = firestore.collection("interviews");
-          if (req.user.role === "INTERVIEWER") {
-            query = query.where("interviewerIds", "array-contains", req.user.id);
-          }
-          const snapshot = await query.get();
-          allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          allDocs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
-        } catch (err2) {
-          console.error("[interviews] fetch failed:", err2.message);
-          throw err2;
-        }
-      }
-
-      // Apply pagination in memory
-      const total = allDocs.length;
-      const paginated = allDocs.slice((page - 1) * limit, page * limit);
-
-      if (paginated.length === 0) {
-        return { data: [], pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } };
-      }
-
-      // Collect unique IDs needed
-      const appIds    = [...new Set(paginated.map(iv => iv.applicationId).filter(Boolean))];
-      const userIds   = [...new Set(paginated.flatMap(iv => iv.interviewerIds || []).filter(Boolean))];
-
-      // Fetch applications using getAll
-      const appMap = {};
-      if (appIds.length > 0) {
-        const appRefs = appIds.map(id => firestore.collection("applications").doc(id));
-        const appSnaps = await firestore.getAll(...appRefs);
-        appSnaps.forEach(snap => { if (snap.exists) appMap[snap.id] = { id: snap.id, ...snap.data() }; });
-      }
-
-      // Collect candidate + job IDs from applications
-      const candIds = [...new Set(Object.values(appMap).map(a => a.candidateId).filter(Boolean))];
-      const jobIds  = [...new Set(Object.values(appMap).map(a => a.jobId).filter(Boolean))];
-
-      // Fetch candidates, jobs, users using getAll in parallel
-      const candRefs = candIds.map(id => firestore.collection("candidates").doc(id));
-      const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
-      const userRefs = userIds.map(id => firestore.collection("users").doc(id));
-
-      const [candSnaps, jobSnaps, userSnaps] = await Promise.all([
-        candRefs.length > 0 ? firestore.getAll(...candRefs) : Promise.resolve([]),
-        jobRefs.length > 0 ? firestore.getAll(...jobRefs) : Promise.resolve([]),
-        userRefs.length > 0 ? firestore.getAll(...userRefs) : Promise.resolve([]),
-      ]);
-
-      const candMap = {};
-      candSnaps.forEach(snap => { if (snap.exists) candMap[snap.id] = { id: snap.id, ...snap.data() }; });
-      const jobMap = {};
-      jobSnaps.forEach(snap  => { if (snap.exists) jobMap[snap.id]  = { id: snap.id, ...snap.data() }; });
-      const userMap = {};
-      userSnaps.forEach(snap => { if (snap.exists) userMap[snap.id] = { id: snap.id, ...snap.data() }; });
-
-      // Fetch feedbacks in batched chunks of 30 to avoid N+1 queries
-      const interviewIds = paginated.map(iv => iv.id).filter(Boolean);
-      const feedbackMap = {};
-      paginated.forEach(iv => {
-        feedbackMap[iv.id] = [];
-      });
-
-      if (interviewIds.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < interviewIds.length; i += 30) {
-          chunks.push(interviewIds.slice(i, i + 30));
-        }
-
-        try {
-          const chunkSnaps = await Promise.all(
-            chunks.map(chunk =>
-              firestore.collection("interviewFeedbacks")
-                .where("interviewId", "in", chunk)
-                .get()
-            )
-          );
-
-          chunkSnaps.forEach(snap => {
-            snap.docs.forEach(doc => {
-              const data = doc.data();
-              if (data.interviewId) {
-                feedbackMap[data.interviewId].push({
-                  id: doc.id,
-                  ...data,
-                  submittedBy: userMap[data.submittedById] || { fullName: "Interviewer" },
-                });
-              }
-            });
-          });
-        } catch (fbErr) {
-          console.error("[interviews] feedback fetch error:", fbErr.message);
-          // Never crash the list view even if feedback fetch fails
-        }
-      }
-
-      // Build populated response
-      const populated = paginated.map(iv => {
-        const appRaw = appMap[iv.applicationId];
-        const app = appRaw ? { ...appRaw } : null;
-        if (app) {
-          app.candidate = candMap[app.candidateId] || null;
-          app.job       = jobMap[app.jobId]        || null;
-        }
-        return {
-          ...iv,
-          application: app,
-          interviewers: (iv.interviewerIds || []).map(id => userMap[id]).filter(Boolean),
-          feedbacks:    feedbackMap[iv.id] || [],
-        };
-      });
-      // Include ALL interviews, even those without candidates (don't filter)
-
-      return {
-        data: populated,
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
-      };
-    }, 30000); // 30s cache
-
-    res.json({ success: true, ...result });
-  }),
-);
-
-router.post(
-  "/",
+  '/sync/status',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const { applicationId, interviewerIds, scheduledStart, mode, roundNo, round, meetingLink, zohoLink, scheduledEnd } = req.body;
+    const dirtyItems = await cache.getDirtyQueue();
+    const orgId = req.user.organizationId || "defaultOrg";
+    const orgDirty = dirtyItems.filter(i => i.orgId === orgId);
+    const lastSync = await redis.get(KEYS.lastSync(orgId));
     
+    res.json({
+      success: true,
+      data: {
+        pendingSync: orgDirty.length,
+        lastSyncAt: lastSync,
+        nextSyncIn: '≤5 seconds',
+      }
+    });
+  })
+);
+
+// ── GET sync health ──
+router.get(
+  '/sync/health',
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  asyncHandler(async (req, res) => {
+    const dirtyItems = await cache.getDirtyQueue();
+    const orgId = req.user.organizationId || "defaultOrg";
+    const orgDirty = dirtyItems.filter(i => i.orgId === orgId);
+    
+    const isHealthy = orgDirty.length < 100;
+    
+    res.json({
+      success: true,
+      data: {
+        healthy: isHealthy,
+        pendingSyncCount: orgDirty.length,
+        warning: orgDirty.length > 50 ? 'Large dirty queue — sync may be delayed' : null,
+        nextSync: '≤5 seconds',
+      }
+    });
+  })
+);
+
+// ── POST force sync (Admin Only) ──
+router.post(
+  '/sync/force',
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { syncQueue } = require('../../jobs/schedulingSyncWorker');
+    const job = await syncQueue.add('firebase-sync-manual', {}, { priority: 1 });
+    res.json({ success: true, data: { jobId: job.id, message: 'Manual sync triggered' } });
+  })
+);
+
+// ── GET all rounds (list) ──
+router.get(
+  '/',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const orgId = req.user.organizationId || "defaultOrg";
+    const filters = {
+      status: req.query.status,
+      candidateId: req.query.candidateId,
+      interviewerId: req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined),
+      jobId: req.query.jobId,
+      page: req.query.page,
+      limit: req.query.limit,
+    };
+    
+    const { data } = await cache.getRoundsList(orgId, filters);
+    res.json({ success: true, ...data });
+  })
+);
+
+// ── GET single round ──
+router.get(
+  '/:roundId',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { data } = await cache.getRound(req.params.roundId);
+    if (!data) return res.status(404).json({ success: false, error: 'Round not found' });
+    res.json({ success: true, data });
+  })
+);
+
+// ── CREATE round ──
+router.post(
+  '/',
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  asyncHandler(async (req, res) => {
+    const { applicationId, interviewerIds, scheduledStart, mode } = req.body;
     if (!applicationId || !interviewerIds || !scheduledStart || !mode) {
       throw new ApiError(400, "Missing required fields");
     }
 
-    const appDoc = await firestore.collection("applications").doc(applicationId).get();
-    if (!appDoc.exists) throw new ApiError(404, "Application not found");
-
-    const interviewData = {
-      applicationId,
-      interviewerIds,
-      scheduledStart,
-      scheduledEnd: scheduledEnd || null,
-      mode,
-      roundNo: parseInt(roundNo) || 1,
-      round: round || `Round ${roundNo || 1}`,
-      meetingLink: meetingLink || "",
-      zohoLink: zohoLink || "",
+    const orgId = req.user.organizationId || "defaultOrg";
+    const roundData = {
+      ...req.body,
+      roundNo: parseInt(req.body.roundNo) || 1,
+      round: req.body.round || `Round ${req.body.roundNo || 1}`,
+      meetingLink: req.body.meetingLink || "",
+      zohoLink: req.body.zohoLink || "",
       createdById: req.user.id,
       createdAt: new Date().toISOString(),
       status: "SCHEDULED"
     };
 
-    const docRef = await firestore.collection("interviews").add(interviewData);
-
-    // Invalidate cached interview lists so all users see the new interview
-    const { invalidatePattern } = require("../../utils/cache");
-    await invalidatePattern('interviews_list_');
-
+    const result = await cache.createRound(roundData, orgId, req.user.id);
+    
     await logAudit({
       actorUserId: req.user.id,
       action: "SCHEDULE_INTERVIEW",
       entityType: "INTERVIEW",
-      entityId: docRef.id,
-      newData: interviewData,
+      entityId: result.tempId,
+      newData: roundData,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    broadcast({ type: "INTERVIEW_UPDATED", data: { id: docRef.id, ...interviewData } });
-
-    res.status(201).json({ success: true, data: { id: docRef.id, ...interviewData } });
-  }),
+    res.status(201).json(result);
+  })
 );
 
+// ── POST submit feedback ──
 router.post(
-  "/:id/feedback",
+  '/:roundId/feedback',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   offerLetterUpload.single("offerFile"),
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const { roundId } = req.params;
     const {
       technicalRating,
       communicationRating,
@@ -270,113 +203,80 @@ router.post(
       recommendation,
     } = req.body;
 
-    const interviewRef = firestore.collection("interviews").doc(id);
-    const interviewDoc = await interviewRef.get();
-    if (!interviewDoc.exists) throw new ApiError(404, "Interview not found");
+    const { data: current } = await cache.getRound(roundId);
+    if (!current) throw new ApiError(404, "Round not found");
 
-    // Check if feedback already exists for this interview
-    const existingFeedback = await firestore.collection("interviewFeedbacks")
-      .where("interviewId", "==", id)
-      .limit(1)
-      .get();
-    
-    if (!existingFeedback.empty) {
-      throw new ApiError(400, "Feedback has already been submitted for this interview round.");
-    }
-
-    const feedbackData = {
-      interviewId: id,
-      submittedById: req.user.id,
-      technicalRating: parseInt(technicalRating) || 0,
-      communicationRating: parseInt(communicationRating) || 0,
-      cultureFitRating: parseInt(cultureFitRating) || 0,
-      strengths: strengths || "",
-      weaknesses: weaknesses || req.body.concerns || "",
-      overallComments: overallComments || "",
+    const feedbackEntry = {
+      id: `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      submittedBy: req.user.id,
+      submittedAt: new Date().toISOString(),
+      ratings: {
+        technical: parseInt(technicalRating) || 0,
+        communication: parseInt(communicationRating) || 0,
+        culture: parseInt(cultureFitRating) || 0,
+      },
       recommendation: recommendation || "PENDING",
-      createdAt: new Date().toISOString()
+      strengths: strengths || "",
+      concerns: weaknesses || req.body.concerns || "",
+      notes: overallComments || "",
     };
 
     if (req.file) {
-      feedbackData.offerFileUrl = req.file.path;
-      feedbackData.offerFileName = req.file.originalname;
+      feedbackEntry.offerFileUrl = req.file.path;
+      feedbackEntry.offerFileName = req.file.originalname;
     }
 
-    const feedbackRef = await firestore.collection("interviewFeedbacks").add(feedbackData);
-
-    const updateData = { 
+    const currentFeedbacks = current.feedback || current.feedbacks || [];
+    const updatePayload = {
       status: "COMPLETED",
-      result: recommendation,
+      result: recommendation || "PENDING",
+      feedback: [...currentFeedbacks, feedbackEntry],
+      outcome: recommendation || "PENDING",
+      outcomeSetAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    if (req.file) updateData.offerLetterUrl = req.file.path;
 
-    await interviewRef.update(updateData);
-
-    // SYNC: Update Application and Candidate status based on recommendation
-    const interviewDataRaw = interviewDoc.data();
-    if (interviewDataRaw.applicationId) {
-      const appRef = firestore.collection("applications").doc(interviewDataRaw.applicationId);
-      const appDoc = await appRef.get();
-      
-      if (appDoc.exists) {
-        const appData = appDoc.data();
-        let newStatus = appData.status;
-        let candidateStatus = "ACTIVE";
-
-        if (recommendation === "REJECTED") {
-          newStatus = "REJECTED";
-          candidateStatus = "REJECTED";
-        } else if (recommendation === "SELECTED" || recommendation === "OFFER_SENT" || recommendation === "OFFER_LETTER") {
-          newStatus = "OFFER_SENT";
-          candidateStatus = "OFFER_SENT";
-        } else if (recommendation === "JOINED") {
-          newStatus = "JOINED";
-          candidateStatus = "JOINED";
-        }
-
-        // Update Application
-        await appRef.update({ status: newStatus, updatedAt: new Date().toISOString() });
-
-        // Update Candidate global status
-        if (appData.candidateId) {
-          await firestore.collection("candidates").doc(appData.candidateId).update({
-            status: candidateStatus,
-            updatedAt: new Date().toISOString()
-          });
-        }
-      }
+    if (req.file) {
+      updatePayload.offerLetterUrl = req.file.path;
     }
+
+    const result = await cache.writeRound(
+      roundId,
+      updatePayload,
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
 
     await logAudit({
       actorUserId: req.user.id,
       action: "SUBMIT_INTERVIEW_FEEDBACK",
       entityType: "INTERVIEW_FEEDBACK",
-      entityId: feedbackRef.id,
-      newData: feedbackData,
+      entityId: feedbackEntry.id,
+      newData: feedbackEntry,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    broadcast({ type: 'INTERVIEW_FEEDBACK_SUBMITTED', interviewId: id, recommendation });
+    // Also broadcast the specific legacy event
+    const { broadcastNamedEvent } = require('../../utils/sse');
+    broadcastNamedEvent('INTERVIEW_FEEDBACK_SUBMITTED', { interviewId: roundId, recommendation });
 
-    res.status(201).json({ success: true, data: { id: feedbackRef.id, ...feedbackData } });
-  }),
+    res.status(201).json({ success: true, data: feedbackEntry });
+  })
 );
 
+// ── POST upload recording ──
 router.post(
-  "/:id/recording",
+  '/:id/recording',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     if (!req.file) throw new ApiError(400, "Recording file is required");
 
-    const interviewRef = firestore.collection("interviews").doc(id);
-    const interviewDoc = await interviewRef.get();
-    if (!interviewDoc.exists) throw new ApiError(404, "Interview not found");
+    const { data: current } = await cache.getRound(id);
+    if (!current) throw new ApiError(404, "Interview not found");
 
-    // Use memory buffer for Firebase Storage
     const { uploadFileToFirebase } = require("../../config/firebase");
     const folder = "interview-recordings";
     const fileName = `interview_${id}_${Date.now()}_${req.file.originalname}`;
@@ -392,13 +292,19 @@ router.post(
       createdAt: new Date().toISOString()
     };
 
+    // We can write fileMeta directly to Firestore since it's a side meta table
     const fileRef = await firestore.collection("fileMetas").add(fileMeta);
 
-    await interviewRef.update({
-      voiceRecordingFileId: fileRef.id,
-      voiceRecordingUrl: fileUrl,
-      updatedAt: new Date().toISOString()
-    });
+    const result = await cache.writeRound(
+      id,
+      {
+        voiceRecordingFileId: fileRef.id,
+        voiceRecordingUrl: fileUrl,
+        updatedAt: new Date().toISOString()
+      },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
 
     await logAudit({
       actorUserId: req.user.id,
@@ -411,37 +317,41 @@ router.post(
     });
 
     res.json({ success: true, data: { fileId: fileRef.id, url: fileUrl } });
-  }),
+  })
 );
 
+// ── DELETE round ──
 router.delete(
-  "/:id",
+  '/:roundId',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const interviewRef = firestore.collection("interviews").doc(id);
-    const doc = await interviewRef.get();
-    if (!doc.exists) throw new ApiError(404, "Interview not found");
+    const { roundId } = req.params;
+    const { data: current } = await cache.getRound(roundId, true);
+    if (!current) throw new ApiError(404, "Interview not found");
 
-    const existing = doc.data();
-    await interviewRef.delete();
+    const result = await cache.deleteRound(
+      roundId,
+      req.user.organizationId || "defaultOrg",
+      req.user.id
+    );
 
     await logAudit({
       actorUserId: req.user.id,
       action: "DELETE_INTERVIEW",
       entityType: "INTERVIEW",
-      entityId: id,
-      oldData: existing,
+      entityId: roundId,
+      oldData: current,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     res.json({ success: true, message: "Interview deleted successfully" });
-  }),
+  })
 );
 
+// ── PATCH panel members (Legacy Panelists update) ──
 router.patch(
-  "/:id/panelists",
+  '/:id/panelists',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -451,65 +361,56 @@ router.patch(
       throw new ApiError(400, "interviewerIds (array) is required");
     }
 
-    const interviewRef = firestore.collection("interviews").doc(id);
-    const doc = await interviewRef.get();
-    if (!doc.exists) throw new ApiError(404, "Interview not found");
+    const { data: current } = await cache.getRound(id);
+    if (!current) throw new ApiError(404, "Interview not found");
 
-    const oldData = doc.data();
-    await interviewRef.update({
-      interviewerIds,
-      updatedAt: new Date().toISOString()
-    });
+    await cache.writeRound(
+      id,
+      {
+        interviewerIds,
+        updatedAt: new Date().toISOString()
+      },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
 
     await logAudit({
       actorUserId: req.user.id,
       action: "TRANSFER_INTERVIEW_PANELISTS",
       entityType: "INTERVIEW",
       entityId: id,
-      oldData: { interviewerIds: oldData.interviewerIds },
+      oldData: { interviewerIds: current.interviewerIds },
       newData: { interviewerIds },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    broadcast({ type: 'INTERVIEW_PANELISTS_UPDATED', interviewId: id, interviewerIds });
+    const { broadcastNamedEvent } = require('../../utils/sse');
+    broadcastNamedEvent('INTERVIEW_PANELISTS_UPDATED', { interviewId: id, interviewerIds });
 
     res.json({ success: true, message: "Panelists transferred successfully" });
-  }),
-);
-
-// EDIT INTERVIEW ROUTES
-router.get(
-  "/:roundId",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
-  asyncHandler(async (req, res) => {
-    const { roundId } = req.params;
-    const doc = await firestore.collection("interviews").doc(roundId).get();
-    if (!doc.exists) throw new ApiError(404, "Interview not found");
-    res.json({ success: true, data: { id: doc.id, ...doc.data() } });
   })
 );
 
+// ── PUT update round ──
 router.put(
-  "/:roundId",
+  '/:roundId',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const data = req.body;
     
-    const interviewRef = firestore.collection("interviews").doc(roundId);
-    const doc = await interviewRef.get();
-    if (!doc.exists) throw new ApiError(404, "Interview not found");
-    const oldData = doc.data();
+    const { data: current } = await cache.getRound(roundId);
+    if (!current) throw new ApiError(404, "Interview not found");
 
     const isSuperAdmin = req.user.role === "SUPER_ADMIN";
 
     if (!isSuperAdmin) {
-      if (new Date(data.scheduledStart) < new Date() && data.scheduledStart !== oldData.scheduledStart) {
+      if (new Date(data.scheduledStart) < new Date() && data.scheduledStart !== current.scheduledStart) {
         throw new ApiError(400, "Interview date must not be in the past");
       }
-      if (oldData.status === "COMPLETED" || oldData.status === "CANCELLED") {
-        throw new ApiError(400, `Cannot edit interview in ${oldData.status} status`);
+      if (current.status === "COMPLETED" || current.status === "CANCELLED") {
+        throw new ApiError(400, `Cannot edit interview in ${current.status} status`);
       }
     }
 
@@ -530,13 +431,13 @@ router.put(
       throw new ApiError(400, "Duration must be between 15 and 480 minutes");
     }
 
-    let status = oldData.status;
-    let rescheduleHistory = oldData.rescheduleHistory || [];
+    let status = current.status;
+    let rescheduleHistory = current.rescheduleHistory || [];
 
-    if (data.scheduledStart !== oldData.scheduledStart && oldData.status === "SCHEDULED") {
+    if (data.scheduledStart !== current.scheduledStart && current.status === "SCHEDULED") {
       status = "RESCHEDULED";
       rescheduleHistory.push({
-        previousDate: oldData.scheduledStart,
+        previousDate: current.scheduledStart,
         newDate: data.scheduledStart,
         reason: data.rescheduleReason || "No reason provided",
         rescheduledBy: req.user.id,
@@ -551,39 +452,55 @@ router.put(
       updatedAt: new Date().toISOString()
     };
 
-    await interviewRef.update(updateData);
+    const result = await cache.writeRound(
+      roundId,
+      updateData,
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
 
-    const updatedDoc = await interviewRef.get();
-    const updatedPayload = { id: updatedDoc.id, ...updatedDoc.data() };
-
-    broadcast({ type: "INTERVIEW_UPDATED", data: updatedPayload });
-
-    // Dummy Notification Trigger (You would inject your notification logic here)
-    if (data.scheduledStart !== oldData.scheduledStart || data.mode !== oldData.mode) {
+    if (data.scheduledStart !== current.scheduledStart || data.mode !== current.mode) {
       data.interviewerIds.forEach(id => {
         sendNotification(id, "Interview Updated", `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`);
       });
     }
 
-    res.json({ success: true, data: updatedPayload });
+    res.json({ success: true, data: result.data });
   })
 );
 
+// ── PATCH status ──
 router.patch(
-  "/:roundId/reschedule",
+  '/:roundId/status',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { status, notes } = req.body;
+    if (!status) return res.status(400).json({ success: false, error: 'status is required' });
+    
+    const result = await cache.writeRound(
+      req.params.roundId,
+      { status, statusNotes: notes, statusUpdatedAt: new Date().toISOString() },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json(result);
+  })
+);
+
+// ── PATCH reschedule ──
+router.patch(
+  '/:roundId/reschedule',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { scheduledStart, mode, rescheduleReason } = req.body;
 
-    const interviewRef = firestore.collection("interviews").doc(roundId);
-    const doc = await interviewRef.get();
-    if (!doc.exists) throw new ApiError(404, "Interview not found");
-    const oldData = doc.data();
+    const { data: current } = await cache.getRound(roundId);
+    if (!current) throw new ApiError(404, "Interview not found");
 
-    let rescheduleHistory = oldData.rescheduleHistory || [];
+    let rescheduleHistory = current.rescheduleHistory || [];
     rescheduleHistory.push({
-      previousDate: oldData.scheduledStart,
+      previousDate: current.scheduledStart,
       newDate: scheduledStart,
       reason: rescheduleReason || "No reason provided",
       rescheduledBy: req.user.id,
@@ -598,17 +515,38 @@ router.patch(
       updatedAt: new Date().toISOString()
     };
 
-    await interviewRef.update(updateData);
-    
-    const updatedDoc = await interviewRef.get();
-    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
+    const result = await cache.writeRound(
+      roundId,
+      updateData,
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
 
-    res.json({ success: true, data: updateData });
+    res.json({ success: true, data: result.data });
   })
 );
 
+// ── PATCH meet-link ──
 router.patch(
-  "/:roundId/panel",
+  '/:roundId/meet-link',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { meetLink } = req.body;
+    
+    const result = await cache.writeRound(
+      roundId,
+      { meetingLink: meetLink, updatedAt: new Date().toISOString() },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json(result);
+  })
+);
+
+// ── PATCH panel ──
+router.patch(
+  '/:roundId/panel',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
@@ -618,43 +556,80 @@ router.patch(
       throw new ApiError(400, "Panel members array must contain at least one member");
     }
 
-    const interviewRef = firestore.collection("interviews").doc(roundId);
-    await interviewRef.update({ interviewerIds, updatedAt: new Date().toISOString() });
-
-    const updatedDoc = await interviewRef.get();
-    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
-
-    res.json({ success: true, data: { interviewerIds } });
+    const result = await cache.writeRound(
+      roundId,
+      { interviewerIds, updatedAt: new Date().toISOString() },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json(result);
   })
 );
 
+// ── PATCH transfer ──
 router.patch(
-  "/:roundId/cancel",
+  '/:roundId/transfer',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
-    const interviewRef = firestore.collection("interviews").doc(roundId);
-    await interviewRef.update({ status: "CANCELLED", updatedAt: new Date().toISOString() });
-
-    const updatedDoc = await interviewRef.get();
-    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
-
-    res.json({ success: true });
+    const { toJobId, toJobTitle, reason } = req.body;
+    
+    const { data: current } = await cache.getRound(roundId);
+    if (!current) throw new ApiError(404, "Round not found");
+    
+    const result = await cache.writeRound(
+      roundId,
+      {
+        jobId: toJobId,
+        jobTitle: toJobTitle,
+        transferHistory: [
+          ...(current.transferHistory || []),
+          {
+            fromJobId: current.jobId || "",
+            toJobId,
+            reason,
+            transferredBy: req.user.id,
+            transferredAt: new Date().toISOString(),
+          }
+        ],
+        updatedAt: new Date().toISOString()
+      },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json(result);
   })
 );
 
+// ── PATCH cancel ──
 router.patch(
-  "/:roundId/complete",
+  '/:roundId/cancel',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
-    const interviewRef = firestore.collection("interviews").doc(roundId);
-    await interviewRef.update({ status: "COMPLETED", updatedAt: new Date().toISOString() });
+    const result = await cache.writeRound(
+      roundId,
+      { status: "CANCELLED", updatedAt: new Date().toISOString() },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json({ success: true, data: result.data });
+  })
+);
 
-    const updatedDoc = await interviewRef.get();
-    broadcast({ type: "INTERVIEW_UPDATED", data: { id: updatedDoc.id, ...updatedDoc.data() } });
-
-    res.json({ success: true });
+// ── PATCH complete ──
+router.patch(
+  '/:roundId/complete',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const result = await cache.writeRound(
+      roundId,
+      { status: "COMPLETED", updatedAt: new Date().toISOString() },
+      req.user.id,
+      req.user.organizationId || "defaultOrg"
+    );
+    res.json({ success: true, data: result.data });
   })
 );
 

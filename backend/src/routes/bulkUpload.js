@@ -143,21 +143,55 @@ router.post(
     jobsData.set(jobId, { id: jobId, state: "active", progress: 0, result: null });
     
     // Process asynchronously
+    let lastEmitAt = 0;
     runBulkImport(
       sessionData, 
       columnMapping, 
       req.user.id, 
       req.user.organizationId || "defaultOrg",
-      (progress) => {
+      (progress, stats) => {
         const job = jobsData.get(jobId);
-        if (job) job.progress = progress;
+        if (job) {
+          job.progress = progress;
+          job.stats = stats;
+        }
+        const now = Date.now();
+        const processed = stats.imported + stats.skipped + stats.failed;
+        if (processed % 25 === 0 || processed === stats.total || (now - lastEmitAt > 800)) {
+          lastEmitAt = now;
+          const sse = require('../utils/sse');
+          sse.broadcastToOrg(sessionData.organizationId, 'BULK_IMPORT_PROGRESS', {
+            jobId,
+            processed,
+            total: stats.total,
+            percent: progress,
+            imported: stats.imported,
+            failed: stats.failed,
+            skipped: stats.skipped,
+          });
+        }
       }
-    ).then((result) => {
+    ).then(async (result) => {
       const job = jobsData.get(jobId);
       if (job) {
         job.state = "completed";
         job.result = result;
       }
+
+      // Invalidate candidate list cache after bulk import
+      const inv = require('../utils/cacheInvalidation');
+      await inv.candidateList(sessionData.organizationId);
+
+      // Broadcast completion
+      const sse = require('../utils/sse');
+      sse.broadcastToOrg(sessionData.organizationId, 'BULK_IMPORT_COMPLETE', {
+        jobId,
+        total: result.total,
+        imported: result.imported,
+        failed: result.failed,
+        skipped: result.skipped,
+        hasErrors: result.failed > 0,
+      });
     }).catch((err) => {
       const job = jobsData.get(jobId);
       if (job) {

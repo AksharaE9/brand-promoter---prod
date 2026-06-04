@@ -115,6 +115,16 @@ router.put("/profile", asyncHandler(async (req, res) => {
     userAgent: req.headers["user-agent"]
   });
 
+  const orgId = req.user.organizationId || DEFAULT_ORG_ID;
+  const inv = require("../../utils/cacheInvalidation");
+  await inv.user(orgId, req.user.id);
+
+  const sse = require("../../utils/sse");
+  sse.sendToUser(req.user.id, 'PROFILE_UPDATED', {
+    userId: req.user.id,
+    changes: changedFields,
+  });
+
   res.json({ success: true, data: { id: req.user.id, ...after } });
 }));
 
@@ -210,6 +220,15 @@ router.put("/organization", requireRoles("SUPER_ADMIN"), asyncHandler(async (req
     userAgent: req.headers["user-agent"]
   });
 
+  const inv = require("../../utils/cacheInvalidation");
+  await inv.settings(orgId);
+
+  const sse = require("../../utils/sse");
+  sse.broadcastToOrg(orgId, 'ORG_SETTINGS_UPDATED', {
+    changes: changedFields,
+    updatedBy: req.user.id,
+  });
+
   res.json({ success: true, data: updatePayload });
 }));
 
@@ -273,6 +292,14 @@ router.put("/contact", requireRoles("SUPER_ADMIN"), asyncHandler(async (req, res
     },
     ipAddress: req.ip,
     userAgent: req.headers["user-agent"]
+  });
+
+  const inv = require("../../utils/cacheInvalidation");
+  await inv.settings(orgId);
+
+  const sse = require("../../utils/sse");
+  sse.broadcastToOrg(orgId, 'ORG_CONTACT_UPDATED', {
+    updatedBy: req.user.id,
   });
 
   res.json({ success: true, data: updatedContact });

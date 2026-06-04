@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch, apiDelete } from '../lib/api';
+import { apiGet, apiDelete } from '../lib/api';
 import { getStoredToken, API_BASE_URL } from '../lib/api';
 
 async function customRequest(path, options = {}) {
@@ -33,9 +33,10 @@ async function customRequest(path, options = {}) {
 
   if (!response.ok) {
     const message = data?.message || `Request failed (${response.status})`;
-    const error = new Error(message);
-    error.status = response.status;
-    error.response = { data };
+    const error = Object.assign(new Error(message), {
+      status: response.status,
+      response: { data }
+    });
     throw error;
   }
 

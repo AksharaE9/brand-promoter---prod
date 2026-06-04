@@ -143,11 +143,12 @@ async function run() {
     return `mock-id-for-${name.replace(/\s+/g, "")}`;
   }
 
-  // Load excel sheet
   const excelFilePath = "d:/ats new/interview_schedule_converted.xlsx";
   console.log(`Reading Excel file: ${excelFilePath}`);
   const wb = XLSX.readFile(excelFilePath);
-  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const firstSheetName = wb.SheetNames.at(0);
+  const sheetsMap = new Map(Object.entries(wb.Sheets));
+  const sheet = sheetsMap.get(firstSheetName);
   const rows = XLSX.utils.sheet_to_json(sheet);
   console.log(`Found ${rows.length} rows to process.\n`);
 
@@ -155,8 +156,7 @@ async function run() {
   const scheduledInterviews = [];
   let successfulSchedulesCount = 0;
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
+  for (const [i, row] of rows.entries()) {
     const rowIndex = i + 2; // Row number in Excel file (2-indexed)
     const candidateName = row["Candidate Name"] || "Unknown";
     const candidateEmail = row["Candidate Email"] || "";
@@ -309,6 +309,17 @@ async function run() {
 
   if (liveMode) {
     console.log(`\n🎉 Successfully scheduled ${successfulSchedulesCount} interviews in the database!`);
+    try {
+      const redis = require("../src/utils/redisClient");
+      const keys = await redis.keys("scheduling:rounds:list:*");
+      if (keys.length > 0) {
+        await redis.del(...keys);
+        console.log(`[Redis] Invalidated ${keys.length} list cache keys.`);
+      }
+      await redis.quit();
+    } catch (redisErr) {
+      console.error("[Redis] Failed to invalidate cache keys:", redisErr.message);
+    }
   }
 }
 

@@ -18,6 +18,7 @@ const dashboardRoutes = require("./modules/dashboard/routes");
 const collegeDriveRoutes = require("./modules/college-drives/routes");
 const auditRoutes = require("./modules/audit/routes");
 const notificationRoutes = require("./modules/notifications/routes");
+const { worker: syncWorker, scheduleSyncJob } = require("./jobs/schedulingSyncWorker");
 const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { createRateLimiter, setSecurityHeaders } = require("./middleware/security");
@@ -89,11 +90,26 @@ app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
 app.use(createRateLimiter({ max: 500, message: "Too many API requests. Please retry shortly." })); // Increased for higher concurrency
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
+  const redis = require('./utils/redisClient');
+  const sse = require('./utils/sse');
+  
+  let redisHealthy = false;
+  try {
+    redisHealthy = await redis.isHealthy();
+  } catch { /* ignore */ }
+
   res.json({
     success: true,
     message: "ATS Backend is running",
     timestamp: new Date().toISOString(),
+    services: {
+      redis: {
+        healthy: redisHealthy,
+        ...redis.getConnectionInfo(),
+      },
+      sse: sse.getStats(),
+    },
   });
 });
 
@@ -101,7 +117,7 @@ app.get("/api/health", (req, res) => {
 app.use((req, res, next) => {
   if (req.method === "GET" && req.path.startsWith("/api/")) {
     // Skip caching for auth, SSE streams, and health
-    const noCachePaths = ["/api/auth/", "/api/health", "/api/notifications/stream"];
+    const noCachePaths = ["/api/auth/", "/api/health", "/api/notifications/stream", "/api/sse/stream"];
     const shouldNoCache = noCachePaths.some(p => req.path.includes(p));
 
     // Dynamic data — no browser cache
@@ -123,6 +139,7 @@ app.use((req, res, next) => {
 app.use("/api/auth", createRateLimiter({ max: 20, message: "Too many authentication attempts. Please wait." }));
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/sse", require("./routes/sse"));
 app.use("/api/team", require("./modules/team/routes"));
 app.use("/api/settings", require("./modules/settings/routes"));
 app.use("/api/files", require("./modules/files/routes"));
@@ -151,6 +168,31 @@ async function bootstrap() {
     server.listen(PORT, () => {
       console.log(`[ATS-STABILIZED-V3.0] Server is running on port ${PORT}`);
     });
+
+    // Start the scheduling sync job
+    scheduleSyncJob().catch(err => {
+      console.error('[SchedulingSync] Failed to schedule sync job:', err);
+    });
+
+    // Pre-warm critical cache keys (non-blocking)
+    const { warmCaches } = require('./utils/cacheWarmer');
+    warmCaches().catch(err => {
+      console.error('[CacheWarmer] Warm-up failed:', err.message);
+    });
+
+    // Handle graceful shutdown
+    const shutdown = async () => {
+      console.log('[Server] Shutting down, closing sync worker...');
+      try {
+        await syncWorker.close();
+        console.log('[Server] Sync worker closed successfully.');
+      } catch (err) {
+        console.error('[Server] Error closing sync worker:', err);
+      }
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 
     // ── Performance: Keep-alive optimization ─────────────────
     server.keepAliveTimeout = 65000;   // prevents premature TCP close
