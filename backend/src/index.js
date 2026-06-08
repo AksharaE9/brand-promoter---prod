@@ -10,6 +10,7 @@ const sse = require("./utils/sse");
 const { warmCaches } = require("./utils/cacheWarmer");
 const { getCacheMetrics } = require("./utils/cache");
 const { auth, requireRoles } = require("./middleware/auth");
+const { checkIndexes } = require("./scripts/checkFirestoreIndexes");
 
 const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/users/routes");
@@ -114,23 +115,72 @@ app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
 app.get("/api/health", async (req, res) => {
-  let redisHealthy = false;
-  try {
-    redisHealthy = await redis.isHealthy();
-  } catch { /* ignore */ }
-
-  res.json({
-    success: true,
-    message: "ATS Backend is running",
+  const { db: firestore } = require('./config/firebase');
+  const health = {
+    status:    'ok',
     timestamp: new Date().toISOString(),
-    services: {
-      redis: {
-        healthy: redisHealthy,
-        ...redis.getConnectionInfo(),
-      },
-      sse: sse.getStats(),
-    },
-  });
+    uptime:    process.uptime(),
+    layers:    {}
+  };
+
+  // Redis health
+  try {
+    const pingStart = Date.now();
+    await redis.ping();
+    health.layers.redis = {
+      status:    'ok',
+      latencyMs: Date.now() - pingStart,
+      ...redis.getConnectionInfo(),
+    };
+  } catch (err) {
+    health.layers.redis   = { status: 'degraded', error: err.message };
+    health.status         = 'degraded';
+  }
+
+  // Cache metrics
+  const { getCacheMetrics } = require('./utils/cache');
+  health.layers.cache = getCacheMetrics();
+
+  // Dirty queue status
+  try {
+    const [dirtyCount, deadCount] = await Promise.all([
+      redis.hlen('scheduling:dirty:queue'),
+      redis.scard('scheduling:dead-letter:queue'),
+    ]);
+    health.layers.syncQueue = {
+      status:          deadCount > 0 ? 'warning' : 'ok',
+      pendingSync:     dirtyCount,
+      deadLettered:    deadCount,
+      warning:         deadCount > 0 ? `${deadCount} rounds in dead letter queue` : null,
+    };
+    if (deadCount > 0) health.status = 'degraded';
+  } catch (err) {
+    health.layers.syncQueue = { status: 'unknown', error: err.message };
+  }
+
+  // SSE connections
+  health.layers.sse = sse.getStats();
+
+  // Firestore connectivity
+  try {
+    const fsStart = Date.now();
+    await firestore.collection('_health').doc('ping').set({
+      timestamp: new Date().toISOString()
+    });
+    health.layers.firestore = {
+      status:    'ok',
+      latencyMs: Date.now() - fsStart,
+    };
+  } catch (err) {
+    health.layers.firestore = { status: 'error', error: err.message };
+    health.status           = 'error';
+  }
+
+  const httpStatus = health.status === 'error' ? 503
+    : health.status === 'degraded' ? 207
+    : 200;
+
+  res.status(httpStatus).json({ success: health.status === 'ok', data: health });
 });
 
 // Cache Metrics Monitoring Endpoint (GET /api/health/cache — admin only)
@@ -180,6 +230,13 @@ async function bootstrap() {
 
     server.listen(PORT, () => {
       console.log(`[ATS-STABILIZED-V3.0] Server is running on port ${PORT}`);
+      checkIndexes().then(results => {
+        if (results.building.length === 0 && results.failed.length === 0) {
+          console.log('[IndexCheck] All Firestore indexes confirmed ready ✓');
+        }
+      }).catch(err => {
+        console.error('[IndexCheck] Index check script failed:', err.message);
+      });
     });
 
     // Start the scheduling sync job (only if not on Vercel)

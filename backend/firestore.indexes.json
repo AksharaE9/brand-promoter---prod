@@ -23,10 +23,10 @@
       "collectionGroup": "candidates",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "organizationId",    "order": "ASCENDING" },
-        { "fieldPath": "isDeleted",         "order": "ASCENDING" },
-        { "fieldPath": "currentStageId",    "order": "ASCENDING" },
-        { "fieldPath": "createdAt",         "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "currentStage",   "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
     {
@@ -50,6 +50,16 @@
       ]
     },
     {
+      "collectionGroup": "candidates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "source",         "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "applications",
       "queryScope": "COLLECTION",
       "fields": [
@@ -69,13 +79,32 @@
       ]
     },
     {
+      "collectionGroup": "applications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "jobId",          "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "interviews",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "organizationId", "order": "ASCENDING" },
         { "fieldPath": "isDeleted",      "order": "ASCENDING" },
-        { "fieldPath": "scheduledStart", "order": "ASCENDING" },
-        { "fieldPath": "status",         "order": "ASCENDING" }
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "interviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" },
+        { "fieldPath": "scheduledStart", "order": "ASCENDING" }
       ]
     },
     {
@@ -96,10 +125,20 @@
       ]
     },
     {
+      "collectionGroup": "interviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "jobId",          "order": "ASCENDING" },
+        { "fieldPath": "scheduledStart", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notifications",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "userId",    "order": "ASCENDING" },
+        { "fieldPath": "isDeleted", "order": "ASCENDING" },
         { "fieldPath": "isRead",    "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
@@ -118,7 +157,16 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "organizationId", "order": "ASCENDING" },
-        { "fieldPath": "actorUserId",     "order": "ASCENDING" },
+        { "fieldPath": "actorUserId",    "order": "ASCENDING" },
+        { "fieldPath": "createdAt",      "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "auditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "entityType",     "order": "ASCENDING" },
         { "fieldPath": "createdAt",      "order": "DESCENDING" }
       ]
     },
@@ -141,12 +189,12 @@
       ]
     },
     {
-      "collectionGroup": "dailyLogs",
+      "collectionGroup": "collegeDrives",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "projectId",  "order": "ASCENDING" },
-        { "fieldPath": "createdBy",  "order": "ASCENDING" },
-        { "fieldPath": "date",       "order": "DESCENDING" }
+        { "fieldPath": "organizationId", "order": "ASCENDING" },
+        { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "dateFrom",       "order": "DESCENDING" }
       ]
     },
     {
@@ -155,6 +203,7 @@
       "fields": [
         { "fieldPath": "organizationId", "order": "ASCENDING" },
         { "fieldPath": "isDeleted",      "order": "ASCENDING" },
+        { "fieldPath": "status",         "order": "ASCENDING" },
         { "fieldPath": "dateFrom",       "order": "DESCENDING" }
       ]
     }

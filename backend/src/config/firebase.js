@@ -6,14 +6,28 @@ const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
 
+// ── Validate required env vars on startup ──
+const REQUIRED_ENV = [
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_API_KEY',
+  'FIREBASE_AUTH_DOMAIN',
+  'FIREBASE_STORAGE_BUCKET',
+];
+const missing = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missing.length > 0) {
+  throw new Error(
+    `[Firebase] Missing required environment variables: ${missing.join(', ')}\n` +
+    `Ensure your .env file is configured correctly.`
+  );
+}
+
 const firebaseConfig = {
-  apiKey: "AIzaSyCTNbY9aRSzsEMIOWXQOEoqZP3xote1fN4",
-  authDomain: "ats-5acc5.firebaseapp.com",
-  databaseURL: "https://ats-5acc5-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "ats-5acc5",
-  storageBucket: "ats-5acc5.firebasestorage.app",
-  messagingSenderId: "272298077380",
-  appId: "1:272298077380:web:597e95106877a764be2d91",
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${process.env.FIREBASE_PROJECT_ID}-default-rtdb.asia-southeast1.firebasedatabase.app`,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  appId: process.env.FIREBASE_APP_ID,
 };
 
 let db;
@@ -24,8 +38,16 @@ let serviceAccount = null;
 const serviceAccountPath = path.join(__dirname, "serviceAccountKey.json");
 if (fs.existsSync(serviceAccountPath)) {
   serviceAccount = require(serviceAccountPath);
+} else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  try { serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON); } catch (e) {}
 } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  try { serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) {}
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT.startsWith('{')) {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+      serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT);
+    }
+  } catch (e) {}
 }
 
 // Always initialize Web App for fallback and Bridge

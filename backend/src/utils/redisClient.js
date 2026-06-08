@@ -1,67 +1,79 @@
 'use strict';
 const Redis = require('ioredis');
 
-const sharedConfig = {
-  enableOfflineQueue:     false,  // Fail fast when disconnected to avoid hanging HTTP requests
-  connectTimeout:         2000,   // 2 seconds connect timeout
-  commandTimeout:         500,    // 500ms command timeout for fast fallback
-  keepAlive:              30000,
-  lazyConnect:            false,
-  enableReadyCheck:       true,
-  maxRetriesPerRequest:   1,      // Limit command retries to avoid latency spikes
-  retryStrategy: (times) => {
-    if (times > 3) {
-      console.error('[Redis] Too many connection failures, disabling retries');
-      return null;
+function createClient(name, overrides = {}) {
+  const baseConfig = {
+    ...(process.env.REDIS_URL
+      ? {}
+      : {
+          host:     process.env.REDIS_HOST     || '127.0.0.1',
+          port: parseInt(process.env.REDIS_PORT) || 6379,
+          password: process.env.REDIS_PASSWORD  || undefined,
+        }
+    ),
+    tls:                process.env.REDIS_TLS === 'true' ? {} : undefined,
+    enableOfflineQueue: false,   // fail fast when Redis is down
+    connectTimeout:     2000,    // 2s to establish connection
+    commandTimeout:     500,     // 500ms per command — strict
+    maxRetriesPerRequest: 1,     // retry once then fail
+    retryStrategy: (times) => {
+      if (times > 5) return null; // give up after 5 retries
+      return Math.min(times * 300, 2000);
+    },
+    reconnectOnError: (err) => {
+      const targets = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
+      return targets.some(t => err.message.includes(t)) ? 1 : false;
+    },
+    keepAlive:        15000,
+    enableReadyCheck: true,
+    lazyConnect:      false,
+    ...overrides,
+  };
+
+  const url = process.env.REDIS_URL;
+  const config = url ? { ...baseConfig, lazyConnect: false } : baseConfig;
+  const client = url ? new Redis(url, config) : new Redis(config);
+
+  client.on('connect',      () => console.log(`[Redis:${name}] Connected`));
+  client.on('ready',        () => console.log(`[Redis:${name}] Ready`));
+  client.on('error',        e  => {
+    // Only log once per error type to avoid log flooding during Redis outage
+    if (!client._lastErrorMsg || client._lastErrorMsg !== e.message) {
+      console.error(`[Redis:${name}] Error:`, e.message);
+      client._lastErrorMsg = e.message;
     }
-    return Math.min(times * 300, 2000);
-  },
-  reconnectOnError: (err) => {
-    const targets = ['READONLY','ECONNRESET','ETIMEDOUT','ENOTFOUND'];
-    return targets.some(t => err.message.includes(t)) ? 1 : false;
-  },
-};
+  });
+  client.on('reconnecting', () => console.warn(`[Redis:${name}] Reconnecting`));
+  client.on('close',        () => console.warn(`[Redis:${name}] Connection closed`));
 
-const redisUrl = process.env.REDIS_URL;
-
-// Primary client for reads, writes, pipelines
-const client = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
-  host:                   process.env.REDIS_HOST     || '127.0.0.1',
-  port:               parseInt(process.env.REDIS_PORT) || 6379,
-  password:               process.env.REDIS_PASSWORD || undefined,
-  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
-  ...sharedConfig
-});
-
-// Subscriber client ONLY for SSE or pub/sub — never share with regular commands
-// because a subscribed client cannot run other commands
-const subscriberClient = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
-  host:                   process.env.REDIS_HOST     || '127.0.0.1',
-  port:               parseInt(process.env.REDIS_PORT) || 6379,
-  password:               process.env.REDIS_PASSWORD || undefined,
-  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
-  ...sharedConfig
-});
-
-client.on('connect',      () => console.log('[Redis:primary] Connected'));
-client.on('ready',        () => console.log('[Redis:primary] Ready'));
-client.on('error',        e  => console.error('[Redis:primary] Error:', e.message));
-client.on('reconnecting', () => console.warn('[Redis:primary] Reconnecting'));
-
-subscriberClient.on('connect', () => console.log('[Redis:subscriber] Connected'));
-subscriberClient.on('error',   e  => console.error('[Redis:subscriber] Error:', e.message));
-
-// Warmup — verify connection before server accepts traffic
-async function warmup() {
-  const result = await client.ping();
-  if (result !== 'PONG') throw new Error('Redis warmup failed');
-  console.log('[Redis] Warmup OK');
+  return client;
 }
 
-// Keep health methods on client for compatibility
+// Primary client — strict 500ms timeout for all regular commands
+const primaryClient = createClient('primary');
+
+// Pipeline client — relaxed 5s timeout for batch write operations
+const pipelineClient = createClient('pipeline', {
+  commandTimeout: 5000,  // 5s for pipeline operations
+  maxRetriesPerRequest: 2,
+});
+
+// Subscriber client — no command timeout (stays open for pub/sub)
+const subscriberClient = createClient('subscriber', {
+  commandTimeout: 0,     // 0 = no timeout for subscription connections
+  enableOfflineQueue: true, // subscriber must queue to survive reconnects
+});
+
+async function warmup() {
+  const result = await primaryClient.ping();
+  if (result !== 'PONG') throw new Error('[Redis] Warmup ping failed');
+  console.log('[Redis] Warmup OK — primary, pipeline, and subscriber clients ready');
+}
+
+// Support connection health info
 async function isHealthy() {
   try {
-    const result = await client.ping();
+    const result = await primaryClient.ping();
     return result === 'PONG';
   } catch {
     return false;
@@ -70,14 +82,15 @@ async function isHealthy() {
 
 function getConnectionInfo() {
   return {
-    status: client.status || 'unknown',
-    isReady: client.status === 'ready',
+    status: primaryClient.status || 'unknown',
+    isReady: primaryClient.status === 'ready',
   };
 }
 
-client.isHealthy = isHealthy;
-client.getConnectionInfo = getConnectionInfo;
+primaryClient.isHealthy = isHealthy;
+primaryClient.getConnectionInfo = getConnectionInfo;
 
-module.exports = client;
+module.exports = primaryClient;
+module.exports.pipeline = pipelineClient;
 module.exports.subscriber = subscriberClient;
 module.exports.warmup = warmup;

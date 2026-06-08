@@ -147,11 +147,54 @@ const worker = new Worker(
         return { synced: 0 };
       }
       
-      console.log(`[SchedulingSync] Syncing ${dirtyItems.length} dirty rounds to Firebase`);
+      // Check retry counts — move items exceeding MAX_RETRIES to dead letter queue
+      const retryKeys = dirtyItems.map(item => `scheduling:retry:count:${item.roundId}`);
+      const retryCounts = retryKeys.length > 0 ? await redis.mget(...retryKeys) : [];
+      
+      const toSync = [];
+      const toDeadLetter = [];
+      const MAX_RETRIES = 3;
+      
+      dirtyItems.forEach((item, idx) => {
+        const count = parseInt(retryCounts[idx] || '0', 10);
+        if (count >= MAX_RETRIES) {
+          toDeadLetter.push(item);
+        } else {
+          toSync.push(item);
+        }
+      });
+      
+      // Move failing items to dead letter queue
+      if (toDeadLetter.length > 0) {
+        const dlPipeline = redis.pipeline();
+        for (const item of toDeadLetter) {
+          const cachedData = await redis.get(KEYS.round(item.roundId));
+          const dlEntry = JSON.stringify({
+            roundId: item.roundId,
+            orgId: item.orgId,
+            data: cachedData ? JSON.parse(cachedData) : null,
+            failedAt: new Date().toISOString(),
+            retries: MAX_RETRIES,
+          });
+          dlPipeline.sadd('scheduling:dead-letter:queue', dlEntry);
+          dlPipeline.del(`scheduling:retry:count:${item.roundId}`);
+        }
+        await dlPipeline.exec();
+        
+        // Remove from dirty queue
+        await removeFromDirtyQueue(toDeadLetter.map(item => item.raw));
+        console.error(`[SchedulingSync] Moved ${toDeadLetter.length} rounds to dead letter queue after ${MAX_RETRIES} failures`);
+      }
+      
+      if (toSync.length === 0) {
+        return { synced: 0, deadLettered: toDeadLetter.length };
+      }
+      
+      console.log(`[SchedulingSync] Syncing ${toSync.length} dirty rounds to Firebase`);
       
       // 2. Fetch all dirty rounds from Redis in parallel
       const roundData = await Promise.all(
-        dirtyItems.map(async item => {
+        toSync.map(async item => {
           const { data } = await getRound(item.roundId, true);
           return { ...item, roundData: data };
         })
@@ -246,55 +289,76 @@ const worker = new Worker(
           batchItems.push(item);
         }
         
-        // Commit the Firestore batch
-        await firestoreBatch.commit();
-        totalSynced += batchItems.length;
-        
-        // Update Redis entries for temp ID → real ID mappings
-        await Promise.all(
-          Object.entries(tempToRealIdMap).map(async ([tempId, realId]) => {
-            const cachedData = await redis.get(KEYS.round(tempId));
-            if (cachedData) {
-              const parsed = JSON.parse(cachedData);
-              parsed.id = realId;
-              parsed._pendingSync = false;
-              parsed._isNew = false;
-              // Store under real ID
-              await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
-              // Remove temp ID key
-              await redis.del(KEYS.round(tempId));
-            }
-          })
-        );
-        
-        // Mark as no longer pending sync in Redis
-        await Promise.all(
-          batchItems.map(async item => {
-            const realId = tempToRealIdMap[item.roundId] || item.roundId;
-            const cachedData = await redis.get(KEYS.round(realId));
-            if (cachedData) {
-              const parsed = JSON.parse(cachedData);
-              parsed._pendingSync = false;
-              parsed._isNew = false;
-              await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
-            }
-          })
-        );
-        
-        syncedRawKeys.push(...batchItems.map(i => i.raw));
+        try {
+          // Commit the Firestore batch
+          await firestoreBatch.commit();
+          totalSynced += batchItems.length;
+          
+          // Update Redis entries for temp ID → real ID mappings
+          await Promise.all(
+            Object.entries(tempToRealIdMap).map(async ([tempId, realId]) => {
+              const cachedData = await redis.get(KEYS.round(tempId));
+              if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                parsed.id = realId;
+                parsed._pendingSync = false;
+                parsed._isNew = false;
+                // Store under real ID
+                await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
+                // Remove temp ID key
+                await redis.del(KEYS.round(tempId));
+              }
+            })
+          );
+          
+          // Mark as no longer pending sync in Redis
+          await Promise.all(
+            batchItems.map(async item => {
+              const realId = tempToRealIdMap[item.roundId] || item.roundId;
+              const cachedData = await redis.get(KEYS.round(realId));
+              if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                parsed._pendingSync = false;
+                parsed._isNew = false;
+                await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
+              }
+            })
+          );
+          
+          syncedRawKeys.push(...batchItems.map(i => i.raw));
+          
+          // Clear retry counts on success
+          const successPipeline = redis.pipeline();
+          batchItems.forEach(item => {
+            successPipeline.del(`scheduling:retry:count:${item.roundId}`);
+          });
+          await successPipeline.exec();
+          
+        } catch (batchErr) {
+          console.error('[SchedulingSync] Firestore batch commit failed:', batchErr.message);
+          
+          // Increment retry counts for all items in this batch
+          const failPipeline = redis.pipeline();
+          batchItems.forEach(item => {
+            failPipeline.incr(`scheduling:retry:count:${item.roundId}`);
+            failPipeline.expire(`scheduling:retry:count:${item.roundId}`, 3600);
+          });
+          await failPipeline.exec();
+        }
       }
       
       // 4. Remove synced items from dirty queue
-      await removeFromDirtyQueue(syncedRawKeys);
+      if (syncedRawKeys.length > 0) {
+        await removeFromDirtyQueue(syncedRawKeys);
+      }
 
       // Clear Redis list caches for all involved organizations to guarantee fresh reads after sync
-      const uniqueOrgs = [...new Set(dirtyItems.map(i => i.orgId || "defaultOrg"))];
+      const uniqueOrgs = [...new Set(toSync.map(i => i.orgId || "defaultOrg"))];
       await Promise.all(uniqueOrgs.map(orgId => invalidateListCaches(orgId)));
       
       // 5. Broadcast sync completion via SSE
       if (totalSynced > 0) {
         const sse = require('../utils/sse');
-        const uniqueOrgs = [...new Set(dirtyItems.map(i => i.orgId || "defaultOrg"))];
         uniqueOrgs.forEach(orgId => {
           sse.broadcastToOrg(orgId, 'SCHEDULING_SYNC_COMPLETE', {
             synced: totalSynced,
@@ -309,13 +373,13 @@ const worker = new Worker(
       console.log(`[SchedulingSync] Synced ${totalSynced} rounds in ${duration}ms`);
       
       // Update last sync timestamp
-      if (dirtyItems.length > 0) {
-        const orgs = [...new Set(dirtyItems.map(i => i.orgId))];
+      if (toSync.length > 0) {
+        const orgs = [...new Set(toSync.map(i => i.orgId))];
         const syncTimestamp = new Date().toISOString();
         await Promise.all(orgs.map(orgId => redis.set(KEYS.lastSync(orgId), syncTimestamp)));
       }
       
-      return { synced: totalSynced, duration, tempIdMap: tempToRealIdMap };
+      return { synced: totalSynced, duration, tempIdMap: tempToRealIdMap, deadLettered: toDeadLetter.length };
       
     } finally {
       clearInterval(lockExtender);

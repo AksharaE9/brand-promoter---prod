@@ -650,4 +650,69 @@ router.patch(
   })
 );
 
+// GET /api/interviews/dead-letter — view dead letter queue (Admin Only)
+router.get(
+  '/dead-letter',
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const redis = require('../../utils/redisClient');
+    const members = await redis.smembers('scheduling:dead-letter:queue');
+    const items = members.map(m => { try { return JSON.parse(m); } catch { return null; } }).filter(Boolean);
+    res.json({ success: true, data: { count: items.length, items } });
+  })
+);
+
+// POST /api/interviews/dead-letter/:roundId/retry — retry a specific dead letter item (Admin Only)
+router.post(
+  '/dead-letter/:roundId/retry',
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const redis = require('../../utils/redisClient');
+    const { roundId } = req.params;
+    const members = await redis.smembers('scheduling:dead-letter:queue');
+
+    const rawTarget = members.find(m => {
+      try {
+        return JSON.parse(m).roundId === roundId;
+      } catch {
+        return false;
+      }
+    });
+
+    if (!rawTarget) {
+      return res.status(404).json({ success: false, error: 'Not found in dead letter queue' });
+    }
+
+    const target = JSON.parse(rawTarget);
+
+    // Re-add to dirty queue with reset retry count
+    const pipeline = redis.pipeline();
+    // Use the HSET-based dirty queue schema to match cache service
+    const dirtyValue = JSON.stringify({
+      roundId,
+      orgId: target.orgId,
+      isNew: roundId.startsWith('temp_'),
+      queuedAt: Date.now(),
+    });
+    pipeline.hset('scheduling:dirty:queue', `${target.orgId}:${roundId}`, dirtyValue);
+    pipeline.setex(`scheduling:round:${roundId}`, 7200, JSON.stringify(target.data));
+    pipeline.del(`scheduling:retry:count:${roundId}`);
+    pipeline.srem('scheduling:dead-letter:queue', rawTarget);
+    await pipeline.exec();
+
+    res.json({ success: true, message: `Round ${roundId} requeued for sync` });
+  })
+);
+
+// DELETE /api/interviews/dead-letter/clear — clear entire dead letter queue (Admin Only)
+router.delete(
+  '/dead-letter/clear',
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const redis = require('../../utils/redisClient');
+    await redis.del('scheduling:dead-letter:queue');
+    res.json({ success: true, message: 'Dead letter queue cleared' });
+  })
+);
+
 module.exports = router;

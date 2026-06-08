@@ -1,5 +1,6 @@
 'use strict';
 const redis = require('./redisClient');
+const redisPipeline = require('./redisClient').pipeline;
 const zlib = require('zlib');
 const { promisify } = require('util');
 
@@ -10,13 +11,38 @@ const DEFAULT_TTL = 60;
 const COMPRESS_THRESHOLD = 1024; // compress values over 1KB
 const COMPRESSED_PREFIX  = 'gz:';
 
+// All Redis errors that indicate the connection is down or command was rejected
+const REDIS_DOWN_CODES = new Set([
+  'NR_CLOSED',        // connection closed
+  'ECONNREFUSED',     // connection refused
+  'ECONNRESET',       // connection reset
+  'ETIMEDOUT',        // connection timed out
+  'REDIS_OFFLINE',    // enableOfflineQueue: false fires this
+  'ERR_REDIS_CLOSED', // ioredis closed state
+]);
+
+function isRedisUnavailable(err) {
+  if (!err) return false;
+  return (
+    REDIS_DOWN_CODES.has(err.code) ||
+    REDIS_DOWN_CODES.has(err.name) ||
+    err.message?.includes('Command timed out') ||
+    err.message?.includes('Queue is full') ||
+    err.message?.includes('Connection is closed') ||
+    err.message?.includes('enableOfflineQueue') ||
+    err.message?.includes('OFFLINE')
+  );
+}
+
 // ── Metrics tracking ──
 const metrics = {
-  hits:   0,
-  misses: 0,
-  errors: 0,
-  sets:   0,
-  dels:   0,
+  hits:            0,
+  misses:          0,
+  errors:          0,
+  sets:            0,
+  dels:            0,
+  redisDownErrors: 0,
+  timeoutErrors:   0,
 };
 
 // ── Core operations ──
@@ -40,7 +66,15 @@ async function getCache(key) {
     return JSON.parse(json);
   } catch (err) {
     metrics.errors++;
-    console.error('[Cache] getCache error:', key, err.message);
+    if (isRedisUnavailable(err)) {
+      metrics.redisDownErrors++;
+      return null; // Silent fallback
+    }
+    if (err.message?.includes('timed out')) {
+      metrics.timeoutErrors++;
+      return null; // Silent fallback
+    }
+    console.error('[Cache] Unexpected getCache error:', key, err.message);
     return null;
   }
 }
@@ -48,8 +82,6 @@ async function getCache(key) {
 async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
   try {
     if (data === null || data === undefined) return;
-    metrics.sets++;
-
     const json = JSON.stringify(data);
     let value;
 
@@ -61,22 +93,26 @@ async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
     }
 
     await redis.setex(key, ttlSeconds, value);
+    metrics.sets++;
   } catch (err) {
     metrics.errors++;
-    console.error('[Cache] setCache error:', key, err.message);
+    if (!isRedisUnavailable(err)) {
+      console.error('[Cache] Unexpected setCache error:', key, err.message);
+    }
   }
 }
 
 async function deleteCache(key) {
   try {
-    metrics.dels++;
     await redis.del(key);
+    metrics.dels++;
   } catch (err) {
     metrics.errors++;
-    console.error('[Cache] deleteCache error:', key, err.message);
+    if (!isRedisUnavailable(err)) {
+      console.error('[Cache] Unexpected deleteCache error:', key, err.message);
+    }
   }
 }
-
 
 async function deleteCachePattern(pattern) {
   try {
@@ -96,13 +132,15 @@ async function deleteCachePattern(pattern) {
     for (let i = 0; i < toDelete.length; i += 100) {
       const batch = toDelete.slice(i, i + 100);
       metrics.dels += batch.length;
-      const pipeline = redis.pipeline();
-      batch.forEach(k => pipeline.del(k));
-      await pipeline.exec();
+      const pl = redisPipeline.pipeline();
+      batch.forEach(k => pl.del(k));
+      await pl.exec();
     }
   } catch (err) {
     metrics.errors++;
-    console.error('[Cache] deleteCachePattern error:', pattern, err.message);
+    if (!isRedisUnavailable(err)) {
+      console.error('[Cache] deleteCachePattern error:', pattern, err.message);
+    }
   }
 }
 
@@ -117,19 +155,26 @@ function cacheKey(...parts) {
   return parts.filter(Boolean).join(':');
 }
 
-// ── Pipeline batch set ──
+// ── Pipeline batch set using the dedicated pipelineClient ──
 async function setCacheMany(entries, ttlSeconds = DEFAULT_TTL) {
   try {
-    const pipeline = redis.pipeline();
+    const pl = redisPipeline.pipeline();
     entries.forEach(({ key, data }) => {
       metrics.sets++;
-      pipeline.setex(key, ttlSeconds, JSON.stringify(data));
+      pl.setex(key, ttlSeconds, JSON.stringify(data));
     });
-    await pipeline.exec();
+    await pl.exec();
   } catch (err) {
     metrics.errors++;
-    console.error('[Cache] setCacheMany error:', err.message);
+    if (!isRedisUnavailable(err)) {
+      console.error('[Cache] setCacheMany error:', err.message);
+    }
   }
+}
+
+// Alternate name for pipeline batch set (used in Part 3.1 instructions)
+async function pipelineSet(entries, ttlSeconds = DEFAULT_TTL) {
+  return setCacheMany(entries, ttlSeconds);
 }
 
 // ── Health check ──
@@ -145,7 +190,13 @@ async function pingCache() {
 function getCacheMetrics() {
   const total = metrics.hits + metrics.misses;
   const hitRate = total > 0 ? ((metrics.hits / total) * 100).toFixed(1) : '0.0';
-  return { ...metrics, total, hitRate: `${hitRate}%` };
+  return { 
+    ...metrics, 
+    total, 
+    hitRate: `${hitRate}%`,
+    redisHealthy: metrics.redisDownErrors === 0,
+    degradedMode: metrics.redisDownErrors > 0
+  };
 }
 
 // ── TTL constants ──
@@ -173,6 +224,7 @@ const TTL = {
   ROUND:         7200,   // 2 hours — rounds stay warm
   ROUND_DETAIL:  7200,
   DIRTY:         3600,   // 1 hour — dirty queue entries
+  ENTITY:         600,   // 10 minutes - entity cache
 };
 
 // ── Backward-compatible API ──
@@ -199,13 +251,23 @@ async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
   const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
 
   try {
-    const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
+    let lockAcquired = false;
+    try {
+      lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
+    } catch (lockErr) {
+      if (isRedisUnavailable(lockErr)) {
+        return await fetcher(); // Redis down — fetch directly without lock
+      }
+      throw lockErr;
+    }
 
     if (lockAcquired) {
       try {
         const data = await fetcher();
         await setCache(key, data, ttlSec);
         return data;
+      } catch (idFetchError) {
+        throw idFetchError;
       } finally {
         await redis.del(lockKey).catch(() => {});
       }
@@ -263,8 +325,9 @@ async function invalidateOrgAnalyticsAndReports(orgId) {
 
 module.exports = {
   getCache, setCache, deleteCache, deleteCachePattern,
-  deleteManyPatterns, cacheKey, setCacheMany, pingCache, TTL,
+  deleteManyPatterns, cacheKey, setCacheMany, pipelineSet, pingCache, TTL,
   getCacheMetrics,
+  isRedisUnavailable,
   // Backward-compatible API
   getCached,
   getCachedWithMutex,
