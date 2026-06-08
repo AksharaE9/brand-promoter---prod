@@ -657,7 +657,11 @@ router.get(
   "/categories",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("candidates").select("category").get();
+    const orgId = req.user.organizationId || "defaultOrg";
+    const snapshot = await firestore.collection("candidates")
+      .where("organizationId", "==", orgId)
+      .where("isDeleted", "==", false)
+      .select("category").get();
     const list = [...new Set(snapshot.docs.map(doc => doc.data().category).filter(Boolean))];
     res.json({ success: true, data: list });
   }),

@@ -157,7 +157,97 @@ if (!usingAdmin) {
       batch: () => db.batch()
     }),
     getAll: async (...docRefs) => {
-      return Promise.all(docRefs.map(ref => ref.get()));
+      if (!docRefs || docRefs.length === 0) return [];
+
+      const results = new Array(docRefs.length);
+      const collections = {};
+
+      docRefs.forEach((wrapper, index) => {
+        const rawRef = wrapper.ref || wrapper;
+        const pathSegments = rawRef.path.split('/');
+        const docId = pathSegments.pop();
+        const colPath = pathSegments.join('/');
+
+        if (!collections[colPath]) {
+          collections[colPath] = [];
+        }
+        collections[colPath].push({
+          index,
+          docId,
+          wrapper,
+          rawRef
+        });
+      });
+
+      const fetchPromises = Object.entries(collections).map(async ([colPath, items]) => {
+        const { documentId } = require("firebase/firestore");
+        const chunks = [];
+        for (let i = 0; i < items.length; i += 30) {
+          chunks.push(items.slice(i, i + 30));
+        }
+
+        await Promise.all(chunks.map(async (chunk) => {
+          const chunkIds = chunk.map(item => item.docId);
+          const colRef = collection(webDb, colPath);
+          const q = query(colRef, where(documentId(), "in", chunkIds));
+
+          try {
+            const querySnap = await getDocs(q);
+            const docsMap = {};
+            querySnap.docs.forEach(docSnap => {
+              docsMap[docSnap.id] = docSnap;
+            });
+
+            chunk.forEach(item => {
+              const docSnap = docsMap[item.docId];
+              if (docSnap) {
+                results[item.index] = {
+                  exists: true,
+                  id: item.docId,
+                  data: () => docSnap.data(),
+                  ref: item.rawRef
+                };
+              } else {
+                results[item.index] = {
+                  exists: false,
+                  id: item.docId,
+                  data: () => undefined,
+                  ref: item.rawRef
+                };
+              }
+            });
+          } catch (err) {
+            console.error(`[firebase-getAll] Query failed for ${colPath}:`, err.message);
+            await Promise.all(chunk.map(async (item) => {
+              try {
+                let s;
+                if (typeof item.wrapper.get === 'function') {
+                  s = await item.wrapper.get();
+                  results[item.index] = s;
+                } else {
+                  s = await getDoc(item.rawRef);
+                  results[item.index] = {
+                    exists: s.exists(),
+                    id: item.docId,
+                    data: () => s.data(),
+                    ref: item.rawRef
+                  };
+                }
+              } catch (singleErr) {
+                results[item.index] = {
+                  exists: false,
+                  id: item.docId,
+                  data: () => undefined,
+                  ref: item.rawRef
+                };
+              }
+            }));
+          }
+        }));
+      });
+
+      await Promise.all(fetchPromises);
+      return results;
     }
   };
 

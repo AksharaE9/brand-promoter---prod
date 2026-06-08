@@ -99,7 +99,21 @@ async function getPipelineStages() {
   }
 }
 
+async function getOrgAnalyticsData(orgId) {
+  const start = new Date(0);
+  const end = new Date("2100-01-01T00:00:00.000Z");
+  const data = await loadAnalyticsBase(orgId, start, end);
+  return {
+    candidates: data.candidates,
+    interviews: data.interviews,
+    applications: data.applications,
+    apps: data.applications, // alias for reports/routes destructuring compatibility
+    users: data.users
+  };
+}
+
 module.exports = {
   loadAnalyticsBase,
   getPipelineStages,
+  getOrgAnalyticsData,
 };
