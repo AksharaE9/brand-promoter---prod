@@ -440,17 +440,16 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-    const cursor = req.query.cursor?.trim();
-    const page = Number(req.query.page) || 1;
-    const offset = (page - 1) * limit;
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
+    const cursor = req.query.cursor?.trim(); // last doc ID for cursor-based load-more
     const search = req.query.search?.trim()?.toLowerCase();
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${page}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
+    // Cache key includes cursor so each "page" is separately cached
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}`;
 
     const fields = [
       'fullName', 'email', 'phone', 'status', 'currentStage',
@@ -461,26 +460,55 @@ router.get(
     ];
 
     const data = await getCached(cacheKeyStr, async () => {
+      // For search: always in-memory full scan (fast, correct)
+      if (search) {
+        let baseQuery = firestore.collection("candidates")
+          .where("organizationId", "==", orgId)
+          .where("isDeleted", "==", false)
+          .select(...fields);
+        if (status) baseQuery = baseQuery.where("status", "==", status);
+        if (category) baseQuery = baseQuery.where("category", "==", category);
+        if (assignedToMe) baseQuery = baseQuery.where("mentorId", "==", req.user.id);
+
+        let items = [];
+        try {
+          const snap = await baseQuery.orderBy("createdAt", "desc").limit(2000).get();
+          items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch {
+          // Index missing fallback
+          const snap = await firestore.collection("candidates")
+            .where("organizationId", "==", orgId)
+            .where("isDeleted", "==", false)
+            .select(...fields)
+            .limit(2000).get();
+          items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (status) items = items.filter(c => c.status === status);
+          if (category) items = items.filter(c => c.category === category);
+          if (assignedToMe) items = items.filter(c => c.mentorId === req.user.id);
+          items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        }
+
+        // Search filter
+        items = items.filter(c =>
+          (c.fullName && c.fullName.toLowerCase().includes(search)) ||
+          (c.email && c.email.toLowerCase().includes(search)) ||
+          (c.phone && c.phone.includes(search))
+        );
+
+        const total = items.length;
+        await populateCandidateRelations(items);
+        return { items, nextCursor: null, hasMore: false, total };
+      }
+
+      // Normal cursor-based pagination
       let query = firestore.collection("candidates")
         .where("organizationId", "==", orgId)
         .where("isDeleted", "==", false)
         .select(...fields);
 
-      let useCursorPagination = true;
-
-      if (status) {
-        query = query.where("status", "==", status);
-      }
-      if (category) {
-        query = query.where("category", "==", category);
-      }
-      if (assignedToMe) {
-        query = query.where("mentorId", "==", req.user.id);
-      }
-
-      if (search) {
-        useCursorPagination = false;
-      }
+      if (status) query = query.where("status", "==", status);
+      if (category) query = query.where("category", "==", category);
+      if (assignedToMe) query = query.where("mentorId", "==", req.user.id);
 
       let paginatedItems = [];
       let total = 0;
@@ -488,100 +516,68 @@ router.get(
       let hasMore = false;
 
       try {
-        if (useCursorPagination) {
-          let q = query.orderBy("createdAt", "desc");
+        let q = query.orderBy("createdAt", "desc");
 
-          // Try count query first
-          try {
-            const countSnap = await q.count().get();
-            total = countSnap.data().count;
-          } catch (cntErr) {
-            console.warn('[Candidates] Count query failed:', cntErr.message);
-          }
+        // Count query for total
+        try {
+          const countSnap = await q.count().get();
+          total = countSnap.data().count;
+        } catch (cntErr) {
+          console.warn('[Candidates] Count query failed:', cntErr.message);
+        }
 
-          const snapshot = await q.offset(offset).limit(limit).get();
-          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          paginatedItems = items;
-
-          hasMore = offset + paginatedItems.length < total;
-          nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].id : null;
+        // Use cursor if provided (load more)
+        if (cursor) {
+          // Find the cursor doc index in a local window for Web SDK compat
+          const windowSnap = await q.limit(2000).get();
+          const allDocs = windowSnap.docs;
+          const cursorIdx = allDocs.findIndex(d => d.id === cursor);
+          const startIdx = cursorIdx === -1 ? 0 : cursorIdx + 1;
+          const sliced = allDocs.slice(startIdx, startIdx + limit);
+          paginatedItems = sliced.map(d => ({ id: d.id, ...d.data() }));
+          hasMore = startIdx + limit < allDocs.length;
+          nextCursor = hasMore && sliced[sliced.length - 1] ? sliced[sliced.length - 1].id : null;
+          if (total === 0) total = allDocs.length;
         } else {
-          // Search fallback
-          let q = query.orderBy("createdAt", "desc");
-          const poolSize = 1000;
-          const snapshot = await q.limit(poolSize).get();
-          let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-          if (search) {
-            items = items.filter(c =>
-              (c.fullName && c.fullName.toLowerCase().includes(search)) ||
-              (c.email && c.email.toLowerCase().includes(search)) ||
-              (c.phone && c.phone.includes(search))
-            );
-          }
-
-          total = items.length;
-          paginatedItems = items.slice(offset, offset + limit);
-          hasMore = offset + limit < items.length;
-          nextCursor = hasMore && paginatedItems[paginatedItems.length - 1] ? paginatedItems[paginatedItems.length - 1].id : null;
+          const snapshot = await q.limit(limit).get();
+          paginatedItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          hasMore = paginatedItems.length === limit && paginatedItems.length < total;
+          nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].id : null;
         }
       } catch (dbError) {
-        console.warn('[Candidates] Main query failed, using index-free fallback. Error:', dbError.message);
+        console.warn('[Candidates] Main query failed, index-free fallback. Error:', dbError.message);
 
-        // Fallback query matching only organizationId and isDeleted (simple index)
-        let fallbackQuery = firestore.collection("candidates")
+        const snap = await firestore.collection("candidates")
           .where("organizationId", "==", orgId)
           .where("isDeleted", "==", false)
-          .select(...fields);
+          .select(...fields)
+          .limit(5000).get();
+        let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        const poolSize = 5000;
-        const snapshot = await fallbackQuery.limit(poolSize).get();
-        let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (status) items = items.filter(c => c.status === status);
+        if (category) items = items.filter(c => c.category === category);
+        if (assignedToMe) items = items.filter(c => c.mentorId === req.user.id);
+        items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-        // 1. Status/Category/Mentor filter in memory
-        if (status) {
-          items = items.filter(c => c.status === status);
-        }
-        if (category) {
-          items = items.filter(c => c.category === category);
-        }
-        if (assignedToMe) {
-          items = items.filter(c => c.mentorId === req.user.id);
-        }
-
-        // 2. Search filter in memory
-        if (search) {
-          items = items.filter(c =>
-            (c.fullName && c.fullName.toLowerCase().includes(search)) ||
-            (c.email && c.email.toLowerCase().includes(search)) ||
-            (c.phone && c.phone.includes(search))
-          );
-        }
-
-        // 3. Sort by createdAt desc in memory
-        items.sort((a, b) => {
-          const ad = a.createdAt ? new Date(a.createdAt) : new Date(0);
-          const bd = b.createdAt ? new Date(b.createdAt) : new Date(0);
-          return bd - ad;
-        });
-
-        // 4. Pagination in memory
         total = items.length;
-        paginatedItems = items.slice(offset, offset + limit);
-        hasMore = offset + limit < items.length;
+        let startIdx = 0;
+        if (cursor) {
+          const idx = items.findIndex(c => c.id === cursor);
+          if (idx !== -1) startIdx = idx + 1;
+        }
+        paginatedItems = items.slice(startIdx, startIdx + limit);
+        hasMore = startIdx + limit < items.length;
         nextCursor = hasMore && paginatedItems[paginatedItems.length - 1] ? paginatedItems[paginatedItems.length - 1].id : null;
       }
 
       await populateCandidateRelations(paginatedItems);
-
       return { items: paginatedItems, nextCursor, hasMore, total };
-    }, 30000);
+    }, 20000); // 20s cache
 
     const pagination = {
-      total: data.total || data.items.length,
-      page: page,
-      limit: limit,
-      totalPages: Math.ceil((data.total || data.items.length) / limit) || 1
+      total: data.total || 0,
+      limit,
+      hasMore: data.hasMore
     };
 
     if (data.items && data.items.length > 30) {

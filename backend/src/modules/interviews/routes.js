@@ -133,11 +133,11 @@ router.get(
       candidateId: req.query.candidateId,
       interviewerId: req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined),
       jobId: req.query.jobId,
-      search: req.query.search,   // ← server-side search by candidate name / job title
-      page: req.query.page,
-      limit: req.query.limit,
+      search: req.query.search,
+      cursor: req.query.cursor,       // cursor-based load-more
+      limit: req.query.limit || 50,  // default 50 per page
     };
-    
+
     const { data } = await cache.getRoundsList(orgId, filters);
     res.json({ success: true, ...data });
   })

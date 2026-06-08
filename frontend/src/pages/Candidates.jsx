@@ -278,10 +278,12 @@ const Candidates = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
   const [roleFilter, setRoleFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
@@ -292,6 +294,7 @@ const Candidates = () => {
   const [creating, setCreating] = useState(false);
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
+  const loadMoreRef = useRef(null);
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role), [currentUser]);
@@ -307,7 +310,7 @@ const Candidates = () => {
       const res = await apiDelete('/candidates/all');
       if (res.success) {
         setBanner(`Deleted all candidates: ${res.message}`);
-        loadCandidates('', 'All', 1);
+        loadCandidates('', 'All');
       } else {
         setError(res.message || 'Failed to delete candidates');
       }
@@ -318,113 +321,94 @@ const Candidates = () => {
     }
   };
 
-  const loadCandidates = useCallback(async (query = '', stat = statusFilter, targetPage = 1, append = false, silent = false) => {
+  // Core fetch — reset=true clears list and cursor (new search/filter), reset=false appends
+  const fetchCandidates = useCallback(async ({ cursorParam = null, reset = false, stat, query } = {}) => {
+    const statFilter = stat !== undefined ? stat : statusFilter;
+    const searchQuery = query !== undefined ? query : debouncedSearch;
+
+    if (reset) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+
     try {
-      if (!append && !silent) setLoading(true);
-      const searchParam = query.trim() ? `&search=${encodeURIComponent(query.trim())}` : '';
-      const statParam = stat && stat !== 'All' ? `&status=${encodeURIComponent(stat)}` : '';
-      const res = await apiGet(`/candidates?limit=24&page=${targetPage}${searchParam}${statParam}`);
+      const params = new URLSearchParams({ limit: '24' });
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      if (statFilter && statFilter !== 'All') params.set('status', statFilter);
+      if (cursorParam) params.set('cursor', cursorParam);
+
+      const res = await apiGet(`/candidates?${params.toString()}`);
       const newData = res.data || [];
-      setItems(prev => {
-        if (append) return [...prev, ...newData];
-        // Prevent unnecessary full re-renders on silent polling by comparing deep equality
-        if (silent && JSON.stringify(prev) === JSON.stringify(newData)) {
-          return prev;
-        }
-        return newData;
-      });
-      if (res.pagination) {
-        setTotalPages(res.pagination.totalPages || 1);
-        setPage(res.pagination.page || 1);
-      }
+
+      setItems(prev => (reset ? newData : [...prev, ...newData]));
+      setNextCursor(res.nextCursor || null);
+      setHasMore(res.hasMore || false);
+      setTotalCount(res.pagination?.total || 0);
     } catch (err) {
-      console.error(err);
+      console.error('[Candidates] fetch error:', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, debouncedSearch]);
 
+  // Reset and reload when search or filter changes
+  const loadCandidates = useCallback((query, stat) => {
+    setNextCursor(null);
+    setHasMore(false);
+    fetchCandidates({ reset: true, stat, query });
+  }, [fetchCandidates]);
+
+  // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(timer);
   }, [search]);
 
+  // Sync status from URL param
   useEffect(() => {
     setStatusFilter(statusParam || 'All');
   }, [statusParam]);
 
+  // Reset role/location filter on status change
   useEffect(() => {
     setRoleFilter('All');
     setLocationFilter('All');
   }, [statusFilter]);
 
+  // Load jobs once for filter dropdowns
   useEffect(() => {
     const loadJobs = async () => {
       try {
         const res = await apiGet('/jobs?limit=100');
-        if (res && res.success && res.data) {
-          setGlobalJobs(res.data);
-        }
+        if (res && res.success && res.data) setGlobalJobs(res.data);
       } catch (err) {
-        console.error("Failed to load global jobs:", err);
+        console.error('Failed to load global jobs:', err);
       }
     };
     loadJobs();
   }, []);
 
+  // Initial load + reload when search/filter changes
   useEffect(() => {
-    loadCandidates(debouncedSearch, statusFilter);
-  }, [debouncedSearch, statusFilter, loadCandidates]);
+    fetchCandidates({ reset: true, stat: statusFilter, query: debouncedSearch });
+  }, [debouncedSearch, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Smart polling — replaces SSE (SSE causes reconnect storms on Vercel serverless)
+  // Infinite scroll — IntersectionObserver on sentinel div
   useEffect(() => {
-    let pollTimer = null;
-
-    const poll = () => {
-      if (document.visibilityState === 'visible') {
-        loadCandidates(debouncedSearch, statusFilter, 1, false, true);
-      }
-    };
-
-    const startPolling = () => {
-      pollTimer = setInterval(poll, 30000); // 30s interval
-    };
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        poll(); // immediate refresh on tab focus
-        startPolling();
-      } else {
-        clearInterval(pollTimer); // pause when tab hidden
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    startPolling();
-
-    return () => {
-      clearInterval(pollTimer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [debouncedSearch, statusFilter, loadCandidates]);
-
-  // Infinite scroll
-  useEffect(() => {
+    if (!loadMoreRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !loading && page < totalPages) {
-          const nextPage = page + 1;
-          loadCandidates(debouncedSearch, statusFilter, nextPage, true);
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          fetchCandidates({ cursorParam: nextCursor, reset: false });
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1, rootMargin: '200px' }
     );
-    const trigger = document.getElementById('load-more-trigger');
-    if (trigger) observer.observe(trigger);
-    return () => {
-      if (trigger) observer.unobserve(trigger);
-    };
-  }, [loading, page, totalPages, debouncedSearch, statusFilter, loadCandidates]);
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, nextCursor, fetchCandidates]);
 
   const handleNavigate = useCallback((id) => navigate(`/candidate/${id}`), [navigate]);
   
@@ -452,7 +436,6 @@ const Candidates = () => {
     try {
       let res;
       if (action === 'join') {
-        // Use the new /join endpoint
         res = await fetch(`${API_BASE_URL}/applications/${applicationId}/join`, {
           method: 'POST',
           headers: {
@@ -488,13 +471,13 @@ const Candidates = () => {
         const errMsg = json.message || 'Failed to update status';
         if (res.status === 409) {
           // Already decided — sync with server
-          loadCandidates(debouncedSearch, statusFilter, 1, false, true);
+          loadCandidates(debouncedSearch, statusFilter);
         }
         throw new Error(errMsg);
       }
 
       setBanner(`Candidate marked as ${status}.`);
-      loadCandidates(debouncedSearch, statusFilter, 1, false, true);
+      loadCandidates(debouncedSearch, statusFilter);
       setTimeout(() => setBanner(''), 3000);
     } catch (err) {
       setError(err.message);
@@ -859,11 +842,13 @@ const Candidates = () => {
                 />
               ))}
             </div>
-            {page < totalPages && (
-              <div id="load-more-trigger" className="h-20 flex items-center justify-center mt-6 w-full col-span-full">
-                <Loader size="small" message="Loading more candidates..." />
-              </div>
-            )}
+            {/* Infinite scroll sentinel — always rendered so observer can watch it */}
+            <div ref={loadMoreRef} className="h-16 flex items-center justify-center mt-6 w-full">
+              {loadingMore && <Loader size="small" message="Loading more..." />}
+              {!hasMore && items.length > 0 && !loadingMore && (
+                <p className="text-xs text-slate-400 font-medium">All {totalCount > 0 ? totalCount : items.length} candidates loaded</p>
+              )}
+            </div>
           </>
         )}
       </PageEnter>
@@ -871,7 +856,7 @@ const Candidates = () => {
       <BulkUploadModal 
         isOpen={showBulkModal} 
         onClose={() => setShowBulkModal(false)} 
-        onImportComplete={() => loadCandidates(debouncedSearch, statusFilter, 1, false, true)} 
+        onImportComplete={() => loadCandidates(debouncedSearch, statusFilter)} 
       />
 
       {/* CREATE CANDIDATE MODAL */}

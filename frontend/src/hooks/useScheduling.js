@@ -13,13 +13,16 @@ export function useRoundsList(filters = {}) {
   return useQuery({
     queryKey: QUERY_KEYS.rounds(filters),
     queryFn: () => schedulingApi.getRounds(filters),
-    // Search results must always be fresh — no caching. Normal list: 30s stale time.
-    staleTime: isSearch ? 0 : 30_000,
-    gcTime: isSearch ? 0 : 5 * 60_000, // don't keep search results in memory
+    // Search results must always be fresh — no caching. Normal list: 60s stale time.
+    staleTime: isSearch ? 0 : 60_000,
+    gcTime: isSearch ? 0 : 5 * 60_000,
     refetchOnWindowFocus: false,
     select: (data) => {
-      // Direct array or data wrapper check
-      return data?.data ?? data ?? [];
+      // Backend now returns { data: [...], hasMore, nextCursor, pagination }
+      if (data && Array.isArray(data.data)) return data;
+      // Legacy: direct array
+      if (Array.isArray(data)) return { data, hasMore: false, nextCursor: null };
+      return { data: [], hasMore: false, nextCursor: null };
     },
   });
 }

@@ -12,6 +12,7 @@ import EditInterviewModal from '../components/Interview/EditInterviewModal';
 import { subscribeSSE } from '../lib/sse';
 
 import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
+import { schedulingApi } from '../services/schedulingApi';
 import SyncIndicator from '../components/Interview/SyncIndicator';
 import { useDebounce } from '../hooks/useDebounce';
 
@@ -92,7 +93,13 @@ const InterviewSchedule = () => {
   const shouldSubmitFeedback = searchParams.get('submitFeedback') === 'true';
   const [activeInterviewId, setActiveInterviewId] = useState('');
 
-  const { data: queryInterviews = [], isLoading: isQueryLoading, refetch: refetchInterviews } = useRoundsList();
+  // cursor-based load-more state
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [allInterviews, setAllInterviews] = useState([]);  // accumulates pages
+  const [serverHasMore, setServerHasMore] = useState(false);
+  const [serverNextCursor, setServerNextCursor] = useState(null);
+
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews } = useRoundsList();
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
   const rescheduleMutation = useRescheduleRound();
@@ -101,7 +108,16 @@ const InterviewSchedule = () => {
   const transferCandidateMutation = useTransferCandidate();
   const deleteRoundMutation = useDeleteRound();
 
-  const interviews = queryInterviews;
+  // When base query returns, seed allInterviews with first page
+  useEffect(() => {
+    if (!roundsResponse) return;
+    const firstPage = roundsResponse.data || [];
+    setAllInterviews(firstPage);
+    setServerHasMore(roundsResponse.hasMore || false);
+    setServerNextCursor(roundsResponse.nextCursor || null);
+  }, [roundsResponse]);
+
+  const interviews = allInterviews;
 
   const [applications, setApplications] = useState([]);
   const [candidates, setCandidates] = useState([]);
@@ -166,18 +182,25 @@ const InterviewSchedule = () => {
   const loadAll = useCallback(async () => {
     // Refresh the queries list
     refetchInterviews();
-    const interviewRows = queryInterviews;
+  }, [refetchInterviews]);
 
-    // Auto-select first candidate
-    const firstGroup = Array.from(
-      interviewRows.reduce((map, iv) => {
-        const cId = iv.application?.candidate?.id || iv.application?.candidateId;
-        if (cId && !map.has(cId)) map.set(cId, iv);
-        return map;
-      }, new Map()).values()
-    ).sort((a, b) => new Date(b.scheduledStart).getTime() - new Date(a.scheduledStart).getTime())[0];
-    setSelectedId(prev => prev || firstGroup?.applicationId || '');
-  }, [refetchInterviews, queryInterviews]);
+  // Load-more: fetch next page using cursor
+  const loadMoreInterviews = useCallback(async () => {
+    if (!serverHasMore || loadingMore || !serverNextCursor) return;
+    setLoadingMore(true);
+    try {
+      const res = await schedulingApi.getRounds({ cursor: serverNextCursor, limit: 50 });
+      const nextPage = res?.data || [];
+      setAllInterviews(prev => [...prev, ...nextPage]);
+      setServerHasMore(res?.hasMore || false);
+      setServerNextCursor(res?.nextCursor || null);
+    } catch (err) {
+      console.error('[InterviewSchedule] load-more error:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [serverHasMore, loadingMore, serverNextCursor]);
+
 
   const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
 
@@ -344,13 +367,15 @@ const InterviewSchedule = () => {
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
 
-  // ── Server-side search: re-fetch interviews when debounced search changes ──
-  const { data: searchedInterviews, isFetching: isSearching } = useRoundsList(
+  // ── Search: re-fetch from server when debounced search changes ──
+  const { data: searchResponse, isFetching: isSearching } = useRoundsList(
     debouncedSearch ? { search: debouncedSearch, ...(filterMine ? { interviewerId: currentUser?.id } : {}) } : {}
   );
+  const searchedInterviews = searchResponse?.data ?? [];
 
-  // The actual list to render: if searching, use searched results; otherwise use base list
-  const displayInterviews = debouncedSearch ? (searchedInterviews || []) : interviews;
+  // The actual list to render: if searching, use search results; otherwise use base accumulated list
+  const displayInterviews = debouncedSearch ? searchedInterviews : interviews;
+
 
   // ── groupedApplications: built purely from interviews data, no candidates limit ──
   const groupedApplications = useMemo(() => {
@@ -397,20 +422,27 @@ const InterviewSchedule = () => {
     setVisibleCount(30);
   }, [debouncedSearch, filterMine]);
 
-  // IntersectionObserver sentinel at the bottom of the list
+  // ── Infinite scroll: load more from server when near bottom ──
   useEffect(() => {
     if (!listEndRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) {
-          setVisibleCount(prev => prev + 30);
+          if (serverHasMore && !loadingMore) {
+            // Load next page from server
+            loadMoreInterviews();
+          } else if (!serverHasMore) {
+            // All server data loaded; just show more from local rendered slice
+            setVisibleCount(prev => prev + 30);
+          }
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1, rootMargin: '200px' }
     );
     observer.observe(listEndRef.current);
     return () => observer.disconnect();
-  }, [listEndRef.current]);
+  }, [listEndRef.current, serverHasMore, loadingMore, loadMoreInterviews]);
+
 
   // Visible slice for lazy rendering
   const visibleGroups = useMemo(

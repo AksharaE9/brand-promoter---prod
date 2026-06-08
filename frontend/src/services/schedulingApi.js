@@ -8,9 +8,9 @@ export const schedulingApi = {
         params.append(key, val);
       }
     });
+    if (!params.has('limit')) params.set('limit', '50'); // default 50 per page
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await api.get(`/interviews${qs}`);
-    // Support either { data: [...] } or direct array wrapper in backend response
     return res.data;
   },
   

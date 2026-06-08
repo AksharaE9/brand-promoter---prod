@@ -8,7 +8,7 @@ const inv = require('../utils/cacheInvalidation');
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 const ROUND_TTL = 60 * 60 * 2;        // 2 hours — rounds stay in cache
-const LIST_TTL = 60;                   // 60 seconds — list cache (was 5s, caused constant cold fetches)
+const LIST_TTL = 300;                  // 5 minutes — list cache (longer = fewer cold Firestore hits)
 const DIRTY_TTL = 60 * 60;             // 1 hour — dirty queue entries
 
 // ─────────────────────────────────────────────
@@ -65,7 +65,7 @@ async function getEntitiesCached(collectionName, ids) {
   return resultMap;
 }
 
-async function populateInterviews(rounds) {
+async function populateInterviews(rounds, { skipFeedbacks = false } = {}) {
   if (!rounds || rounds.length === 0) return [];
 
   // Gathers unique applicationIds and interviewerIds
@@ -86,78 +86,63 @@ async function populateInterviews(rounds) {
     getEntitiesCached("users", userIds),
   ]);
 
-  // Fetch feedbacks
-  const interviewIds = rounds.map(iv => iv.id).filter(Boolean);
+  // Feedbacks: skip in list view (only needed when opening a specific round detail)
   const feedbackMap = {};
   rounds.forEach(iv => { if (isSafeKey(iv.id)) feedbackMap[iv.id] = []; });
 
-  if (interviewIds.length > 0) {
-    let cachedFbs = [];
-    try {
-      const fbRedisKeys = interviewIds.map(id => `entity:feedbacks:${id}`);
-      cachedFbs = await redis.mget(...fbRedisKeys);
-    } catch (err) {
-      console.warn("[SchedulingCache] mget failed for feedbacks:", err.message);
-      cachedFbs = new Array(interviewIds.length).fill(null);
-    }
+  if (!skipFeedbacks) {
+    const interviewIds = rounds.map(iv => iv.id).filter(Boolean);
+    if (interviewIds.length > 0) {
+      let cachedFbs = [];
+      try {
+        const fbRedisKeys = interviewIds.map(id => `entity:feedbacks:${id}`);
+        cachedFbs = await redis.mget(...fbRedisKeys);
+      } catch (err) {
+        console.warn("[SchedulingCache] mget failed for feedbacks:", err.message);
+        cachedFbs = new Array(interviewIds.length).fill(null);
+      }
 
-    const missingIvIds = [];
-    cachedFbs.forEach((val, idx) => {
-      const ivId = interviewIds[idx];
-      if (val) {
-        try {
-          feedbackMap[ivId] = JSON.parse(val);
-        } catch (_) {
+      const missingIvIds = [];
+      cachedFbs.forEach((val, idx) => {
+        const ivId = interviewIds[idx];
+        if (val) {
+          try { feedbackMap[ivId] = JSON.parse(val); } catch (_) { missingIvIds.push(ivId); }
+        } else {
           missingIvIds.push(ivId);
         }
-      } else {
-        missingIvIds.push(ivId);
-      }
-    });
+      });
 
-    if (missingIvIds.length > 0) {
-      const chunks = [];
-      for (let i = 0; i < missingIvIds.length; i += 30) {
-        chunks.push(missingIvIds.slice(i, i + 30));
-      }
-      try {
-        const chunkSnaps = await Promise.all(
-          chunks.map(chunk =>
-            db.collection("interviewFeedbacks")
-              .where("interviewId", "in", chunk)
-              .get()
-          )
-        );
-
-        const fetchedMap = {};
-        missingIvIds.forEach(id => { if (isSafeKey(id)) fetchedMap[id] = []; });
-
-        chunkSnaps.forEach(snap => {
-          if (snap && snap.docs) {
-            snap.docs.forEach(doc => {
-              const data = doc.data();
-              if (data.interviewId && isSafeKey(data.interviewId) && fetchedMap[data.interviewId]) {
-                const subUser = (isSafeKey(data.submittedById) && userMap[data.submittedById]) || { fullName: "Interviewer" };
-                fetchedMap[data.interviewId].push({
-                  id: doc.id,
-                  ...data,
-                  submittedBy: subUser,
-                });
-              }
-            });
-          }
-        });
-
-        const pipeline = redis.pipeline();
-        Object.entries(fetchedMap).forEach(([ivId, fbs]) => {
-          if (isSafeKey(ivId)) {
-            feedbackMap[ivId] = fbs;
-            pipeline.setex(`entity:feedbacks:${ivId}`, 120, JSON.stringify(fbs)); // 2 min TTL
-          }
-        });
-        await pipeline.exec();
-      } catch (fbErr) {
-        console.error("[SchedulingCache] feedback fetch error:", fbErr.message);
+      if (missingIvIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < missingIvIds.length; i += 30) chunks.push(missingIvIds.slice(i, i + 30));
+        try {
+          const chunkSnaps = await Promise.all(
+            chunks.map(chunk => db.collection("interviewFeedbacks").where("interviewId", "in", chunk).get())
+          );
+          const fetchedMap = {};
+          missingIvIds.forEach(id => { if (isSafeKey(id)) fetchedMap[id] = []; });
+          chunkSnaps.forEach(snap => {
+            if (snap && snap.docs) {
+              snap.docs.forEach(doc => {
+                const data = doc.data();
+                if (data.interviewId && isSafeKey(data.interviewId) && fetchedMap[data.interviewId]) {
+                  const subUser = (isSafeKey(data.submittedById) && userMap[data.submittedById]) || { fullName: 'Interviewer' };
+                  fetchedMap[data.interviewId].push({ id: doc.id, ...data, submittedBy: subUser });
+                }
+              });
+            }
+          });
+          const pipeline = redis.pipeline();
+          Object.entries(fetchedMap).forEach(([ivId, fbs]) => {
+            if (isSafeKey(ivId)) {
+              feedbackMap[ivId] = fbs;
+              pipeline.setex(`entity:feedbacks:${ivId}`, 120, JSON.stringify(fbs));
+            }
+          });
+          await pipeline.exec();
+        } catch (fbErr) {
+          console.error('[SchedulingCache] feedback fetch error:', fbErr.message);
+        }
       }
     }
   }
@@ -265,109 +250,111 @@ async function getRound(roundId, includeDeleted = false) {
 async function getRoundsList(orgId, filters = {}) {
   const filterHash = hashFilters(filters);
   const cacheKey = KEYS.roundsList(orgId, filterHash);
-  
+  const isSearch = !!(filters.search && filters.search.trim());
+
+  // Pagination params: default 50, max 200
+  const limit = Math.min(200, parseInt(filters.limit, 10) || 50);
+  const cursor = filters.cursor?.trim(); // last doc ID for load-more
+
   try {
-    // 1. Try Redis list cache — skip cache entirely for search queries (must be fresh)
-    const isSearch = !!(filters.search && filters.search.trim());
-    let cached = null;
+    // 1. Try Redis list cache — skip cache for search (must be fresh)
     if (!isSearch) {
       try {
-        cached = await redis.get(cacheKey);
+        const cached = await redis.get(cacheKey);
+        if (cached) return { source: 'cache', data: JSON.parse(cached) };
       } catch (redisErr) {
-        console.warn('[SchedulingCache] Redis getRoundsList read failed, falling back to Firestore:', redisErr.message);
+        console.warn('[SchedulingCache] Redis getRoundsList read failed:', redisErr.message);
       }
     }
-    if (cached) {
-      return { source: 'cache', data: JSON.parse(cached) };
-    }
-    
-    // 2. Cache miss — build query
+
+    // 2. Build Firestore query — skip feedback fields in select (fetched lazily)
     let query = db.collection('interviews')
       .where('organizationId', '==', orgId)
       .where('isDeleted', '==', false)
       .select(
         'applicationId', 'interviewerIds', 'status', 'roundNo', 'round',
         'meetingLink', 'zohoLink', 'scheduledStart', 'scheduledEnd',
-        'createdAt', 'updatedAt', 'outcome', 'isDeleted', 'feedback', 'feedbacks',
-        'organizationId'
+        'createdAt', 'updatedAt', 'outcome', 'isDeleted', 'organizationId'
+        // NOTE: 'feedback'/'feedbacks' intentionally excluded from list — loaded on detail view
       );
-    
+
     if (filters.status) query = query.where('status', '==', filters.status);
     if (filters.candidateId) query = query.where('candidateId', '==', filters.candidateId);
-    if (filters.interviewerId) {
-      query = query.where('interviewerIds', 'array-contains', filters.interviewerId);
-    }
-    
+    if (filters.interviewerId) query = query.where('interviewerIds', 'array-contains', filters.interviewerId);
+
     let docs = [];
     try {
       const snap = await query.orderBy('scheduledStart', 'desc').get();
       docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
     } catch (err) {
-      // Fallback: fetch without orderBy, sort in memory
       const snap = await query.get();
       docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
       docs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
     }
-    
-    // 3. Merge with any dirty (pending sync) rounds from Redis
+
+    // 3. Merge dirty queue + filter deleted
     const merged = await mergeWithDirtyQueue(docs, orgId);
-    
-    // Filter out deleted rounds
-    const activeRounds = merged.filter(r => !r.isDeleted);
-    
-    // 4. Populate references
-    const populated = await populateInterviews(activeRounds);
+    let activeRounds = merged.filter(r => !r.isDeleted);
 
-    // Pre-warm individual round caches in Redis to speed up subsequent CRUD/detail operations
-    if (populated.length > 0) {
-      try {
-        const prewarmPipeline = redis.pipeline();
-        populated.forEach(r => {
-          if (isSafeKey(r.id)) {
-            prewarmPipeline.setex(KEYS.round(r.id), ROUND_TTL, JSON.stringify(r));
-          }
-        });
-        await prewarmPipeline.exec();
-      } catch (err) {
-        console.warn('[SchedulingCache] Pre-warm failed:', err.message);
-      }
-    }
-
-    // Apply jobId filter in-memory if requested
-    let finalData = populated;
+    // 4. In-memory filters
     if (filters.jobId) {
-      finalData = populated.filter(r => r.application && r.application.jobId === filters.jobId);
+      activeRounds = activeRounds.filter(r => r.applicationId && r.application?.jobId === filters.jobId);
     }
-
-    // Apply search filter in-memory — searches candidate name and job title
-    if (filters.search && filters.search.trim()) {
+    if (isSearch) {
+      // For search: populate ALL then filter (we need candidate names)
+      const allPopulated = await populateInterviews(activeRounds, { skipFeedbacks: true });
       const q = filters.search.trim().toLowerCase();
-      finalData = finalData.filter(r => {
+      const filtered = allPopulated.filter(r => {
         const candName = (r.application?.candidate?.fullName || '').toLowerCase();
         const jobTitle = (r.application?.job?.title || '').toLowerCase();
         return candName.includes(q) || jobTitle.includes(q);
       });
+      return {
+        source: 'firebase',
+        data: { data: filtered, pagination: { total: filtered.length, hasMore: false } }
+      };
     }
 
-    // Apply pagination in-memory
-    // Default limit is 5000 (effectively "all") because the frontend renders all at once.
-    // Callers that need true pagination can pass ?page=N&limit=N explicitly.
-    const page = Math.max(1, parseInt(filters.page, 10) || 1);
-    const limit = Math.min(5000, parseInt(filters.limit, 10) || 5000);
-    const total = finalData.length;
-    const paginated = finalData.slice((page - 1) * limit, page * limit);
-    
+    // 5. Cursor pagination on raw docs (before populate — minimize populate calls)
+    const total = activeRounds.length;
+    let startIdx = 0;
+    if (cursor) {
+      const idx = activeRounds.findIndex(r => r.id === cursor);
+      if (idx !== -1) startIdx = idx + 1;
+    }
+    const pageRounds = activeRounds.slice(startIdx, startIdx + limit);
+    const hasMore = startIdx + limit < total;
+    const nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
+
+    // 6. Populate only the page slice (NOT all interviews) — key speedup
+    const populated = await populateInterviews(pageRounds, { skipFeedbacks: true });
+
+    // Pre-warm individual round caches asynchronously (don't block response)
+    setImmediate(() => {
+      if (populated.length > 0) {
+        const prewarmPipeline = redis.pipeline();
+        populated.forEach(r => {
+          if (isSafeKey(r.id)) prewarmPipeline.setex(KEYS.round(r.id), ROUND_TTL, JSON.stringify(r));
+        });
+        prewarmPipeline.exec().catch(err => console.warn('[SchedulingCache] Pre-warm failed:', err.message));
+      }
+    });
+
     const result = {
-      data: paginated,
-      pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+      data: populated,
+      nextCursor,
+      hasMore,
+      pagination: { total, hasMore }
     };
 
-    // 5. Cache the merged and populated list
-    try {
-      await redis.setex(cacheKey, LIST_TTL, JSON.stringify(result));
-      await redis.sadd(`scheduling:rounds:lists:${orgId}`, cacheKey);
-    } catch (_) {}
-    
+    // Cache only first-page queries (no cursor = first page)
+    if (!cursor) {
+      try {
+        await redis.setex(cacheKey, LIST_TTL, JSON.stringify(result));
+        await redis.sadd(`scheduling:rounds:lists:${orgId}`, cacheKey);
+      } catch (_) {}
+    }
+
     return { source: 'firebase', data: result };
   } catch (err) {
     console.error('[SchedulingCache] getRoundsList error:', err);
