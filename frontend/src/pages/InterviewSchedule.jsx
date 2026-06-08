@@ -99,7 +99,8 @@ const InterviewSchedule = () => {
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverNextCursor, setServerNextCursor] = useState(null);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews } = useRoundsList();
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList();
+  const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
   const rescheduleMutation = useRescheduleRound();
@@ -117,6 +118,12 @@ const InterviewSchedule = () => {
     setServerNextCursor(roundsResponse.nextCursor || null);
   }, [roundsResponse]);
 
+  useEffect(() => {
+    if (queryError) {
+      setError(queryError.message || 'Failed to load interviews');
+    }
+  }, [queryError]);
+
   const interviews = allInterviews;
 
   const [applications, setApplications] = useState([]);
@@ -133,7 +140,6 @@ const InterviewSchedule = () => {
   const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
   const [feedbackForm, setFeedbackForm] = useState(emptyFeedbackForm);
   const [savingSchedule, setSavingSchedule] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [offerLetterFile, setOfferLetterFile] = useState(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [candidateHistory, setCandidateHistory] = useState([]);
@@ -295,31 +301,14 @@ const InterviewSchedule = () => {
   }, [debouncedJobSearch, showScheduleModal]);
 
   useEffect(() => {
-    let mounted = true;
-
-    const load = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        await loadAll();
-      } catch (err) {
-        if (!mounted) return;
-        setError(err.message || 'Failed to load interviews');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    load();
     return () => {
-      mounted = false;
       if (timerRef.current) clearInterval(timerRef.current);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
       if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     };
-  }, []);
+  }, [recordedUrl]);
 
   useEffect(() => {
     if (jobIdParam) {

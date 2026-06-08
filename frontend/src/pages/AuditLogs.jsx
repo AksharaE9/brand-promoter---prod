@@ -38,7 +38,7 @@ const AuditLogs = () => {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [reloadTrigger, setReloadTrigger] = useState(0);
+  const [liveCount, setLiveCount] = useState(0); // new events since page loaded
   const tableTopRef = useRef(null);
 
   // Filters state
@@ -87,36 +87,34 @@ const AuditLogs = () => {
   }, []);
 
   // Fetch Audit Logs from backend
-  const fetchLogs = async () => {
+  const fetchLogs = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError('');
-      
-      let url = `/audit-logs?limit=${limit}&page=${page}`;
-      if (entityType) url += `&entityType=${entityType}`;
-      if (selectedUserId) url += `&userId=${selectedUserId}`;
-      if (startDate) url += `&startDate=${new Date(startDate).toISOString()}`;
-      if (endDate) url += `&endDate=${new Date(endDate).toISOString()}`;
-      if (debouncedSearch) url += `&search=${encodeURIComponent(debouncedSearch)}`;
-      
-      // If we have selected multiple actions, we query them. If multiple, we filter in memory or fetch all.
-      // Since our backend handles single action, let's query first action if only one is selected, else filter client-side.
-      if (selectedActions.length === 1) {
-        url += `&action=${selectedActions[0]}`;
-      }
 
-      const res = await apiGet(url);
+      const params = new URLSearchParams();
+      params.set('limit', String(limit));
+      params.set('page', String(page));
+      if (entityType)      params.set('entityType', entityType);
+      if (selectedUserId)  params.set('userId', selectedUserId);
+      if (startDate)       params.set('startDate', new Date(startDate).toISOString());
+      if (endDate)         params.set('endDate', endDate); // backend appends T23:59:59
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (selectedActions.length === 1) params.set('action', selectedActions[0]);
+
+      const res = await apiGet(`/audit-logs?${params.toString()}`);
       if (res.success) {
         let resultLogs = res.data || [];
-        
-        // If multiple action filters selected, filter client-side
+        // Client-side filter for multi-action selection
         if (selectedActions.length > 1) {
           resultLogs = resultLogs.filter(log => selectedActions.includes(log.action));
         }
-
         setLogs(resultLogs);
         setTotalCount(res.pagination?.total || resultLogs.length);
         setTotalPages(res.pagination?.totalPages || 1);
+        setLiveCount(0); // reset live indicator on manual fetch
+      } else {
+        setError(res.message || 'Failed to fetch logs');
       }
     } catch (err) {
       setError(err.message || 'Failed to retrieve audit events');
@@ -127,17 +125,41 @@ const AuditLogs = () => {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, selectedActions, reloadTrigger]);
+  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, selectedActions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Singleton SSE — debounced 500ms so rapid events don't flood the log table
+  // Real-time SSE: prepend new log entry at top of table without full reload
   useEffect(() => {
-    let debounceTimer = null;
-    const unsub = subscribeSSE(() => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => setReloadTrigger(p => p + 1), 500);
-    });
-    return () => { unsub(); clearTimeout(debounceTimer); };
-  }, []);
+    const unsub = subscribeSSE((data) => {
+      if (data.type !== 'AUDIT_LOG_CREATED') return;
+      // Build a preview row from the SSE payload
+      const liveLog = {
+        id:          data.logId || `live-${Date.now()}`,
+        action:      data.action,
+        entityType:  data.entityType,
+        entityId:    data.entityId,
+        entityName:  data.entityId || 'N/A',
+        createdAt:   data.timestamp || new Date().toISOString(),
+        actor: {
+          fullName: data.performedByName || data.actorName || 'System',
+          email:    '',
+          role:     'Admin',
+        },
+        description: data.description || `${data.action} on ${data.entityType}`,
+        _live: true, // mark as live for UI highlight
+      };
+
+      // Only prepend if we're on page 1 and no filters that would exclude it
+      if (page === 1 && !startDate && !endDate && !debouncedSearch && selectedActions.length === 0) {
+        setLogs(prev => [liveLog, ...prev.slice(0, limit - 1)]);
+        setTotalCount(prev => prev + 1);
+        setLiveCount(prev => prev + 1);
+      } else {
+        // Just bump the counter so user knows something happened
+        setLiveCount(prev => prev + 1);
+      }
+    }, ['AUDIT_LOG_CREATED']);
+    return () => unsub();
+  }, [page, startDate, endDate, debouncedSearch, selectedActions, limit]);
 
   const handlePageChange = (newPage) => {
     setPage(newPage);
@@ -266,9 +288,24 @@ const AuditLogs = () => {
         <div className="flex items-end justify-between gap-3" ref={tableTopRef}>
           <div>
             <div className="os-eyebrow">Security & Compliance</div>
-            <h1 className="os-h1">Enterprise Audit Logs</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="os-h1">Enterprise Audit Logs</h1>
+              {/* Live event indicator */}
+              <div className="flex items-center gap-1.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Live</span>
+                {liveCount > 0 && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full">
+                    +{liveCount} new
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <button className="os-btn-outline" onClick={fetchLogs}>Refresh Logs</button>
+          <button className="os-btn-outline" onClick={() => fetchLogs()}>Refresh Logs</button>
         </div>
 
         {/* Filter Panel */}
@@ -481,7 +518,9 @@ const AuditLogs = () => {
                 ))
               ) : logs.length > 0 ? (
                 logs.map((log) => (
-                  <tr key={log.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                  <tr key={log.id} className={`border-b border-slate-100 hover:bg-slate-50/50 transition-colors ${
+                    log._live ? 'bg-emerald-50/60 border-l-2 border-l-emerald-400 animate-in fade-in slide-in-from-top-1 duration-300' : ''
+                  }`}>
                     {/* Timestamp */}
                     <td className="p-4 text-xs font-mono text-slate-500 cursor-help" title={getRelativeTime(log.createdAt)}>
                       {new Date(log.createdAt).toLocaleString('en-US', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}

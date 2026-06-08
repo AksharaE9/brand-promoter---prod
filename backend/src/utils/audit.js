@@ -4,13 +4,14 @@ const { db: firestore } = require("../config/firebase");
  * Write an audit log entry — FIRE AND FORGET (non-blocking).
  * The caller does NOT await this. It never blocks a request.
  *
- * actorName and entityName should be passed from the call-site (denormalized).
- * We do NOT make a Firestore read here to resolve names — that would add
- * a hidden N+1 read to every mutation endpoint.
+ * actorName, actorEmail, actorRole and orgId should be passed from the call-site.
+ * We do NOT make a Firestore read here — that would add a hidden N+1 read to every mutation.
  */
 function logAudit({
   actorUserId = null,
   actorName = null,
+  actorEmail = null,
+  actorRole = null,
   action,
   entityType,
   entityId = null,
@@ -20,11 +21,14 @@ function logAudit({
   ipAddress = null,
   userAgent = null,
   orgId = null,
+  organizationId = null, // alias — accept either key
 }) {
-  const targetOrg = orgId || "defaultOrg";
+  const targetOrg = orgId || organizationId || "defaultOrg";
   const payload = {
     actorUserId,
-    actorName: actorName || actorUserId || "System",
+    actorName:  actorName  || actorUserId || "System",
+    actorEmail: actorEmail || "",
+    actorRole:  actorRole  || "SYSTEM",
     action,
     entityType,
     entityId,
@@ -37,12 +41,11 @@ function logAudit({
     organizationId: targetOrg,
     isDeleted: false
   };
-  
+
   // Intentionally NOT awaited — fire and forget
   firestore.collection("auditLogs").add(payload)
     .then(async (docRef) => {
       try {
-        const targetOrg = orgId || "defaultOrg";
         const inv = require("./cacheInvalidation");
         await inv.audit(targetOrg);
 
@@ -52,6 +55,7 @@ function logAudit({
           action,
           entityType,
           entityId,
+          actorName: payload.actorName,
           description: `${payload.actorName} performed ${action} on ${entityType}`,
           performedBy: actorUserId,
           performedByName: payload.actorName,

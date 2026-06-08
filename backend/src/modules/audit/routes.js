@@ -2,16 +2,18 @@ const express = require('express');
 const router = express.Router();
 const { db: firestore } = require('../../config/firebase');
 const { auth, requireRoles } = require('../../middleware/auth');
-const { getCached } = require('../../utils/cache');
 
 /**
  * GET /api/audit-logs
  *
- * Performance fixes applied:
- * - REMOVED: 5x full-collection fetches (users/candidates/applications/jobs/interviews)
- * - Audit logs are denormalized — actorName and entityName are stored AT WRITE TIME
- * - Only fetch the actual audit logs, paginated server-side
- * - In-memory filter only over the paginated slice (not the entire collection)
+ * Returns paginated audit logs for the org. Supports:
+ * - Date range: startDate / endDate
+ * - Filter: entityType, action (single), userId
+ * - Search: actorName / entityName / action / entityType (in-memory)
+ * - Cursor pagination: page + limit
+ *
+ * Fallback: if the composite index is missing, runs an index-free query
+ * and sorts/filters in memory.
  */
 router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
   try {
@@ -26,10 +28,10 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       search
     } = req.query;
 
-    const parsedLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200
-    const pageNum = Math.max(1, parseInt(page) || 1);
-    const offset = (pageNum - 1) * parsedLimit;
-    const orgId = req.user.organizationId || "defaultOrg";
+    const parsedLimit = Math.min(parseInt(limit) || 50, 200);
+    const pageNum    = Math.max(1, parseInt(page) || 1);
+    const offset     = (pageNum - 1) * parsedLimit;
+    const orgId      = req.user.organizationId || "defaultOrg";
 
     const fields = [
       'entityType', 'action', 'actorUserId', 'createdAt', 'ipAddress',
@@ -37,169 +39,151 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       'entityId', 'organizationId', 'isDeleted'
     ];
 
-    // Build Firestore query — equality filters only
-    let query = firestore.collection("auditLogs")
+    // ── Helper: shape a raw Firestore doc into the response format ──
+    const formatLog = (log) => ({
+      ...log,
+      actor: {
+        fullName: log.actorName  || log.actorUserId || "System",
+        email:    log.actorEmail || "",
+        role:     log.actorRole  || "Admin",
+      },
+      entityName: log.entityName || log.entityId || "N/A",
+    });
+
+    // ── Helper: build in-memory page from a filtered array ──
+    const paginateInMemory = (logs) => {
+      const total     = logs.length;
+      const paginated = logs.slice(offset, offset + parsedLimit);
+      const hasMore   = offset + parsedLimit < logs.length;
+      return { finalLogs: paginated.map(formatLog), totalCount: total, hasMore };
+    };
+
+    // ── Attempt primary query (needs composite index) ──
+    let baseQuery = firestore.collection("auditLogs")
       .where("organizationId", "==", orgId)
       .where("isDeleted", "==", false)
       .select(...fields);
 
-    if (entityType) query = query.where("entityType", "==", entityType);
-    if (action)     query = query.where("action",     "==", action);
-    if (userId)     query = query.where("actorUserId", "==", userId);
+    if (entityType) baseQuery = baseQuery.where("entityType", "==", entityType);
+    if (action)     baseQuery = baseQuery.where("action",     "==", action);
+    if (userId)     baseQuery = baseQuery.where("actorUserId","==", userId);
 
-    // Date range filters
-    if (startDate) query = query.where("createdAt", ">=", new Date(startDate).toISOString());
-    if (endDate)   query = query.where("createdAt", "<=", new Date(endDate).toISOString());
+    if (startDate)  baseQuery = baseQuery.where("createdAt", ">=", new Date(startDate).toISOString());
+    if (endDate)    baseQuery = baseQuery.where("createdAt", "<=", new Date(endDate + 'T23:59:59.999Z').toISOString());
 
-    query = query.orderBy("createdAt", "desc");
-
-    let useCursorPagination = true;
-    if (search) {
-      useCursorPagination = false;
-    }
-
-    let finalLogs = [];
+    let finalLogs  = [];
     let totalCount = 0;
-    let nextCursor = null;
-    let hasMore = false;
+    let hasMore    = false;
 
     try {
-      if (useCursorPagination) {
-        // Happy path: run count query
+      // Try with orderBy (requires composite index)
+      const ordered = baseQuery.orderBy("createdAt", "desc");
+
+      if (!search) {
+        // Count query for total
         try {
-          const countSnap = await query.count().get();
+          const countSnap = await ordered.count().get();
           totalCount = countSnap.data().count;
-        } catch (cntErr) {
-          console.warn('[Audit] Count query failed, falling back:', cntErr.message);
-        }
+        } catch (_) {}
 
-        // Execute offset paginated query
-        const snapshot = await query.offset(offset).limit(parsedLimit).get();
+        const snapshot = await ordered.offset(offset).limit(parsedLimit).get();
         const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        finalLogs = logs.map(log => ({
-          ...log,
-          actor: {
-            fullName: log.actorName || log.actorUserId || "System",
-            email:    log.actorEmail || "",
-            role:     log.actorRole  || "Admin",
-          },
-          entityName: log.entityName || log.entityId || "N/A",
-        }));
-
-        hasMore = offset + finalLogs.length < totalCount;
-        nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].ref.path : null;
+        finalLogs  = logs.map(formatLog);
+        hasMore    = offset + finalLogs.length < totalCount;
       } else {
-        // In-memory search fallback
-        const fetchLimit = 5000;
-        const snapshot = await query.limit(fetchLimit).get();
+        // Search: fetch more docs, filter in-memory
+        const snapshot = await ordered.limit(5000).get();
         let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (search) {
-          const s = search.toLowerCase();
-          logs = logs.filter(log =>
-            (log.actorName   || "").toLowerCase().includes(s) ||
-            (log.entityName  || "").toLowerCase().includes(s) ||
-            (log.action      || "").toLowerCase().includes(s) ||
-            (log.entityType  || "").toLowerCase().includes(s)
-          );
-        }
-
-        totalCount = logs.length;
-        const paginated = logs.slice(offset, offset + parsedLimit);
-        hasMore = offset + parsedLimit < logs.length;
-        nextCursor = hasMore && paginated[paginated.length - 1] ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
-
-        finalLogs = paginated.map(log => ({
-          ...log,
-          actor: {
-            fullName: log.actorName || log.actorUserId || "System",
-            email:    log.actorEmail || "",
-            role:     log.actorRole  || "Admin",
-          },
-          entityName: log.entityName || log.entityId || "N/A",
-        }));
-      }
-    } catch (dbError) {
-      console.warn('[Audit] Main query failed, using index-free fallback. Error:', dbError.message);
-      
-      let fallbackQuery = firestore.collection("auditLogs")
-        .where("organizationId", "==", orgId)
-        .where("isDeleted", "==", false)
-        .select(...fields);
-
-      if (entityType) fallbackQuery = fallbackQuery.where("entityType", "==", entityType);
-      if (action)     fallbackQuery = fallbackQuery.where("action",     "==", action);
-      if (userId)     fallbackQuery = fallbackQuery.where("actorUserId", "==", userId);
-
-      const fetchLimit = 10000;
-      const snapshot = await fallbackQuery.limit(fetchLimit).get();
-      let logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      // 1. Date range filter
-      if (startDate) {
-        const startISO = new Date(startDate).toISOString();
-        logs = logs.filter(log => log.createdAt && log.createdAt >= startISO);
-      }
-      if (endDate) {
-        const endISO = new Date(endDate).toISOString();
-        logs = logs.filter(log => log.createdAt && log.createdAt <= endISO);
-      }
-
-      // 2. Search
-      if (search) {
         const s = search.toLowerCase();
         logs = logs.filter(log =>
-          (log.actorName   || "").toLowerCase().includes(s) ||
-          (log.entityName  || "").toLowerCase().includes(s) ||
-          (log.action      || "").toLowerCase().includes(s) ||
-          (log.entityType  || "").toLowerCase().includes(s)
+          (log.actorName  || "").toLowerCase().includes(s) ||
+          (log.entityName || "").toLowerCase().includes(s) ||
+          (log.action     || "").toLowerCase().includes(s) ||
+          (log.entityType || "").toLowerCase().includes(s) ||
+          (log.actorEmail || "").toLowerCase().includes(s)
+        );
+        ({ finalLogs, totalCount, hasMore } = paginateInMemory(logs));
+      }
+    } catch (primaryErr) {
+      // ── Index-free fallback: fetch without orderBy/date-range, sort in memory ──
+      console.warn('[Audit] Primary query failed, using index-free fallback:', primaryErr.message);
+
+      // Try fetching both the org's data AND "defaultOrg" data (legacy logs before orgId was fixed)
+      const orgIds = orgId !== "defaultOrg" ? [orgId, "defaultOrg"] : [orgId];
+      let allLogs = [];
+
+      for (const qOrgId of orgIds) {
+        let fbq = firestore.collection("auditLogs")
+          .where("organizationId", "==", qOrgId)
+          .where("isDeleted",      "==", false)
+          .select(...fields);
+
+        if (entityType) fbq = fbq.where("entityType",  "==", entityType);
+        if (action)     fbq = fbq.where("action",       "==", action);
+        if (userId)     fbq = fbq.where("actorUserId",  "==", userId);
+
+        try {
+          const snap = await fbq.limit(10000).get();
+          const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          allLogs.push(...docs);
+        } catch (fbErr) {
+          console.warn(`[Audit] Fallback query for orgId=${qOrgId} failed:`, fbErr.message);
+        }
+      }
+
+      // Deduplicate by id
+      const seen = new Set();
+      allLogs = allLogs.filter(l => {
+        if (seen.has(l.id)) return false;
+        seen.add(l.id);
+        return true;
+      });
+
+      // Date range filter in memory
+      if (startDate) {
+        const startISO = new Date(startDate).toISOString();
+        allLogs = allLogs.filter(l => l.createdAt && l.createdAt >= startISO);
+      }
+      if (endDate) {
+        const endISO = new Date(endDate + 'T23:59:59.999Z').toISOString();
+        allLogs = allLogs.filter(l => l.createdAt && l.createdAt <= endISO);
+      }
+
+      // Search filter in memory
+      if (search) {
+        const s = search.toLowerCase();
+        allLogs = allLogs.filter(l =>
+          (l.actorName  || "").toLowerCase().includes(s) ||
+          (l.entityName || "").toLowerCase().includes(s) ||
+          (l.action     || "").toLowerCase().includes(s) ||
+          (l.entityType || "").toLowerCase().includes(s) ||
+          (l.actorEmail || "").toLowerCase().includes(s)
         );
       }
 
-      // 3. Sort by createdAt desc
-      logs.sort((a, b) => {
+      // Sort newest first
+      allLogs.sort((a, b) => {
         const ad = a.createdAt ? new Date(a.createdAt) : new Date(0);
         const bd = b.createdAt ? new Date(b.createdAt) : new Date(0);
         return bd - ad;
       });
 
-      // 4. Pagination
-      totalCount = logs.length;
-      const paginated = logs.slice(offset, offset + parsedLimit);
-      hasMore = offset + parsedLimit < logs.length;
-      nextCursor = hasMore && paginated[paginated.length - 1] ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
-
-      finalLogs = paginated.map(log => ({
-        ...log,
-        actor: {
-          fullName: log.actorName || log.actorUserId || "System",
-          email:    log.actorEmail || "",
-          role:     log.actorRole  || "Admin",
-        },
-        entityName: log.entityName || log.entityId || "N/A",
-      }));
+      ({ finalLogs, totalCount, hasMore } = paginateInMemory(allLogs));
     }
 
     const pagination = {
-      total: totalCount,
-      page: pageNum,
-      limit: parsedLimit,
+      total:      totalCount,
+      page:       pageNum,
+      limit:      parsedLimit,
       totalPages: Math.ceil(totalCount / parsedLimit) || 1
     };
 
     if (finalLogs.length > 30) {
       const { streamPaginatedJson } = require("../../utils/streamResponse");
-      return streamPaginatedJson(res, finalLogs, { nextCursor, hasMore, pagination });
+      return streamPaginatedJson(res, finalLogs, { hasMore, pagination });
     }
 
-    res.json({
-      success: true,
-      data: finalLogs,
-      nextCursor,
-      hasMore,
-      pagination
-    });
+    return res.json({ success: true, data: finalLogs, hasMore, pagination });
   } catch (error) {
     console.error('[Audit] Query failed:', error.message);
     res.status(500).json({ success: false, message: error.message });
@@ -207,10 +191,7 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
 });
 
 /**
- * GET /api/audit-logs/:id
- *
- * Single log — use denormalized fields stored at write time.
- * Only falls back to a live read if entityName is missing.
+ * GET /api/audit-logs/:id — Single log detail
  */
 router.get('/:id', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
   try {
@@ -218,17 +199,13 @@ router.get('/:id', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
     if (!doc.exists) {
       return res.status(404).json({ success: false, message: 'Log not found' });
     }
-
     const log = { id: doc.id, ...doc.data() };
-
-    // Use denormalized data — no extra reads needed in the happy path
     log.actor = {
       fullName: log.actorName  || log.actorUserId || "System",
       email:    log.actorEmail || "",
       role:     log.actorRole  || "Admin",
     };
     log.entityName = log.entityName || log.entityId || "N/A";
-
     res.json({ success: true, data: log });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

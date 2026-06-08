@@ -283,13 +283,66 @@ async function getRoundsList(orgId, filters = {}) {
     if (filters.interviewerId) query = query.where('interviewerIds', 'array-contains', filters.interviewerId);
 
     let docs = [];
-    try {
-      const snap = await query.orderBy('scheduledStart', 'desc').get();
-      docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-    } catch (err) {
-      const snap = await query.get();
-      docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-      docs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
+    let total = 0;
+    let nextCursor = null;
+    let hasMore = false;
+    let firestorePaginated = false;
+
+    if (isSearch) {
+      // For search: limit initial fetch to 500 latest interviews to keep population fast
+      try {
+        const snap = await query.orderBy('scheduledStart', 'desc').limit(500).get();
+        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
+      } catch (err) {
+        const snap = await query.limit(500).get();
+        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
+        docs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
+      }
+    } else {
+      // Normal cursor-based pagination directly on Firestore
+      try {
+        let q = query.orderBy('scheduledStart', 'desc');
+
+        // Fetch count of matching interviews
+        try {
+          const countSnap = await q.count().get();
+          total = countSnap.data().count;
+        } catch (cntErr) {
+          console.warn('[SchedulingCache] Count query failed:', cntErr.message);
+        }
+
+        let pageQuery = q;
+        if (cursor) {
+          const cursorDoc = await db.collection('interviews').doc(cursor).get();
+          if (cursorDoc.exists) {
+            pageQuery = pageQuery.startAfter(cursorDoc);
+          }
+        }
+
+        const snap = await pageQuery.limit(limit).get();
+        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
+        
+        hasMore = docs.length === limit;
+        nextCursor = hasMore && docs[docs.length - 1] ? docs[docs.length - 1].id : null;
+        firestorePaginated = true;
+      } catch (err) {
+        console.warn('[SchedulingCache] Main paginated query failed (missing index?), using in-memory window:', err.message);
+        // Fallback: fetch a larger window and sort/paginate in-memory
+        const snap = await query.limit(1000).get();
+        let allDocs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
+        allDocs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
+
+        total = allDocs.length;
+        let startIdx = 0;
+        if (cursor) {
+          const idx = allDocs.findIndex(r => r.id === cursor);
+          if (idx !== -1) startIdx = idx + 1;
+        }
+        docs = allDocs.slice(startIdx, startIdx + limit);
+        hasMore = startIdx + limit < total;
+        nextCursor = hasMore && docs[docs.length - 1] ? docs[docs.length - 1].id : null;
+        firestorePaginated = true;
+      }
     }
 
     // 3. Merge dirty queue + filter deleted
@@ -300,8 +353,9 @@ async function getRoundsList(orgId, filters = {}) {
     if (filters.jobId) {
       activeRounds = activeRounds.filter(r => r.applicationId && r.application?.jobId === filters.jobId);
     }
+    
     if (isSearch) {
-      // For search: populate ALL then filter (we need candidate names)
+      // For search: populate matched then filter by query (we need candidate names)
       const allPopulated = await populateInterviews(activeRounds, { skipFeedbacks: true });
       const q = filters.search.trim().toLowerCase();
       const filtered = allPopulated.filter(r => {
@@ -315,16 +369,19 @@ async function getRoundsList(orgId, filters = {}) {
       };
     }
 
-    // 5. Cursor pagination on raw docs (before populate — minimize populate calls)
-    const total = activeRounds.length;
-    let startIdx = 0;
-    if (cursor) {
-      const idx = activeRounds.findIndex(r => r.id === cursor);
-      if (idx !== -1) startIdx = idx + 1;
+    // 5. Cursor pagination on raw docs (if not already paginated by Firestore)
+    let pageRounds = activeRounds;
+    if (!firestorePaginated) {
+      total = activeRounds.length;
+      let startIdx = 0;
+      if (cursor) {
+        const idx = activeRounds.findIndex(r => r.id === cursor);
+        if (idx !== -1) startIdx = idx + 1;
+      }
+      pageRounds = activeRounds.slice(startIdx, startIdx + limit);
+      hasMore = startIdx + limit < total;
+      nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
     }
-    const pageRounds = activeRounds.slice(startIdx, startIdx + limit);
-    const hasMore = startIdx + limit < total;
-    const nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
 
     // 6. Populate only the page slice (NOT all interviews) — key speedup
     const populated = await populateInterviews(pageRounds, { skipFeedbacks: true });
