@@ -442,13 +442,15 @@ router.get(
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
     const cursor = req.query.cursor?.trim();
+    const page = Number(req.query.page) || 1;
+    const offset = (page - 1) * limit;
     const search = req.query.search?.trim()?.toLowerCase();
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${page}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
 
     const fields = [
       'fullName', 'email', 'phone', 'status', 'currentStage',
@@ -480,23 +482,74 @@ router.get(
         useCursorPagination = false;
       }
 
-      query = query.orderBy("createdAt", "desc");
+      let paginatedItems = [];
+      let total = 0;
+      let nextCursor = null;
+      let hasMore = false;
 
-      if (useCursorPagination) {
-        const { paginateFirestore } = require("../../utils/pagination");
-        const result = await paginateFirestore({ query, limit, cursor });
-        const paginatedItems = result.data;
-        const nextCursor = result.nextCursor;
-        const hasMore = result.hasMore;
-        
-        await populateCandidateRelations(paginatedItems);
+      try {
+        if (useCursorPagination) {
+          let q = query.orderBy("createdAt", "desc");
 
-        return { items: paginatedItems, nextCursor, hasMore };
-      } else {
-        const poolSize = 1000;
-        const snapshot = await query.limit(poolSize).get();
+          // Try count query first
+          try {
+            const countSnap = await q.count().get();
+            total = countSnap.data().count;
+          } catch (cntErr) {
+            console.warn('[Candidates] Count query failed:', cntErr.message);
+          }
+
+          const snapshot = await q.offset(offset).limit(limit).get();
+          const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          paginatedItems = items;
+
+          hasMore = offset + paginatedItems.length < total;
+          nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].id : null;
+        } else {
+          // Search fallback
+          let q = query.orderBy("createdAt", "desc");
+          const poolSize = 1000;
+          const snapshot = await q.limit(poolSize).get();
+          let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+          if (search) {
+            items = items.filter(c =>
+              (c.fullName && c.fullName.toLowerCase().includes(search)) ||
+              (c.email && c.email.toLowerCase().includes(search)) ||
+              (c.phone && c.phone.includes(search))
+            );
+          }
+
+          total = items.length;
+          paginatedItems = items.slice(offset, offset + limit);
+          hasMore = offset + limit < items.length;
+          nextCursor = hasMore && paginatedItems[paginatedItems.length - 1] ? paginatedItems[paginatedItems.length - 1].id : null;
+        }
+      } catch (dbError) {
+        console.warn('[Candidates] Main query failed, using index-free fallback. Error:', dbError.message);
+
+        // Fallback query matching only organizationId and isDeleted (simple index)
+        let fallbackQuery = firestore.collection("candidates")
+          .where("organizationId", "==", orgId)
+          .where("isDeleted", "==", false)
+          .select(...fields);
+
+        const poolSize = 5000;
+        const snapshot = await fallbackQuery.limit(poolSize).get();
         let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+        // 1. Status/Category/Mentor filter in memory
+        if (status) {
+          items = items.filter(c => c.status === status);
+        }
+        if (category) {
+          items = items.filter(c => c.category === category);
+        }
+        if (assignedToMe) {
+          items = items.filter(c => c.mentorId === req.user.id);
+        }
+
+        // 2. Search filter in memory
         if (search) {
           items = items.filter(c =>
             (c.fullName && c.fullName.toLowerCase().includes(search)) ||
@@ -505,34 +558,43 @@ router.get(
           );
         }
 
-        let startIndex = 0;
-        if (cursor) {
-          const idx = items.findIndex(item => item.id === cursor);
-          if (idx !== -1) {
-            startIndex = idx + 1;
-          }
-        }
+        // 3. Sort by createdAt desc in memory
+        items.sort((a, b) => {
+          const ad = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const bd = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return bd - ad;
+        });
 
-        const paginatedItems = items.slice(startIndex, startIndex + limit);
-        const nextCursor = (startIndex + limit < items.length) ? paginatedItems[paginatedItems.length - 1].id : null;
-        const hasMore = startIndex + limit < items.length;
-
-        await populateCandidateRelations(paginatedItems);
-
-        return { items: paginatedItems, nextCursor, hasMore };
+        // 4. Pagination in memory
+        total = items.length;
+        paginatedItems = items.slice(offset, offset + limit);
+        hasMore = offset + limit < items.length;
+        nextCursor = hasMore && paginatedItems[paginatedItems.length - 1] ? paginatedItems[paginatedItems.length - 1].id : null;
       }
+
+      await populateCandidateRelations(paginatedItems);
+
+      return { items: paginatedItems, nextCursor, hasMore, total };
     }, 30000);
+
+    const pagination = {
+      total: data.total || data.items.length,
+      page: page,
+      limit: limit,
+      totalPages: Math.ceil((data.total || data.items.length) / limit) || 1
+    };
 
     if (data.items && data.items.length > 30) {
       const { streamPaginatedJson } = require("../../utils/streamResponse");
-      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore });
+      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore, pagination });
     }
 
     res.json({
       success: true,
       data: data.items,
       nextCursor: data.nextCursor,
-      hasMore: data.hasMore
+      hasMore: data.hasMore,
+      pagination
     });
   })
 );

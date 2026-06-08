@@ -17,7 +17,7 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
   try {
     const {
       limit = 50,
-      cursor,
+      page = 1,
       entityType,
       action,
       userId,
@@ -27,6 +27,8 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
     } = req.query;
 
     const parsedLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const offset = (pageNum - 1) * parsedLimit;
     const orgId = req.user.organizationId || "defaultOrg";
 
     const fields = [
@@ -56,11 +58,24 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       useCursorPagination = false;
     }
 
+    let finalLogs = [];
+    let totalCount = 0;
+    let nextCursor = null;
+    let hasMore = false;
+
     try {
       if (useCursorPagination) {
-        const { paginateFirestore } = require("../../utils/pagination");
-        const result = await paginateFirestore({ query, limit: parsedLimit, cursor });
-        const logs = result.data;
+        // Happy path: run count query
+        try {
+          const countSnap = await query.count().get();
+          totalCount = countSnap.data().count;
+        } catch (cntErr) {
+          console.warn('[Audit] Count query failed, falling back:', cntErr.message);
+        }
+
+        // Execute offset paginated query
+        const snapshot = await query.offset(offset).limit(parsedLimit).get();
+        const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         finalLogs = logs.map(log => ({
           ...log,
@@ -71,8 +86,9 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
           },
           entityName: log.entityName || log.entityId || "N/A",
         }));
-        nextCursor = result.nextCursor;
-        hasMore = result.hasMore;
+
+        hasMore = offset + finalLogs.length < totalCount;
+        nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].ref.path : null;
       } else {
         // In-memory search fallback
         const fetchLimit = 5000;
@@ -89,18 +105,10 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
           );
         }
 
-        let startIndex = 0;
-        if (cursor) {
-          const cursorId = cursor.includes('/') ? cursor.split('/').pop() : cursor;
-          const idx = logs.findIndex(item => item.id === cursorId);
-          if (idx !== -1) {
-            startIndex = idx + 1;
-          }
-        }
-
-        const paginated = logs.slice(startIndex, startIndex + parsedLimit);
-        nextCursor = (startIndex + parsedLimit < logs.length) ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
-        hasMore = startIndex + parsedLimit < logs.length;
+        totalCount = logs.length;
+        const paginated = logs.slice(offset, offset + parsedLimit);
+        hasMore = offset + parsedLimit < logs.length;
+        nextCursor = hasMore && paginated[paginated.length - 1] ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
 
         finalLogs = paginated.map(log => ({
           ...log,
@@ -157,18 +165,10 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       });
 
       // 4. Pagination
-      let startIndex = 0;
-      if (cursor) {
-        const cursorId = cursor.includes('/') ? cursor.split('/').pop() : cursor;
-        const idx = logs.findIndex(item => item.id === cursorId);
-        if (idx !== -1) {
-          startIndex = idx + 1;
-        }
-      }
-
-      const paginated = logs.slice(startIndex, startIndex + parsedLimit);
-      nextCursor = (startIndex + parsedLimit < logs.length) ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
-      hasMore = startIndex + parsedLimit < logs.length;
+      totalCount = logs.length;
+      const paginated = logs.slice(offset, offset + parsedLimit);
+      hasMore = offset + parsedLimit < logs.length;
+      nextCursor = hasMore && paginated[paginated.length - 1] ? `auditLogs/${paginated[paginated.length - 1].id}` : null;
 
       finalLogs = paginated.map(log => ({
         ...log,
@@ -181,16 +181,24 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       }));
     }
 
+    const pagination = {
+      total: totalCount,
+      page: pageNum,
+      limit: parsedLimit,
+      totalPages: Math.ceil(totalCount / parsedLimit) || 1
+    };
+
     if (finalLogs.length > 30) {
       const { streamPaginatedJson } = require("../../utils/streamResponse");
-      return streamPaginatedJson(res, finalLogs, { nextCursor, hasMore });
+      return streamPaginatedJson(res, finalLogs, { nextCursor, hasMore, pagination });
     }
 
     res.json({
       success: true,
       data: finalLogs,
       nextCursor,
-      hasMore
+      hasMore,
+      pagination
     });
   } catch (error) {
     console.error('[Audit] Query failed:', error.message);

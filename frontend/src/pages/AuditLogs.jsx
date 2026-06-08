@@ -129,12 +129,12 @@ const AuditLogs = () => {
     fetchLogs();
   }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, selectedActions, reloadTrigger]);
 
-  // Singleton SSE — debounced 5s so rapid events don't flood the log table
+  // Singleton SSE — debounced 500ms so rapid events don't flood the log table
   useEffect(() => {
     let debounceTimer = null;
     const unsub = subscribeSSE(() => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => setReloadTrigger(p => p + 1), 5000);
+      debounceTimer = setTimeout(() => setReloadTrigger(p => p + 1), 500);
     });
     return () => { unsub(); clearTimeout(debounceTimer); };
   }, []);

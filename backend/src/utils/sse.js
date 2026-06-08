@@ -88,21 +88,24 @@ function removeClient(orgId, userId, res) {
 
 function broadcastToOrg(orgId, eventName, data) {
   const orgMap = orgClients.get(orgId);
-  if (!orgMap || orgMap.size === 0) {
-    // Still buffer the event for replay on reconnect
-    const eventId = getNextEventId(orgId);
-    const payload = buildPayload(eventName, data, eventId);
-    pushToReplayBuffer(orgId, eventId, eventName, payload);
-    return;
-  }
-
   const eventId = getNextEventId(orgId);
+  
+  // 1. Custom named event
   const payload = buildPayload(eventName, data, eventId);
   pushToReplayBuffer(orgId, eventId, eventName, payload);
 
-  orgMap.forEach((resSet) => {
-    resSet.forEach((res) => safeWrite(res, payload));
-  });
+  // 2. Legacy 'message' event for standard onmessage listeners
+  const legacyPayload = buildPayload('message', { ...data, type: eventName }, eventId);
+  pushToReplayBuffer(orgId, eventId, 'message', legacyPayload);
+
+  if (orgMap && orgMap.size > 0) {
+    orgMap.forEach((resSet) => {
+      resSet.forEach((res) => {
+        safeWrite(res, payload);
+        safeWrite(res, legacyPayload);
+      });
+    });
+  }
 }
 
 function sendToUser(userId, eventName, data) {
