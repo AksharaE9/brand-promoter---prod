@@ -24,8 +24,21 @@ const dashboardRoutes = require("./modules/dashboard/routes");
 const collegeDriveRoutes = require("./modules/college-drives/routes");
 const auditRoutes = require("./modules/audit/routes");
 const notificationRoutes = require("./modules/notifications/routes");
-const { worker: syncWorker, scheduleSyncJob } = require("./jobs/schedulingSyncWorker");
-const { worker: importWorker } = require("./jobs/bulkImportWorker");
+const isVercel = !!process.env.VERCEL;
+let syncWorker = null;
+let scheduleSyncJob = null;
+let importWorker = null;
+
+if (!isVercel) {
+  try {
+    const syncModule = require("./jobs/schedulingSyncWorker");
+    syncWorker = syncModule.worker;
+    scheduleSyncJob = syncModule.scheduleSyncJob;
+    importWorker = require("./jobs/bulkImportWorker").worker;
+  } catch (err) {
+    console.warn("[BullMQ] Background workers failed to load:", err.message);
+  }
+}
 const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { setSecurityHeaders } = require("./middleware/security");
@@ -169,10 +182,12 @@ async function bootstrap() {
       console.log(`[ATS-STABILIZED-V3.0] Server is running on port ${PORT}`);
     });
 
-    // Start the scheduling sync job
-    scheduleSyncJob().catch(err => {
-      console.error('[SchedulingSync] Failed to schedule sync job:', err);
-    });
+    // Start the scheduling sync job (only if not on Vercel)
+    if (scheduleSyncJob) {
+      scheduleSyncJob().catch(err => {
+        console.error('[SchedulingSync] Failed to schedule sync job:', err);
+      });
+    }
 
     // Pre-warm critical cache keys (non-blocking)
     warmCaches().catch(err => {
@@ -183,8 +198,8 @@ async function bootstrap() {
     const shutdown = async () => {
       console.log('[Server] Shutting down, closing workers...');
       try {
-        await syncWorker.close();
-        await importWorker.close();
+        if (syncWorker) await syncWorker.close();
+        if (importWorker) await importWorker.close();
         console.log('[Server] Workers closed successfully.');
       } catch (err) {
         console.error('[Server] Error closing workers:', err);

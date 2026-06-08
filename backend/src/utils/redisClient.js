@@ -2,19 +2,19 @@
 const Redis = require('ioredis');
 
 const sharedConfig = {
-  enableOfflineQueue:     true,
-  connectTimeout:         8000,
-  commandTimeout:         4000,
+  enableOfflineQueue:     false,  // Fail fast when disconnected to avoid hanging HTTP requests
+  connectTimeout:         2000,   // 2 seconds connect timeout
+  commandTimeout:         500,    // 500ms command timeout for fast fallback
   keepAlive:              30000,
   lazyConnect:            false,
   enableReadyCheck:       true,
-  maxRetriesPerRequest:   3,
+  maxRetriesPerRequest:   1,      // Limit command retries to avoid latency spikes
   retryStrategy: (times) => {
-    if (times > 10) {
-      console.error('[Redis] Too many retries, giving up');
+    if (times > 3) {
+      console.error('[Redis] Too many connection failures, disabling retries');
       return null;
     }
-    return Math.min(times * 300, 5000);
+    return Math.min(times * 300, 2000);
   },
   reconnectOnError: (err) => {
     const targets = ['READONLY','ECONNRESET','ETIMEDOUT','ENOTFOUND'];
