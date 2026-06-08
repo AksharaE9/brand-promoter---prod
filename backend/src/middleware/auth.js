@@ -29,7 +29,12 @@ async function auth(req, res, next) {
     
     // Try user cache before hitting Firestore
     const userCacheKey = `auth:user:${payload.userId}:${payload.sessionId || 'nosession'}`;
-    let cachedUser = await redis.get(userCacheKey);
+    let cachedUser = null;
+    try {
+      cachedUser = await redis.get(userCacheKey);
+    } catch (redisErr) {
+      console.warn('[AuthCache] Failed to get user from Redis cache, falling back to Firestore:', redisErr.message);
+    }
 
     if (cachedUser) {
       const user = JSON.parse(cachedUser);
@@ -71,7 +76,11 @@ async function auth(req, res, next) {
     }
 
     // Cache for 2 minutes — fast path for subsequent requests
-    await redis.setex(userCacheKey, USER_CACHE_TTL, JSON.stringify(user));
+    try {
+      await redis.setex(userCacheKey, USER_CACHE_TTL, JSON.stringify(user));
+    } catch (redisErr) {
+      console.warn('[AuthCache] Failed to cache user in Redis:', redisErr.message);
+    }
 
     req.user = user;
     return next();

@@ -1,7 +1,95 @@
 'use strict';
-const { rateLimit } = require('express-rate-limit');
+const { rateLimit, MemoryStore } = require('express-rate-limit');
 const { RedisStore } = require('rate-limit-redis');
 const redis = require('../utils/redisClient');
+
+class SelfHealingStore {
+  constructor(options) {
+    this.memoryStore = new MemoryStore();
+    this.redisStore = new RedisStore(options);
+    this.useMemoryFallback = false;
+    this.lastFailureTime = 0;
+    this.fallbackDurationMs = 60000; // 1 minute
+  }
+
+  async init(options) {
+    this.memoryStore.init(options);
+    try {
+      await this.redisStore.init(options);
+    } catch (err) {
+      console.warn(`[RateLimiter] Failed to initialize RedisStore, falling back to MemoryStore:`, err.message);
+      this.useMemoryFallback = true;
+      this.lastFailureTime = Date.now();
+    }
+  }
+
+  shouldUseMemory() {
+    if (this.useMemoryFallback) {
+      if (Date.now() - this.lastFailureTime > this.fallbackDurationMs) {
+        this.useMemoryFallback = false;
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async get(key) {
+    if (this.shouldUseMemory()) {
+      return this.memoryStore.get(key);
+    }
+    try {
+      return await this.redisStore.get(key);
+    } catch (err) {
+      console.warn(`[RateLimiter] RedisStore.get failed, falling back to MemoryStore:`, err.message);
+      this.useMemoryFallback = true;
+      this.lastFailureTime = Date.now();
+      return this.memoryStore.get(key);
+    }
+  }
+
+  async increment(key) {
+    if (this.shouldUseMemory()) {
+      return this.memoryStore.increment(key);
+    }
+    try {
+      return await this.redisStore.increment(key);
+    } catch (err) {
+      console.warn(`[RateLimiter] RedisStore.increment failed, falling back to MemoryStore:`, err.message);
+      this.useMemoryFallback = true;
+      this.lastFailureTime = Date.now();
+      return this.memoryStore.increment(key);
+    }
+  }
+
+  async decrement(key) {
+    if (this.shouldUseMemory()) {
+      return this.memoryStore.decrement(key);
+    }
+    try {
+      await this.redisStore.decrement(key);
+    } catch (err) {
+      console.warn(`[RateLimiter] RedisStore.decrement failed, falling back to MemoryStore:`, err.message);
+      this.useMemoryFallback = true;
+      this.lastFailureTime = Date.now();
+      await this.memoryStore.decrement(key);
+    }
+  }
+
+  async resetKey(key) {
+    if (this.shouldUseMemory()) {
+      return this.memoryStore.resetKey(key);
+    }
+    try {
+      await this.redisStore.resetKey(key);
+    } catch (err) {
+      console.warn(`[RateLimiter] RedisStore.resetKey failed, falling back to MemoryStore:`, err.message);
+      this.useMemoryFallback = true;
+      this.lastFailureTime = Date.now();
+      await this.memoryStore.resetKey(key);
+    }
+  }
+}
 
 function createLimiter(windowMs, max, prefix) {
   return rateLimit({
@@ -10,7 +98,7 @@ function createLimiter(windowMs, max, prefix) {
     standardHeaders: true,
     legacyHeaders:   false,
     validate: false,
-    store: new RedisStore({
+    store: new SelfHealingStore({
       sendCommand: (...args) => redis.call(...args),
       prefix: `ratelimit:${prefix}:`,
     }),

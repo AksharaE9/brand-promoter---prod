@@ -53,6 +53,10 @@ app.use(timingMiddleware);
 // ── Performance: Request Deduplication ───────────────────────
 app.use(dedupMiddleware);
 
+// ── Performance: HTTP/2 Push Hints ───────────────────────────
+const pushHints = require("./middleware/pushHints");
+app.use(pushHints);
+
 // ── Security: Headers ────────────────────────────────────────
 app.disable('x-powered-by');
 
@@ -158,7 +162,11 @@ async function bootstrap() {
   try {
     const redis = require('./utils/redisClient');
     // Warm up Redis connection before accepting traffic
-    await redis.warmup();
+    try {
+      await redis.warmup();
+    } catch (warmupErr) {
+      console.warn('[Redis] Warmup failed. Server will run without Redis cache/rate-limiter:', warmupErr.message);
+    }
 
     const server = http.createServer(app);
     initSocket(server);

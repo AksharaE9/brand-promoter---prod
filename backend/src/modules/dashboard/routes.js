@@ -3,6 +3,8 @@ const { db: firestore } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 const { getCached, invalidate } = require("../../utils/cache");
+const { swrGet } = require("../../utils/swrCache");
+const { tieredDelete } = require("../../utils/tieredCache");
 
 const router = express.Router();
 router.use(auth);
@@ -33,9 +35,9 @@ router.get(
     const orgId = req.user.organizationId || 'default';
     const cacheKey = `dashboard_init_org:${orgId}`;
 
-    if (skipCache) await invalidate(cacheKey);
+    if (skipCache) await tieredDelete(cacheKey);
 
-    const data = await getCached(cacheKey, async () => {
+    const result = await swrGet(cacheKey, async () => {
       // First fetch the pipeline stages because we need their IDs for the parallel stage count queries
       const stagesSnap = await firestore.collection("pipeline_stages").get();
       const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -176,9 +178,9 @@ router.get(
         recentApplications: applications,
         upcomingInterviews: interviewDocs,
       };
-    }, 60000); // 60s cache
+    }, 45, 15000); // 45s Redis TTL, 15s L1 TTL
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.data });
   })
 );
 
@@ -192,7 +194,7 @@ router.get(
     const userId = req.user.id;
     const cacheKey = `recruiter_summary_${userId}`;
 
-    const data = await getCached(cacheKey, async () => {
+    const result = await swrGet(cacheKey, async () => {
       const candSnap = await firestore.collection("candidates")
         .where("mentorId", "==", userId)
         .get();
@@ -206,9 +208,9 @@ router.get(
       });
 
       return { stats, candidateCount: candidates.length };
-    }, 30000);
+    }, 30, 10000);
 
-    res.json({ success: true, data });
+    res.json({ success: true, data: result.data });
   })
 );
 

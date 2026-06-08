@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 import viteCompression from 'vite-plugin-compression';
+import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'child_process';
 
 const stripAttributesPlugin = () => ({
   name: 'strip-attributes',
@@ -16,13 +18,94 @@ const stripAttributesPlugin = () => ({
   }
 });
 
+let gitHash = 'default';
+try {
+  gitHash = execSync('git rev-parse --short HEAD').toString().trim();
+} catch (e) {
+  // Graceful fallback if git is not available
+}
+
 export default defineConfig({
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    __DEV__: false,
+    'import.meta.env.VITE_BUILD_HASH': JSON.stringify(gitHash),
+  },
+  resolve: {
+    alias: {
+      'react': 'react/cjs/react.production.js',
+      'react-dom': 'react-dom/cjs/react-dom.production.js',
+    },
+  },
   plugins: [
     react(),
     stripAttributesPlugin(),
     viteCompression({ algorithm: 'gzip', ext: '.gz' }),
     viteCompression({ algorithm: 'brotliCompress', ext: '.br' }),
     visualizer({ open: false, filename: 'stats.html', gzipSize: true }),
+    VitePWA({
+      registerType:    'autoUpdate',
+      injectRegister:  'auto',
+      workbox: {
+        // Precache all static assets on install
+        globPatterns: ['**/*.{js,css,html,ico,woff2}'],
+        
+        // Runtime caching strategies
+        runtimeCaching: [
+          {
+            // API static data — serve stale while revalidating
+            urlPattern: /\/api\/(jobs|team|org-settings|panel-members)/,
+            handler:    'StaleWhileRevalidate',
+            options: {
+              cacheName:  'api-static',
+              expiration: { maxAgeSeconds: 300, maxEntries: 50 },
+            },
+          },
+          {
+            // Fonts and icons — cache first, very long TTL
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com/,
+            handler:    'CacheFirst',
+            options: {
+              cacheName:  'google-fonts',
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          {
+            // Firebase Storage assets (avatars, resumes)
+            urlPattern: /^https:\/\/storage\.googleapis\.com/,
+            handler:    'CacheFirst',
+            options: {
+              cacheName:  'firebase-storage',
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 7, maxEntries: 200 },
+            },
+          },
+          {
+            // Cloudinary images
+            urlPattern: /^https:\/\/res\.cloudinary\.com/,
+            handler:    'CacheFirst',
+            options: {
+              cacheName:  'cloudinary',
+              expiration: { maxAgeSeconds: 60 * 60 * 24 * 30, maxEntries: 300 },
+            },
+          },
+        ],
+        
+        // Skip waiting — activate new service worker immediately
+        skipWaiting:  true,
+        clientsClaim: true,
+      },
+      manifest: {
+        name:             'TalentOS',
+        short_name:       'TalentOS',
+        theme_color:      '#1e3a5f',
+        background_color: '#f8fafc',
+        display:          'standalone',
+        icons: [
+          { src:'/icon-192.png', sizes:'192x192', type:'image/png' },
+          { src:'/icon-512.png', sizes:'512x512', type:'image/png' },
+        ],
+      },
+    })
   ],
   server: {
     proxy: {
@@ -41,11 +124,14 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
-              return 'vendor-react';
+            if (id.includes('react-router-dom') || id.includes('react-router') || id.includes('@remix-run')) {
+              return 'react-router';
             }
-            if (id.includes('@tanstack/react-query')) {
-              return 'vendor-query';
+            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
+              return 'react-core';
+            }
+            if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query')) {
+              return 'react-query';
             }
             if (id.includes('recharts')) {
               return 'vendor-charts';

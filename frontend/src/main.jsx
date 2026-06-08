@@ -30,19 +30,23 @@ const queryClient = new QueryClient({
 const sessionPersister = {
   persistClient: async (client) => {
     try {
-      // Filter cache to only persist jobs, team, and settings queries
+      // Filter cache to only persist jobs, team, org-settings, drives, panel-members
       const filteredQueries = client.clientState.queries.filter(q => {
         const key = q.queryKey[0];
-        return typeof key === 'string' && ['jobs', 'team', 'settings'].includes(key);
+        return typeof key === 'string' && ['jobs', 'team', 'org-settings', 'drives', 'panel-members'].includes(key) && q.state.status === 'success';
       });
-      const filteredClient = {
-        ...client,
+      const cacheData = {
         clientState: {
-          ...client.clientState,
-          queries: filteredQueries
-        }
+          ...client,
+          clientState: {
+            ...client.clientState,
+            queries: filteredQueries
+          }
+        },
+        buster: import.meta.env.VITE_BUILD_HASH || 'default',
+        timestamp: Date.now()
       };
-      sessionStorage.setItem('REACT_QUERY_OFFLINE_CACHE', JSON.stringify(filteredClient));
+      sessionStorage.setItem('REACT_QUERY_OFFLINE_CACHE', JSON.stringify(cacheData));
     } catch (e) {
       console.warn('Failed to persist QueryClient:', e.message);
     }
@@ -50,7 +54,23 @@ const sessionPersister = {
   restoreClient: async () => {
     try {
       const cache = sessionStorage.getItem('REACT_QUERY_OFFLINE_CACHE');
-      return cache ? JSON.parse(cache) : undefined;
+      if (!cache) return undefined;
+      const parsed = JSON.parse(cache);
+      
+      // Clear cache if build buster mismatch
+      const currentBuster = import.meta.env.VITE_BUILD_HASH || 'default';
+      if (parsed.buster !== currentBuster) {
+        sessionStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
+        return undefined;
+      }
+      
+      // Expire cache after 5 minutes
+      if (Date.now() - parsed.timestamp > 5 * 60_000) {
+        sessionStorage.removeItem('REACT_QUERY_OFFLINE_CACHE');
+        return undefined;
+      }
+      
+      return parsed.clientState;
     } catch (e) {
       console.warn('Failed to restore QueryClient:', e.message);
       return undefined;

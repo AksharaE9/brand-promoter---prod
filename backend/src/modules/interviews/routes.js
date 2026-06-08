@@ -70,7 +70,12 @@ router.get(
     const dirtyItems = await cache.getDirtyQueue();
     const orgId = req.user.organizationId || "defaultOrg";
     const orgDirty = dirtyItems.filter(i => i.orgId === orgId);
-    const lastSync = await redis.get(KEYS.lastSync(orgId));
+    let lastSync = null;
+    try {
+      lastSync = await redis.get(KEYS.lastSync(orgId));
+    } catch (redisErr) {
+      console.warn('[SyncStatus] Failed to get lastSync from Redis:', redisErr.message);
+    }
     
     res.json({
       success: true,

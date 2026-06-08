@@ -4,6 +4,7 @@ const { asyncHandler } = require("../../utils/errors");
 const { loadAnalyticsBase, getPipelineStages } = require("./dataLoader");
 const { db: firestore } = require("../../config/firebase");
 const { getCached, getCache, setCache } = require("../../utils/cache");
+const { swrGet } = require("../../utils/swrCache");
 
 const ROUTE_CACHE_TTL = 30; // 30s per-route cache
 
@@ -99,9 +100,7 @@ async function getStagesMap() {
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -190,18 +189,16 @@ router.get("/overview", asyncHandler(async (req, res) => {
         interviewsThisMonth: getPct(currInterviews.length, prevInterviews.length)
       }
     };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 2. GET /api/analytics/pipeline
 router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -232,9 +229,9 @@ router.get("/pipeline", asyncHandler(async (req, res) => {
     });
 
     return { funnel };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 3. GET /api/analytics/hiring-velocity
@@ -258,9 +255,7 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, users] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getUsersList()
@@ -296,18 +291,16 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
     });
 
     return { interviewers: load };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 5. GET /api/analytics/recruiter-performance
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_recruiter_performance_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_recruiter_performance_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, users, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getUsersList(),
@@ -342,18 +335,16 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
     });
 
     return { recruiters: performance };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 6. GET /api/analytics/source-analysis
 router.get("/source-analysis", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
     const { candidates } = await loadAnalyticsBase(myOrg, start, end);
 
     const currCands = candidates.filter(c => {
@@ -390,18 +381,16 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
     });
 
     return { sources, total };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 7. GET /api/analytics/stage-conversion
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -440,17 +429,15 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
     }
 
     return { stages: stagesData, conversions };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 8. GET /api/analytics/monthly-trends
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;
-
-  const data = await getCached(cacheKey, async () => {
+  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;  const result = await swrGet(cacheKey, async () => {
     const end = new Date();
     const start = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000); // last 6 months
 
@@ -499,9 +486,9 @@ router.get("/monthly-trends", asyncHandler(async (req, res) => {
     }
 
     return { months };
-  }, ROUTE_CACHE_TTL * 1000);
+  }, ROUTE_CACHE_TTL, 15000);
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: result.data });
 }));
 
 // 9. GET /api/analytics/debug-counts

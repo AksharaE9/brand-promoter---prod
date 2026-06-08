@@ -29,14 +29,21 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
     const parsedLimit = Math.min(parseInt(limit) || 50, 200); // cap at 200
     const orgId = req.user.organizationId || "defaultOrg";
 
+    const fields = [
+      'entityType', 'action', 'actorUserId', 'createdAt', 'ipAddress',
+      'userAgent', 'actorName', 'actorEmail', 'actorRole', 'entityName',
+      'entityId', 'organizationId', 'isDeleted'
+    ];
+
     // Build Firestore query — equality filters only
     let query = firestore.collection("auditLogs")
       .where("organizationId", "==", orgId)
-      .where("isDeleted", "==", false);
+      .where("isDeleted", "==", false)
+      .select(...fields);
 
     if (entityType) query = query.where("entityType", "==", entityType);
     if (action)     query = query.where("action",     "==", action);
-    if (userId)     query = query.where("actorUserId","==", userId);
+    if (userId)     query = query.where("actorUserId", "==", userId);
 
     // Date range filters
     if (startDate) query = query.where("createdAt", ">=", new Date(startDate).toISOString());
@@ -49,12 +56,16 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       useCursorPagination = false;
     }
 
+    let finalLogs = [];
+    let nextCursor = null;
+    let hasMore = false;
+
     if (useCursorPagination) {
       const { paginateFirestore } = require("../../utils/pagination");
       const result = await paginateFirestore({ query, limit: parsedLimit, cursor });
       const logs = result.data;
 
-      const normalized = logs.map(log => ({
+      finalLogs = logs.map(log => ({
         ...log,
         actor: {
           fullName: log.actorName || log.actorUserId || "System",
@@ -63,13 +74,8 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
         },
         entityName: log.entityName || log.entityId || "N/A",
       }));
-
-      res.json({
-        success: true,
-        data: normalized,
-        nextCursor: result.nextCursor,
-        hasMore: result.hasMore
-      });
+      nextCursor = result.nextCursor;
+      hasMore = result.hasMore;
     } else {
       // In-memory search fallback
       const fetchLimit = 5000;
@@ -95,10 +101,10 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       }
 
       const paginated = logs.slice(startIndex, startIndex + parsedLimit);
-      const nextCursor = (startIndex + parsedLimit < logs.length) ? paginated[paginated.length - 1].id : null;
-      const hasMore = startIndex + parsedLimit < logs.length;
+      nextCursor = (startIndex + parsedLimit < logs.length) ? paginated[paginated.length - 1].id : null;
+      hasMore = startIndex + parsedLimit < logs.length;
 
-      const normalized = paginated.map(log => ({
+      finalLogs = paginated.map(log => ({
         ...log,
         actor: {
           fullName: log.actorName || log.actorUserId || "System",
@@ -107,14 +113,19 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
         },
         entityName: log.entityName || log.entityId || "N/A",
       }));
-
-      res.json({
-        success: true,
-        data: normalized,
-        nextCursor,
-        hasMore
-      });
     }
+
+    if (finalLogs.length > 30) {
+      const { streamPaginatedJson } = require("../../utils/streamResponse");
+      return streamPaginatedJson(res, finalLogs, { nextCursor, hasMore });
+    }
+
+    res.json({
+      success: true,
+      data: finalLogs,
+      nextCursor,
+      hasMore
+    });
   } catch (error) {
     console.error('[Audit] Query failed:', error.message);
     res.status(500).json({ success: false, message: error.message });

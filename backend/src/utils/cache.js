@@ -1,7 +1,14 @@
 'use strict';
 const redis = require('./redisClient');
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gzip   = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 const DEFAULT_TTL = 60;
+const COMPRESS_THRESHOLD = 1024; // compress values over 1KB
+const COMPRESSED_PREFIX  = 'gz:';
 
 // ── Metrics tracking ──
 const metrics = {
@@ -16,12 +23,21 @@ const metrics = {
 async function getCache(key) {
   try {
     const val = await redis.get(key);
-    if (val) {
-      metrics.hits++;
-      return JSON.parse(val);
+    if (!val) {
+      metrics.misses++;
+      return null;
     }
-    metrics.misses++;
-    return null;
+
+    metrics.hits++;
+    let json;
+    if (val.startsWith(COMPRESSED_PREFIX)) {
+      const compressed = Buffer.from(val.slice(COMPRESSED_PREFIX.length), 'base64');
+      json = (await gunzip(compressed)).toString();
+    } else {
+      json = val;
+    }
+
+    return JSON.parse(json);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] getCache error:', key, err.message);
@@ -33,7 +49,18 @@ async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
   try {
     if (data === null || data === undefined) return;
     metrics.sets++;
-    await redis.setex(key, ttlSeconds, JSON.stringify(data));
+
+    const json = JSON.stringify(data);
+    let value;
+
+    if (json.length > COMPRESS_THRESHOLD) {
+      const compressed = await gzip(json);
+      value = COMPRESSED_PREFIX + compressed.toString('base64');
+    } else {
+      value = json;
+    }
+
+    await redis.setex(key, ttlSeconds, value);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] setCache error:', key, err.message);
@@ -49,6 +76,7 @@ async function deleteCache(key) {
     console.error('[Cache] deleteCache error:', key, err.message);
   }
 }
+
 
 async function deleteCachePattern(pattern) {
   try {

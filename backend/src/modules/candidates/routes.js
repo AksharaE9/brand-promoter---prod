@@ -450,10 +450,19 @@ router.get(
 
     const cacheKeyStr = `candidates:list:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
 
+    const fields = [
+      'fullName', 'email', 'phone', 'status', 'currentStage',
+      'assignedRecruiterId', 'assignedRecruiterName',
+      'source', 'createdAt', 'offerDecision',
+      'location', 'jobTitle', 'graduationYear', 'category', 'mentorId',
+      'resumeFileId', 'profilePhotoFileId'
+    ];
+
     const data = await getCached(cacheKeyStr, async () => {
       let query = firestore.collection("candidates")
         .where("organizationId", "==", orgId)
-        .where("isDeleted", "==", false);
+        .where("isDeleted", "==", false)
+        .select(...fields);
 
       let useCursorPagination = true;
 
@@ -513,6 +522,11 @@ router.get(
         return { items: paginatedItems, nextCursor, hasMore };
       }
     }, 30000);
+
+    if (data.items && data.items.length > 30) {
+      const { streamPaginatedJson } = require("../../utils/streamResponse");
+      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore });
+    }
 
     res.json({
       success: true,

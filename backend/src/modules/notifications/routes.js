@@ -30,7 +30,10 @@ router.get('/stream', (req, res) => {
 // GET /notifications
 router.get('/', asyncHandler(async (req, res) => {
   const { unreadOnly } = req.query;
-  let query = firestore.collection("notifications").where("userId", "==", req.user.id);
+  let query = firestore.collection("notifications")
+    .where("userId", "==", req.user.id)
+    .where("isDeleted", "==", false)
+    .select('type', 'title', 'message', 'link', 'isRead', 'createdAt');
   
   if (unreadOnly === 'true') {
     query = query.where("isRead", "==", false);
@@ -52,6 +55,7 @@ router.post('/', asyncHandler(async (req, res) => {
     message,
     type: type || 'INFO',
     isRead: false,
+    isDeleted: false,
     createdAt: new Date().toISOString()
   };
   await docRef.set(notif);
