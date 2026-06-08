@@ -5,6 +5,11 @@ const path = require("path");
 const http = require("http");
 require("dotenv").config();
 const { initSocket } = require("./config/socket");
+const redis = require("./utils/redisClient");
+const sse = require("./utils/sse");
+const { warmCaches } = require("./utils/cacheWarmer");
+const { getCacheMetrics } = require("./utils/cache");
+const { auth, requireRoles } = require("./middleware/auth");
 
 const authRoutes = require("./modules/auth/routes");
 const userRoutes = require("./modules/users/routes");
@@ -96,9 +101,6 @@ app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
 app.get("/api/health", async (req, res) => {
-  const redis = require('./utils/redisClient');
-  const sse = require('./utils/sse');
-  
   let redisHealthy = false;
   try {
     redisHealthy = await redis.isHealthy();
@@ -119,14 +121,9 @@ app.get("/api/health", async (req, res) => {
 });
 
 // Cache Metrics Monitoring Endpoint (GET /api/health/cache — admin only)
-const { requireRoles } = require("./middleware/auth");
-const { auth } = require("./middleware/auth");
-const { getCacheMetrics } = require("./utils/cache");
-const sseManager = require("./utils/sse");
-
 app.get("/api/health/cache", auth, requireRoles("SUPER_ADMIN"), (req, res) => {
   const cacheStats = getCacheMetrics();
-  const sseStats = sseManager.getStats();
+  const sseStats = sse.getStats();
   res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
 });
 
@@ -160,7 +157,6 @@ app.use(errorHandler);
 
 async function bootstrap() {
   try {
-    const redis = require('./utils/redisClient');
     // Warm up Redis connection asynchronously (non-blocking)
     redis.warmup().catch(warmupErr => {
       console.warn('[Redis] Warmup failed. Server will run without Redis cache/rate-limiter:', warmupErr.message);
@@ -179,7 +175,6 @@ async function bootstrap() {
     });
 
     // Pre-warm critical cache keys (non-blocking)
-    const { warmCaches } = require('./utils/cacheWarmer');
     warmCaches().catch(err => {
       console.error('[CacheWarmer] Warm-up failed:', err.message);
     });
