@@ -31,12 +31,6 @@ export default defineConfig({
     __DEV__: false,
     'import.meta.env.VITE_BUILD_HASH': JSON.stringify(gitHash),
   },
-  resolve: {
-    alias: {
-      'react': 'react/cjs/react.production.js',
-      'react-dom': 'react-dom/cjs/react-dom.production.js',
-    },
-  },
   plugins: [
     react(),
     stripAttributesPlugin(),
