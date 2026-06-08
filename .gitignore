@@ -13,10 +13,6 @@ dist-ssr
 *.local
 # Environment
 .env
-.env.*
-!.env.example
-serviceAccountKey.json
-**/serviceAccountKey.json
 tmp/
 
 # Editor directories and files

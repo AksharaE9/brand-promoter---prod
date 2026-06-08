@@ -4,7 +4,6 @@ const KEYS = require('../utils/schedulingCacheKeys');
 const { db, admin } = require('../config/firebase');
 const sse = require('../utils/sse');
 const inv = require('../utils/cacheInvalidation');
-const { getEntitiesCached } = require('../utils/entityCache');
 
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
@@ -16,6 +15,55 @@ const DIRTY_TTL = 60 * 60;             // 1 hour — dirty queue entries
 // POPULATION HELPER (Matches original populator, optimized via Redis entity caching)
 // ─────────────────────────────────────────────
 
+async function getEntitiesCached(collectionName, ids) {
+  if (!ids || ids.length === 0) return {};
+
+  const redisKeys = ids.map(id => `entity:${collectionName}:${id}`);
+  let cachedVals = [];
+  try {
+    cachedVals = await redis.mget(...redisKeys);
+  } catch (err) {
+    console.warn(`[SchedulingCache] mget failed for ${collectionName}:`, err.message);
+    cachedVals = new Array(ids.length).fill(null);
+  }
+
+    const resultMap = {};
+  const missingIds = [];
+
+  cachedVals.forEach((val, index) => {
+    const id = ids[index];
+    if (val && isSafeKey(id)) {
+      try {
+        resultMap[id] = JSON.parse(val);
+      } catch (_) {
+        missingIds.push(id);
+      }
+    } else {
+      missingIds.push(id);
+    }
+  });
+
+  if (missingIds.length > 0) {
+    try {
+      const refs = missingIds.map(id => db.collection(collectionName).doc(id));
+      const snaps = await db.getAll(...refs);
+
+      const pipeline = redis.pipeline();
+      snaps.forEach(snap => {
+        if (snap && snap.exists && isSafeKey(snap.id)) {
+          const docData = { id: snap.id, ...snap.data() };
+          resultMap[snap.id] = docData;
+          pipeline.setex(`entity:${collectionName}:${snap.id}`, 600, JSON.stringify(docData)); // 10 min TTL
+        }
+      });
+      await pipeline.exec();
+    } catch (err) {
+      console.error(`[SchedulingCache] Entity fetch error for ${collectionName}:`, err.message);
+    }
+  }
+
+  return resultMap;
+}
 
 async function populateInterviews(rounds, { skipFeedbacks = false } = {}) {
   if (!rounds || rounds.length === 0) return [];
@@ -307,11 +355,17 @@ async function getRoundsList(orgId, filters = {}) {
     }
     
     if (isSearch) {
-      const { searchInterviews } = require('../modules/interviews/searchService');
-      const searchRes = await searchInterviews(orgId, filters.search, filters);
+      // For search: populate matched then filter by query (we need candidate names)
+      const allPopulated = await populateInterviews(activeRounds, { skipFeedbacks: true });
+      const q = filters.search.trim().toLowerCase();
+      const filtered = allPopulated.filter(r => {
+        const candName = (r.application?.candidate?.fullName || '').toLowerCase();
+        const jobTitle = (r.application?.job?.title || '').toLowerCase();
+        return candName.includes(q) || jobTitle.includes(q);
+      });
       return {
-        source: searchRes.source,
-        data: { data: searchRes.data, pagination: { total: searchRes.data.length, hasMore: false } }
+        source: 'firebase',
+        data: { data: filtered, pagination: { total: filtered.length, hasMore: false } }
       };
     }
 
