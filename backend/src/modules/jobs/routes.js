@@ -30,8 +30,8 @@ router.get(
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
     const cursor = req.query.cursor?.trim();
     const { getCached } = require("../../utils/cache");
-
-    const cacheKeyStr = `jobs:list:${cursor || 'start'}:${limit}:${req.query.isActive || ''}:${req.query.search || ''}`;
+    const orgId = req.user.organizationId || "defaultOrg";
+    const cacheKeyStr = `jobs:list:${orgId}:${cursor || 'start'}:${limit}:${req.query.isActive || ''}:${req.query.search || ''}`;
 
     const result = await getCached(cacheKeyStr, async () => {
       let query = firestore.collection("jobs");

@@ -17,37 +17,42 @@ async function loadAnalyticsBase(orgId, startDate, endDate) {
   }
 
   const promise = (async () => {
-    // Fire all queries in parallel
+    // Fire queries in parallel with only single-field equality filters to avoid index requirements
     const [candSnap, intSnap, appSnap, userSnap] = await Promise.all([
       db.collection('candidates')
         .where('organizationId', '==', orgId)
-        .where('isDeleted',      '==', false)
-        .where('createdAt',      '>=', startDate.toISOString())
-        .where('createdAt',      '<=', endDate.toISOString())
         .get(),
       db.collection('interviews')
         .where('organizationId', '==', orgId)
-        .where('isDeleted',      '==', false)
         .get(),
       db.collection('applications')
         .where('organizationId', '==', orgId)
-        .where('isDeleted',      '==', false)
-        .where('createdAt',      '>=', startDate.toISOString())
-        .where('createdAt',      '<=', endDate.toISOString())
         .get(),
       db.collection('users')
         .where('organizationId', '==', orgId)
-        .where('isDeleted',      '==', false)
-        .where('status',         '==', 'ACTIVE')
         .get(),
     ]);
 
-    const data = {
-      candidates:   candSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-      interviews:   intSnap.docs.map(d  => ({ id: d.id, ...d.data() })),
-      applications: appSnap.docs.map(d  => ({ id: d.id, ...d.data() })),
-      users:        userSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-    };
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
+
+    const candidates = candSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.isDeleted === false && c.createdAt && c.createdAt >= startISO && c.createdAt <= endISO);
+
+    const interviews = intSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(i => i.isDeleted === false);
+
+    const applications = appSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(a => a.isDeleted === false && a.createdAt && a.createdAt >= startISO && a.createdAt <= endISO);
+
+    const users = userSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.isDeleted === false && u.status === 'ACTIVE');
+
+    const data = { candidates, interviews, applications, users };
 
     await setCache(cKey, data, TTL.ANALYTICS);
     return data;

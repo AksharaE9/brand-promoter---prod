@@ -448,7 +448,7 @@ router.get(
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${req.user.id}`;
 
     const fields = [
       'fullName', 'email', 'phone', 'status', 'currentStage',
@@ -493,7 +493,7 @@ router.get(
 
         return { items: paginatedItems, nextCursor, hasMore };
       } else {
-        const poolSize = 3000;
+        const poolSize = 1000;
         const snapshot = await query.limit(poolSize).get();
         let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
