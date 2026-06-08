@@ -1,5 +1,5 @@
 'use strict';
-const { deleteCachePattern, deleteCache } = require('./cache');
+const { tieredDelete: deleteCache, tieredDeletePattern: deleteCachePattern } = require('./tieredCache');
 
 async function runInvalidations(patterns) {
   const unique = [...new Set(patterns.filter(Boolean))];

@@ -177,14 +177,15 @@ const TTL = {
 
 // ── Backward-compatible API ──
 async function getCached(key, fetcher, ttlMs = 60000) {
-  const cached = await getCache(key);
-  if (cached !== null) {
-    return cached;
+  const { tieredGet, tieredSet } = require('./tieredCache');
+  const { data } = await tieredGet(key, ttlMs);
+  if (data !== null) {
+    return data;
   }
-  const data = await fetcher();
+  const fresh = await fetcher();
   const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
-  await setCache(key, data, ttlSec);
-  return data;
+  await tieredSet(key, fresh, ttlSec, ttlMs);
+  return fresh;
 }
 
 /**
