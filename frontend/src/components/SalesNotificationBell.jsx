@@ -39,7 +39,7 @@ const SalesNotificationBell = () => {
 
         const load = async () => {
             try {
-                const productsRes = await apiGet('/sales/tracker');
+                const productsRes = await apiGet('/sales/products');
                 if (!active) return;
 
                 const followUpItems = (productsRes.data || [])

@@ -177,32 +177,99 @@ const InterviewSchedule = () => {
       }, new Map()).values()
     ).sort((a, b) => new Date(b.scheduledStart).getTime() - new Date(a.scheduledStart).getTime())[0];
     setSelectedId(prev => prev || firstGroup?.applicationId || '');
+  }, [refetchInterviews, queryInterviews]);
 
-    // Step 2: Load supporting data for scheduling form (lazy — only when needed)
-    // We load candidates/jobs/applications for the schedule modal but NOT for the list panel
-    const [applicationsRes, jobsRes] = await Promise.all([
-      apiGet('/applications?limit=500'),
-      apiGet('/jobs?limit=50'),
-    ]);
-    setApplications(applicationsRes.data || []);
-    setJobs(jobsRes.data || []);
-    setJobSuggestions(jobsRes.data || []);
+  const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
 
-    // Step 3: Load interviewers
-    try {
-      const interviewerRes = await apiGet('/users/interviewers');
-      setInterviewers(interviewerRes.data || []);
-    } catch (_) {
-      const seen = new Set();
-      const fallback = [];
-      interviewRows.forEach(iv => {
-        (iv.interviewers || []).forEach(u => {
-          if (u?.id && !seen.has(u.id)) { seen.add(u.id); fallback.push(u); }
-        });
-      });
-      setInterviewers(fallback);
-    }
-  }, []);
+  useEffect(() => {
+    if (supportingDataLoaded) return;
+    if (viewMode !== 'calendar' && !showScheduleModal) return;
+
+    const loadSupportingData = async () => {
+      try {
+        const [applicationsRes, jobsRes] = await Promise.all([
+          apiGet('/applications?limit=200'),
+          apiGet('/jobs?limit=50&isActive=true'),
+        ]);
+        setApplications(applicationsRes.data || []);
+        setJobs(jobsRes.data || []);
+        setJobSuggestions(jobsRes.data || []);
+
+        let interviewerList = [];
+        try {
+          const interviewerRes = await apiGet('/users/interviewers');
+          interviewerList = interviewerRes.data || [];
+        } catch (_) {
+          const seen = new Set();
+          interviews.forEach(iv => {
+            (iv.interviewers || []).forEach(u => {
+              if (u?.id && !seen.has(u.id)) {
+                seen.add(u.id);
+                interviewerList.push(u);
+              }
+            });
+          });
+        }
+        setInterviewers(interviewerList);
+        setSupportingDataLoaded(true);
+      } catch (err) {
+        console.error('Failed to load scheduler supporting data:', err);
+      }
+    };
+
+    loadSupportingData();
+  }, [viewMode, showScheduleModal, supportingDataLoaded, interviews]);
+
+  const debouncedCandidateSearch = useDebounce(candidateSearch, 300);
+  const debouncedJobSearch = useDebounce(jobSearch, 300);
+
+  useEffect(() => {
+    if (!showScheduleModal) return;
+    let active = true;
+
+    const fetchCandidates = async () => {
+      try {
+        setSearchingCandidates(true);
+        const res = await apiGet(`/candidates?search=${encodeURIComponent(debouncedCandidateSearch)}&limit=20`);
+        if (!active) return;
+        setCandidateSuggestions(res.data || res.items || []);
+      } catch (err) {
+        console.error('Failed to search candidates:', err);
+      } finally {
+        if (active) setSearchingCandidates(false);
+      }
+    };
+
+    fetchCandidates();
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedCandidateSearch, showScheduleModal]);
+
+  useEffect(() => {
+    if (!showScheduleModal) return;
+    let active = true;
+
+    const fetchJobs = async () => {
+      try {
+        setSearchingJobs(true);
+        const res = await apiGet(`/jobs?search=${encodeURIComponent(debouncedJobSearch)}&isActive=true&limit=20`);
+        if (!active) return;
+        setJobSuggestions(res.data || res.items || []);
+      } catch (err) {
+        console.error('Failed to search jobs:', err);
+      } finally {
+        if (active) setSearchingJobs(false);
+      }
+    };
+
+    fetchJobs();
+
+    return () => {
+      active = false;
+    };
+  }, [debouncedJobSearch, showScheduleModal]);
 
   useEffect(() => {
     let mounted = true;
@@ -232,11 +299,17 @@ const InterviewSchedule = () => {
   }, []);
 
   useEffect(() => {
-    if (jobIdParam && jobs.length > 0) {
-      const job = jobs.find(j => j.id === jobIdParam);
-      if (job) setInterviewListSearch(job.title);
+    if (jobIdParam) {
+      const interviewWithJob = interviews.find(iv => (iv.application?.job?.id || iv.application?.jobId) === jobIdParam);
+      const jobTitle = interviewWithJob?.application?.job?.title;
+      if (jobTitle) {
+        setInterviewListSearch(jobTitle);
+      } else if (jobs.length > 0) {
+        const job = jobs.find(j => j.id === jobIdParam);
+        if (job) setInterviewListSearch(job.title);
+      }
     }
-  }, [jobIdParam, jobs]);
+  }, [jobIdParam, interviews, jobs]);
 
   // Singleton SSE — debounced reload
   const lastSSEReloadRef = useRef(0);
