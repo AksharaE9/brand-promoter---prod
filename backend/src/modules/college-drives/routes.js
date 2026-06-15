@@ -1,6 +1,6 @@
 const express = require("express");
 const XLSX = require("xlsx");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
@@ -22,8 +22,9 @@ router.get(
   "/colleges",
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("colleges").orderBy("name", "asc").get();
-    const colleges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const colleges = await prisma.college.findMany({
+      orderBy: { name: "asc" }
+    });
     res.json({ success: true, data: colleges });
   }),
 );
@@ -43,13 +44,13 @@ router.post(
       year: normalizeText(year) || null,
       role: normalizeText(role) || null,
       course: normalizeText(course) || null,
-      createdById: req.user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdById: req.user.id
     };
 
-    const docRef = await firestore.collection("colleges").add(collegeData);
-    res.status(201).json({ success: true, data: { id: docRef.id, ...collegeData } });
+    const college = await prisma.college.create({
+      data: collegeData
+    });
+    res.status(201).json({ success: true, data: college });
   }),
 );
 
@@ -58,9 +59,17 @@ router.patch(
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const updateData = { ...req.body, updatedAt: new Date().toISOString() };
+    const updateData = { ...req.body };
     delete updateData.id;
-    await firestore.collection("colleges").doc(id).update(updateData);
+    
+    if (updateData.name !== undefined) {
+      updateData.name = normalizeText(updateData.name);
+    }
+    
+    await prisma.college.update({
+      where: { id },
+      data: updateData
+    });
     res.json({ success: true });
   }),
 );
@@ -72,10 +81,13 @@ router.get(
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
     const { collegeId } = req.query;
-    let query = firestore.collection("collegeDrives");
-    if (collegeId) query = query.where("collegeId", "==", collegeId);
-    const snapshot = await query.orderBy("createdAt", "desc").get();
-    const drives = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const where = { isDeleted: false };
+    if (collegeId) where.collegeId = collegeId;
+
+    const drives = await prisma.collegeDrive.findMany({
+      where,
+      orderBy: { createdAt: "desc" }
+    });
     res.json({ success: true, data: drives });
   }),
 );
@@ -88,24 +100,27 @@ router.post(
     if (!title || !collegeId || !dateFrom) throw new ApiError(400, "Missing required drive fields");
 
     const driveData = {
-      title, collegeId, dateFrom,
+      title,
+      collegeId,
+      dateFrom,
       dateTo: dateTo || null,
       status: status || "PLANNED",
       notes: notes || null,
       ownerId: req.user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      organizationId: req.user.organizationId || "defaultOrg"
     };
 
-    const docRef = await firestore.collection("collegeDrives").add(driveData);
+    const drive = await prisma.collegeDrive.create({
+      data: driveData
+    });
     
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
-    await inv.drive(orgId, docRef.id);
+    await inv.drive(orgId, drive.id);
 
     const sse = require("../../utils/sse");
     sse.broadcastToOrg(orgId, 'DRIVE_CREATED', {
-      driveId: docRef.id,
+      driveId: drive.id,
       collegeName: driveData.title,
       driveDate: driveData.dateFrom,
       city: driveData.notes || "",
@@ -113,7 +128,7 @@ router.post(
       createdByName: req.user.fullName || req.user.email,
     });
 
-    res.status(201).json({ success: true, data: { id: docRef.id, ...driveData } });
+    res.status(201).json({ success: true, data: drive });
   }),
 );
 
@@ -123,10 +138,10 @@ router.get(
   "/drives/:id/candidates",
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("collegeDriveCandidates")
-      .where("driveId", "==", req.params.id)
-      .orderBy("createdAt", "desc").get();
-    const candidates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const candidates = await prisma.collegeDriveCandidate.findMany({
+      where: { driveId: req.params.id },
+      orderBy: { createdAt: "desc" }
+    });
     res.json({ success: true, data: candidates });
   }),
 );
@@ -140,23 +155,40 @@ router.post(
     if (!fullName || !phone) throw new ApiError(400, "fullName and phone are required");
 
     // Check duplicate candidate by phone
-    const dupSnap = await firestore.collection("candidates").where("phone", "==", phone).limit(1).get();
+    const existingCandidate = await prisma.candidate.findFirst({
+      where: { phone, isDeleted: false }
+    });
+    
     let candidateId;
-    if (!dupSnap.empty) {
-      candidateId = dupSnap.docs[0].id;
+    if (existingCandidate) {
+      candidateId = existingCandidate.id;
     } else {
-      const candRef = await firestore.collection("candidates").add({
-        fullName, email, phone, source: "College Drive", createdAt: new Date().toISOString()
+      const candidate = await prisma.candidate.create({
+        data: {
+          fullName,
+          email: email || "N/A",
+          phone,
+          source: "College Drive",
+          organizationId: req.user.organizationId || "defaultOrg"
+        }
       });
-      candidateId = candRef.id;
+      candidateId = candidate.id;
     }
 
-    const driveDup = await firestore.collection("collegeDriveCandidates")
-      .where("driveId", "==", driveId).where("candidateId", "==", candidateId).limit(1).get();
-    if (!driveDup.empty) throw new ApiError(409, "Candidate already in this drive");
+    const driveDup = await prisma.collegeDriveCandidate.findFirst({
+      where: { driveId, candidateId }
+    });
+    if (driveDup) throw new ApiError(409, "Candidate already in this drive");
 
-    await firestore.collection("collegeDriveCandidates").add({
-      driveId, candidateId, fullName, email, phone, status: "ADDED", createdAt: new Date().toISOString()
+    await prisma.collegeDriveCandidate.create({
+      data: {
+        driveId,
+        candidateId,
+        fullName,
+        email: email || null,
+        phone,
+        status: "ADDED"
+      }
     });
 
     const orgId = req.user.organizationId || "defaultOrg";
@@ -200,22 +232,18 @@ router.post(
         });
         console.log(`[BulkUpload] Parsed ${sheetRows.length} rows from sheet "${sheetName}"`);
       }
-      
-      if (allRows.length > 0) {
-        const headers = Object.keys(allRows[0]).filter(k => !k.startsWith('_'));
-        console.log(`[BulkUpload] Headers found: ${headers.join(", ")}`);
-      }
     } catch (err) {
       console.error("[BulkUpload] XLSX Parse Error:", err);
       throw new ApiError(400, "Failed to parse Excel file. Please ensure it is a valid .xlsx or .csv file.");
     }
 
     const results = { inserted: 0, skipped: 0, errors: [] };
+    const orgId = req.user.organizationId || "defaultOrg";
+
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
       const sheetInfo = `[Sheet: ${row._sheetName}, Row ${row._rowIndex}]`;
 
-      // Extremely flexible header matching (case-insensitive, space-insensitive)
       const getValue = (patterns) => {
         const key = Object.keys(row).find(k => 
           patterns.some(p => k.trim().toLowerCase() === p.toLowerCase())
@@ -237,36 +265,53 @@ router.post(
       }
 
       try {
-        const dupSnap = await firestore.collection("candidates").where("phone", "==", phone).limit(1).get();
+        const existingCandidate = await prisma.candidate.findFirst({
+          where: { phone, isDeleted: false }
+        });
+        
         let candidateId;
-        if (!dupSnap.empty) {
-          candidateId = dupSnap.docs[0].id;
+        if (existingCandidate) {
+          candidateId = existingCandidate.id;
         } else {
-          const candRef = await firestore.collection("candidates").add({
-            fullName, email, phone, source: "College Drive Bulk", createdAt: new Date().toISOString()
+          const candidate = await prisma.candidate.create({
+            data: {
+              fullName,
+              email: email || "N/A",
+              phone,
+              source: "College Drive Bulk",
+              organizationId: orgId
+            }
           });
-          candidateId = candRef.id;
+          candidateId = candidate.id;
         }
 
-        const driveDup = await firestore.collection("collegeDriveCandidates")
-          .where("driveId", "==", driveId).where("candidateId", "==", candidateId).limit(1).get();
+        const driveDup = await prisma.collegeDriveCandidate.findFirst({
+          where: { driveId, candidateId }
+        });
 
-        if (driveDup.empty) {
-          await firestore.collection("collegeDriveCandidates").add({
-            driveId, candidateId, fullName, email, phone, status: "ADDED", createdAt: new Date().toISOString()
+        if (!driveDup) {
+          await prisma.collegeDriveCandidate.create({
+            data: {
+              driveId,
+              candidateId,
+              fullName,
+              email: email || null,
+              phone,
+              status: "ADDED"
+            }
           });
           results.inserted++;
         } else {
           results.skipped++;
-          results.errors.push(`Row ${lineNo}: Candidate already in drive`);
+          results.errors.push(`${sheetInfo}: Candidate already in drive`);
         }
       } catch (e) {
         results.skipped++;
-        results.errors.push(`Row ${lineNo}: Error - ${e.message}`);
+        results.errors.push(`${sheetInfo}: Error - ${e.message}`);
       }
     }
+
     if (results.inserted > 0) {
-      const orgId = req.user.organizationId || "defaultOrg";
       const inv = require("../../utils/cacheInvalidation");
       await inv.drive(orgId, driveId);
       await inv.candidateList(orgId);
@@ -289,44 +334,78 @@ router.post(
 router.post("/drives/:id/recruiters", requireRoles(...CAN_ACCESS), asyncHandler(async (req, res) => {
   const { recruiterIds } = req.body;
   const recruiters = recruiterIds.map(uid => ({ userId: uid, assignedAt: new Date().toISOString() }));
-  await firestore.collection("collegeDrives").doc(req.params.id).update({ recruiters });
+  
+  await prisma.collegeDrive.update({
+    where: { id: req.params.id },
+    data: { recruiters }
+  });
   res.json({ success: true });
 }));
 
 router.post("/drives/:id/jobs", requireRoles(...CAN_ACCESS), asyncHandler(async (req, res) => {
   const { jobIds } = req.body;
-  const driveRef = firestore.collection("collegeDrives").doc(req.params.id);
-  const drive = (await driveRef.get()).data();
-  const existing = drive.linkedJobs || [];
+  const drive = await prisma.collegeDrive.findUnique({
+    where: { id: req.params.id }
+  });
+  if (!drive) throw new ApiError(404, "Drive not found");
+  
+  let existing = [];
+  try {
+    existing = typeof drive.linkedJobs === 'string' ? JSON.parse(drive.linkedJobs) : drive.linkedJobs;
+  } catch (_) {}
+  if (!Array.isArray(existing)) existing = [];
   
   for (const jid of jobIds) {
     if (!existing.some(l => l.jobId === jid)) {
-      const jobDoc = await firestore.collection("jobs").doc(jid).get();
-      if (jobDoc.exists) {
-        existing.push({ jobId: jid, job: { id: jobDoc.id, ...jobDoc.data() }, linkedAt: new Date().toISOString() });
+      const job = await prisma.job.findUnique({
+        where: { id: jid }
+      });
+      if (job) {
+        existing.push({ jobId: jid, job, linkedAt: new Date().toISOString() });
       }
     }
   }
-  await driveRef.update({ linkedJobs: existing });
+  
+  await prisma.collegeDrive.update({
+    where: { id: req.params.id },
+    data: { linkedJobs: existing }
+  });
   res.json({ success: true });
 }));
 
 router.delete("/drives/:id/jobs/:jobId", requireRoles(...CAN_ACCESS), asyncHandler(async (req, res) => {
-  const driveRef = firestore.collection("collegeDrives").doc(req.params.id);
-  const drive = (await driveRef.get()).data();
-  const filtered = (drive.linkedJobs || []).filter(l => l.jobId !== req.params.jobId);
-  await driveRef.update({ linkedJobs: filtered });
+  const drive = await prisma.collegeDrive.findUnique({
+    where: { id: req.params.id }
+  });
+  if (!drive) throw new ApiError(404, "Drive not found");
+  
+  let existing = [];
+  try {
+    existing = typeof drive.linkedJobs === 'string' ? JSON.parse(drive.linkedJobs) : drive.linkedJobs;
+  } catch (_) {}
+  if (!Array.isArray(existing)) existing = [];
+  
+  const filtered = existing.filter(l => l.jobId !== req.params.jobId);
+  await prisma.collegeDrive.update({
+    where: { id: req.params.id },
+    data: { linkedJobs: filtered }
+  });
   res.json({ success: true });
 }));
 
 router.patch("/drives/:id/candidates/:candidateId/status", requireRoles(...CAN_ACCESS), asyncHandler(async (req, res) => {
-  const snap = await firestore.collection("collegeDriveCandidates")
-    .where("driveId", "==", req.params.id)
-    .where("candidateId", "==", req.params.candidateId)
-    .limit(1).get();
-  if (!snap.empty) {
-    const doc = snap.docs[0];
-    await doc.ref.update({ status: req.body.status, updatedAt: new Date().toISOString() });
+  const driveCandidate = await prisma.collegeDriveCandidate.findFirst({
+    where: {
+      driveId: req.params.id,
+      candidateId: req.params.candidateId
+    }
+  });
+
+  if (driveCandidate) {
+    await prisma.collegeDriveCandidate.update({
+      where: { id: driveCandidate.id },
+      data: { status: req.body.status }
+    });
     
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
@@ -336,7 +415,7 @@ router.patch("/drives/:id/candidates/:candidateId/status", requireRoles(...CAN_A
     sse.broadcastToOrg(orgId, 'DRIVE_STATUS_CHANGED', {
       driveId: req.params.id,
       status: req.body.status,
-      collegeName: doc.data().fullName,
+      collegeName: driveCandidate.fullName,
       changedBy: req.user.id,
       changedByName: req.user.fullName || req.user.email,
     });
@@ -345,7 +424,6 @@ router.patch("/drives/:id/candidates/:candidateId/status", requireRoles(...CAN_A
 }));
 
 router.get("/drives/:id/timeline", requireRoles(...CAN_ACCESS), asyncHandler(async (req, res) => {
-  // Simple timeline: just return empty for now or fetch pipeline events
   res.json({ success: true, data: [] });
 }));
 

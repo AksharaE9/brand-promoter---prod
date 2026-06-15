@@ -1,6 +1,6 @@
 // src/modules/analytics/dataLoader.js
 'use strict';
-const { db } = require('../../config/firebase');
+const prisma = require('../../config/db');
 const { getCache, setCache, TTL } = require('../../utils/cache');
 
 const activePromises = new Map();
@@ -17,40 +17,35 @@ async function loadAnalyticsBase(orgId, startDate, endDate) {
   }
 
   const promise = (async () => {
-    // Fire queries in parallel with only single-field equality filters to avoid index requirements
-    const [candSnap, intSnap, appSnap, userSnap] = await Promise.all([
-      db.collection('candidates')
-        .where('organizationId', '==', orgId)
-        .get(),
-      db.collection('interviews')
-        .where('organizationId', '==', orgId)
-        .get(),
-      db.collection('applications')
-        .where('organizationId', '==', orgId)
-        .get(),
-      db.collection('users')
-        .where('organizationId', '==', orgId)
-        .get(),
+    // Fire queries in parallel to fetch from CockroachDB
+    const [candidates, interviews, applications, users] = await Promise.all([
+      prisma.candidate.findMany({
+        where: {
+          organizationId: orgId,
+          isDeleted: false,
+          createdAt: { gte: startDate, lte: endDate }
+        }
+      }),
+      prisma.interview.findMany({
+        where: {
+          organizationId: orgId
+        }
+      }),
+      prisma.application.findMany({
+        where: {
+          organizationId: orgId,
+          isDeleted: false,
+          createdAt: { gte: startDate, lte: endDate }
+        }
+      }),
+      prisma.user.findMany({
+        where: {
+          organizationId: orgId,
+          isDeleted: false,
+          status: 'ACTIVE'
+        }
+      }),
     ]);
-
-    const startISO = startDate.toISOString();
-    const endISO = endDate.toISOString();
-
-    const candidates = candSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.isDeleted === false && c.createdAt && c.createdAt >= startISO && c.createdAt <= endISO);
-
-    const interviews = intSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(i => i.isDeleted === false);
-
-    const applications = appSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(a => a.isDeleted === false && a.createdAt && a.createdAt >= startISO && a.createdAt <= endISO);
-
-    const users = userSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(u => u.isDeleted === false && u.status === 'ACTIVE');
 
     const data = { candidates, interviews, applications, users };
 
@@ -80,8 +75,7 @@ async function getPipelineStages() {
   }
 
   const promise = (async () => {
-    const stagesSnap = await db.collection("pipeline_stages").get();
-    const stages = stagesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const stages = await prisma.pipelineStage.findMany();
 
     try {
       await setCache(cacheKey, stages, STAGES_CACHE_TTL);

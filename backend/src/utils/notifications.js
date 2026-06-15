@@ -1,4 +1,4 @@
-const { db: firestore } = require('../config/firebase');
+const prisma = require('../config/db');
 const { sendToUser } = require('./sse');
 
 /**
@@ -6,20 +6,18 @@ const { sendToUser } = require('./sse');
  */
 async function sendNotification({ userId, title, message, link = null, type = 'INFO' }) {
   try {
-    const notificationData = {
-      userId,
-      title,
-      message,
-      link,
-      type,
-      isRead: false,
-      createdAt: new Date().toISOString(),
-    };
+    const notification = await prisma.notification.create({
+      data: {
+        userId,
+        title,
+        message,
+        link,
+        type,
+        isRead: false,
+      },
+    });
 
-    const docRef = await firestore.collection("notifications").add(notificationData);
-    const notification = { id: docRef.id, ...notificationData };
-
-    // 1. Send via SSE
+    // Emit via SSE
     sendToUser(userId, notification);
 
     return notification;
@@ -31,25 +29,22 @@ async function sendNotification({ userId, title, message, link = null, type = 'I
 
 async function notifyAdmins({ title, message, link = null, type = 'INFO' }) {
   try {
-    const snapshot = await firestore.collection("users")
-      .where("role", "==", "SUPER_ADMIN")
-      .where("status", "==", "ACTIVE")
-      .get();
+    const admins = await prisma.user.findMany({
+      where: { role: 'SUPER_ADMIN', status: 'ACTIVE', isDeleted: false },
+      select: { id: true },
+    });
 
-    const admins = snapshot.docs.map(doc => ({ id: doc.id }));
-
-    const promises = admins.map(admin => sendNotification({
+    await Promise.all(admins.map(admin => sendNotification({
       userId: admin.id,
       title,
       message,
       link,
-      type
-    }));
-
-    await Promise.all(promises);
+      type,
+    })));
   } catch (err) {
     console.error('[NOTIFICATION] notifyAdmins failed:', err.message);
   }
 }
 
 module.exports = { sendNotification, notifyAdmins };
+

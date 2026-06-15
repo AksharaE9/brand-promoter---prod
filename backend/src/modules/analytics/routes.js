@@ -2,7 +2,7 @@ const express = require("express");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 const { loadAnalyticsBase, getPipelineStages } = require("./dataLoader");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { getCached, getCache, setCache } = require("../../utils/cache");
 const { swrGet } = require("../../utils/swrCache");
 
@@ -80,8 +80,7 @@ async function getUsersList() {
   const cacheKey = 'analytics:users_list';
   const cached = await getCache(cacheKey);
   if (cached) return cached;
-  const snapshot = await firestore.collection("users").get();
-  const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const users = await prisma.user.findMany();
   await setCache(cacheKey, users, 60);
   return users;
 }
@@ -100,7 +99,9 @@ async function getStagesMap() {
 router.get("/overview", asyncHandler(async (req, res) => {
   const { start, end, prevStart, prevEnd } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_overview_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -198,7 +199,9 @@ router.get("/overview", asyncHandler(async (req, res) => {
 router.get("/pipeline", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_pipeline_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -255,7 +258,9 @@ router.get("/hiring-velocity", asyncHandler(async (req, res) => {
 router.get("/interviewer-load", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_interviewer_load_route_${myOrg}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, users] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getUsersList()
@@ -267,7 +272,14 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
       .filter(u => (u.role === "SUPER_ADMIN" || u.role === "RECRUITER" || u.role === "INTERVIEWER") && u.isDeleted !== true);
 
     const load = interviewers.map((int, idx) => {
-      const list = interviews.filter(i => i.interviewerIds?.includes(int.id) || i.interviewerId === int.id);
+      const list = interviews.filter(i => {
+        let ids = [];
+        try {
+          ids = typeof i.interviewerIds === 'string' ? JSON.parse(i.interviewerIds) : i.interviewerIds;
+        } catch (_) {}
+        if (!Array.isArray(ids)) ids = [];
+        return ids.includes(int.id) || i.createdById === int.id;
+      });
 
       const weeklyLoad = [
         list.filter(i => { const d = new Date(i.scheduledStart || i.createdAt || 0); return d.getDate() % 4 === 0; }).length,
@@ -300,7 +312,9 @@ router.get("/interviewer-load", asyncHandler(async (req, res) => {
 router.get("/recruiter-performance", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_recruiter_performance_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_recruiter_performance_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, users, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getUsersList(),
@@ -313,7 +327,7 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
       .filter(u => u.role === "RECRUITER" && u.isDeleted !== true);
 
     const performance = recruiters.map((rec, idx) => {
-      const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id));
+      const cands = candidates.filter(c => c.isDeleted !== true && (c.assignedRecruiterId === rec.id || c.createdById === rec.id || c.mentorId === rec.id));
       const recApps = apps.filter(a => cands.some(c => c.id === a.candidateId));
 
       const totalHandled = cands.length;
@@ -344,7 +358,9 @@ router.get("/recruiter-performance", asyncHandler(async (req, res) => {
 router.get("/source-analysis", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_source_analysis_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const { candidates } = await loadAnalyticsBase(myOrg, start, end);
 
     const currCands = candidates.filter(c => {
@@ -390,7 +406,9 @@ router.get("/source-analysis", asyncHandler(async (req, res) => {
 router.get("/stage-conversion", asyncHandler(async (req, res) => {
   const { start, end } = getPeriod(req);
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_stage_conversion_route_${myOrg}_${start.toISOString().slice(0,10)}_${end.toISOString().slice(0,10)}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const [analyticsData, stageMap] = await Promise.all([
       loadAnalyticsBase(myOrg, start, end),
       getStagesMap()
@@ -437,7 +455,9 @@ router.get("/stage-conversion", asyncHandler(async (req, res) => {
 // 8. GET /api/analytics/monthly-trends
 router.get("/monthly-trends", asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
-  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;  const result = await swrGet(cacheKey, async () => {
+  const cacheKey = `analytics_monthly_trends_route_${myOrg}`;
+  
+  const result = await swrGet(cacheKey, async () => {
     const end = new Date();
     const start = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000); // last 6 months
 
@@ -496,8 +516,7 @@ router.get('/debug-counts', asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
   
   try {
-    const allSnap = await firestore.collection('candidates').get();
-    const all = allSnap.docs.map(d => d.data());
+    const all = await prisma.candidate.findMany();
     
     const counts = {
       totalCandidates: all.length,

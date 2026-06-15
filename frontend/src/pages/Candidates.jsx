@@ -86,6 +86,11 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
     onNavigate(candidate.id);
   }, [candidate.id, onNavigate]);
 
+  const handleMouseEnter = useCallback(() => {
+    // Prefetch candidate profile dossier
+    apiGet(`/candidates/${candidate.id}`).catch(() => {});
+  }, [candidate.id]);
+
   const initials = useMemo(() => (candidate.name || 'C')
     .split(' ')
     .filter(Boolean)
@@ -142,6 +147,7 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
       <div
         className={`os-card p-5 hover:shadow-lg transition-all duration-300 cursor-pointer relative group flex flex-col hover:-translate-y-1 offer-candidate-row${isJoined ? ' row--joined' : ''}${isRejected ? ' row--rejected' : ''}`}
         onClick={handleNavigation}
+        onMouseEnter={handleMouseEnter}
         style={{ minHeight: '160px' }}
       >
         {/* Delete button */}
@@ -294,7 +300,10 @@ const Candidates = () => {
   const [creating, setCreating] = useState(false);
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
-  const loadMoreRef = useRef(null);
+  const loadMoreRef = useRef(null);       // sentinel DOM node
+  const scrollContainerRef = useRef(null); // scrollable os-content element
+  const currentStatusRef = useRef(statusParam || 'All');
+  const currentSearchRef = useRef('');
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role), [currentUser]);
@@ -326,6 +335,9 @@ const Candidates = () => {
     const statFilter = stat !== undefined ? stat : statusFilter;
     const searchQuery = query !== undefined ? query : debouncedSearch;
 
+    const expectedStatus = statFilter;
+    const expectedSearch = searchQuery;
+
     if (reset) {
       setLoading(true);
     } else {
@@ -339,6 +351,12 @@ const Candidates = () => {
       if (cursorParam) params.set('cursor', cursorParam);
 
       const res = await apiGet(`/candidates?${params.toString()}`);
+
+      // If the filter or search query has changed since this request was made, discard it to prevent corruption.
+      if (expectedStatus !== currentStatusRef.current || expectedSearch !== currentSearchRef.current) {
+        return;
+      }
+
       const newData = res.data || [];
 
       setItems(prev => (reset ? newData : [...prev, ...newData]));
@@ -371,10 +389,21 @@ const Candidates = () => {
     setStatusFilter(statusParam || 'All');
   }, [statusParam]);
 
-  // Reset role/location filter on status change
+  // Reset role/location filter AND scroll to top on section change
   useEffect(() => {
     setRoleFilter('All');
     setLocationFilter('All');
+    // Immediately clear items so old section data never shows
+    setItems([]);
+    setNextCursor(null);
+    setHasMore(false);
+    // Scroll back to top of the content container
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    } else {
+      // Fallback: find the os-content element
+      document.querySelector('.os-content')?.scrollTo({ top: 0, behavior: 'instant' });
+    }
   }, [statusFilter]);
 
   // Load jobs once for filter dropdowns
@@ -390,25 +419,48 @@ const Candidates = () => {
     loadJobs();
   }, []);
 
+  // Initialize scrollContainerRef on mount
+  useEffect(() => {
+    scrollContainerRef.current = document.querySelector('.os-content');
+  }, []);
+
   // Initial load + reload when search/filter changes
   useEffect(() => {
     fetchCandidates({ reset: true, stat: statusFilter, query: debouncedSearch });
   }, [debouncedSearch, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Infinite scroll — IntersectionObserver on sentinel div
-  useEffect(() => {
-    if (!loadMoreRef.current) return;
+  // ── Live refs for observer — never stale ──
+  const hasMoreRef     = useRef(hasMore);
+  const loadingMoreRef = useRef(loadingMore);
+  const nextCursorRef  = useRef(nextCursor);
+  const fetchRef       = useRef(fetchCandidates);
+
+  hasMoreRef.current     = hasMore;
+  loadingMoreRef.current = loadingMore;
+  nextCursorRef.current  = nextCursor;
+  fetchRef.current       = fetchCandidates;
+
+  currentStatusRef.current = statusFilter;
+  currentSearchRef.current = debouncedSearch;
+
+  // ── Sentinel callback ref — attaches observer when node mounts or state changes ──
+  const sentinelCbRef = useCallback((node) => {
+    if (loadMoreRef.current?._obs) {
+      loadMoreRef.current._obs.disconnect();
+    }
+    loadMoreRef.current = node;
+    if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-          fetchCandidates({ cursorParam: nextCursor, reset: false });
+        if (entries[0].isIntersecting && hasMoreRef.current && !loadingMoreRef.current) {
+          fetchRef.current({ cursorParam: nextCursorRef.current, reset: false });
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      { threshold: 0, rootMargin: '200px' }
     );
-    observer.observe(loadMoreRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, loading, nextCursor, fetchCandidates]);
+    observer.observe(node);
+    node._obs = observer;
+  }, [hasMore, loadingMore, items.length]);
 
   const handleNavigate = useCallback((id) => navigate(`/candidate/${id}`), [navigate]);
   
@@ -843,7 +895,7 @@ const Candidates = () => {
               ))}
             </div>
             {/* Infinite scroll sentinel — always rendered so observer can watch it */}
-            <div ref={loadMoreRef} className="h-16 flex items-center justify-center mt-6 w-full">
+            <div ref={sentinelCbRef} className="h-16 flex items-center justify-center mt-6 w-full">
               {loadingMore && <Loader size="small" message="Loading more..." />}
               {!hasMore && items.length > 0 && !loadingMore && (
                 <p className="text-xs text-slate-400 font-medium">All {totalCount > 0 ? totalCount : items.length} candidates loaded</p>

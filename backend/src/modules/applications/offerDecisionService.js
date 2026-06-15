@@ -1,4 +1,4 @@
-const { db: firestore } = require('../../config/firebase');
+const prisma = require('../../config/db');
 const { asyncHandler, ApiError } = require('../../utils/errors');
 const { logAudit } = require('../../utils/audit');
 const sse = require('../../utils/sse');
@@ -7,30 +7,18 @@ const inv = require('../../utils/cacheInvalidation');
 
 const VALID_OFFER_STATUSES = ['OFFER_SENT'];
 
-/**
- * Fetches application with candidate and job data
- */
 async function fetchApplication(applicationId) {
-  const doc = await firestore.collection('applications').doc(applicationId).get();
-  if (!doc.exists) throw new ApiError(404, 'Application not found');
-
-  const app = { id: doc.id, ...doc.data() };
-
-  // Fetch candidate and job in parallel
-  const [candDoc, jobDoc] = await Promise.all([
-    app.candidateId ? firestore.collection('candidates').doc(app.candidateId).get() : null,
-    app.jobId ? firestore.collection('jobs').doc(app.jobId).get() : null,
-  ]);
-
-  app.candidate = candDoc?.exists ? { id: candDoc.id, ...candDoc.data() } : null;
-  app.job = jobDoc?.exists ? { id: jobDoc.id, ...jobDoc.data() } : null;
-
+  const app = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: {
+      candidate: { select: { id: true, fullName: true } },
+      job: { select: { id: true, title: true } },
+    },
+  });
+  if (!app) throw new ApiError(404, 'Application not found');
   return app;
 }
 
-/**
- * Mark an application as JOINED
- */
 async function markAsJoined(req, res) {
   const { applicationId } = req.params;
   const { dateOfJoining, notes } = req.body;
@@ -38,79 +26,45 @@ async function markAsJoined(req, res) {
 
   const app = await fetchApplication(applicationId);
 
-  // Status guard
   if (!VALID_OFFER_STATUSES.includes(app.status)) {
     throw new ApiError(409, `Cannot mark as joined — application is currently ${app.status}, not OFFER_SENT`);
   }
 
-  // Idempotency guard
-  if (app.offerDecision) {
-    throw new ApiError(409, `Offer decision already recorded as ${app.offerDecision}`);
-  }
-
-  const now = new Date().toISOString();
   const candidateName = app.candidate?.fullName || 'Unknown Candidate';
   const jobTitle = app.job?.title || 'Unknown Role';
 
-  // Update application
-  const updatePayload = {
-    status: 'JOINED',
-    offerDecision: 'JOINED',
-    offerDecidedAt: now,
-    offerDecidedBy: decidedByUserId,
-    offerDecisionNotes: notes || null,
-    dateOfJoining: dateOfJoining || null,
-    offerLetterStatus: 'NOT_STARTED',
-    backgroundCheck: 'NOT_STARTED',
-    onboardingStatus: 'NOT_STARTED',
-    updatedAt: now,
-  };
-
-  await firestore.collection('applications').doc(applicationId).update(updatePayload);
-  const orgId = req.user.organizationId || 'defaultOrg';
-  await inv.application(orgId, app.candidateId);
-
-  // Sync candidate record status
-  if (app.candidateId) {
-    await firestore.collection('candidates').doc(app.candidateId).update({
+  const updated = await prisma.application.update({
+    where: { id: applicationId },
+    data: {
       status: 'JOINED',
-      doj: dateOfJoining || null,
-      updatedAt: now,
+      joiningDate: dateOfJoining || null,
+    },
+  });
+
+  if (app.candidateId) {
+    await prisma.candidate.update({
+      where: { id: app.candidateId },
+      data: {
+        status: 'JOINED',
+        doj: dateOfJoining || null,
+      },
     });
   }
 
-  // Activity log
-  await firestore.collection('activityLogs').add({
-    applicationId,
-    action: 'OFFER_ACCEPTED_JOINED',
-    actorUserId: decidedByUserId,
-    metadata: { candidateName, jobTitle, dateOfJoining },
-    createdAt: now,
-  });
+  const orgId = req.user.organizationId || 'defaultOrg';
+  await inv.application(orgId, app.candidateId);
 
-  await logAudit({
+  logAudit({
     actorUserId: decidedByUserId,
     action: 'MARK_AS_JOINED',
     entityType: 'APPLICATION',
     entityId: applicationId,
     oldData: { status: app.status },
-    newData: { status: 'JOINED', offerDecision: 'JOINED' },
+    newData: { status: 'JOINED' },
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'],
   });
 
-  const ssePayload = {
-    type: 'JOINED',
-    applicationId,
-    candidateId: app.candidateId,
-    candidateName,
-    jobId: app.jobId,
-    jobTitle,
-    offerDecidedAt: now,
-    dateOfJoining: dateOfJoining || null,
-  };
-
-  // Broadcast named SSE event to org
   sse.broadcastToOrg(orgId, 'CANDIDATE_JOINED', {
     candidateId: app.candidateId,
     decision: 'JOINED',
@@ -119,7 +73,6 @@ async function markAsJoined(req, res) {
     decidedByName: req.user.fullName || req.user.email,
   });
 
-  // Notify admins (non-blocking)
   try {
     await notifyAdmins({
       title: 'Candidate Joined',
@@ -131,13 +84,9 @@ async function markAsJoined(req, res) {
     console.error('[OFFER] Notification failed (non-fatal):', err.message);
   }
 
-  const updatedApp = { id: applicationId, ...app, ...updatePayload };
-  res.json({ success: true, data: updatedApp });
+  res.json({ success: true, data: updated });
 }
 
-/**
- * Mark an application as REJECTED
- */
 async function markAsRejected(req, res) {
   const { applicationId } = req.params;
   const { rejectionReason = 'OTHER', notes } = req.body;
@@ -149,70 +98,36 @@ async function markAsRejected(req, res) {
     throw new ApiError(409, `Cannot reject — application is currently ${app.status}, not OFFER_SENT`);
   }
 
-  if (app.offerDecision) {
-    throw new ApiError(409, `Offer decision already recorded as ${app.offerDecision}`);
-  }
-
-  const now = new Date().toISOString();
   const candidateName = app.candidate?.fullName || 'Unknown Candidate';
   const jobTitle = app.job?.title || 'Unknown Role';
 
-  const updatePayload = {
-    status: 'REJECTED',
-    offerDecision: 'REJECTED',
-    offerDecidedAt: now,
-    offerDecidedBy: decidedByUserId,
-    offerDecisionNotes: notes || null,
-    rejectionReason: rejectionReason || 'OTHER',
-    rejectedAt: now,
-    rejectedBy: decidedByUserId,
-    updatedAt: now,
-  };
+  const updated = await prisma.application.update({
+    where: { id: applicationId },
+    data: { status: 'REJECTED' },
+  });
 
-  await firestore.collection('applications').doc(applicationId).update(updatePayload);
-  const orgId = req.user.organizationId || 'defaultOrg';
-  await inv.application(orgId, app.candidateId);
-
-  // Sync candidate record status
   if (app.candidateId) {
-    await firestore.collection('candidates').doc(app.candidateId).update({
-      status: 'REJECTED',
-      updatedAt: now,
+    await prisma.candidate.update({
+      where: { id: app.candidateId },
+      data: { status: 'REJECTED' },
     });
   }
 
-  // Activity log
-  await firestore.collection('activityLogs').add({
-    applicationId,
-    action: 'OFFER_REJECTED',
-    actorUserId: decidedByUserId,
-    metadata: { candidateName, jobTitle, rejectionReason },
-    createdAt: now,
-  });
+  const orgId = req.user.organizationId || 'defaultOrg';
+  await inv.application(orgId, app.candidateId);
 
-  await logAudit({
+  logAudit({
     actorUserId: decidedByUserId,
     action: 'MARK_AS_REJECTED',
     entityType: 'APPLICATION',
     entityId: applicationId,
     oldData: { status: app.status },
-    newData: { status: 'REJECTED', offerDecision: 'REJECTED', rejectionReason },
+    newData: { status: 'REJECTED', rejectionReason },
+    metadata: { rejectionReason, notes: notes || null },
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'],
   });
 
-  const ssePayload = {
-    type: 'REJECTED',
-    applicationId,
-    candidateId: app.candidateId,
-    candidateName,
-    jobId: app.jobId,
-    jobTitle,
-    offerDecidedAt: now,
-    rejectionReason,
-  };
-
-  // Broadcast named SSE event to org
   sse.broadcastToOrg(orgId, 'CANDIDATE_REJECTED', {
     candidateId: app.candidateId,
     decision: 'REJECTED',
@@ -232,8 +147,7 @@ async function markAsRejected(req, res) {
     console.error('[OFFER] Notification failed (non-fatal):', err.message);
   }
 
-  const updatedApp = { id: applicationId, ...app, ...updatePayload };
-  res.json({ success: true, data: updatedApp });
+  res.json({ success: true, data: updated });
 }
 
 module.exports = { markAsJoined: asyncHandler(markAsJoined), markAsRejected: asyncHandler(markAsRejected) };

@@ -1,49 +1,32 @@
 const express = require("express");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const sse = require("../../utils/sse");
-const { markAsJoined, markAsRejected } = require("./offerDecisionService");
 const inv = require("../../utils/cacheInvalidation");
 
 const router = express.Router();
-
 router.use(auth);
 
-// ── Offer Decision Routes ─────────────────────────────────────────────────────
-router.post(
-  "/:applicationId/join",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
-  markAsJoined
-);
-
-router.post(
-  "/:applicationId/reject",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
-  markAsRejected
-);
+// ── Offer Decision Routes ──────────────────────────────────────────────────────
+const { markAsJoined, markAsRejected } = require("./offerDecisionService");
+router.post("/:applicationId/join",  requireRoles("SUPER_ADMIN", "RECRUITER"), markAsJoined);
+router.post("/:applicationId/reject", requireRoles("SUPER_ADMIN", "RECRUITER"), markAsRejected);
 
 async function resolveDefaultStage(jobId) {
-  // In Firestore, we'll look for stages in the "pipeline_stages" collection
-  const snapshot = await firestore.collection("pipeline_stages")
-    .where("jobId", "==", jobId)
-    .orderBy("sortOrder", "asc")
-    .limit(1)
-    .get();
-  
-  if (!snapshot.empty) return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-
-  const globalSnapshot = await firestore.collection("pipeline_stages")
-    .where("jobId", "==", null)
-    .orderBy("sortOrder", "asc")
-    .limit(1)
-    .get();
-  
-  if (!globalSnapshot.empty) return { id: globalSnapshot.docs[0].id, ...globalSnapshot.docs[0].data() };
-
-  return null;
+  let stage = await prisma.pipelineStage.findFirst({
+    where: { jobId },
+    orderBy: { sortOrder: "asc" },
+  });
+  if (!stage) {
+    stage = await prisma.pipelineStage.findFirst({
+      where: { jobId: null },
+      orderBy: { sortOrder: "asc" },
+    });
+  }
+  return stage;
 }
 
 router.post(
@@ -51,63 +34,57 @@ router.post(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { candidateId, jobId, currentStageId, shortlisted = false } = req.body;
+    if (!candidateId || !jobId) throw new ApiError(400, "candidateId and jobId are required");
 
-    if (!candidateId || !jobId) {
-      throw new ApiError(400, "candidateId and jobId are required");
-    }
-
-    const [candidateDoc, jobDoc] = await Promise.all([
-      firestore.collection("candidates").doc(candidateId).get(),
-      firestore.collection("jobs").doc(jobId).get()
+    const [candidate, job] = await Promise.all([
+      prisma.candidate.findUnique({ where: { id: candidateId } }),
+      prisma.job.findUnique({ where: { id: jobId } }),
     ]);
 
-    if (!candidateDoc.exists) throw new ApiError(404, "Candidate not found");
-    if (!jobDoc.exists) throw new ApiError(404, "Job not found");
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+    if (!job) throw new ApiError(404, "Job not found");
 
-    const candidate = { id: candidateDoc.id, ...candidateDoc.data() };
-    const job = { id: jobDoc.id, ...jobDoc.data() };
-
-    const duplicateSnap = await firestore.collection("applications")
-      .where("candidateId", "==", candidateId)
-      .where("jobId", "==", jobId)
-      .limit(1)
-      .get();
-    
-    if (!duplicateSnap.empty) {
-      throw new ApiError(409, "Application already exists for this candidate and job");
-    }
+    const duplicate = await prisma.application.findFirst({
+      where: { candidateId, jobId },
+    });
+    if (duplicate) throw new ApiError(409, "Application already exists for this candidate and job");
 
     let stageId = currentStageId;
     if (!stageId) {
       const defaultStage = await resolveDefaultStage(jobId);
-      if (!defaultStage) {
-        throw new ApiError(400, "No pipeline stages found. Create stages first.");
-      }
+      if (!defaultStage) throw new ApiError(400, "No pipeline stages found. Create stages first.");
       stageId = defaultStage.id;
     }
 
     const orgId = req.user.organizationId || "defaultOrg";
-    const applicationData = {
-      candidateId,
-      jobId,
-      currentStageId: stageId,
-      shortlisted,
-      status: "IN_PIPELINE",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      organizationId: orgId,
-      isDeleted: false
-    };
 
-    const docRef = await firestore.collection("applications").add(applicationData);
-    const applicationId = docRef.id;
+    const application = await prisma.application.create({
+      data: {
+        candidateId,
+        jobId,
+        currentStageId: stageId,
+        shortlisted,
+        status: "IN_PIPELINE",
+        organizationId: orgId,
+        isDeleted: false,
+      },
+    });
 
-    // Invalidate cached reports and analytics lists
+    await prisma.pipelineEvent.create({
+      data: {
+        applicationId: application.id,
+        fromStageId: null,
+        toStageId: stageId,
+        remark: "Application created",
+        movedById: req.user.id,
+        movedByName: req.user.fullName,
+        movedAt: new Date(),
+      },
+    });
+
     await inv.application(orgId, candidateId);
-
-    // SSE broadcast
-    sse.broadcastToOrg(orgId, 'APPLICATION_CREATED', {
-      applicationId,
+    sse.broadcastToOrg(orgId, "APPLICATION_CREATED", {
+      applicationId: application.id,
       candidateId,
       candidateName: candidate.fullName,
       jobId,
@@ -116,34 +93,23 @@ router.post(
       createdByName: req.user.fullName,
     });
 
-    // Record initial pipeline event
-    await firestore.collection("pipeline_events").add({
-      applicationId,
-      fromStageId: null,
-      toStageId: stageId,
-      remark: "Application created",
-      movedById: req.user.id,
-      movedByName: req.user.fullName,
-      movedAt: new Date().toISOString()
-    });
-
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: "CREATE_APPLICATION",
       entityType: "APPLICATION",
-      entityId: applicationId,
-      newData: applicationData,
+      entityId: application.id,
+      newData: application,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     await notifyAdmins({
-      title: 'New Application',
+      title: "New Application",
       message: `${candidate.fullName} applied for ${job.title}`,
-      link: `/candidates/${candidateId}`
+      link: `/candidates/${candidateId}`,
     });
 
-    res.status(201).json({ success: true, data: { id: applicationId, ...applicationData } });
+    res.status(201).json({ success: true, data: application });
   }),
 );
 
@@ -152,59 +118,25 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
-    const cursor = req.query.cursor?.trim();
     const orgId = req.user.organizationId || "defaultOrg";
 
-    let query = firestore.collection("applications")
-      .where("organizationId", "==", orgId)
-      .where("isDeleted", "==", false);
+    const where = { organizationId: orgId, isDeleted: false };
+    if (req.query.jobId) where.jobId = req.query.jobId;
+    if (req.query.candidateId) where.candidateId = req.query.candidateId;
+    if (req.query.stageId) where.currentStageId = req.query.stageId;
 
-    if (req.query.jobId) query = query.where("jobId", "==", req.query.jobId);
-    if (req.query.candidateId) query = query.where("candidateId", "==", req.query.candidateId);
-    if (req.query.stageId) query = query.where("currentStageId", "==", req.query.stageId);
-
-    query = query.orderBy("createdAt", "desc");
-
-    const { paginateFirestore } = require("../../utils/pagination");
-    const result = await paginateFirestore({ query, limit, cursor });
-    const paginated = result.data;
-
-    // Populate relations
-    if (paginated.length > 0) {
-      const candidateIds = [...new Set(paginated.map(a => a.candidateId))];
-      const jobIds = [...new Set(paginated.map(a => a.jobId))];
-      const stageIds = [...new Set(paginated.map(a => a.currentStageId).filter(Boolean))];
-
-      const candRefs = candidateIds.map(id => firestore.collection("candidates").doc(id));
-      const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
-      const stageRefs = stageIds.map(id => firestore.collection("pipeline_stages").doc(id));
-
-      const [candSnaps, jobSnaps, stageSnaps] = await Promise.all([
-        candRefs.length > 0 ? firestore.getAll(...candRefs) : Promise.resolve([]),
-        jobRefs.length > 0 ? firestore.getAll(...jobRefs) : Promise.resolve([]),
-        stageRefs.length > 0 ? firestore.getAll(...stageRefs) : Promise.resolve([])
-      ]);
-
-      const candMap = {};
-      candSnaps.forEach(s => { if (s.exists) candMap[s.id] = { id: s.id, ...s.data() }; });
-      const jobMap = {};
-      jobSnaps.forEach(s => { if (s.exists) jobMap[s.id] = { id: s.id, ...s.data() }; });
-      const stageMap = {};
-      stageSnaps.forEach(s => { if (s.exists) stageMap[s.id] = { id: s.id, ...s.data() }; });
-
-      paginated.forEach(a => {
-        a.candidate = candMap[a.candidateId] || null;
-        a.job = jobMap[a.jobId] || null;
-        a.currentStage = stageMap[a.currentStageId] || null;
-      });
-    }
-
-    res.json({
-      success: true,
-      data: paginated,
-      nextCursor: result.nextCursor,
-      hasMore: result.hasMore
+    const applications = await prisma.application.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      include: {
+        candidate: { select: { id: true, fullName: true, email: true, phone: true } },
+        job: { select: { id: true, title: true, department: true } },
+        currentStage: { select: { id: true, name: true, sortOrder: true } },
+      },
     });
+
+    res.json({ success: true, data: applications, hasMore: applications.length === limit });
   }),
 );
 
@@ -212,9 +144,16 @@ router.get(
   "/:id",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const doc = await firestore.collection("applications").doc(req.params.id).get();
-    if (!doc.exists) throw new ApiError(404, "Application not found");
-    res.json({ success: true, data: { id: doc.id, ...doc.data() } });
+    const application = await prisma.application.findUnique({
+      where: { id: req.params.id },
+      include: {
+        candidate: true,
+        job: true,
+        currentStage: true,
+      },
+    });
+    if (!application) throw new ApiError(404, "Application not found");
+    res.json({ success: true, data: application });
   }),
 );
 
@@ -224,28 +163,23 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { shortlisted } = req.body || {};
+    if (typeof shortlisted !== "boolean") throw new ApiError(400, "shortlisted must be boolean");
 
-    if (typeof shortlisted !== "boolean") {
-      throw new ApiError(400, "shortlisted must be boolean");
-    }
+    const existing = await prisma.application.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "Application not found");
 
-    const docRef = firestore.collection("applications").doc(id);
-    const doc = await docRef.get();
-    
-    if (!doc.exists) throw new ApiError(404, "Application not found");
-    const existing = doc.data();
+    await prisma.application.update({ where: { id }, data: { shortlisted } });
 
     const orgId = req.user.organizationId || "defaultOrg";
     await inv.application(orgId, existing.candidateId);
-
-    sse.broadcastToOrg(orgId, 'APPLICATION_UPDATED', {
+    sse.broadcastToOrg(orgId, "APPLICATION_UPDATED", {
       applicationId: id,
       candidateId: existing.candidateId,
       changes: { shortlisted },
       updatedBy: req.user.id,
     });
 
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: shortlisted ? "SHORTLIST_APPLICATION" : "UNSHORTLIST_APPLICATION",
       entityType: "APPLICATION",
@@ -265,50 +199,40 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { status, joiningDate } = req.body;
-
     if (!status) throw new ApiError(400, "status is required");
 
-    const docRef = firestore.collection("applications").doc(id);
-    const doc = await docRef.get();
-    if (!doc.exists) throw new ApiError(404, "Application not found");
+    const existing = await prisma.application.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "Application not found");
 
-    const oldData = doc.data();
-    const updatePayload = { 
-      status, 
-      updatedAt: new Date().toISOString() 
-    };
-    if (joiningDate) updatePayload.joiningDate = joiningDate;
-    
-    await docRef.update(updatePayload);
-    const orgId = req.user.organizationId || "defaultOrg";
-    await inv.application(orgId, oldData.candidateId);
+    const updateData = { status };
+    if (joiningDate) updateData.joiningDate = joiningDate;
+
+    await prisma.application.update({ where: { id }, data: updateData });
 
     // Sync candidate status for sidebar views
-    if (['JOINED', 'REJECTED', 'OFFER_SENT'].includes(status)) {
-      const candUpdate = {
-        status,
-        updatedAt: new Date().toISOString()
-      };
-      if (status === 'JOINED' && joiningDate) {
-        candUpdate.doj = joiningDate;
-      }
-      await firestore.collection("candidates").doc(oldData.candidateId).update(candUpdate);
+    if (["JOINED", "REJECTED", "OFFER_SENT"].includes(status)) {
+      const candUpdate = { status };
+      if (status === "JOINED" && joiningDate) candUpdate.doj = joiningDate;
+      await prisma.candidate.update({ where: { id: existing.candidateId }, data: candUpdate });
     }
 
-    await logAudit({
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.application(orgId, existing.candidateId);
+
+    logAudit({
       actorUserId: req.user.id,
       action: "UPDATE_APPLICATION_STATUS",
       entityType: "APPLICATION",
       entityId: id,
-      oldData: { status: oldData.status },
+      oldData: { status: existing.status },
       newData: { status },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    sse.broadcastToOrg(orgId, 'APPLICATION_STATUS_CHANGED', {
+    sse.broadcastToOrg(orgId, "APPLICATION_STATUS_CHANGED", {
       applicationId: id,
-      candidateId: oldData.candidateId,
+      candidateId: existing.candidateId,
       status,
       changedBy: req.user.id,
     });

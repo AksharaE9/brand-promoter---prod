@@ -1,5 +1,5 @@
 'use strict';
-const { db: firestore } = require("../config/firebase");
+const prisma = require("../config/db");
 const { verifyAccessToken } = require("../utils/jwt");
 const { ApiError } = require("../utils/errors");
 const redis = require("../utils/redisClient");
@@ -26,14 +26,20 @@ async function auth(req, res, next) {
 
   try {
     const payload = verifyAccessToken(token);
-    
-    // Try user cache before hitting Firestore
-    const userCacheKey = `auth:user:${payload.userId}:${payload.sessionId || 'nosession'}`;
+
+    // Support both current format (userId) and legacy format (id)
+    const resolvedUserId = payload.userId || payload.id;
+    if (!resolvedUserId) {
+      return next(new ApiError(401, 'Invalid token: missing user identity'));
+    }
+
+    // Try user cache before hitting DB
+    const userCacheKey = `auth:user:${resolvedUserId}:${payload.sessionId || 'nosession'}`;
     let cachedUser = null;
     try {
       cachedUser = await redis.get(userCacheKey);
     } catch (redisErr) {
-      console.warn('[AuthCache] Failed to get user from Redis cache, falling back to Firestore:', redisErr.message);
+      console.warn('[AuthCache] Redis get failed, falling back to DB:', redisErr.message);
     }
 
     if (cachedUser) {
@@ -44,40 +50,47 @@ async function auth(req, res, next) {
       req.user = user;
       // Update session last active asynchronously
       if (payload.sessionId) {
-        firestore.collection("sessions").doc(payload.sessionId).update({
-          lastActive: new Date().toISOString()
+        prisma.session.update({
+          where: { id: payload.sessionId },
+          data: { lastActive: new Date() },
         }).catch(() => {});
       }
       return next();
     }
 
-    // Cache miss — fetch from Firestore
+    // Cache miss — fetch from DB
     if (payload.sessionId) {
-      const sessionDoc = await firestore.collection("sessions").doc(payload.sessionId).get();
-      if (!sessionDoc.exists) {
+      const session = await prisma.session.findUnique({
+        where: { id: payload.sessionId },
+      });
+      if (!session) {
         return next(new ApiError(401, "Session has been revoked or expired"));
       }
       // Update last active
-      firestore.collection("sessions").doc(payload.sessionId).update({
-        lastActive: new Date().toISOString()
+      prisma.session.update({
+        where: { id: payload.sessionId },
+        data: { lastActive: new Date() },
       }).catch(() => {});
     }
 
-    const userDoc = await firestore.collection("users").doc(payload.userId).get();
+    const userRecord = await prisma.user.findUnique({
+      where: { id: resolvedUserId },
+    });
 
-    if (!userDoc.exists) {
+    if (!userRecord) {
       return next(new ApiError(401, "Invalid user"));
     }
 
-    const user = { id: userDoc.id, ...userDoc.data(), sessionId: payload.sessionId || null };
+    const user = { ...userRecord, sessionId: payload.sessionId || null };
 
     if (user.status !== "ACTIVE" || user.isDeleted === true) {
       return next(new ApiError(401, "Inactive or deleted user account"));
     }
 
-    // Cache for 2 minutes — fast path for subsequent requests
+    // Cache for 2 minutes
+    const userCacheWriteKey = `auth:user:${resolvedUserId}:${payload.sessionId || 'nosession'}`;
     try {
-      await redis.setex(userCacheKey, USER_CACHE_TTL, JSON.stringify(user));
+      await redis.setex(userCacheWriteKey, USER_CACHE_TTL, JSON.stringify(user));
     } catch (redisErr) {
       console.warn('[AuthCache] Failed to cache user in Redis:', redisErr.message);
     }
@@ -125,3 +138,4 @@ module.exports = {
   requireRoles,
   invalidateUserCache,
 };
+

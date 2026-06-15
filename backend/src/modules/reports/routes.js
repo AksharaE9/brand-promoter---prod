@@ -2,7 +2,7 @@ const express = require("express");
 const PDFDocument = require("pdfkit");
 const XLSX = require("xlsx");
 const { stringify } = require("csv-stringify/sync");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { getOrgAnalyticsData } = require("../analytics/dataLoader");
@@ -18,10 +18,10 @@ async function getUsersMap() {
   const cacheKey = 'reports:users_map';
   const cached = await getCache(cacheKey);
   if (cached) return cached;
-  const snapshot = await firestore.collection("users").get();
+  const users = await prisma.user.findMany();
   const map = {};
-  snapshot.docs.forEach(doc => {
-    map[doc.id] = { id: doc.id, ...doc.data() };
+  users.forEach(u => {
+    map[u.id] = u;
   });
   await setCache(cacheKey, map, 60);
   return map;
@@ -32,29 +32,33 @@ async function getStagesMap() {
   const cacheKey = 'reports:stages_map';
   const cached = await getCache(cacheKey);
   if (cached) return cached;
-  const snapshot = await firestore.collection("pipeline_stages").get();
+  const stages = await prisma.pipelineStage.findMany();
   const map = {};
-  snapshot.docs.forEach(doc => {
-    map[doc.id] = { id: doc.id, ...doc.data() };
+  stages.forEach(s => {
+    map[s.id] = s;
   });
   await setCache(cacheKey, map, 120);
   return map;
 }
 
 async function buildRecruiterActivity(myOrg) {
-  const snapshot = await firestore.collection("users")
-    .where("organizationId", "==", myOrg)
-    .where("role", "==", "RECRUITER")
-    .get();
-  const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.isDeleted !== true);
+  const users = await prisma.user.findMany({
+    where: {
+      organizationId: myOrg,
+      role: "RECRUITER",
+      isDeleted: false
+    }
+  });
 
   if (users.length === 0) return [];
 
   const recruiterIds = new Set(users.map(u => u.id));
 
   // Fetch collections in parallel
-  const [jobsSnap, analyticsData] = await Promise.all([
-    firestore.collection("jobs").get(),
+  const [jobs, analyticsData] = await Promise.all([
+    prisma.job.findMany({
+      where: { organizationId: myOrg }
+    }),
     getOrgAnalyticsData(myOrg)
   ]);
   const { candidates, interviews } = analyticsData;
@@ -63,15 +67,15 @@ async function buildRecruiterActivity(myOrg) {
   const candidatesCountMap = {};
   const interviewsCountMap = {};
 
-  jobsSnap.docs.forEach(doc => {
-    const createdById = doc.data().createdById;
+  jobs.forEach(job => {
+    const createdById = job.createdById;
     if (createdById && recruiterIds.has(createdById)) {
       jobsCountMap[createdById] = (jobsCountMap[createdById] || 0) + 1;
     }
   });
 
   candidates.forEach(c => {
-    const createdById = c.createdById || c.assignedRecruiterId;
+    const createdById = c.createdById || c.assignedRecruiterId || c.mentorId;
     if (createdById && recruiterIds.has(createdById)) {
       candidatesCountMap[createdById] = (candidatesCountMap[createdById] || 0) + 1;
     }
@@ -101,16 +105,18 @@ async function buildHiringProgress(myOrg) {
   const usersMap = await getUsersMap();
   const orgUserIds = new Set(Object.values(usersMap).filter(u => (u.organizationId || "defaultOrg") === myOrg).map(u => u.id));
 
-  // Fetch all jobs and filter by organization recruiters in-memory
-  const jobsSnap = await firestore.collection("jobs").get();
-  let jobs = jobsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  jobs = jobs.filter(job => orgUserIds.has(job.createdById));
+  // Fetch all jobs and filter in-memory
+  const jobs = await prisma.job.findMany({
+    where: {
+      organizationId: myOrg
+    },
+    orderBy: {
+      createdAt: 'desc'
+    },
+    take: 100
+  });
 
   if (jobs.length === 0) return [];
-
-  // Sort by date
-  jobs.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  jobs = jobs.slice(0, 100);
 
   // Fetch all applications for this organization
   const { apps } = await getOrgAnalyticsData(myOrg);
@@ -249,7 +255,15 @@ router.get("/interviews", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
   });
 
   let result = interviews.map(data => {
-    const interviewer = usersMap[data.interviewerId] || null;
+    let interviewerIds = [];
+    try {
+      interviewerIds = typeof data.interviewerIds === 'string' ? JSON.parse(data.interviewerIds) : data.interviewerIds;
+    } catch (_) {}
+    if (!Array.isArray(interviewerIds)) interviewerIds = [];
+    
+    // Choose primary interviewer or system
+    const primaryId = interviewerIds[0] || data.createdById;
+    const interviewer = usersMap[primaryId] || null;
     const candidate = candidatesMap[data.candidateId] || null;
 
     return {
@@ -257,7 +271,7 @@ router.get("/interviews", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler
       candidateName: candidate ? candidate.fullName : "Unknown Candidate",
       interviewerName: interviewer ? interviewer.fullName : "Unknown Interviewer",
       interviewerType: interviewer ? interviewer.userType : "N/A",
-      interviewerId: data.interviewerId || null,
+      interviewerId: primaryId || null,
       scheduledStart: data.scheduledStart,
       mode: data.mode || "ONLINE",
       outcome: data.status || "SCHEDULED",
@@ -369,14 +383,21 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
     });
 
     data = interviews.map(d => {
-      const interviewer = usersMap[d.interviewerId] || null;
+      let interviewerIds = [];
+      try {
+        interviewerIds = typeof d.interviewerIds === 'string' ? JSON.parse(d.interviewerIds) : d.interviewerIds;
+      } catch (_) {}
+      if (!Array.isArray(interviewerIds)) interviewerIds = [];
+      const primaryId = interviewerIds[0] || d.createdById;
+
+      const interviewer = usersMap[primaryId] || null;
       const candidate = candidatesMap[d.candidateId] || null;
 
       return {
         "Candidate Name": candidate ? candidate.fullName : "Unknown Candidate",
         "Interviewer Name": interviewer ? interviewer.fullName : "Unknown Interviewer",
         "Interviewer Role": interviewer ? interviewer.userType : "N/A",
-        "Interviewer ID": d.interviewerId || null,
+        "Interviewer ID": primaryId || null,
         "Scheduled Date": new Date(d.scheduledStart).toLocaleString(),
         Mode: d.mode || "ONLINE",
         Outcome: d.status || "SCHEDULED",
@@ -457,19 +478,25 @@ router.get("/hiring-progress", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHa
 }));
 
 router.get("/pipeline-insights", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
-  const { days = 30 } = req.query;
-  const appsCountSnap = await firestore.collection("applications").count().get();
-  const candsCountSnap = await firestore.collection("candidates").count().get();
-  const selectedCountSnap = await firestore.collection("applications").where("status", "in", ["SELECTED", "JOINED"]).count().get().catch(() => ({ data: () => ({ count: 0 }) }));
+  const total = await prisma.application.count({ where: { isDeleted: false } });
+  const candsTotal = await prisma.candidate.count({ where: { isDeleted: false } });
   
-  const total = appsCountSnap.data().count;
-  const candsTotal = candsCountSnap.data().count;
-  const selected = selectedCountSnap.data().count;
+  const selected = await prisma.application.count({
+    where: {
+      status: { in: ["SELECTED", "JOINED"] },
+      isDeleted: false
+    }
+  });
 
-  const candsSampleSnap = await firestore.collection("candidates").orderBy("createdAt", "desc").limit(500).get();
+  const candsSample = await prisma.candidate.findMany({
+    where: { isDeleted: false },
+    orderBy: { createdAt: 'desc' },
+    take: 500
+  });
+
   const sources = {};
-  candsSampleSnap.docs.forEach(doc => {
-    const s = doc.data().source || 'Direct';
+  candsSample.forEach(c => {
+    const s = c.source || 'Direct';
     if (!sources[s]) sources[s] = { total: 0 };
     sources[s].total++;
   });

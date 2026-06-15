@@ -171,9 +171,16 @@ app.use(errorHandler);
 async function bootstrap() {
   try {
     // Warm up Redis connection asynchronously (non-blocking)
-    redis.warmup().catch(warmupErr => {
-      console.warn('[Redis] Warmup failed. Server will run without Redis cache/rate-limiter:', warmupErr.message);
-    });
+    redis.warmup()
+      .then(() => {
+        // Pre-warm critical cache keys (non-blocking) only after Redis is confirmed ready
+        warmCaches().catch(err => {
+          console.error('[CacheWarmer] Warm-up failed:', err.message);
+        });
+      })
+      .catch(warmupErr => {
+        console.warn('[Redis] Warmup failed. Server will run without Redis cache/rate-limiter:', warmupErr.message);
+      });
 
     const server = http.createServer(app);
     initSocket(server);
@@ -188,11 +195,6 @@ async function bootstrap() {
         console.error('[SchedulingSync] Failed to schedule sync job:', err);
       });
     }
-
-    // Pre-warm critical cache keys (non-blocking)
-    warmCaches().catch(err => {
-      console.error('[CacheWarmer] Warm-up failed:', err.message);
-    });
 
     // Handle graceful shutdown
     const shutdown = async () => {

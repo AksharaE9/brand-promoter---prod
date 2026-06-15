@@ -14,13 +14,30 @@ class SelfHealingStore {
 
   async init(options) {
     this.memoryStore.init(options);
-    try {
-      await this.redisStore.init(options);
-    } catch (err) {
-      console.warn(`[RateLimiter] Failed to initialize RedisStore, falling back to MemoryStore:`, err.message);
-      this.useMemoryFallback = true;
-      this.lastFailureTime = Date.now();
-    }
+    
+    let isInitialized = false;
+    const tryInit = async () => {
+      if (isInitialized) return;
+      if (redis.status !== 'ready') return;
+      try {
+        await this.redisStore.init(options);
+        isInitialized = true;
+        this.useMemoryFallback = false;
+        console.log(`[RateLimiter] RedisStore initialized successfully.`);
+      } catch (err) {
+        console.warn(`[RateLimiter] Failed to initialize RedisStore, falling back to MemoryStore:`, err.message);
+        this.useMemoryFallback = true;
+        this.lastFailureTime = Date.now();
+      }
+    };
+
+    // Attempt immediately
+    await tryInit();
+
+    // Listen to ready events to initialize if not done yet
+    redis.on('ready', () => {
+      tryInit().catch(() => {});
+    });
   }
 
   shouldUseMemory() {

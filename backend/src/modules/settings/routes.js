@@ -1,118 +1,103 @@
 const express = require("express");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
+const redis = require("../../utils/redisClient");
 
 const router = express.Router();
 router.use(auth);
 
 const DEFAULT_ORG_ID = "defaultOrg";
 
-// Helper to initialize organization if not exists
+// Organization settings are stored in Redis as JSON since they're a small blob
+// This avoids needing an Organization table in SQL while retaining fast reads.
+
+const ORG_CACHE_PREFIX = "org:settings:";
+const ORG_CACHE_TTL = 3600; // 1 hour
+
+const DEFAULT_ORG = {
+  name: "My Organization",
+  contactInfo: {
+    primaryEmail: null, secondaryEmail: null, primaryPhone: null,
+    secondaryPhone: null, address: null, city: null, state: null,
+    country: null, pincode: null, website: null,
+  },
+  branding: { logoKey: null, primaryColor: "#3B82F6", companyTagline: null },
+  preferences: { timezone: "Asia/Kolkata", dateFormat: "DD/MM/YYYY", currency: "INR", language: "en" },
+};
+
 async function getOrCreateOrg(orgId) {
-  const orgRef = firestore.collection("organizations").doc(orgId);
-  const doc = await orgRef.get();
-  if (doc.exists) {
-    return doc.data();
-  }
+  try {
+    const cached = await redis.get(`${ORG_CACHE_PREFIX}${orgId}`);
+    if (cached) return JSON.parse(cached);
+  } catch (_) {}
 
-  const defaultOrg = {
-    name: "My Organization",
-    contactInfo: {
-      primaryEmail: null,
-      secondaryEmail: null,
-      primaryPhone: null,
-      secondaryPhone: null,
-      address: null,
-      city: null,
-      state: null,
-      country: null,
-      pincode: null,
-      website: null
-    },
-    branding: {
-      logoKey: null,
-      primaryColor: '#3B82F6',
-      companyTagline: null
-    },
-    preferences: {
-      timezone: 'Asia/Kolkata',
-      dateFormat: 'DD/MM/YYYY',
-      currency: 'INR',
-      language: 'en'
-    },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
+  const data = { ...DEFAULT_ORG, id: orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 
-  await orgRef.set(defaultOrg);
-  return defaultOrg;
+  try {
+    await redis.setex(`${ORG_CACHE_PREFIX}${orgId}`, ORG_CACHE_TTL, JSON.stringify(data));
+  } catch (_) {}
+
+  return data;
 }
 
-// GET /profile
+async function saveOrg(orgId, data) {
+  const withTs = { ...data, updatedAt: new Date().toISOString() };
+  try {
+    await redis.setex(`${ORG_CACHE_PREFIX}${orgId}`, ORG_CACHE_TTL, JSON.stringify(withTs));
+  } catch (_) {}
+  return withTs;
+}
+
+// GET /settings/profile
 router.get("/profile", asyncHandler(async (req, res) => {
-  const userDoc = await firestore.collection("users").doc(req.user.id).get();
-  if (!userDoc.exists) throw new ApiError(404, "User not found");
-  const userData = userDoc.data();
-  delete userData.passwordHash;
-  delete userData.password;
-  res.json({ success: true, data: { id: userDoc.id, ...userData } });
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: {
+      id: true, fullName: true, email: true, phone: true,
+      role: true, status: true, organizationId: true,
+      userType: true, department: true, designation: true,
+      profilePhotoUrl: true, createdAt: true, updatedAt: true,
+    },
+  });
+  if (!user) throw new ApiError(404, "User not found");
+  res.json({ success: true, data: user });
 }));
 
-// PUT /profile
+// PUT /settings/profile
 router.put("/profile", asyncHandler(async (req, res) => {
   const { fullName, workPhone, bio, profilePhoto } = req.body;
 
-  if (!fullName || fullName.trim().length === 0) {
-    throw new ApiError(400, "Full Name is required");
-  }
-  if (fullName.trim().length > 100) {
-    throw new ApiError(400, "Full Name cannot exceed 100 characters");
-  }
-  if (workPhone && !/^\d{10}$/.test(workPhone)) {
-    throw new ApiError(400, "Work Phone must be a 10-digit number");
-  }
+  if (!fullName || fullName.trim().length === 0) throw new ApiError(400, "Full Name is required");
+  if (fullName.trim().length > 100) throw new ApiError(400, "Full Name cannot exceed 100 characters");
+  if (workPhone && !/^\d{10}$/.test(workPhone)) throw new ApiError(400, "Work Phone must be 10 digits");
 
-  const updatePayload = {
-    fullName: fullName.trim(),
-    phone: workPhone ? workPhone.trim() : null, // sync phone
-    workPhone: workPhone ? workPhone.trim() : null,
-    bio: bio ? bio.trim().slice(0, 500) : null,
-    profilePhotoFileId: profilePhoto || null,
-    updatedAt: new Date().toISOString()
-  };
+  const before = await prisma.user.findUnique({ where: { id: req.user.id } });
 
-  const userRef = firestore.collection("users").doc(req.user.id);
-  const oldDoc = await userRef.get();
-  const before = oldDoc.data();
+  const updated = await prisma.user.update({
+    where: { id: req.user.id },
+    data: {
+      fullName: fullName.trim(),
+      phone: workPhone ? workPhone.trim() : null,
+    },
+    select: {
+      id: true, fullName: true, email: true, phone: true,
+      role: true, status: true, organizationId: true,
+      profilePhotoUrl: true, createdAt: true, updatedAt: true,
+    },
+  });
 
-  await userRef.update(updatePayload);
-
-  const updatedDoc = await userRef.get();
-  const after = updatedDoc.data();
-  delete after.passwordHash;
-  delete after.password;
-
-  const changedFields = ["fullName", "workPhone", "phone", "bio", "profilePhotoFileId"].filter(
-    k => before[k] !== updatePayload[k === "profilePhotoFileId" ? "profilePhotoFileId" : k]
-  );
-
-  await logAudit({
+  logAudit({
     actorUserId: req.user.id,
     actorName: req.user.fullName,
     action: "USER_PROFILE_UPDATED",
     entityType: "USER",
     entityId: req.user.id,
-    entityName: req.user.fullName,
-    metadata: {
-      before: { fullName: before.fullName, phone: before.phone, bio: before.bio, profilePhotoFileId: before.profilePhotoFileId },
-      after: { fullName: after.fullName, phone: after.phone, bio: after.bio, profilePhotoFileId: after.profilePhotoFileId },
-      changedFields,
-      entityName: req.user.fullName
-    },
+    oldData: { fullName: before?.fullName, phone: before?.phone },
+    newData: { fullName: updated.fullName, phone: updated.phone },
     ipAddress: req.ip,
-    userAgent: req.headers["user-agent"]
+    userAgent: req.headers["user-agent"],
   });
 
   const orgId = req.user.organizationId || DEFAULT_ORG_ID;
@@ -120,45 +105,31 @@ router.put("/profile", asyncHandler(async (req, res) => {
   await inv.user(orgId, req.user.id);
 
   const sse = require("../../utils/sse");
-  sse.sendToUser(req.user.id, 'PROFILE_UPDATED', {
-    userId: req.user.id,
-    changes: changedFields,
-  });
+  sse.sendToUser(req.user.id, "PROFILE_UPDATED", { userId: req.user.id });
 
-  res.json({ success: true, data: { id: req.user.id, ...after } });
+  res.json({ success: true, data: updated });
 }));
 
-// GET /organization (SUPER_ADMIN only)
+// GET /settings/organization (SUPER_ADMIN)
 router.get("/organization", requireRoles("SUPER_ADMIN"), asyncHandler(async (req, res) => {
   const orgId = req.user.organizationId || DEFAULT_ORG_ID;
   const org = await getOrCreateOrg(orgId);
   res.json({ success: true, data: org });
 }));
 
-// PUT /organization (SUPER_ADMIN only)
+// PUT /settings/organization (SUPER_ADMIN)
 router.put("/organization", requireRoles("SUPER_ADMIN"), asyncHandler(async (req, res) => {
   const orgId = req.user.organizationId || DEFAULT_ORG_ID;
   const { name, contactInfo = {}, branding = {}, preferences = {} } = req.body;
 
-  if (!name || name.trim().length === 0) {
-    throw new ApiError(400, "Organization name is required");
-  }
+  if (!name || name.trim().length === 0) throw new ApiError(400, "Organization name is required");
 
-  // Validate contact info emails
-  if (contactInfo.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.primaryEmail)) {
+  if (contactInfo.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.primaryEmail))
     throw new ApiError(400, "Invalid primary email format");
-  }
-  if (contactInfo.secondaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.secondaryEmail)) {
-    throw new ApiError(400, "Invalid secondary email format");
-  }
-
-  // Validate website URL
-  if (contactInfo.website && !/^https?:\/\/[^\s$.?#].[^\s]*$/.test(contactInfo.website)) {
+  if (contactInfo.website && !/^https?:\/\/[^\s$.?#].[^\s]*$/.test(contactInfo.website))
     throw new ApiError(400, "Invalid website URL format");
-  }
 
   const oldOrg = await getOrCreateOrg(orgId);
-
   const updatePayload = {
     name: name.trim(),
     contactInfo: {
@@ -171,91 +142,65 @@ router.put("/organization", requireRoles("SUPER_ADMIN"), asyncHandler(async (req
       state: contactInfo.state || null,
       country: contactInfo.country || null,
       pincode: contactInfo.pincode || null,
-      website: contactInfo.website || null
+      website: contactInfo.website || null,
     },
     branding: {
       logoKey: branding.logoKey || null,
-      primaryColor: branding.primaryColor || '#3B82F6',
-      companyTagline: branding.companyTagline || null
+      primaryColor: branding.primaryColor || "#3B82F6",
+      companyTagline: branding.companyTagline || null,
     },
     preferences: {
-      timezone: preferences.timezone || 'Asia/Kolkata',
-      dateFormat: preferences.dateFormat || 'DD/MM/YYYY',
-      currency: preferences.currency || 'INR',
-      language: preferences.language || 'en'
+      timezone: preferences.timezone || "Asia/Kolkata",
+      dateFormat: preferences.dateFormat || "DD/MM/YYYY",
+      currency: preferences.currency || "INR",
+      language: preferences.language || "en",
     },
-    updatedAt: new Date().toISOString()
   };
 
-  const orgRef = firestore.collection("organizations").doc(orgId);
-  await orgRef.update(updatePayload);
+  const saved = await saveOrg(orgId, { ...oldOrg, ...updatePayload });
 
-  // Diff changed fields
-  const changedFields = [];
-  const before = {};
-  const after = {};
+  const changedFields = ["name", "contactInfo", "branding", "preferences"].filter(
+    f => JSON.stringify(oldOrg[f]) !== JSON.stringify(updatePayload[f])
+  );
 
-  ["name", "contactInfo", "branding", "preferences"].forEach(field => {
-    if (JSON.stringify(oldOrg[field]) !== JSON.stringify(updatePayload[field])) {
-      changedFields.push(field);
-      before[field] = oldOrg[field];
-      after[field] = updatePayload[field];
-    }
-  });
-
-  await logAudit({
+  logAudit({
     actorUserId: req.user.id,
     actorName: req.user.fullName,
     action: "ORG_SETTINGS_UPDATED",
     entityType: "ORGANIZATION",
     entityId: orgId,
-    entityName: updatePayload.name,
-    metadata: {
-      before,
-      after,
-      changedFields,
-      entityName: updatePayload.name
-    },
+    oldData: { name: oldOrg.name },
+    newData: { name: updatePayload.name },
+    metadata: { changedFields, entityName: updatePayload.name },
     ipAddress: req.ip,
-    userAgent: req.headers["user-agent"]
+    userAgent: req.headers["user-agent"],
   });
 
   const inv = require("../../utils/cacheInvalidation");
   await inv.settings(orgId);
 
   const sse = require("../../utils/sse");
-  sse.broadcastToOrg(orgId, 'ORG_SETTINGS_UPDATED', {
-    changes: changedFields,
-    updatedBy: req.user.id,
-  });
+  sse.broadcastToOrg(orgId, "ORG_SETTINGS_UPDATED", { changes: changedFields, updatedBy: req.user.id });
 
-  res.json({ success: true, data: updatePayload });
+  res.json({ success: true, data: saved });
 }));
 
-// GET /contact (All Roles)
+// GET /settings/contact
 router.get("/contact", asyncHandler(async (req, res) => {
   const orgId = req.user.organizationId || DEFAULT_ORG_ID;
   const org = await getOrCreateOrg(orgId);
   res.json({ success: true, data: org.contactInfo || {} });
 }));
 
-// PUT /contact (SUPER_ADMIN only)
+// PUT /settings/contact (SUPER_ADMIN)
 router.put("/contact", requireRoles("SUPER_ADMIN"), asyncHandler(async (req, res) => {
   const orgId = req.user.organizationId || DEFAULT_ORG_ID;
   const contactInfo = req.body;
 
-  // Validate contact info emails
-  if (contactInfo.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.primaryEmail)) {
+  if (contactInfo.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.primaryEmail))
     throw new ApiError(400, "Invalid primary email format");
-  }
-  if (contactInfo.secondaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactInfo.secondaryEmail)) {
-    throw new ApiError(400, "Invalid secondary email format");
-  }
-
-  // Validate website URL
-  if (contactInfo.website && !/^https?:\/\/[^\s$.?#].[^\s]*$/.test(contactInfo.website)) {
+  if (contactInfo.website && !/^https?:\/\/[^\s$.?#].[^\s]*$/.test(contactInfo.website))
     throw new ApiError(400, "Invalid website URL format");
-  }
 
   const oldOrg = await getOrCreateOrg(orgId);
   const updatedContact = {
@@ -268,39 +213,27 @@ router.put("/contact", requireRoles("SUPER_ADMIN"), asyncHandler(async (req, res
     state: contactInfo.state || null,
     country: contactInfo.country || null,
     pincode: contactInfo.pincode || null,
-    website: contactInfo.website || null
+    website: contactInfo.website || null,
   };
 
-  const orgRef = firestore.collection("organizations").doc(orgId);
-  await orgRef.update({
-    contactInfo: updatedContact,
-    updatedAt: new Date().toISOString()
-  });
+  await saveOrg(orgId, { ...oldOrg, contactInfo: updatedContact });
 
-  await logAudit({
+  logAudit({
     actorUserId: req.user.id,
-    actorName: req.user.fullName,
     action: "ORG_CONTACT_UPDATED",
     entityType: "ORGANIZATION",
     entityId: orgId,
-    entityName: oldOrg.name,
-    metadata: {
-      before: { contactInfo: oldOrg.contactInfo },
-      after: { contactInfo: updatedContact },
-      changedFields: ["contactInfo"],
-      entityName: oldOrg.name
-    },
+    oldData: { contactInfo: oldOrg.contactInfo },
+    newData: { contactInfo: updatedContact },
     ipAddress: req.ip,
-    userAgent: req.headers["user-agent"]
+    userAgent: req.headers["user-agent"],
   });
 
   const inv = require("../../utils/cacheInvalidation");
   await inv.settings(orgId);
 
   const sse = require("../../utils/sse");
-  sse.broadcastToOrg(orgId, 'ORG_CONTACT_UPDATED', {
-    updatedBy: req.user.id,
-  });
+  sse.broadcastToOrg(orgId, "ORG_CONTACT_UPDATED", { updatedBy: req.user.id });
 
   res.json({ success: true, data: updatedContact });
 }));

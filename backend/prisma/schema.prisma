@@ -1,0 +1,596 @@
+// prisma/schema.prisma
+// CockroachDB Migration Schema for ATS Application
+// Provider: postgresql (CockroachDB is wire-compatible)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "cockroachdb"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  RECRUITER
+  INTERVIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum CandidateStatus {
+  ACTIVE
+  SCREENING
+  INTERVIEWING
+  OFFER_SENT
+  JOINED
+  REJECTED
+  OFFER_DECLINED
+  ON_HOLD
+}
+
+enum ApplicationStatus {
+  IN_PIPELINE
+  PENDING
+  SHORTLISTED
+  OFFER_SENT
+  JOINED
+  REJECTED
+  WITHDRAWN
+  ON_HOLD
+}
+
+enum InterviewMode {
+  IN_PERSON
+  VIRTUAL
+  PHONE
+}
+
+enum InterviewStatus {
+  SCHEDULED
+  RESCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  JOB_POSTED
+  TEAM_MEMBER_DELETED
+  ROLE_CHANGED
+}
+
+// ─────────────────────────────────────────────
+// Users & Auth
+// ─────────────────────────────────────────────
+
+model User {
+  id               String     @id @default(cuid())
+  fullName         String
+  email            String     @unique
+  phone            String?
+  passwordHash     String?
+  role             UserRole   @default(RECRUITER)
+  status           UserStatus @default(PENDING)
+  organizationId   String     @default("defaultOrg")
+  isActive         Boolean    @default(true)
+  isDeleted        Boolean    @default(false)
+  deletedAt        DateTime?
+  deletedBy        String?
+  userType         String?
+  department       String?
+  designation      String?
+  employeeId       String?
+  reportingTo      String?
+  maxActiveCandidates Int?
+  profilePhotoUrl  String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  // Relations
+  sessions         Session[]
+  notifications    Notification[]
+  candidatesCreated Candidate[] @relation("CandidateCreatedBy")
+  candidatesAssigned Candidate[] @relation("CandidateAssignedRecruiter")
+  candidatesMentored Candidate[] @relation("CandidateMentor")
+  jobsCreated      Job[]
+  auditLogs        AuditLog[]
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  device      String?
+  ipAddress   String?
+  location    String?
+  lastActive  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ─────────────────────────────────────────────
+// Candidates
+// ─────────────────────────────────────────────
+
+model Candidate {
+  id                  String          @id @default(cuid())
+  fullName            String
+  email               String          @default("N/A")
+  phone               String?
+  currentCompany      String?
+  totalExperienceYears Float?
+  location            String?
+  area                String?
+  course              String?
+  graduationYear      String?
+  preferredRole       String?
+  source              String?
+  jobTitle            String?
+  category            String?
+  status              String          @default("ACTIVE")
+  currentStage        String?
+  organizationId      String          @default("defaultOrg")
+  isDeleted           Boolean         @default(false)
+  deletedAt           DateTime?
+
+  // Resume / photo
+  resumeFileId        String?
+  profilePhotoFileId  String?
+  resumeFile          FileMeta?       @relation("CandidateResume", fields: [resumeFileId], references: [id])
+  profilePhotoFile    FileMeta?       @relation("CandidatePhoto", fields: [profilePhotoFileId], references: [id])
+
+  // Relations to users
+  createdById         String?
+  createdBy           User?           @relation("CandidateCreatedBy", fields: [createdById], references: [id])
+  assignedRecruiterId String?
+  assignedRecruiterName String?
+  assignedRecruiter   User?           @relation("CandidateAssignedRecruiter", fields: [assignedRecruiterId], references: [id])
+  mentorId            String?
+  mentor              User?           @relation("CandidateMentor", fields: [mentorId], references: [id])
+
+  // Offer decision
+  offerDecision       String?
+  doj                 String?
+
+  // Custom fields as JSON (flexible NoSQL-style)
+  customFields        Json?
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  applications        Application[]
+
+  @@index([organizationId])
+  @@index([phone])
+  @@index([email])
+  @@index([status])
+  @@index([isDeleted])
+  @@index([createdAt])
+  @@index([resumeFileId])
+  @@index([profilePhotoFileId])
+  @@index([createdById])
+  @@index([assignedRecruiterId])
+  @@index([mentorId])
+  @@map("candidates")
+}
+
+// ─────────────────────────────────────────────
+// Jobs
+// ─────────────────────────────────────────────
+
+model Job {
+  id              String   @id @default(cuid())
+  title           String
+  department      String?
+  location        String?
+  employmentType  String?
+  experienceMin   Float?
+  experienceMax   Float?
+  openingsCount   Int      @default(1)
+  description     String?
+  isActive        Boolean  @default(true)
+  organizationId  String   @default("defaultOrg")
+  createdById     String?
+  createdBy       User?    @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  applications    Application[]
+  pipelineStages  PipelineStage[]
+  documents       JobDocument[]
+  questions       JobQuestion[]
+
+  @@index([isActive])
+  @@index([organizationId])
+  @@index([createdAt])
+  @@index([createdById])
+  @@map("jobs")
+}
+
+// ─────────────────────────────────────────────
+// Applications
+// ─────────────────────────────────────────────
+
+model Application {
+  id              String            @id @default(cuid())
+  candidateId     String
+  jobId           String
+  currentStageId  String?
+  shortlisted     Boolean           @default(false)
+  status          String            @default("IN_PIPELINE")
+  joiningDate     String?
+  organizationId  String            @default("defaultOrg")
+  isDeleted       Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  candidate       Candidate         @relation(fields: [candidateId], references: [id])
+  job             Job               @relation(fields: [jobId], references: [id])
+  currentStage    PipelineStage?    @relation(fields: [currentStageId], references: [id])
+  pipelineEvents  PipelineEvent[]
+  interviews      Interview[]
+
+  @@unique([candidateId, jobId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([jobId])
+  @@index([candidateId])
+  @@index([isDeleted])
+  @@index([currentStageId])
+  @@map("applications")
+}
+
+// ─────────────────────────────────────────────
+// Pipeline
+// ─────────────────────────────────────────────
+
+model PipelineStage {
+  id           String        @id @default(cuid())
+  jobId        String?
+  name         String
+  sortOrder    Int           @default(0)
+  color        String?
+  description  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  job          Job?          @relation(fields: [jobId], references: [id])
+  applications Application[]
+  fromEvents   PipelineEvent[] @relation("FromStage")
+  toEvents     PipelineEvent[] @relation("ToStage")
+
+  @@index([jobId])
+  @@index([sortOrder])
+  @@map("pipeline_stages")
+}
+
+model PipelineEvent {
+  id           String        @id @default(cuid())
+  applicationId String
+  fromStageId  String?
+  toStageId    String?
+  remark       String?
+  movedById    String?
+  movedByName  String?
+  movedAt      DateTime      @default(now())
+
+  application  Application   @relation(fields: [applicationId], references: [id])
+  fromStage    PipelineStage? @relation("FromStage", fields: [fromStageId], references: [id])
+  toStage      PipelineStage? @relation("ToStage", fields: [toStageId], references: [id])
+
+  @@index([applicationId])
+  @@index([fromStageId])
+  @@index([toStageId])
+  @@map("pipeline_events")
+}
+
+// ─────────────────────────────────────────────
+// Interviews
+// ─────────────────────────────────────────────
+
+model Interview {
+  id               String         @id @default(cuid())
+  applicationId    String?
+  candidateId      String?
+  candidateName    String?
+  jobId            String?
+  jobTitle         String?
+  roundNo          Int            @default(1)
+  round            String?
+  scheduledStart   DateTime?
+  durationMinutes  Int            @default(60)
+  mode             String         @default("VIRTUAL")
+  meetingLink      String?
+  zohoLink         String?
+  status           String         @default("SCHEDULED")
+  result           String?
+  outcome          String?
+  outcomeSetAt     DateTime?
+  notes            String?
+  organizationId   String         @default("defaultOrg")
+  createdById      String?
+
+  // Interviewer IDs stored as JSON array (mirrors Firestore array field)
+  interviewerIds   Json           @default("[]")
+  interviewerNames String?
+
+  // Feedback stored as JSON array of feedback objects
+  feedback         Json           @default("[]")
+
+  // Reschedule history stored as JSON array
+  rescheduleHistory Json          @default("[]")
+
+  // Transfer history
+  transferHistory  Json           @default("[]")
+
+  // Offer letter
+  offerLetterUrl   String?
+  voiceRecordingFileId String?
+  voiceRecordingUrl    String?
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  application      Application?   @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId])
+  @@index([scheduledStart])
+  @@index([status])
+  @@index([organizationId])
+  @@index([organizationId, scheduledStart])
+  @@index([organizationId, status, scheduledStart])
+  @@index([candidateId])
+  @@index([jobId])
+  @@index([createdById])
+  @@map("interviews")
+}
+
+// ─────────────────────────────────────────────
+// Notifications
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  link      String?
+  type      String   @default("INFO")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// Audit Logs
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  actorUserId    String?
+  actorName      String?
+  actorEmail     String?
+  actorRole      String?
+  action         String
+  entityType     String
+  entityId       String?
+  entityName     String?
+  oldData        Json?
+  newData        Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  organizationId String   @default("defaultOrg")
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  actor          User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([organizationId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// File Metadata
+// ─────────────────────────────────────────────
+
+model FileMeta {
+  id           String   @id @default(cuid())
+  storageKey   String
+  originalName String?
+  mimeType     String?
+  sizeBytes    Int?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  candidateResumes Candidate[] @relation("CandidateResume")
+  candidatePhotos  Candidate[] @relation("CandidatePhoto")
+
+  @@index([uploadedById])
+  @@map("file_metas")
+}
+
+// ─────────────────────────────────────────────
+// Custom Field Definitions
+// ─────────────────────────────────────────────
+
+model CustomFieldDefinition {
+  id          String   @id @default(cuid())
+  name        String
+  fieldKey    String
+  type        String   // text, number, select, date, etc.
+  options     Json?    // for select fields
+  required    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("custom_field_definitions")
+}
+
+// ─────────────────────────────────────────────
+// Job Documents & Questions
+// ─────────────────────────────────────────────
+
+model JobDocument {
+  id              String   @id @default(cuid())
+  jobId           String
+  type            String
+  googleDriveLink String?
+  uploadedById    String?
+  uploadedByName  String?
+  uploadedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_documents")
+}
+
+model JobQuestion {
+  id          String   @id @default(cuid())
+  jobId       String
+  question    String
+  competency  String?
+  difficulty  String?
+  addedById   String?
+  addedByName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_questions")
+}
+
+// ─────────────────────────────────────────────
+// College Drives
+// ─────────────────────────────────────────────
+
+model College {
+  id             String   @id @default(cuid())
+  name           String
+  location       String?
+  area           String?
+  year           String?
+  role           String?
+  course         String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("colleges")
+}
+
+model CollegeDrive {
+  id             String   @id @default(cuid())
+  title          String
+  collegeId      String
+  dateFrom       String
+  dateTo         String?
+  status         String   @default("PLANNED")
+  notes          String?
+  ownerId        String?
+  organizationId String   @default("defaultOrg")
+  recruiters     Json     @default("[]")
+  linkedJobs     Json     @default("[]")
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([collegeId])
+  @@map("college_drives")
+}
+
+model CollegeDriveCandidate {
+  id             String   @id @default(cuid())
+  driveId        String
+  candidateId    String
+  fullName       String
+  email          String?
+  phone          String
+  status         String   @default("ADDED")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([driveId])
+  @@index([candidateId])
+  @@map("college_drive_candidates")
+}
+
+// ─────────────────────────────────────────────
+// Sales Module
+// ─────────────────────────────────────────────
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  category       String
+  location       String?
+  description    String?
+  price          Float?
+  tags           Json     @default("[]")
+  coordinatorId  String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("products")
+}
+
+model SalesTracking {
+  id           String   @id @default(cuid())
+  productId    String   @unique
+  status       String   @default("LEAD")
+  notes        String?
+  followUpDate String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("sales_tracking")
+}
+
+model SalesActivity {
+  id        String   @id @default(cuid())
+  productId String
+  action    String
+  details   String?
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@map("sales_activities")
+}

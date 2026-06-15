@@ -7,6 +7,10 @@ import './responsive.css';
 import './layout.css';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { startKeepAlive } from './lib/api';
+
+// Prevent Render instance sleeping
+startKeepAlive();
 
 const queryClient = new QueryClient({
   defaultOptions: {

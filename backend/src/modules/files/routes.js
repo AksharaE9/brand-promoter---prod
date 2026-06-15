@@ -3,7 +3,7 @@ const { upload } = require("../../middleware/upload");
 const { uploadFileToFirebase } = require("../../config/firebase");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 
 const router = express.Router();
 router.use(auth);
@@ -15,17 +15,17 @@ router.post("/profile-photo", upload.single("file"), asyncHandler(async (req, re
   const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
   if (!storageKey) throw new ApiError(500, "Failed to upload profile photo");
   
-  const fileMeta = {
-    storageKey,
-    originalName: req.file.originalname,
-    mimeType: req.file.mimetype,
-    sizeBytes: req.file.size,
-    uploadedById: req.user.id,
-    createdAt: new Date().toISOString()
-  };
-  const fileRef = await firestore.collection("fileMetas").add(fileMeta);
+  const fileMeta = await prisma.fileMeta.create({
+    data: {
+      storageKey,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      sizeBytes: req.file.size,
+      uploadedById: req.user.id
+    }
+  });
   
-  res.json({ success: true, url: storageKey, fileId: fileRef.id });
+  res.json({ success: true, url: storageKey, fileId: fileMeta.id });
 }));
 
 module.exports = router;

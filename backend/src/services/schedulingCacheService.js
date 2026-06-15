@@ -1,14 +1,14 @@
 // src/services/schedulingCacheService.js
 const redis = require('../utils/redisClient');
 const KEYS = require('../utils/schedulingCacheKeys');
-const { db, admin } = require('../config/firebase');
+const prisma = require('../config/db');
 const sse = require('../utils/sse');
 const inv = require('../utils/cacheInvalidation');
 
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 const ROUND_TTL = 60 * 60 * 2;        // 2 hours — rounds stay in cache
-const LIST_TTL = 300;                  // 5 minutes — list cache (longer = fewer cold Firestore hits)
+const LIST_TTL = 300;                  // 5 minutes — list cache
 const DIRTY_TTL = 60 * 60;             // 1 hour — dirty queue entries
 
 // ─────────────────────────────────────────────
@@ -27,7 +27,7 @@ async function getEntitiesCached(collectionName, ids) {
     cachedVals = new Array(ids.length).fill(null);
   }
 
-    const resultMap = {};
+  const resultMap = {};
   const missingIds = [];
 
   cachedVals.forEach((val, index) => {
@@ -45,16 +45,24 @@ async function getEntitiesCached(collectionName, ids) {
 
   if (missingIds.length > 0) {
     try {
-      const refs = missingIds.map(id => db.collection(collectionName).doc(id));
-      const snaps = await db.getAll(...refs);
+      let fetched = [];
+      if (collectionName === "applications") {
+        fetched = await prisma.application.findMany({
+          where: { id: { in: missingIds } },
+          include: { candidate: true, job: true }
+        });
+      } else if (collectionName === "candidates") {
+        fetched = await prisma.candidate.findMany({ where: { id: { in: missingIds } } });
+      } else if (collectionName === "jobs") {
+        fetched = await prisma.job.findMany({ where: { id: { in: missingIds } } });
+      } else if (collectionName === "users") {
+        fetched = await prisma.user.findMany({ where: { id: { in: missingIds } } });
+      }
 
       const pipeline = redis.pipeline();
-      snaps.forEach(snap => {
-        if (snap && snap.exists && isSafeKey(snap.id)) {
-          const docData = { id: snap.id, ...snap.data() };
-          resultMap[snap.id] = docData;
-          pipeline.setex(`entity:${collectionName}:${snap.id}`, 600, JSON.stringify(docData)); // 10 min TTL
-        }
+      fetched.forEach(item => {
+        resultMap[item.id] = item;
+        pipeline.setex(`entity:${collectionName}:${item.id}`, 600, JSON.stringify(item)); // 10 min TTL
       });
       await pipeline.exec();
     } catch (err) {
@@ -68,12 +76,33 @@ async function getEntitiesCached(collectionName, ids) {
 async function populateInterviews(rounds, { skipFeedbacks = false } = {}) {
   if (!rounds || rounds.length === 0) return [];
 
-  // Gathers unique applicationIds and interviewerIds
-  const appIds = [...new Set(rounds.map(iv => iv.applicationId).filter(Boolean))];
-  const userIds = [...new Set(rounds.flatMap(iv => iv.interviewerIds || []).filter(Boolean))];
+  // Filter out rounds that already have application, candidate, and job populated
+  const unpopulatedRounds = rounds.filter(iv => !iv.application || !iv.application.candidate || !iv.application.job);
 
-  // Fetch applications cached
-  const appMap = await getEntitiesCached("applications", appIds);
+  // Gathers unique applicationIds and interviewerIds
+  const appIds = [...new Set(unpopulatedRounds.map(iv => iv.applicationId).filter(Boolean))];
+  
+  const interviewerIdsList = rounds.flatMap(iv => {
+    let ids = [];
+    try {
+      ids = typeof iv.interviewerIds === 'string' ? JSON.parse(iv.interviewerIds) : iv.interviewerIds;
+    } catch (_) {}
+    return Array.isArray(ids) ? ids : [];
+  });
+
+  const feedbackUserIds = rounds.flatMap(iv => {
+    let fb = [];
+    try {
+      fb = typeof iv.feedback === 'string' ? JSON.parse(iv.feedback) : iv.feedback;
+    } catch (_) {}
+    if (!Array.isArray(fb)) fb = [];
+    return fb.map(f => f.submittedBy);
+  });
+
+  const userIds = [...new Set([...interviewerIdsList, ...feedbackUserIds].filter(Boolean))];
+
+  // Fetch applications cached (only for unpopulated ones)
+  const appMap = appIds.length > 0 ? await getEntitiesCached("applications", appIds) : {};
 
   // Gathers candidate and job IDs
   const candIds = [...new Set(Object.values(appMap).map(a => a.candidateId).filter(Boolean))];
@@ -81,130 +110,66 @@ async function populateInterviews(rounds, { skipFeedbacks = false } = {}) {
 
   // Fetch candidates, jobs, and users in parallel
   const [candMap, jobMap, userMap] = await Promise.all([
-    getEntitiesCached("candidates", candIds),
-    getEntitiesCached("jobs", jobIds),
-    getEntitiesCached("users", userIds),
+    candIds.length > 0 ? getEntitiesCached("candidates", candIds) : Promise.resolve({}),
+    jobIds.length > 0 ? getEntitiesCached("jobs", jobIds) : Promise.resolve({}),
+    userIds.length > 0 ? getEntitiesCached("users", userIds) : Promise.resolve({}),
   ]);
-
-  // Feedbacks: skip in list view (only needed when opening a specific round detail)
-  const feedbackMap = {};
-  rounds.forEach(iv => { if (isSafeKey(iv.id)) feedbackMap[iv.id] = []; });
-
-  if (!skipFeedbacks) {
-    const interviewIds = rounds.map(iv => iv.id).filter(Boolean);
-    if (interviewIds.length > 0) {
-      let cachedFbs = [];
-      try {
-        const fbRedisKeys = interviewIds.map(id => `entity:feedbacks:${id}`);
-        cachedFbs = await redis.mget(...fbRedisKeys);
-      } catch (err) {
-        console.warn("[SchedulingCache] mget failed for feedbacks:", err.message);
-        cachedFbs = new Array(interviewIds.length).fill(null);
-      }
-
-      const missingIvIds = [];
-      cachedFbs.forEach((val, idx) => {
-        const ivId = interviewIds[idx];
-        if (val) {
-          try { feedbackMap[ivId] = JSON.parse(val); } catch (_) { missingIvIds.push(ivId); }
-        } else {
-          missingIvIds.push(ivId);
-        }
-      });
-
-      if (missingIvIds.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < missingIvIds.length; i += 30) chunks.push(missingIvIds.slice(i, i + 30));
-        try {
-          const chunkSnaps = await Promise.all(
-            chunks.map(chunk => db.collection("interviewFeedbacks").where("interviewId", "in", chunk).get())
-          );
-          const fetchedMap = {};
-          missingIvIds.forEach(id => { if (isSafeKey(id)) fetchedMap[id] = []; });
-          chunkSnaps.forEach(snap => {
-            if (snap && snap.docs) {
-              snap.docs.forEach(doc => {
-                const data = doc.data();
-                if (data.interviewId && isSafeKey(data.interviewId) && fetchedMap[data.interviewId]) {
-                  const subUser = (isSafeKey(data.submittedById) && userMap[data.submittedById]) || { fullName: 'Interviewer' };
-                  fetchedMap[data.interviewId].push({ id: doc.id, ...data, submittedBy: subUser });
-                }
-              });
-            }
-          });
-          const pipeline = redis.pipeline();
-          Object.entries(fetchedMap).forEach(([ivId, fbs]) => {
-            if (isSafeKey(ivId)) {
-              feedbackMap[ivId] = fbs;
-              pipeline.setex(`entity:feedbacks:${ivId}`, 120, JSON.stringify(fbs));
-            }
-          });
-          await pipeline.exec();
-        } catch (fbErr) {
-          console.error('[SchedulingCache] feedback fetch error:', fbErr.message);
-        }
-      }
-    }
-  }
 
   // Construct populated rounds
   return rounds.map(iv => {
-    const appRaw = (isSafeKey(iv.applicationId) && appMap[iv.applicationId]) || null;
-    const app = appRaw ? { ...appRaw } : null;
-    if (app) {
-      app.candidate = (isSafeKey(app.candidateId) && candMap[app.candidateId]) || null;
-      app.job       = (isSafeKey(app.jobId) && jobMap[app.jobId]) || null;
+    let app = iv.application;
+    if (app && (!app.candidate || !app.job)) {
+      app = { ...app };
+      if (!app.candidate && isSafeKey(app.candidateId)) {
+        app.candidate = candMap[app.candidateId] || null;
+      }
+      if (!app.job && isSafeKey(app.jobId)) {
+        app.job = jobMap[app.jobId] || null;
+      }
+    } else if (!app) {
+      const appRaw = (isSafeKey(iv.applicationId) && appMap[iv.applicationId]) || null;
+      app = appRaw ? { ...appRaw } : null;
+      if (app) {
+        app.candidate = (isSafeKey(app.candidateId) && candMap[app.candidateId]) || null;
+        app.job       = (isSafeKey(app.jobId) && jobMap[app.jobId]) || null;
+      }
     }
 
-    // Merge database feedbacks with Redis write-through feedbacks
-    const finalFeedbacks = [...((isSafeKey(iv.id) && feedbackMap[iv.id]) || [])];
-    const roundFeedbacks = iv.feedback || iv.feedbacks || [];
+    let interviewerIds = [];
+    try {
+      interviewerIds = typeof iv.interviewerIds === 'string' ? JSON.parse(iv.interviewerIds) : iv.interviewerIds;
+    } catch (_) {}
+    if (!Array.isArray(interviewerIds)) interviewerIds = [];
 
-    roundFeedbacks.forEach(fb => {
-      if (!finalFeedbacks.find(f => f.id === fb.id)) {
-        const submittedById = (typeof fb.submittedBy === 'string') ? fb.submittedBy : (fb.submittedById || fb.submittedBy?.id || fb.submittedBy);
-        const submittedByObj = (typeof fb.submittedBy === 'string')
-          ? ((isSafeKey(fb.submittedBy) && userMap[fb.submittedBy]) || { fullName: "Interviewer" })
-          : (fb.submittedBy || { fullName: "Interviewer" });
+    let feedback = [];
+    try {
+      feedback = typeof iv.feedback === 'string' ? JSON.parse(iv.feedback) : iv.feedback;
+    } catch (_) {}
+    if (!Array.isArray(feedback)) feedback = [];
 
-        finalFeedbacks.push({
-          ...fb,
-          submittedById,
-          submittedBy: submittedByObj
-        });
-      }
+    // Map submittedBy ID to user details inside feedback
+    const populatedFeedback = feedback.map(fb => {
+      const submittedById = fb.submittedBy;
+      const submittedByObj = (isSafeKey(submittedById) && userMap[submittedById]) || { fullName: "Interviewer" };
+      return {
+        ...fb,
+        submittedById,
+        submittedBy: submittedByObj
+      };
     });
 
     return {
       ...iv,
       application: app,
-      interviewers: (iv.interviewerIds || []).map(id => isSafeKey(id) && userMap[id]).filter(Boolean),
-      feedbacks:    finalFeedbacks,
+      interviewers: interviewerIds.map(id => isSafeKey(id) && userMap[id]).filter(Boolean),
+      feedbacks:    populatedFeedback,
     };
   });
 }
 
-
 // ─────────────────────────────────────────────
 // READ OPERATIONS
 // ─────────────────────────────────────────────
-
-function convertTimestampsToDates(data) {
-  if (!data) return data;
-  const result = { ...data };
-  const dateFields = ['scheduledStart', 'scheduledEnd', 'createdAt', 'updatedAt', 'deletedAt', 'completedAt'];
-  dateFields.forEach(field => {
-    const val = result[field];
-    if (val && typeof val === 'object') {
-      if (typeof val.toDate === 'function') {
-        result[field] = val.toDate().toISOString();
-      } else if (val._seconds !== undefined) {
-        result[field] = new Date(val._seconds * 1000 + Math.floor(val._nanoseconds / 1000000)).toISOString();
-      }
-    }
-  });
-  return result;
-}
 
 async function getRound(roundId, includeDeleted = false) {
   try {
@@ -213,7 +178,7 @@ async function getRound(roundId, includeDeleted = false) {
     try {
       cached = await redis.get(KEYS.round(roundId));
     } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis getRound failed, falling back to Firestore:', redisErr.message);
+      console.warn('[SchedulingCache] Redis getRound failed, falling back to database:', redisErr.message);
     }
     if (cached) {
       const parsed = JSON.parse(cached);
@@ -221,26 +186,25 @@ async function getRound(roundId, includeDeleted = false) {
       return { source: 'cache', data: parsed };
     }
     
-    // 2. Cache miss — fetch from Firebase
-    const doc = await db.collection('interviews').doc(roundId).get();
-    if (!doc.exists) return { source: 'firebase', data: null };
+    // 2. Cache miss — fetch from CockroachDB
+    const round = await prisma.interview.findUnique({
+      where: { id: roundId }
+    });
+    if (!round) return { source: 'db', data: null };
     
-    let data = { id: doc.id, ...doc.data() };
-    data = convertTimestampsToDates(data);
-    
-    if (data.isDeleted) {
+    if (round.isDeleted) {
       try {
-        await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify({ ...data, isDeleted: true }));
+        await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify({ ...round, isDeleted: true }));
       } catch (_) {}
-      if (!includeDeleted) return { source: 'firebase', data: null };
+      if (!includeDeleted) return { source: 'db', data: null };
     }
     
     // 3. Populate cache for next read
     try {
-      await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(data));
+      await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(round));
     } catch (_) {}
     
-    return { source: 'firebase', data };
+    return { source: 'db', data: round };
   } catch (err) {
     console.error('[SchedulingCache] getRound error:', err);
     throw err;
@@ -252,12 +216,12 @@ async function getRoundsList(orgId, filters = {}) {
   const cacheKey = KEYS.roundsList(orgId, filterHash);
   const isSearch = !!(filters.search && filters.search.trim());
 
-  // Pagination params: default 50, max 200
+  // Pagination params
   const limit = Math.min(200, parseInt(filters.limit, 10) || 50);
-  const cursor = filters.cursor?.trim(); // last doc ID for load-more
+  const cursor = filters.cursor?.trim();
 
   try {
-    // 1. Try Redis list cache — skip cache for search (must be fresh)
+    // 1. Try Redis list cache
     if (!isSearch) {
       try {
         const cached = await redis.get(cacheKey);
@@ -267,126 +231,156 @@ async function getRoundsList(orgId, filters = {}) {
       }
     }
 
-    // 2. Build Firestore query — skip feedback fields in select (fetched lazily)
-    let query = db.collection('interviews')
-      .where('organizationId', '==', orgId)
-      .where('isDeleted', '==', false)
-      .select(
-        'applicationId', 'interviewerIds', 'status', 'roundNo', 'round',
-        'meetingLink', 'zohoLink', 'scheduledStart', 'scheduledEnd',
-        'createdAt', 'updatedAt', 'outcome', 'isDeleted', 'organizationId'
-        // NOTE: 'feedback'/'feedbacks' intentionally excluded from list — loaded on detail view
-      );
+    // 2. Build Prisma query where clause
+    const where = {
+      organizationId: orgId
+    };
 
-    if (filters.status) query = query.where('status', '==', filters.status);
-    if (filters.candidateId) query = query.where('candidateId', '==', filters.candidateId);
-    if (filters.interviewerId) query = query.where('interviewerIds', 'array-contains', filters.interviewerId);
+    if (filters.status) {
+      where.status = filters.status;
+    }
 
-    let docs = [];
-    let total = 0;
-    let nextCursor = null;
-    let hasMore = false;
-    let firestorePaginated = false;
-
+    // Build application relation filters
+    const applicationWhere = {};
+    if (filters.candidateId) {
+      applicationWhere.candidateId = filters.candidateId;
+    }
+    if (filters.jobId) {
+      applicationWhere.jobId = filters.jobId;
+    }
     if (isSearch) {
-      // For search: limit initial fetch to 500 latest interviews to keep population fast
-      try {
-        const snap = await query.orderBy('scheduledStart', 'desc').limit(500).get();
-        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-      } catch (err) {
-        const snap = await query.limit(500).get();
-        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-        docs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
-      }
-    } else {
-      // Normal cursor-based pagination directly on Firestore
-      try {
-        let q = query.orderBy('scheduledStart', 'desc');
-
-        // Fetch count of matching interviews
-        try {
-          const countSnap = await q.count().get();
-          total = countSnap.data().count;
-        } catch (cntErr) {
-          console.warn('[SchedulingCache] Count query failed:', cntErr.message);
-        }
-
-        let pageQuery = q;
-        if (cursor) {
-          const cursorDoc = await db.collection('interviews').doc(cursor).get();
-          if (cursorDoc.exists) {
-            pageQuery = pageQuery.startAfter(cursorDoc);
+      const q = filters.search.trim();
+      applicationWhere.OR = [
+        {
+          candidate: {
+            fullName: {
+              contains: q,
+              mode: 'insensitive'
+            }
+          }
+        },
+        {
+          job: {
+            title: {
+              contains: q,
+              mode: 'insensitive'
+            }
           }
         }
-
-        const snap = await pageQuery.limit(limit).get();
-        docs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-        
-        hasMore = docs.length === limit;
-        nextCursor = hasMore && docs[docs.length - 1] ? docs[docs.length - 1].id : null;
-        firestorePaginated = true;
-      } catch (err) {
-        console.warn('[SchedulingCache] Main paginated query failed (missing index?), using in-memory window:', err.message);
-        // Fallback: fetch a larger window and sort/paginate in-memory
-        const snap = await query.limit(1000).get();
-        let allDocs = snap.docs.map(d => convertTimestampsToDates({ id: d.id, ...d.data() }));
-        allDocs.sort((a, b) => new Date(b.scheduledStart || 0) - new Date(a.scheduledStart || 0));
-
-        total = allDocs.length;
-        let startIdx = 0;
-        if (cursor) {
-          const idx = allDocs.findIndex(r => r.id === cursor);
-          if (idx !== -1) startIdx = idx + 1;
-        }
-        docs = allDocs.slice(startIdx, startIdx + limit);
-        hasMore = startIdx + limit < total;
-        nextCursor = hasMore && docs[docs.length - 1] ? docs[docs.length - 1].id : null;
-        firestorePaginated = true;
-      }
+      ];
     }
 
-    // 3. Merge dirty queue + filter deleted
-    const merged = await mergeWithDirtyQueue(docs, orgId);
-    let activeRounds = merged.filter(r => !r.isDeleted);
-
-    // 4. In-memory filters
-    if (filters.jobId) {
-      activeRounds = activeRounds.filter(r => r.applicationId && r.application?.jobId === filters.jobId);
+    if (Object.keys(applicationWhere).length > 0) {
+      where.application = applicationWhere;
     }
-    
-    if (isSearch) {
-      // For search: populate matched then filter by query (we need candidate names)
-      const allPopulated = await populateInterviews(activeRounds, { skipFeedbacks: true });
-      const q = filters.search.trim().toLowerCase();
-      const filtered = allPopulated.filter(r => {
-        const candName = (r.application?.candidate?.fullName || '').toLowerCase();
-        const jobTitle = (r.application?.job?.title || '').toLowerCase();
-        return candName.includes(q) || jobTitle.includes(q);
-      });
-      return {
-        source: 'firebase',
-        data: { data: filtered, pagination: { total: filtered.length, hasMore: false } }
+
+    if (filters.interviewerId) {
+      where.interviewerIds = {
+        array_contains: filters.interviewerId
       };
     }
 
-    // 5. Cursor pagination on raw docs (if not already paginated by Firestore)
-    let pageRounds = activeRounds;
-    if (!firestorePaginated) {
-      total = activeRounds.length;
-      let startIdx = 0;
-      if (cursor) {
-        const idx = activeRounds.findIndex(r => r.id === cursor);
-        if (idx !== -1) startIdx = idx + 1;
+    // Retrieve limit + 1 items to see if there is a next page
+    const take = limit + 1;
+
+    const queryParams = {
+      where,
+      orderBy: [
+        { scheduledStart: 'desc' },
+        { id: 'desc' }
+      ],
+      take,
+      select: {
+        id: true,
+        applicationId: true,
+        candidateId: true,
+        candidateName: true,
+        jobId: true,
+        jobTitle: true,
+        roundNo: true,
+        round: true,
+        scheduledStart: true,
+        durationMinutes: true,
+        mode: true,
+        meetingLink: true,
+        zohoLink: true,
+        status: true,
+        result: true,
+        outcome: true,
+        outcomeSetAt: true,
+        notes: true,
+        organizationId: true,
+        createdById: true,
+        interviewerIds: true,
+        interviewerNames: true,
+        feedback: true,
+        rescheduleHistory: true,
+        transferHistory: true,
+        offerLetterUrl: true,
+        voiceRecordingFileId: true,
+        voiceRecordingUrl: true,
+        createdAt: true,
+        updatedAt: true,
+        application: {
+          select: {
+            id: true,
+            candidateId: true,
+            jobId: true,
+            status: true,
+            candidate: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                profilePhotoFile: {
+                  select: {
+                    storageKey: true
+                  }
+                }
+              }
+            },
+            job: {
+              select: {
+                id: true,
+                title: true,
+                department: true,
+                location: true
+              }
+            }
+          }
+        }
       }
-      pageRounds = activeRounds.slice(startIdx, startIdx + limit);
-      hasMore = startIdx + limit < total;
-      nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
+    };
+
+    if (cursor) {
+      queryParams.cursor = { id: cursor };
+      queryParams.skip = 1;
     }
 
-    // 6. Populate only the page slice (NOT all interviews) — key speedup
+    const rounds = await prisma.interview.findMany(queryParams);
+
+    // 3. Merge dirty queue (Redis caches for unsynced/optimistic rounds)
+    let merged = await mergeWithDirtyQueue(rounds, orgId);
+    let activeRounds = merged.filter(r => !r.isDeleted);
+
+    // If cursor is active, filter out any new rounds that might have been prepended from the dirty queue
+    // because they are only meant for the first page.
+    if (cursor) {
+      activeRounds = activeRounds.filter(r => !r._isNew || rounds.some(fr => fr.id === r.id));
+    }
+
+    // Slice active rounds to the page limit
+    const pageRounds = activeRounds.slice(0, limit);
+
+    // Determine hasMore: if either activeRounds has items beyond the limit, or database returned limit + 1
+    const hasMore = activeRounds.length > limit || rounds.length > limit;
+    const nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
+
+    // 4. Populate details (like feedbacks and interviewers) only for the sliced page
     const populated = await populateInterviews(pageRounds, { skipFeedbacks: true });
 
-    // Pre-warm individual round caches asynchronously (don't block response)
+    // Pre-warm individual round caches asynchronously
     setImmediate(() => {
       if (populated.length > 0) {
         const prewarmPipeline = redis.pipeline();
@@ -401,10 +395,10 @@ async function getRoundsList(orgId, filters = {}) {
       data: populated,
       nextCursor,
       hasMore,
-      pagination: { total, hasMore }
+      pagination: { total: activeRounds.length, hasMore }
     };
 
-    // Cache only first-page queries (no cursor = first page)
+    // Cache only first-page queries
     if (!cursor) {
       try {
         await redis.setex(cacheKey, LIST_TTL, JSON.stringify(result));
@@ -412,7 +406,7 @@ async function getRoundsList(orgId, filters = {}) {
       } catch (_) {}
     }
 
-    return { source: 'firebase', data: result };
+    return { source: 'db', data: result };
   } catch (err) {
     console.error('[SchedulingCache] getRoundsList error:', err);
     throw err;
@@ -420,16 +414,14 @@ async function getRoundsList(orgId, filters = {}) {
 }
 
 // ─────────────────────────────────────────────
-// WRITE OPERATIONS — write to Redis, queue Firebase sync
+// WRITE OPERATIONS — write to Redis, queue DB sync
 // ─────────────────────────────────────────────
 
 async function writeRound(roundId, updatePayload, performedBy, orgId, currentData = null) {
   try {
-    // 1. Get current state (from Redis or Firebase)
     const current = currentData || (await getRound(roundId)).data;
     if (!current) throw new Error(`Round ${roundId} not found`);
     
-    // 2. Merge update into current state
     const timestamp = new Date().toISOString();
     const updated = {
       ...current,
@@ -442,19 +434,15 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
     try {
       updated._pendingSync = true;
       updated._lastWriteMs = Date.now();
-      // 3. Write updated state to Redis immediately
       await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(updated));
-      // 4. Log this write for conflict detection
       await logWrite(roundId, updatePayload, performedBy, timestamp);
-      // 5. Add to dirty queue for Firebase sync
       await addToDirtyQueue(roundId, orgId);
       redisSuccess = true;
     } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis writeRound failed, writing directly to Firestore:', redisErr.message);
+      console.warn('[SchedulingCache] Redis writeRound failed, writing directly to DB:', redisErr.message);
     }
 
     if (!redisSuccess) {
-      // Clean up internal metadata fields before writing to Firestore
       const cleanUpdate = { ...updated };
       delete cleanUpdate.id;
       delete cleanUpdate.application;
@@ -462,22 +450,25 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
       delete cleanUpdate.feedbacks;
       delete cleanUpdate._pendingSync;
       delete cleanUpdate._lastWriteMs;
-      await db.collection('interviews').doc(roundId).update(cleanUpdate);
+      delete cleanUpdate.isDeleted;
+      delete cleanUpdate.deletedAt;
+      delete cleanUpdate.deletedBy;
+      
+      await prisma.interview.update({
+        where: { id: roundId },
+        data: cleanUpdate
+      });
     }
     
     try {
-      // Invalidate feedbacks cache
       await redis.del(`entity:feedbacks:${roundId}`);
-      // Invalidate list caches synchronously to prevent race conditions on subsequent reads
       await invalidateListCaches(orgId);
     } catch (_) {}
     
-    // Invalidate other caches (analytics, dashboard) ASYNCHRONOUSLY — do NOT block the response
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     });
     
-    // 7. Broadcast real-time update via SSE to all connected clients
     sse.broadcastToOrg(orgId, 'SCHEDULING_UPDATE', {
       type: 'ROUND_UPDATED',
       roundId,
@@ -496,7 +487,6 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
 
 async function createRound(roundData, orgId, createdBy) {
   try {
-    // 1. Generate a temporary ID for optimistic rendering
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const timestamp = new Date().toISOString();
     
@@ -516,13 +506,11 @@ async function createRound(roundData, orgId, createdBy) {
       newRound._pendingSync = true;
       newRound._isNew = true;
       newRound._lastWriteMs = Date.now();
-      // 2. Store in Redis with temp ID
       await redis.setex(KEYS.round(tempId), ROUND_TTL, JSON.stringify(newRound));
-      // 3. Add to dirty queue as a new document
       await addToDirtyQueue(tempId, orgId, true);
       redisSuccess = true;
     } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis createRound failed, writing directly to Firestore:', redisErr.message);
+      console.warn('[SchedulingCache] Redis createRound failed, writing directly to DB:', redisErr.message);
     }
 
     let finalRound = { ...newRound };
@@ -535,21 +523,22 @@ async function createRound(roundData, orgId, createdBy) {
       delete cleanRound._pendingSync;
       delete cleanRound._isNew;
       delete cleanRound._lastWriteMs;
-      const docRef = await db.collection('interviews').add(cleanRound);
-      finalRound.id = docRef.id;
+      delete cleanRound.isDeleted;
+      
+      const created = await prisma.interview.create({
+        data: cleanRound
+      });
+      finalRound.id = created.id;
     }
     
     try {
-      // Invalidate list caches synchronously to prevent race conditions on subsequent reads
       await invalidateListCaches(orgId);
     } catch (_) {}
     
-    // Invalidate other caches (analytics, dashboard) ASYNCHRONOUSLY — do NOT block the response
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     });
     
-    // 5. SSE broadcast
     sse.broadcastToOrg(orgId, 'ROUND_CREATED', {
       roundId: finalRound.id,
       round: finalRound,
@@ -584,24 +573,20 @@ async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
       await addToDirtyQueue(roundId, orgId);
       redisSuccess = true;
     } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis deleteRound failed, deleting directly in Firestore:', redisErr.message);
+      console.warn('[SchedulingCache] Redis deleteRound failed, deleting directly in DB:', redisErr.message);
     }
 
     if (!redisSuccess) {
-      await db.collection('interviews').doc(roundId).update({
-        isDeleted: true,
-        deletedAt: updated.deletedAt,
-        deletedBy
-      });
+      await prisma.interview.delete({
+        where: { id: roundId }
+      }).catch(() => {});
     }
     
     try {
       await redis.del(`entity:feedbacks:${roundId}`);
-      // Invalidate list caches synchronously to prevent race conditions on subsequent reads
       await invalidateListCaches(orgId);
     } catch (_) {}
     
-    // Invalidate other caches (analytics, dashboard) asynchronously
     inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     
     sse.broadcastToOrg(orgId, 'ROUND_DELETED', {
@@ -621,7 +606,6 @@ async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
 // ─────────────────────────────────────────────
 
 async function addToDirtyQueue(roundId, orgId, isNew = false) {
-  // Use HSET so re-queuing the same roundId overwrites instead of duplicating
   const field = `${orgId}:${roundId}`;
   const value = JSON.stringify({
     roundId,
@@ -637,7 +621,7 @@ async function addToDirtyQueue(roundId, orgId, isNew = false) {
     await pipeline.exec();
   } catch (redisErr) {
     console.warn('[SchedulingCache] Redis addToDirtyQueue failed:', redisErr.message);
-    throw redisErr; // Propagate so caller knows Redis write failed
+    throw redisErr;
   }
 }
 
@@ -657,10 +641,9 @@ async function getDirtyQueue() {
         orgId: parsed.orgId,
         roundId: parsed.roundId,
         isNew: parsed.isNew,
-        raw: field, // the hash field key for removal
+        raw: field,
       };
     } catch {
-      // Fallback: parse from field key
       const [orgId, roundId] = field.split(':');
       return { orgId, roundId, isNew: false, raw: field };
     }
@@ -676,7 +659,7 @@ async function removeFromDirtyQueue(rawKeys) {
   }
 }
 
-async function mergeWithDirtyQueue(firebaseRounds, orgId) {
+async function mergeWithDirtyQueue(dbRounds, orgId) {
   try {
     let hash = null;
     try {
@@ -684,16 +667,14 @@ async function mergeWithDirtyQueue(firebaseRounds, orgId) {
     } catch (redisErr) {
       console.warn('[SchedulingCache] Redis hgetall in mergeWithDirtyQueue failed:', redisErr.message);
     }
-    if (!hash || Object.keys(hash).length === 0) return firebaseRounds;
+    if (!hash || Object.keys(hash).length === 0) return dbRounds;
     
-    // Filter entries belonging to this org
     const dirtyRoundIds = Object.keys(hash)
       .filter(field => field.startsWith(`${orgId}:`))
       .map(field => field.split(':')[1]);
     
-    if (dirtyRoundIds.length === 0) return firebaseRounds;
+    if (dirtyRoundIds.length === 0) return dbRounds;
     
-    // Fetch all dirty rounds from Redis
     const dirtyRounds = await Promise.all(
       dirtyRoundIds.map(async id => {
         try {
@@ -708,24 +689,18 @@ async function mergeWithDirtyQueue(firebaseRounds, orgId) {
     const dirtyMap = {};
     dirtyRounds.filter(Boolean).forEach(r => { if (isSafeKey(r.id)) dirtyMap[r.id] = r; });
     
-    // Replace Firebase versions with Redis versions for dirty rounds
-    const merged = firebaseRounds.map(r => (isSafeKey(r.id) && dirtyMap[r.id]) || r);
+    const merged = dbRounds.map(r => (isSafeKey(r.id) && dirtyMap[r.id]) || r);
     
-    // Add new rounds that exist in Redis but not yet in Firebase
     const newRounds = Object.values(dirtyMap).filter(r => 
-      r._isNew && !firebaseRounds.find(fr => fr.id === r.id)
+      r._isNew && !dbRounds.find(fr => fr.id === r.id)
     );
     
     return [...newRounds, ...merged];
   } catch (err) {
     console.error('[SchedulingCache] mergeWithDirtyQueue error:', err);
-    return firebaseRounds;
+    return dbRounds;
   }
 }
-
-// ─────────────────────────────────────────────
-// CACHE INVALIDATION
-// ─────────────────────────────────────────────
 
 async function invalidateListCaches(orgId) {
   try {
@@ -750,27 +725,19 @@ async function invalidateRound(roundId) {
   }
 }
 
-// ─────────────────────────────────────────────
-// WRITE LOG FOR CONFLICT DETECTION
-// ─────────────────────────────────────────────
-
 async function logWrite(roundId, payload, performedBy, timestamp) {
   try {
     const logKey = KEYS.writeLog(roundId);
     const entry = JSON.stringify({ payload: Object.keys(payload), performedBy, timestamp });
     const pipeline = redis.pipeline();
     pipeline.lpush(logKey, entry);
-    pipeline.ltrim(logKey, 0, 9);  // keep last 10 writes
+    pipeline.ltrim(logKey, 0, 9);
     pipeline.expire(logKey, 3600);
     await pipeline.exec();
   } catch (redisErr) {
     console.warn('[SchedulingCache] Redis logWrite failed:', redisErr.message);
   }
 }
-
-// ─────────────────────────────────────────────
-// UTILITY
-// ─────────────────────────────────────────────
 
 function hashFilters(filters) {
   return Buffer.from(JSON.stringify(filters)).toString('base64').slice(0, 20);

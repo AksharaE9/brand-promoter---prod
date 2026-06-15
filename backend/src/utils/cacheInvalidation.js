@@ -3,13 +3,19 @@ const { tieredDelete: deleteCache, tieredDeletePattern: deleteCachePattern } = r
 
 async function runInvalidations(patterns) {
   const unique = [...new Set(patterns.filter(Boolean))];
-  await Promise.all(unique.map(p => {
-    if (p.includes('*')) {
-      return deleteCachePattern(p);
-    } else {
-      return deleteCache(p);
-    }
-  }));
+  
+  // Execute invalidations in the background to avoid blocking HTTP responses
+  setImmediate(() => {
+    Promise.all(unique.map(p => {
+      if (p.includes('*')) {
+        return deleteCachePattern(p);
+      } else {
+        return deleteCache(p);
+      }
+    })).catch(err => {
+      console.error('[CacheInvalidation] runInvalidations background error:', err.message);
+    });
+  });
 }
 
 const inv = {

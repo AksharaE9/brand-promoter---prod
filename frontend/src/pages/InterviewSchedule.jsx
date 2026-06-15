@@ -14,6 +14,7 @@ import { subscribeSSE } from '../lib/sse';
 import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
 import { schedulingApi } from '../services/schedulingApi';
 import SyncIndicator from '../components/Interview/SyncIndicator';
+import InterviewMemberSkeleton from '../components/Interview/InterviewMemberSkeleton';
 import { useDebounce } from '../hooks/useDebounce';
 
 const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
@@ -99,7 +100,7 @@ const InterviewSchedule = () => {
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverNextCursor, setServerNextCursor] = useState(null);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList();
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 20 });
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -173,8 +174,9 @@ const InterviewSchedule = () => {
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
   // Infinite scroll: how many items to show
-  const [visibleCount, setVisibleCount] = useState(30);
-  const listEndRef = useRef(null); // sentinel for IntersectionObserver
+  const [visibleCount, setVisibleCount] = useState(20);
+  const listEndRef = useRef(null);        // sentinel for IntersectionObserver
+  const listPanelRef = useRef(null);     // scrollable container ref for IntersectionObserver root
   const currentUser = getStoredUser();
   const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
   const recorderRef = useRef(null);
@@ -195,17 +197,34 @@ const InterviewSchedule = () => {
     if (!serverHasMore || loadingMore || !serverNextCursor) return;
     setLoadingMore(true);
     try {
-      const res = await schedulingApi.getRounds({ cursor: serverNextCursor, limit: 50 });
+      const res = await schedulingApi.getRounds({ cursor: serverNextCursor, limit: 20 });
       const nextPage = res?.data || [];
       setAllInterviews(prev => [...prev, ...nextPage]);
       setServerHasMore(res?.hasMore || false);
       setServerNextCursor(res?.nextCursor || null);
+      setVisibleCount(prev => prev + nextPage.length);
     } catch (err) {
       console.error('[InterviewSchedule] load-more error:', err);
     } finally {
       setLoadingMore(false);
     }
   }, [serverHasMore, loadingMore, serverNextCursor]);
+
+  // Prefetch next page silently when current page is loaded
+  useEffect(() => {
+    if (serverHasMore && serverNextCursor && !debouncedSearch) {
+      const nextFilters = {
+        cursor: serverNextCursor,
+        limit: 20,
+        ...(filterMine ? { interviewerId: currentUser?.id } : {})
+      };
+      queryClient.prefetchQuery({
+        queryKey: ['scheduling', 'rounds', nextFilters],
+        queryFn: () => schedulingApi.getRounds(nextFilters),
+        staleTime: 30000,
+      });
+    }
+  }, [serverNextCursor, serverHasMore, debouncedSearch, filterMine, currentUser?.id, queryClient]);
 
 
   const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
@@ -358,7 +377,7 @@ const InterviewSchedule = () => {
 
   // ── Search: re-fetch from server when debounced search changes ──
   const { data: searchResponse, isFetching: isSearching } = useRoundsList(
-    debouncedSearch ? { search: debouncedSearch, ...(filterMine ? { interviewerId: currentUser?.id } : {}) } : {}
+    debouncedSearch ? { search: debouncedSearch, limit: 50, ...(filterMine ? { interviewerId: currentUser?.id } : {}) } : {}
   );
   const searchedInterviews = searchResponse?.data ?? [];
 
@@ -408,29 +427,46 @@ const InterviewSchedule = () => {
 
   // ── Infinite scroll: reset visible count when list changes ──
   useEffect(() => {
-    setVisibleCount(30);
+    setVisibleCount(20);
   }, [debouncedSearch, filterMine]);
 
-  // ── Infinite scroll: load more from server when near bottom ──
-  useEffect(() => {
-    if (!listEndRef.current) return;
+  // ── Live refs — always hold latest values so the observer never uses stale closures ──
+  const serverHasMoreRef = useRef(serverHasMore);
+  const loadingMoreRef   = useRef(loadingMore);
+  const loadMoreRef2     = useRef(loadMoreInterviews);
+
+  serverHasMoreRef.current = serverHasMore;
+  loadingMoreRef.current   = loadingMore;
+  loadMoreRef2.current     = loadMoreInterviews;
+
+  // ── Sentinel callback ref — attaches observer when node mounts or state changes ──
+  const sentinelCallbackRef = useCallback((node) => {
+    // Cleanup any previous observer
+    if (listEndRef.current?._obs) {
+      listEndRef.current._obs.disconnect();
+    }
+    listEndRef.current = node;
+    if (!node) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
-          if (serverHasMore && !loadingMore) {
-            // Load next page from server
-            loadMoreInterviews();
-          } else if (!serverHasMore) {
-            // All server data loaded; just show more from local rendered slice
-            setVisibleCount(prev => prev + 30);
-          }
+        if (!entries[0].isIntersecting) return;
+        // Read live values — never stale
+        if (serverHasMoreRef.current && !loadingMoreRef.current) {
+          loadMoreRef2.current();
+        } else if (!serverHasMoreRef.current) {
+          setVisibleCount(prev => prev + 20);
         }
       },
-      { threshold: 0.1, rootMargin: '200px' }
+      {
+        root: listPanelRef.current || null,
+        threshold: 0,
+        rootMargin: '150px',
+      }
     );
-    observer.observe(listEndRef.current);
-    return () => observer.disconnect();
-  }, [listEndRef.current, serverHasMore, loadingMore, loadMoreInterviews]);
+    observer.observe(node);
+    node._obs = observer; // store for cleanup
+  }, [serverHasMore, loadingMore, displayInterviews.length]);
 
 
   // Visible slice for lazy rendering
@@ -1023,7 +1059,7 @@ const InterviewSchedule = () => {
       </div>
       <PageEnter className={`schedule-page h-[calc(100vh-126px)] overflow-hidden`}>
         {viewMode === 'list' && (
-          <Reveal className="candidate-list-panel bg-white p-4 h-full">
+          <Reveal ref={listPanelRef} className="candidate-list-panel bg-white p-4 h-full">
             <div className="pb-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold font-[Manrope] px-2">Interviews</h2>
@@ -1109,16 +1145,10 @@ const InterviewSchedule = () => {
                 </button>
               );
             })}
-            {/* Infinite scroll sentinel */}
-            {visibleCount < groupedApplications.length && (
-              <div ref={listEndRef} className="flex justify-center py-3">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <svg className="animate-spin h-3.5 w-3.5 text-[#1f52cc]" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                  Loading more...
-                </div>
+            {/* Infinite scroll sentinel & skeletons */}
+            {(visibleCount < groupedApplications.length || loadingMore || serverHasMore) && (
+              <div ref={sentinelCallbackRef} className="w-full mt-2 h-4">
+                {loadingMore && <InterviewMemberSkeleton count={3} />}
               </div>
             )}
             {interviews.length === 0 && !isQueryLoading && (

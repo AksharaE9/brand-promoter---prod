@@ -1,7 +1,7 @@
 'use strict';
 const { Worker, Queue } = require('bullmq');
 const Redis = require('ioredis');
-const { db: firestore } = require("../config/firebase");
+const prisma = require("../config/db");
 const sse = require('../utils/sse');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
@@ -110,41 +110,27 @@ const worker = new Worker(
       } else {
         // Deduplication by phone
         const phoneDigits = mappedCandidate.phone.replace(/\D/g, "");
-        const existingSnap = await firestore.collection("candidates")
-          .where("phone", "==", phoneDigits)
-          .limit(1)
-          .get();
+        const existing = await prisma.candidate.findFirst({
+          where: { phone: phoneDigits, organizationId, isDeleted: false }
+        });
           
-        if (!existingSnap.empty) {
+        if (existing) {
           results.skipped++;
         } else {
           try {
             const candidateDoc = {
               fullName: mappedCandidate.fullName,
-              email: mappedCandidate.email || null,
+              email: mappedCandidate.email || "N/A",
               phone: phoneDigits,
               location: mappedCandidate.location || null,
               preferredRole: mappedCandidate.role || mappedCandidate.preferredRole || null,
-              collegeName: null,
-              graduationYear: null,
-              area: null,
-              course: null,
-              jobId: null,
-              linkedinUrl: null,
-              currentCompany: null,
-              currentRole: null,
-              experienceYears: null,
-              skills: null,
-              notes: null,
-              drive: null,
               organizationId,
               source: "Bulk Import Wizard",
               createdById: userId,
-              createdAt: new Date().toISOString(),
               status: "ACTIVE"
             };
 
-            await firestore.collection("candidates").add(candidateDoc);
+            await prisma.candidate.create({ data: candidateDoc });
             results.imported++;
           } catch (err) {
             results.failed++;

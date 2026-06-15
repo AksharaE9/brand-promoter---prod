@@ -1,33 +1,40 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles, invalidateUserCache } = require("../../middleware/auth");
 const { upload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
-const { getCached, invalidate } = require("../../utils/cache");
+const { getCached } = require("../../utils/cache");
 
 const router = express.Router();
-
 router.use(auth);
 
 const allowedRoles = ["SUPER_ADMIN", "RECRUITER"];
 
+// GET /api/users — list all users in org
 router.get(
   "/",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
     const orgId = req.user.organizationId || "defaultOrg";
     const users = await getCached(`users:list:${orgId}:all`, async () => {
-      const snapshot = await firestore.collection("users").orderBy("createdAt", "desc").get();
-      return snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(u => u.isDeleted !== true && (u.organizationId || "defaultOrg") === orgId);
+      return prisma.user.findMany({
+        where: { isDeleted: false, organizationId: orgId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true, fullName: true, email: true, phone: true,
+          role: true, status: true, organizationId: true,
+          userType: true, department: true, designation: true,
+          profilePhotoUrl: true, createdAt: true, updatedAt: true,
+        },
+      });
     }, 60000);
     res.json({ success: true, data: users });
   }),
 );
 
+// POST /api/users — create user (admin)
 router.post(
   "/",
   requireRoles("SUPER_ADMIN"),
@@ -37,82 +44,67 @@ router.post(
     if (!fullName || !email || !password || !role) {
       throw new ApiError(400, "Full Name, Email, Password, and Role are required");
     }
+    if (!allowedRoles.includes(role)) throw new ApiError(400, "Invalid role");
 
-    if (!allowedRoles.includes(role)) {
-      throw new ApiError(400, "Invalid role");
-    }
+    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (existing) throw new ApiError(409, "User with this email already exists");
 
-    // Check email uniqueness
-    const dupSnapshot = await firestore.collection("users")
-      .where("email", "==", email.toLowerCase())
-      .limit(1)
-      .get();
-    
-    if (!dupSnapshot.empty) {
-      throw new ApiError(409, "User with this email already exists");
-    }
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const user = await prisma.user.create({
+      data: {
+        fullName,
+        email: email.toLowerCase(),
+        passwordHash,
+        role,
+        phone,
+        status: "ACTIVE",
+        organizationId: req.user.organizationId || "defaultOrg",
+      },
+    });
 
-    const userData = {
-      fullName,
-      email: email.toLowerCase(),
-      passwordHash: hashedPassword,
-      role,
-      phone,
-      status: "ACTIVE",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    const docRef = await firestore.collection("users").add(userData);
-    const newUser = { id: docRef.id, ...userData };
-    delete newUser.password;
-
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: "CREATE_USER",
       entityType: "USER",
-      entityId: docRef.id,
-      newData: newUser,
+      entityId: user.id,
+      newData: { fullName, email: user.email, role },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
-    await inv.user(orgId, docRef.id);
+    await inv.user(orgId, user.id);
 
     const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_INVITED', {
-      email: userData.email,
-      role: userData.role,
+    sse.broadcastToOrg(orgId, "TEAM_MEMBER_INVITED", {
+      email: user.email,
+      role: user.role,
       invitedBy: req.user.id,
       invitedByName: req.user.fullName || req.user.email,
     });
 
-    res.status(201).json({ success: true, data: newUser });
+    const { passwordHash: _ph, ...safeUser } = user;
+    res.status(201).json({ success: true, data: safeUser });
   }),
 );
 
+// GET /api/users/interviewers — list recruiters/admins
 router.get(
   "/interviewers",
   asyncHandler(async (req, res) => {
     const users = await getCached("users_interviewers", async () => {
-      const snapshot = await firestore.collection("users")
-        .where("role", "in", ["SUPER_ADMIN", "RECRUITER"])
-        .get();
-      return snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        fullName: doc.data().fullName,
-        role: doc.data().role 
-      }));
+      return prisma.user.findMany({
+        where: { role: { in: ["SUPER_ADMIN", "RECRUITER"] }, isDeleted: false, status: "ACTIVE" },
+        select: { id: true, fullName: true, role: true },
+      });
     }, 60000);
     res.json({ success: true, data: users });
   }),
 );
 
+// PATCH /api/users/:id — update user
 router.patch(
   "/:id",
   requireRoles("SUPER_ADMIN"),
@@ -120,42 +112,33 @@ router.patch(
     const { id } = req.params;
     const { fullName, email, phone, role } = req.body;
 
-    const userRef = firestore.collection("users").doc(id);
-    const doc = await userRef.get();
-    if (!doc.exists) {
-      throw new ApiError(404, "User not found");
-    }
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "User not found");
 
-    const existing = doc.data();
     const normalizedEmail = String(email || "").trim().toLowerCase();
 
-    // Check email uniqueness
-    const dupSnapshot = await firestore.collection("users")
-      .where("email", "==", normalizedEmail)
-      .get();
-    
-    const duplicates = dupSnapshot.docs.filter(d => d.id !== id);
-    if (duplicates.length > 0) {
-      throw new ApiError(409, "User with this email already exists");
+    if (normalizedEmail && normalizedEmail !== existing.email) {
+      const dup = await prisma.user.findFirst({ where: { email: normalizedEmail, NOT: { id } } });
+      if (dup) throw new ApiError(409, "User with this email already exists");
     }
 
-    const updateData = {
-      fullName: String(fullName || "").trim(),
-      email: normalizedEmail,
-      phone: phone ? String(phone).trim() : null,
-      role,
-      updatedAt: new Date().toISOString()
-    };
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        fullName: String(fullName || "").trim(),
+        email: normalizedEmail,
+        phone: phone ? String(phone).trim() : null,
+        role,
+      },
+    });
 
-    await userRef.update(updateData);
-
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: "UPDATE_USER",
       entityType: "USER",
       entityId: id,
-      oldData: existing,
-      newData: updateData,
+      oldData: { fullName: existing.fullName, email: existing.email, role: existing.role },
+      newData: { fullName: updated.fullName, email: updated.email, role: updated.role },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -166,20 +149,19 @@ router.patch(
     await invalidateUserCache(id);
 
     const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, 'TEAM_MEMBER_UPDATED', {
+    sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", {
       userId: id,
-      changes: updateData,
+      changes: { fullName: updated.fullName, email: updated.email, role: updated.role },
       updatedBy: req.user.id,
     });
-    sse.sendToUser(id, 'PROFILE_UPDATED', {
-      userId: id,
-      changes: updateData,
-    });
+    sse.sendToUser(id, "PROFILE_UPDATED", { userId: id });
 
-    res.json({ success: true, data: { id, ...existing, ...updateData } });
+    const { passwordHash: _ph, ...safeUser } = updated;
+    res.json({ success: true, data: safeUser });
   }),
 );
 
+// PATCH /api/users/:id/status
 router.patch(
   "/:id/status",
   requireRoles("SUPER_ADMIN"),
@@ -187,28 +169,20 @@ router.patch(
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!["ACTIVE", "INACTIVE", "PENDING"].includes(status)) {
-      throw new ApiError(400, "Invalid status");
-    }
-    if (id === req.user.id && status === "INACTIVE") {
-      throw new ApiError(400, "You cannot deactivate your own account");
-    }
+    if (!["ACTIVE", "INACTIVE", "PENDING"].includes(status)) throw new ApiError(400, "Invalid status");
+    if (id === req.user.id && status === "INACTIVE") throw new ApiError(400, "You cannot deactivate your own account");
 
-    const userRef = firestore.collection("users").doc(id);
-    const doc = await userRef.get();
-    if (!doc.exists) {
-      throw new ApiError(404, "User not found");
-    }
+    const existing = await prisma.user.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, "User not found");
 
-    const oldStatus = doc.data().status;
-    await userRef.update({ status, updatedAt: new Date().toISOString() });
+    await prisma.user.update({ where: { id }, data: { status, isActive: status === "ACTIVE" } });
 
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: "UPDATE_USER_STATUS",
       entityType: "USER",
       entityId: id,
-      oldData: { status: oldStatus },
+      oldData: { status: existing.status },
       newData: { status },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
@@ -220,27 +194,18 @@ router.patch(
     await invalidateUserCache(id);
 
     const sse = require("../../utils/sse");
-    if (status === 'INACTIVE') {
-      sse.broadcastToOrg(orgId, 'TEAM_MEMBER_DELETED', {
-        userId: id,
-        deletedBy: req.user.id,
-        deletedByName: req.user.fullName || req.user.email,
-      });
-      sse.sendToUser(id, 'ACCOUNT_DEACTIVATED', {
-        message: 'Your account has been deactivated',
-      });
+    if (status === "INACTIVE") {
+      sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: id, deletedBy: req.user.id, deletedByName: req.user.fullName });
+      sse.sendToUser(id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
     } else {
-      sse.broadcastToOrg(orgId, 'TEAM_MEMBER_RESTORED', {
-        userId: id,
-        restoredBy: req.user.id,
-        restoredByName: req.user.fullName || req.user.email,
-      });
+      sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: id, restoredBy: req.user.id, restoredByName: req.user.fullName });
     }
 
     res.json({ success: true, data: { id, status } });
   }),
 );
 
+// POST /api/users/me/photo — upload profile photo
 router.post(
   "/me/photo",
   (req, res, next) => {
@@ -249,34 +214,31 @@ router.post(
   },
   upload.single("file"),
   asyncHandler(async (req, res) => {
-    if (!req.file) {
-      throw new ApiError(400, "Photo file is required");
-    }
+    if (!req.file) throw new ApiError(400, "Photo file is required");
 
     const cloudinaryUrl = req.file.path;
 
-    const fileMeta = {
-      storageKey: cloudinaryUrl,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype || "image/jpeg",
-      sizeBytes: req.file.size || 0,
-      uploadedById: req.user.id,
-      createdAt: new Date().toISOString()
-    };
-
-    const fileRef = await firestore.collection("fileMetas").add(fileMeta);
-
-    await firestore.collection("users").doc(req.user.id).update({
-      profilePhotoFileId: fileRef.id,
-      updatedAt: new Date().toISOString()
+    const fileMeta = await prisma.fileMeta.create({
+      data: {
+        storageKey: cloudinaryUrl,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype || "image/jpeg",
+        sizeBytes: req.file.size || 0,
+        uploadedById: req.user.id,
+      },
     });
 
-    await logAudit({
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { profilePhotoUrl: cloudinaryUrl },
+    });
+
+    logAudit({
       actorUserId: req.user.id,
       action: "UPLOAD_USER_PHOTO",
       entityType: "USER",
       entityId: req.user.id,
-      newData: { fileId: fileRef.id, url: cloudinaryUrl },
+      newData: { fileId: fileMeta.id, url: cloudinaryUrl },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -287,20 +249,13 @@ router.post(
     await invalidateUserCache(req.user.id);
 
     const sse = require("../../utils/sse");
-    sse.sendToUser(req.user.id, 'PROFILE_UPDATED', {
+    sse.sendToUser(req.user.id, "PROFILE_UPDATED", {
       userId: req.user.id,
-      changes: { profilePhotoFileId: fileRef.id },
+      changes: { profilePhotoUrl: cloudinaryUrl },
     });
 
-    res.status(201).json({
-      success: true,
-      data: {
-        fileId: fileRef.id,
-        url: cloudinaryUrl,
-      },
-    });
+    res.status(201).json({ success: true, data: { fileId: fileMeta.id, url: cloudinaryUrl } });
   }),
 );
-
 
 module.exports = router;

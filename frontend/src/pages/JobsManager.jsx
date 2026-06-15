@@ -132,6 +132,12 @@ const JobsManager = () => {
     [items, shortlistByJob, sortBy],
   );
 
+  const prefetchJobDetails = useCallback((jobId) => {
+    // Prefetch job documents and questions
+    apiGet(`/jobs/${jobId}/documents`).catch(() => {});
+    apiGet(`/jobs/${jobId}/questions`).catch(() => {});
+  }, []);
+
   const activeCount = jobs.filter((j) => j.status === 'Active').length;
 
   return (
@@ -277,7 +283,10 @@ const JobsManager = () => {
           ) : null}
           {jobs.map((row, idx) => (
             <Reveal key={row.id} delay={idx * 0.04}>
-              <div className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4">
+              <div 
+                className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4"
+                onMouseEnter={() => prefetchJobDetails(row.id)}
+              >
                 <div>
                   <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/schedule?jobId=${row.id}`)}>
                     {row.title}

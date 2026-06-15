@@ -1,6 +1,6 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { signAccessToken } = require("../../utils/jwt");
 const { auth } = require("../../middleware/auth");
@@ -41,30 +41,28 @@ router.post(
       throw new ApiError(400, "Password must be at least 8 characters");
     }
 
-    const snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
-    if (!snapshot.empty) {
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
       throw new ApiError(409, "User with this email already exists");
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    
-    const userData = {
-      fullName: builtName,
-      email: normalizedEmail,
-      phone: phone ? String(phone).trim() : null,
-      passwordHash,
-      role: normalizedRole,
-      status: "PENDING",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
 
-    const docRef = await firestore.collection("users").add(userData);
+    const user = await prisma.user.create({
+      data: {
+        fullName: builtName,
+        email: normalizedEmail,
+        phone: phone ? String(phone).trim() : null,
+        passwordHash,
+        role: normalizedRole,
+        status: "PENDING",
+      },
+    });
 
     return res.status(201).json({
       success: true,
       message: "Registration successful",
-      data: { id: docRef.id, ...userData },
+      data: { id: user.id, fullName: user.fullName, email: user.email, role: user.role, status: user.status },
     });
   }),
 );
@@ -79,19 +77,16 @@ router.post(
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    let snapshot = await firestore.collection("users").where("email", "==", normalizedEmail).limit(1).get();
+    let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
 
-    // Fallback: search with raw email (in case database has uppercase letters)
-    if (snapshot.empty && email.trim() !== normalizedEmail) {
-      snapshot = await firestore.collection("users").where("email", "==", email.trim()).limit(1).get();
+    // Fallback: try original case
+    if (!user && email.trim() !== normalizedEmail) {
+      user = await prisma.user.findFirst({ where: { email: email.trim() } });
     }
 
-    if (snapshot.empty) {
+    if (!user) {
       throw new ApiError(401, "Email not found. Please register or contact your administrator.");
     }
-
-    const userDoc = snapshot.docs[0];
-    const user = { id: userDoc.id, ...userDoc.data() };
 
     if (user.isDeleted === true) {
       throw new ApiError(401, "This account has been deleted.");
@@ -106,7 +101,7 @@ router.post(
       throw new ApiError(403, "Your account is not active. Please contact your administrator.");
     }
 
-    const hashToCompare = user.passwordHash || user.password;
+    const hashToCompare = user.passwordHash;
     if (!hashToCompare) {
       throw new ApiError(500, "User account is misconfigured (missing password hash)");
     }
@@ -115,19 +110,20 @@ router.post(
       throw new ApiError(401, "Incorrect password. Please try again.");
     }
 
-    const sessionRef = await firestore.collection("sessions").add({
-      userId: user.id,
-      device: parseUserAgent(req.headers["user-agent"]),
-      ipAddress: req.ip || "127.0.0.1",
-      location: "Local Session",
-      lastActive: new Date().toISOString(),
-      createdAt: new Date().toISOString()
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        device: parseUserAgent(req.headers["user-agent"]),
+        ipAddress: req.ip || "127.0.0.1",
+        location: "Local Session",
+        lastActive: new Date(),
+      },
     });
 
     const token = signAccessToken({
       userId: user.id,
       role: user.role,
-      sessionId: sessionRef.id
+      sessionId: session.id,
     });
 
     return res.json({
@@ -139,6 +135,7 @@ router.post(
           fullName: user.fullName,
           email: user.email,
           role: user.role,
+          organizationId: user.organizationId,
           profilePhotoUrl: user.profilePhotoUrl || null,
         },
       },
@@ -157,7 +154,6 @@ router.get(
   }),
 );
 
-// POST /change-password
 router.post(
   "/change-password",
   auth,
@@ -167,16 +163,14 @@ router.post(
     if (!currentPassword || !newPassword || !confirmNewPassword) {
       throw new ApiError(400, "All password fields are required");
     }
-
     if (newPassword !== confirmNewPassword) {
       throw new ApiError(400, "New password and confirmation do not match");
     }
-
     if (newPassword.length < 8) {
       throw new ApiError(400, "New password must be at least 8 characters");
     }
 
-    const hashToCompare = req.user.passwordHash || req.user.password;
+    const hashToCompare = req.user.passwordHash;
     if (!hashToCompare) {
       throw new ApiError(500, "User account is misconfigured");
     }
@@ -186,130 +180,111 @@ router.post(
       throw new ApiError(401, "Incorrect current password");
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const newHash = await bcrypt.hash(newPassword, salt);
+    const newHash = await bcrypt.hash(newPassword, 10);
 
-    await firestore.collection("users").doc(req.user.id).update({
-      passwordHash: newHash,
-      updatedAt: new Date().toISOString()
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { passwordHash: newHash },
     });
 
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       actorName: req.user.fullName,
       action: "PASSWORD_CHANGED",
       entityType: "USER",
       entityId: req.user.id,
       entityName: req.user.fullName,
-      metadata: {
-        changedFields: ["passwordHash"],
-        entityName: req.user.fullName
-      },
+      metadata: { changedFields: ["passwordHash"], entityName: req.user.fullName },
       ipAddress: req.ip,
-      userAgent: req.headers["user-agent"]
+      userAgent: req.headers["user-agent"],
     });
 
     res.json({ success: true, message: "Password updated successfully" });
   })
 );
 
-// GET /sessions
 router.get(
   "/sessions",
   auth,
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("sessions").where("userId", "==", req.user.id).get();
-    const sessions = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        isCurrent: doc.id === req.user.sessionId
-      };
+    const sessions = await prisma.session.findMany({
+      where: { userId: req.user.id },
+      orderBy: { lastActive: "desc" },
     });
 
-    // Sort: current first, then by lastActive desc
-    sessions.sort((a, b) => {
+    const data = sessions.map(s => ({
+      ...s,
+      isCurrent: s.id === req.user.sessionId,
+    }));
+
+    // current first
+    data.sort((a, b) => {
       if (a.isCurrent) return -1;
       if (b.isCurrent) return 1;
-      return new Date(b.lastActive || 0) - new Date(a.lastActive || 0);
+      return new Date(b.lastActive) - new Date(a.lastActive);
     });
 
-    res.json({ success: true, data: sessions });
+    res.json({ success: true, data });
   })
 );
 
-// DELETE /sessions/:sessionId (revoke single session)
 router.delete(
   "/sessions/:sessionId",
   auth,
   asyncHandler(async (req, res) => {
     const { sessionId } = req.params;
-    const sessionDoc = await firestore.collection("sessions").doc(sessionId).get();
+    const session = await prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!sessionDoc.exists || sessionDoc.data().userId !== req.user.id) {
+    if (!session || session.userId !== req.user.id) {
       throw new ApiError(404, "Session not found");
     }
 
-    await firestore.collection("sessions").doc(sessionId).delete();
+    await prisma.session.delete({ where: { id: sessionId } });
 
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       actorName: req.user.fullName,
       action: "SESSION_REVOKED",
       entityType: "SESSION",
       entityId: sessionId,
-      entityName: sessionDoc.data().device || "Unknown Device",
-      metadata: {
-        device: sessionDoc.data().device,
-        ipAddress: sessionDoc.data().ipAddress
-      },
+      entityName: session.device || "Unknown Device",
+      metadata: { device: session.device, ipAddress: session.ipAddress },
       ipAddress: req.ip,
-      userAgent: req.headers["user-agent"]
+      userAgent: req.headers["user-agent"],
     });
 
     res.json({ success: true, message: "Session revoked successfully" });
   })
 );
 
-// DELETE /sessions (revoke all other sessions)
 router.delete(
   "/sessions-other",
   auth,
   asyncHandler(async (req, res) => {
     const currentSessionId = req.user.sessionId;
-    const snapshot = await firestore.collection("sessions")
-      .where("userId", "==", req.user.id)
-      .get();
 
-    const batch = firestore.batch();
-    let count = 0;
-
-    snapshot.docs.forEach(doc => {
-      if (doc.id !== currentSessionId) {
-        batch.delete(doc.ref);
-        count++;
-      }
+    const result = await prisma.session.deleteMany({
+      where: {
+        userId: req.user.id,
+        NOT: { id: currentSessionId },
+      },
     });
 
-    if (count > 0) {
-      await batch.commit();
-      await logAudit({
+    if (result.count > 0) {
+      logAudit({
         actorUserId: req.user.id,
         actorName: req.user.fullName,
         action: "ALL_OTHER_SESSIONS_REVOKED",
         entityType: "SESSION",
         entityId: req.user.id,
         entityName: req.user.fullName,
-        metadata: {
-          revokedCount: count
-        },
+        metadata: { revokedCount: result.count },
         ipAddress: req.ip,
-        userAgent: req.headers["user-agent"]
+        userAgent: req.headers["user-agent"],
       });
     }
 
-    res.json({ success: true, message: `Revoked ${count} other sessions successfully` });
+    res.json({ success: true, message: `Revoked ${result.count} other sessions successfully` });
   })
 );
 

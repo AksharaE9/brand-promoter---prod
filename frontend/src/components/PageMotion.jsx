@@ -17,9 +17,10 @@ export function PageEnter({ children, className = '' }) {
  * on hundreds of DOM nodes simultaneously, causing layout thrashing.
  * Now uses a simple CSS animation — zero JS overhead.
  */
-export function Reveal({ children, className = '', delay = 0, style = {} }) {
+export const Reveal = React.forwardRef(({ children, className = '', delay = 0, style = {} }, ref) => {
   return (
     <div
+      ref={ref}
       className={`reveal-fade ${className}`}
       style={{
         animationDelay: `${Math.min(delay, 0.3)}s`,
@@ -29,6 +30,7 @@ export function Reveal({ children, className = '', delay = 0, style = {} }) {
       {children}
     </div>
   );
-}
+});
+Reveal.displayName = 'Reveal';
 
 export default Reveal;

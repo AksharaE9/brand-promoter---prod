@@ -4,7 +4,7 @@ const Redis = require('ioredis');
 const sharedConfig = {
   enableOfflineQueue:     false,  // Fail fast when disconnected to avoid hanging HTTP requests
   connectTimeout:         2000,   // 2 seconds connect timeout
-  commandTimeout:         500,    // 500ms command timeout for fast fallback
+  commandTimeout:         3000,   // 3 seconds command timeout for stable WAN connection
   keepAlive:              30000,
   lazyConnect:            false,
   enableReadyCheck:       true,
@@ -53,6 +53,26 @@ subscriberClient.on('error',   e  => console.error('[Redis:subscriber] Error:', 
 
 // Warmup — verify connection before server accepts traffic
 async function warmup() {
+  if (client.status !== 'ready') {
+    await new Promise((resolve, reject) => {
+      const onReady = () => {
+        client.removeListener('end', onEnd);
+        resolve();
+      };
+      const onEnd = () => {
+        client.removeListener('ready', onReady);
+        reject(new Error('Redis client connection ended'));
+      };
+      client.once('ready', onReady);
+      client.once('end', onEnd);
+      // set a timeout just in case it takes too long
+      setTimeout(() => {
+        client.removeListener('ready', onReady);
+        client.removeListener('end', onEnd);
+        reject(new Error('Redis connection timeout during warmup'));
+      }, 5000);
+    });
+  }
   const result = await client.ping();
   if (result !== 'PONG') throw new Error('Redis warmup failed');
   console.log('[Redis] Warmup OK');

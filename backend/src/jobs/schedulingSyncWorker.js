@@ -1,7 +1,7 @@
 // src/jobs/schedulingSyncWorker.js
 const { Worker, Queue } = require('bullmq');
 const Redis = require('ioredis');
-const { db, admin } = require('../config/firebase');
+const prisma = require('../config/db');
 const redis = require('../utils/redisClient');
 const KEYS = require('../utils/schedulingCacheKeys');
 const {
@@ -11,8 +11,8 @@ const {
   invalidateListCaches,
 } = require('../services/schedulingCacheService');
 
-const SYNC_QUEUE_NAME = 'scheduling-firebase-sync';
-const MAX_BATCH_SIZE = 500; // Firestore batch limit
+const SYNC_QUEUE_NAME = 'scheduling-firebase-sync'; // Keep queue name same to avoid configuration edits
+const MAX_BATCH_SIZE = 500;
 
 const connectionConfig = process.env.REDIS_URL || {
   host: process.env.REDIS_HOST || '127.0.0.1',
@@ -46,7 +46,6 @@ if (typeof connectionConfig === 'string') {
 queueConnection.on('error', (err) => console.error('[BullMQ Queue Redis] Error:', err.message));
 workerConnection.on('error', (err) => console.error('[BullMQ Worker Redis] Error:', err.message));
 
-// ── Queue and Scheduler setup ──
 const syncQueue = new Queue(SYNC_QUEUE_NAME, {
   connection: queueConnection,
   defaultJobOptions: {
@@ -57,9 +56,7 @@ const syncQueue = new Queue(SYNC_QUEUE_NAME, {
   },
 });
 
-// Schedule the repeating sync job on startup
 async function scheduleSyncJob() {
-  // Remove any existing repeatable job first to avoid duplicates
   const repeatableJobs = await syncQueue.getRepeatableJobs();
   await Promise.all(
     repeatableJobs
@@ -67,66 +64,60 @@ async function scheduleSyncJob() {
       .map(j => syncQueue.removeRepeatableByKey(j.key))
   );
   
-  // Add the new repeatable job — every 5 seconds
   await syncQueue.add('firebase-sync', {}, {
-    repeat: { every: 5000 },  // 5 seconds
+    repeat: { every: 5000 },  // every 5 seconds
     jobId: 'firebase-sync-repeatable',
   });
   
   console.log('[SchedulingSync] Sync job scheduled every 5 seconds');
 }
 
-// ── Status sync helper for application and candidate status ──
 async function syncApplicationAndCandidateStatus(interviewId, recommendation) {
   try {
-    const interviewDoc = await db.collection("interviews").doc(interviewId).get();
-    if (!interviewDoc.exists) return;
+    const interview = await prisma.interview.findUnique({
+      where: { id: interviewId }
+    });
+    if (!interview || !interview.applicationId) return;
     
-    const interviewDataRaw = interviewDoc.data();
-    if (interviewDataRaw.applicationId) {
-      const appRef = db.collection("applications").doc(interviewDataRaw.applicationId);
-      const appDoc = await appRef.get();
-      
-      if (appDoc.exists) {
-        const appData = appDoc.data();
-        let newStatus = appData.status;
-        let candidateStatus = "ACTIVE";
+    const app = await prisma.application.findUnique({
+      where: { id: interview.applicationId }
+    });
+    
+    if (app) {
+      let newStatus = app.status;
+      let candidateStatus = "ACTIVE";
 
-        if (recommendation === "REJECTED") {
-          newStatus = "REJECTED";
-          candidateStatus = "REJECTED";
-        } else if (recommendation === "SELECTED" || recommendation === "OFFER_SENT" || recommendation === "OFFER_LETTER") {
-          newStatus = "OFFER_SENT";
-          candidateStatus = "OFFER_SENT";
-        } else if (recommendation === "JOINED") {
-          newStatus = "JOINED";
-          candidateStatus = "JOINED";
-        }
-
-        // Update Application
-        await appRef.update({ status: newStatus, updatedAt: new Date().toISOString() });
-
-        // Update Candidate global status
-        if (appData.candidateId) {
-          await db.collection("candidates").doc(appData.candidateId).update({
-            status: candidateStatus,
-            updatedAt: new Date().toISOString()
-          });
-        }
+      if (recommendation === "REJECTED") {
+        newStatus = "REJECTED";
+        candidateStatus = "REJECTED";
+      } else if (recommendation === "SELECTED" || recommendation === "OFFER_SENT" || recommendation === "OFFER_LETTER") {
+        newStatus = "OFFER_SENT";
+        candidateStatus = "OFFER_SENT";
+      } else if (recommendation === "JOINED") {
+        newStatus = "JOINED";
+        candidateStatus = "JOINED";
       }
+
+      await prisma.application.update({
+        where: { id: app.id },
+        data: { status: newStatus }
+      });
+
+      await prisma.candidate.update({
+        where: { id: app.candidateId },
+        data: { status: candidateStatus }
+      });
     }
   } catch (err) {
     console.error("[SchedulingSync] Status sync error:", err.message);
   }
 }
 
-// ── Worker ──
 const worker = new Worker(
   SYNC_QUEUE_NAME,
   async (job) => {
     const syncStart = Date.now();
     
-    // Acquire sync lock — prevent concurrent syncs
     const lockKey = KEYS.syncLock();
     const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 60);
     if (!lockAcquired) {
@@ -134,167 +125,165 @@ const worker = new Worker(
       return { skipped: true };
     }
     
-    // Extend lock every 15s to prevent expiry during long syncs
     const lockExtender = setInterval(async () => {
       try { await redis.expire(lockKey, 60); } catch { /* ignore */ }
     }, 15000);
     
     try {
-      // 1. Get all dirty rounds from Redis
       const dirtyItems = await getDirtyQueue();
       
       if (dirtyItems.length === 0) {
         return { synced: 0 };
       }
       
-      console.log(`[SchedulingSync] Syncing ${dirtyItems.length} dirty rounds to Firebase`);
+      console.log(`[SchedulingSync] Syncing ${dirtyItems.length} dirty rounds to CockroachDB`);
       
-      // 2. Fetch all dirty rounds from Redis in parallel
-      const roundData = await Promise.all(
-        dirtyItems.map(async item => {
+      // Fetch all round data in a single MGET call to avoid parallel network congestion
+      const roundKeys = dirtyItems.map(item => KEYS.round(item.roundId));
+      let cachedRounds = [];
+      try {
+        cachedRounds = await redis.mget(...roundKeys);
+      } catch (err) {
+        console.error('[SchedulingSync] MGET failed, falling back to individual database checks:', err.message);
+        cachedRounds = await Promise.all(dirtyItems.map(async item => {
           const { data } = await getRound(item.roundId, true);
-          return { ...item, roundData: data };
-        })
-      );
-      
-      // 3. Split into batches of 500 (Firestore batch limit)
-      const batches = [];
-      for (let i = 0; i < roundData.length; i += MAX_BATCH_SIZE) {
-        batches.push(roundData.slice(i, i + MAX_BATCH_SIZE));
+          return data ? JSON.stringify(data) : null;
+        }));
       }
+
+      const roundData = dirtyItems.map((item, index) => {
+        const cached = cachedRounds[index];
+        return {
+          ...item,
+          roundData: cached ? JSON.parse(cached) : null
+        };
+      });
       
       let totalSynced = 0;
       const syncedRawKeys = [];
       const tempToRealIdMap = {};
       const allSyncedIds = [];
       
-      for (const batch of batches) {
-        const firestoreBatch = db.batch();
-        const batchItems = [];
-        
-        for (const item of batch) {
-          if (!item.roundData) {
-            console.warn(`[SchedulingSync] Round ${item.roundId} not found in Redis, skipping`);
-            syncedRawKeys.push(item.raw);
-            continue;
-          }
-          
-          // Clean internal Redis metadata fields before writing to Firebase
-          const { 
-            _pendingSync, _isNew, _lastWriteMs, 
-            id, application, feedbacks, ...cleanData 
-          } = item.roundData;
-          
-          let docRef;
-          let realId = item.roundId;
-          
-          if (item.isNew && item.roundId.startsWith('temp_')) {
-            // New document — create with auto-generated Firebase ID
-            docRef = db.collection('interviews').doc();
-            tempToRealIdMap[item.roundId] = docRef.id;
-            realId = docRef.id;
-          } else {
-            docRef = db.collection('interviews').doc(item.roundId);
-          }
-          
-          allSyncedIds.push(realId);
-
-          // Convert ISO strings back to Firestore Timestamps
-          const firestoreData = convertDatesToTimestamps(cleanData);
-          
-          // Process nested feedback entries and write to interviewFeedbacks collection
-          if (cleanData.feedback && Array.isArray(cleanData.feedback)) {
-            for (const fb of cleanData.feedback) {
-              if (!fb.id || fb.id.startsWith('temp_')) {
-                const fbRef = db.collection('interviewFeedbacks').doc();
-                fb.id = fbRef.id;
-                
-                const fbData = {
-                  interviewId: realId,
-                  submittedById: fb.submittedBy,
-                  technicalRating: parseInt(fb.ratings?.technical || fb.technicalRating) || 0,
-                  communicationRating: parseInt(fb.ratings?.communication || fb.communicationRating) || 0,
-                  cultureFitRating: parseInt(fb.ratings?.culture || fb.cultureFitRating) || 0,
-                  strengths: fb.strengths || "",
-                  weaknesses: fb.weaknesses || fb.concerns || "",
-                  overallComments: fb.notes || fb.overallComments || "",
-                  recommendation: fb.recommendation || "PENDING",
-                  createdAt: fb.submittedAt || new Date().toISOString()
-                };
-                
-                if (fb.offerFileUrl) {
-                  fbData.offerFileUrl = fb.offerFileUrl;
-                  fbData.offerFileName = fb.offerFileName;
-                }
-
-                firestoreBatch.set(fbRef, fbData);
-                
-                // Update applications and candidates statuses in Firestore
-                await syncApplicationAndCandidateStatus(realId, fb.recommendation);
-              }
-            }
-          }
-          
-          if (cleanData.isDeleted) {
-            if (!item.isNew) firestoreBatch.delete(docRef);
-          } else if (item.isNew) {
-            firestoreBatch.set(docRef, firestoreData);
-          } else {
-            firestoreBatch.set(docRef, firestoreData, { merge: true });
-          }
-          
-          batchItems.push(item);
+      // Sync all items in parallel to avoid blocked event loop and timeouts
+      await Promise.all(roundData.map(async (item) => {
+        if (!item.roundData) {
+          console.warn(`[SchedulingSync] Round ${item.roundId} not found in Redis, skipping`);
+          syncedRawKeys.push(item.raw);
+          return;
         }
         
-        // Commit the Firestore batch
-        await firestoreBatch.commit();
-        totalSynced += batchItems.length;
+        const { 
+          _pendingSync, _isNew, _lastWriteMs, 
+          id, application, feedbacks, ...cleanData 
+        } = item.roundData;
         
-        // Update Redis entries for temp ID → real ID mappings
-        await Promise.all(
-          Object.entries(tempToRealIdMap).map(async ([tempId, realId]) => {
-            const cachedData = await redis.get(KEYS.round(tempId));
-            if (cachedData) {
-              const parsed = JSON.parse(cachedData);
-              parsed.id = realId;
-              parsed._pendingSync = false;
-              parsed._isNew = false;
-              // Store under real ID
-              await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
-              // Remove temp ID key
-              await redis.del(KEYS.round(tempId));
+        let realId = item.roundId;
+        
+        // Prepare DB fields
+        const dataPayload = {
+          applicationId: cleanData.applicationId || null,
+          candidateId: cleanData.candidateId || null,
+          candidateName: cleanData.candidateName || null,
+          jobId: cleanData.jobId || null,
+          jobTitle: cleanData.jobTitle || null,
+          roundNo: cleanData.roundNo ? parseInt(cleanData.roundNo) : 1,
+          round: cleanData.round || null,
+          scheduledStart: cleanData.scheduledStart ? new Date(cleanData.scheduledStart) : null,
+          durationMinutes: cleanData.durationMinutes ? parseInt(cleanData.durationMinutes) : 60,
+          mode: cleanData.mode || "VIRTUAL",
+          meetingLink: cleanData.meetingLink || null,
+          zohoLink: cleanData.zohoLink || null,
+          status: cleanData.status || "SCHEDULED",
+          result: cleanData.result || null,
+          outcome: cleanData.outcome || null,
+          outcomeSetAt: cleanData.outcomeSetAt ? new Date(cleanData.outcomeSetAt) : null,
+          notes: cleanData.notes || null,
+          organizationId: cleanData.organizationId || "defaultOrg",
+          createdById: cleanData.createdById || null,
+          interviewerIds: cleanData.interviewerIds || [],
+          feedback: cleanData.feedback || [],
+          rescheduleHistory: cleanData.rescheduleHistory || [],
+          transferHistory: cleanData.transferHistory || [],
+          offerLetterUrl: cleanData.offerLetterUrl || null,
+          voiceRecordingFileId: cleanData.voiceRecordingFileId || null,
+          voiceRecordingUrl: cleanData.voiceRecordingUrl || null,
+        };
+
+        if (cleanData.isDeleted) {
+          if (!item.isNew && !item.roundId.startsWith('temp_')) {
+            await prisma.interview.delete({ where: { id: item.roundId } }).catch(() => {});
+          }
+        } else if (item.isNew && item.roundId.startsWith('temp_')) {
+          const created = await prisma.interview.create({
+            data: {
+              ...dataPayload,
+              id: undefined
             }
-          })
-        );
-        
-        // Mark as no longer pending sync in Redis
-        await Promise.all(
-          batchItems.map(async item => {
-            const realId = tempToRealIdMap[item.roundId] || item.roundId;
-            const cachedData = await redis.get(KEYS.round(realId));
-            if (cachedData) {
-              const parsed = JSON.parse(cachedData);
-              parsed._pendingSync = false;
-              parsed._isNew = false;
-              await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
+          });
+          tempToRealIdMap[item.roundId] = created.id;
+          realId = created.id;
+        } else {
+          await prisma.interview.upsert({
+            where: { id: item.roundId },
+            update: dataPayload,
+            create: {
+              id: item.roundId,
+              ...dataPayload
             }
-          })
-        );
+          });
+        }
         
-        syncedRawKeys.push(...batchItems.map(i => i.raw));
-      }
+        allSyncedIds.push(realId);
+
+        // Sync statuses if feedback was updated
+        if (dataPayload.feedback && Array.isArray(dataPayload.feedback)) {
+          for (const fb of dataPayload.feedback) {
+            if (fb.recommendation) {
+              await syncApplicationAndCandidateStatus(realId, fb.recommendation);
+            }
+          }
+        }
+
+        totalSynced++;
+        syncedRawKeys.push(item.raw);
+      }));
       
-      // 4. Remove synced items from dirty queue
+      // Update mappings and marks in Redis
+      await Promise.all(
+        Object.entries(tempToRealIdMap).map(async ([tempId, realId]) => {
+          const cachedData = await redis.get(KEYS.round(tempId));
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            parsed.id = realId;
+            parsed._pendingSync = false;
+            parsed._isNew = false;
+            await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
+            await redis.del(KEYS.round(tempId));
+          }
+        })
+      );
+      
+      await Promise.all(
+        syncedRawKeys.map(async rawKey => {
+          const roundId = rawKey.split(':')[1];
+          const realId = tempToRealIdMap[roundId] || roundId;
+          const cachedData = await redis.get(KEYS.round(realId));
+          if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            parsed._pendingSync = false;
+            parsed._isNew = false;
+            await redis.setex(KEYS.round(realId), 7200, JSON.stringify(parsed));
+          }
+        })
+      );
+      
       await removeFromDirtyQueue(syncedRawKeys);
 
-      // Clear Redis list caches for all involved organizations to guarantee fresh reads after sync
       const uniqueOrgs = [...new Set(dirtyItems.map(i => i.orgId || "defaultOrg"))];
       await Promise.all(uniqueOrgs.map(orgId => invalidateListCaches(orgId)));
       
-      // 5. Broadcast sync completion via SSE
       if (totalSynced > 0) {
         const sse = require('../utils/sse');
-        const uniqueOrgs = [...new Set(dirtyItems.map(i => i.orgId || "defaultOrg"))];
         uniqueOrgs.forEach(orgId => {
           sse.broadcastToOrg(orgId, 'SCHEDULING_SYNC_COMPLETE', {
             synced: totalSynced,
@@ -308,7 +297,6 @@ const worker = new Worker(
       const duration = Date.now() - syncStart;
       console.log(`[SchedulingSync] Synced ${totalSynced} rounds in ${duration}ms`);
       
-      // Update last sync timestamp
       if (dirtyItems.length > 0) {
         const orgs = [...new Set(dirtyItems.map(i => i.orgId))];
         const syncTimestamp = new Date().toISOString();
@@ -324,7 +312,7 @@ const worker = new Worker(
   },
   {
     connection: workerConnection,
-    concurrency: 1,  // only one sync at a time
+    concurrency: 1,
     lockDuration: 60000,
     stalledInterval: 15000,
     maxStalledCount: 2,
@@ -340,17 +328,5 @@ worker.on('completed', (job, result) => {
 worker.on('failed', (job, err) => {
   console.error(`[SchedulingSync] Job failed:`, err.message);
 });
-
-// Helper — convert ISO strings to Firestore Timestamps
-function convertDatesToTimestamps(data) {
-  const result = { ...data };
-  const dateFields = ['scheduledStart', 'scheduledEnd', 'createdAt', 'updatedAt', 'deletedAt', 'completedAt'];
-  dateFields.forEach(field => {
-    if (result[field] && typeof result[field] === 'string') {
-      result[field] = admin.firestore.Timestamp.fromDate(new Date(result[field]));
-    }
-  });
-  return result;
-}
 
 module.exports = { worker, syncQueue, scheduleSyncJob };

@@ -2,7 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
-const { db: firestore } = require("../../config/firebase");
+const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, offerLetterUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
@@ -12,12 +12,17 @@ const { broadcast } = require("../../utils/sse");
 const cache = require("../../services/schedulingCacheService");
 const redis = require("../../utils/redisClient");
 const KEYS = require("../../utils/schedulingCacheKeys");
+const { getCache, setCache, TTL } = require("../../utils/cache");
+const { buildInterviewListQuery } = require("./queryBuilder");
+const { populateInterviewRelations } = require("./relationPopulator");
+const { mergeDirtyQueue } = require("./dirtyQueueMerger");
+const crypto = require("crypto");
 
 const router = express.Router();
 
 router.use(auth);
 
-// ── GET export day (Keep PDF export functioning) ──
+// ── GET export day (PDF Export with SQL Backend) ──
 router.get(
   "/export-day",
   requireRoles("SUPER_ADMIN", "RECRUITER"),
@@ -25,16 +30,18 @@ router.get(
     const { date } = req.query;
     if (!date) throw new ApiError(400, "Date is required (YYYY-MM-DD)");
 
-    const start = new Date(`${date}T00:00:00.000Z`).toISOString();
-    const end = new Date(`${date}T23:59:59.999Z`).toISOString();
+    const start = new Date(`${date}T00:00:00.000Z`);
+    const end = new Date(`${date}T23:59:59.999Z`);
 
-    const snapshot = await firestore.collection("interviews")
-      .where("scheduledStart", ">=", start)
-      .where("scheduledStart", "<=", end)
-      .orderBy("scheduledStart", "asc")
-      .get();
-    
-    const interviews = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const interviews = await prisma.interview.findMany({
+      where: {
+        scheduledStart: {
+          gte: start,
+          lte: end
+        }
+      },
+      orderBy: { scheduledStart: 'asc' }
+    });
 
     res.setHeader("Content-Disposition", `attachment; filename="interviews-${date}.pdf"`);
     res.setHeader("Content-Type", "application/pdf");
@@ -50,7 +57,7 @@ router.get(
       doc.fontSize(14).fillColor("#0f1b3d").text("No interviews scheduled for this day.", { align: "center" });
     } else {
       interviews.forEach((item) => {
-        const timeStr = new Date(item.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const timeStr = item.scheduledStart ? new Date(item.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "N/A";
         doc.fontSize(13).fillColor("#071f52").text(`${timeStr} - ${item.candidateName || "N/A"}`, { underline: true });
         doc.fontSize(10).fillColor("#333").text(`Round: ${item.roundNo} | Role: ${item.jobTitle || "General"}`);
         doc.text(`Interviewers: ${item.interviewerNames || "N/A"} | Mode: ${item.mode}`);
@@ -122,24 +129,121 @@ router.post(
   })
 );
 
+function buildCacheKey(orgId, query) {
+  const parts = [
+    query.status       || '',
+    query.jobId        || '',
+    query.candidateId  || '',
+    query.interviewerId || '',
+    query.search       || '',
+    query.cursor       || 'start',
+    query.limit        || '20',
+  ].join(':');
+  const hash = crypto.createHash('md5').update(parts).digest('hex').slice(0, 12);
+  return `interviews:list:${orgId}:${hash}`;
+}
+
+async function prewarmRounds(rounds) {
+  if (!rounds || rounds.length === 0) return;
+  try {
+    const pipeline = redis.pipeline();
+    rounds.forEach(r => {
+      if (r && r.id) {
+        pipeline.setex(KEYS.round(r.id), 7200, JSON.stringify(r));
+      }
+    });
+    await pipeline.exec();
+  } catch (err) {
+    console.warn('[CacheWarmer] prewarmRounds failed:', err.message);
+  }
+}
+
 // ── GET all rounds (list) ──
 router.get(
   '/',
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
+    const requestStart = Date.now();
     const orgId = req.user.organizationId || "defaultOrg";
-    const filters = {
-      status: req.query.status,
-      candidateId: req.query.candidateId,
-      interviewerId: req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined),
-      jobId: req.query.jobId,
-      search: req.query.search,
-      cursor: req.query.cursor,       // cursor-based load-more
-      limit: req.query.limit || 50,  // default 50 per page
+    const interviewerId = req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined);
+
+    // ── 1. Cache check (target: < 10ms on hit) ──
+    const cacheKey = buildCacheKey(orgId, { ...req.query, interviewerId });
+    const cached   = await getCache(cacheKey);
+
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      res.setHeader('X-Response-Time', `${Date.now() - requestStart}ms`);
+      return res.json({ success: true, ...cached });
+    }
+
+    // ── 2. Build and execute query (target: < 150ms with index) ──
+    const { queryParams, limit } = await buildInterviewListQuery({
+      orgId,
+      status:        req.query.status,
+      jobId:         req.query.jobId,
+      candidateId:   req.query.candidateId,
+      interviewerId,
+      search:        req.query.search,
+      cursor:        req.query.cursor,
+      limit:         req.query.limit,
+    });
+
+    // We fetch limit + 1 to know if there is a next page
+    const takeLimit = limit + 1;
+    const dbQueryParams = {
+      ...queryParams,
+      take: takeLimit
     };
 
-    const { data } = await cache.getRoundsList(orgId, filters);
-    res.json({ success: true, ...data });
+    const prisma = require('../../config/db');
+    const docs = await prisma.interview.findMany(dbQueryParams);
+
+    // Determine hasMore
+    const hasMore = docs.length > limit;
+    const pageRounds = docs.slice(0, limit);
+    
+    // Cursor for next page
+    const lastDoc = pageRounds[pageRounds.length - 1];
+    const nextCursor = hasMore && lastDoc ? lastDoc.id : null;
+
+    // ── 3. Dirty queue merge (target: < 200ms, times out and skips if slower) ──
+    const withDirty = await mergeDirtyQueue(pageRounds, orgId);
+
+    // ── 4. Relation population (target: < 500ms with full Redis hit) ──
+    const populated = await populateInterviewRelations(withDirty);
+
+    // ── 5. Build response ──
+    const responseData = {
+      data:       populated,
+      nextCursor,
+      hasMore,
+      pagination: { total: populated.length, hasMore }
+    };
+
+    // ── 6. Cache write (non-blocking) ──
+    setCache(cacheKey, responseData, TTL.SCHEDULING_LIST).catch(() => {});
+
+    // ── 7. Send response immediately ──
+    res.setHeader('X-Cache',         'MISS');
+    res.setHeader('X-Response-Time', `${Date.now() - requestStart}ms`);
+    res.json({ success: true, ...responseData });
+
+    // ── 8. Pre-warm individual round caches AFTER response is sent ──
+    setImmediate(() => {
+      prewarmRounds(populated).catch(() => {});
+    });
+
+    // ── 9. Monitor response time ──
+    const duration = Date.now() - requestStart;
+    if (duration > 2000) {
+      console.warn(
+        `[InterviewList:SLOW] ${duration}ms | org:${orgId} | ` +
+        `rounds:${populated.length} | ` +
+        `cache:MISS | ` +
+        `query:${req.query.cursor ? 'page-N' : 'page-1'}`
+      );
+    }
   })
 );
 
@@ -182,7 +286,7 @@ router.post(
       actorUserId: req.user.id,
       action: "SCHEDULE_INTERVIEW",
       entityType: "INTERVIEW",
-      entityId: result.tempId,
+      entityId: result.tempId || result.data.id,
       newData: roundData,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
@@ -232,7 +336,12 @@ router.post(
       feedbackEntry.offerFileName = req.file.originalname;
     }
 
-    const currentFeedbacks = current.feedback || current.feedbacks || [];
+    let currentFeedbacks = [];
+    try {
+      currentFeedbacks = typeof current.feedback === 'string' ? JSON.parse(current.feedback) : current.feedback;
+    } catch (_) {}
+    if (!Array.isArray(currentFeedbacks)) currentFeedbacks = [];
+
     const updatePayload = {
       status: "COMPLETED",
       result: recommendation || "PENDING",
@@ -264,7 +373,6 @@ router.post(
       userAgent: req.headers["user-agent"],
     });
 
-    // Also broadcast the specific legacy event
     const { broadcastNamedEvent } = require('../../utils/sse');
     broadcastNamedEvent('INTERVIEW_FEEDBACK_SUBMITTED', { interviewId: roundId, recommendation });
 
@@ -290,22 +398,21 @@ router.post(
     
     const fileUrl = await uploadFileToFirebase(req.file.buffer, folder, fileName, req.file.mimetype);
 
-    const fileMeta = {
-      storageKey: fileUrl,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      sizeBytes: req.file.size,
-      uploadedById: req.user.id,
-      createdAt: new Date().toISOString()
-    };
+    // Write fileMeta to CockroachDB using Prisma
+    const fileMeta = await prisma.fileMeta.create({
+      data: {
+        storageKey: fileUrl,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        uploadedById: req.user.id,
+      }
+    });
 
-    // We can write fileMeta directly to Firestore since it's a side meta table
-    const fileRef = await firestore.collection("fileMetas").add(fileMeta);
-
-    const result = await cache.writeRound(
+    await cache.writeRound(
       id,
       {
-        voiceRecordingFileId: fileRef.id,
+        voiceRecordingFileId: fileMeta.id,
         voiceRecordingUrl: fileUrl,
         updatedAt: new Date().toISOString()
       },
@@ -319,12 +426,12 @@ router.post(
       action: "UPLOAD_INTERVIEW_RECORDING",
       entityType: "INTERVIEW",
       entityId: id,
-      newData: { fileId: fileRef.id, url: fileUrl },
+      newData: { fileId: fileMeta.id, url: fileUrl },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    res.json({ success: true, data: { fileId: fileRef.id, url: fileUrl } });
+    res.json({ success: true, data: { fileId: fileMeta.id, url: fileUrl } });
   })
 );
 
@@ -337,7 +444,7 @@ router.delete(
     const { data: current } = await cache.getRound(roundId, true);
     if (!current) throw new ApiError(404, "Interview not found");
 
-    const result = await cache.deleteRound(
+    await cache.deleteRound(
       roundId,
       req.user.organizationId || "defaultOrg",
       req.user.id,
@@ -358,7 +465,7 @@ router.delete(
   })
 );
 
-// ── PATCH panel members (Legacy Panelists update) ──
+// ── PATCH panel members ──
 router.patch(
   '/:id/panelists',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
@@ -442,7 +549,12 @@ router.put(
     }
 
     let status = current.status;
-    let rescheduleHistory = current.rescheduleHistory || [];
+    
+    let rescheduleHistory = [];
+    try {
+      rescheduleHistory = typeof current.rescheduleHistory === 'string' ? JSON.parse(current.rescheduleHistory) : current.rescheduleHistory;
+    } catch (_) {}
+    if (!Array.isArray(rescheduleHistory)) rescheduleHistory = [];
 
     if (data.scheduledStart !== current.scheduledStart && current.status === "SCHEDULED") {
       status = "RESCHEDULED";
@@ -513,7 +625,12 @@ router.patch(
     const { data: current } = await cache.getRound(roundId);
     if (!current) throw new ApiError(404, "Interview not found");
 
-    let rescheduleHistory = current.rescheduleHistory || [];
+    let rescheduleHistory = [];
+    try {
+      rescheduleHistory = typeof current.rescheduleHistory === 'string' ? JSON.parse(current.rescheduleHistory) : current.rescheduleHistory;
+    } catch (_) {}
+    if (!Array.isArray(rescheduleHistory)) rescheduleHistory = [];
+
     rescheduleHistory.push({
       previousDate: current.scheduledStart,
       newDate: scheduledStart,
@@ -593,13 +710,19 @@ router.patch(
     const { data: current } = await cache.getRound(roundId);
     if (!current) throw new ApiError(404, "Round not found");
     
+    let transferHistory = [];
+    try {
+      transferHistory = typeof current.transferHistory === 'string' ? JSON.parse(current.transferHistory) : current.transferHistory;
+    } catch (_) {}
+    if (!Array.isArray(transferHistory)) transferHistory = [];
+
     const result = await cache.writeRound(
       roundId,
       {
         jobId: toJobId,
         jobTitle: toJobTitle,
         transferHistory: [
-          ...(current.transferHistory || []),
+          ...transferHistory,
           {
             fromJobId: current.jobId || "",
             toJobId,

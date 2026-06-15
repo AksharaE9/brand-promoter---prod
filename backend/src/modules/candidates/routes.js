@@ -2,14 +2,15 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
-const { db: firestore, uploadFileToFirebase, FieldPath } = require("../../config/firebase");
+const prisma = require("../../config/db");
+const { uploadFileToFirebase } = require("../../config/firebase");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const sse = require("../../utils/sse");
-const { getCache, setCache, TTL, getCached } = require("../../utils/cache");
+const { getCached } = require("../../utils/cache");
 const inv = require("../../utils/cacheInvalidation");
 
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
@@ -18,16 +19,17 @@ const router = express.Router();
 
 router.use(auth);
 
+// GET Custom field definitions
 router.get(
   "/custom-fields/definitions",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("custom_field_definitions").get();
-    const definitions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const definitions = await prisma.customFieldDefinition.findMany();
     res.json({ success: true, data: definitions });
   })
 );
 
+// Normalize fields for import
 function normalizeFieldKey(input) {
   return String(input || "")
     .trim()
@@ -48,6 +50,7 @@ function normalizeFieldValue(value) {
   }
 }
 
+// POST Bulk candidate upload (from XLSX)
 router.post(
   "/bulk-upload",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -80,9 +83,9 @@ router.post(
     let skipped = 0;
     const errors = [];
     
-    const batch = firestore.batch();
-    const existingEmails = new Set();
     const existingPhones = new Set();
+    const bulkData = [];
+    const orgId = req.user.organizationId || "defaultOrg";
 
     for (let i = 0; i < allRows.length; i += 1) {
       const raw = allRows[Number(i)];
@@ -102,8 +105,17 @@ router.post(
         continue;
       }
 
-      const orgId = req.user.organizationId || "defaultOrg";
-      batch.set(candRef, {
+      // Check DB for existing phone number
+      const existingDb = await prisma.candidate.findFirst({
+        where: { phone, organizationId: orgId, isDeleted: false }
+      });
+      if (existingDb) {
+        skipped += 1;
+        errors.push(`${sheetInfo}: candidate with phone ${phone} already exists`);
+        continue;
+      }
+
+      bulkData.push({
         fullName,
         email: email || "N/A",
         phone,
@@ -111,21 +123,19 @@ router.post(
         totalExperienceYears: raw.totalExperienceYears || raw.experienceYears ? parseFloat(raw.totalExperienceYears || raw.experienceYears) : null,
         source: String(raw.source || "Excel Upload").trim(),
         createdById: req.user.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         status: "ACTIVE",
         organizationId: orgId,
         isDeleted: false
       });
       
-      if (email) existingEmails.add(email);
       if (phone) existingPhones.add(phone);
       inserted++;
     }
 
-    if (inserted > 0) {
-      await batch.commit();
-      const orgId = req.user.organizationId || "defaultOrg";
+    if (bulkData.length > 0) {
+      await prisma.candidate.createMany({
+        data: bulkData
+      });
       await inv.candidateList(orgId);
       sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', { count: inserted });
     }
@@ -148,6 +158,7 @@ router.post(
 
 const importJobs = new Map();
 
+// POST Bulk Import Wizard (candidates + applications creation)
 router.post(
   "/bulk-import",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -160,6 +171,10 @@ router.post(
     const importJobId = `job_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     importJobs.set(importJobId, { status: 'processing', progress: 0, total: rows.length, inserted: 0, skipped: 0 });
 
+    const orgId = req.user.organizationId || "defaultOrg";
+    const userId = req.user.id;
+
+    // Run background task
     setTimeout(async () => {
       let inserted = 0;
       let skipped = 0;
@@ -176,31 +191,41 @@ router.post(
             continue;
           }
 
-          const orgId = req.user.organizationId || "defaultOrg";
-          const candRef = await firestore.collection("candidates").add({
-            fullName,
-            email: email || "N/A",
-            phone,
-            location: raw.location || null,
-            area: raw.area || null,
-            course: raw.course || null,
-            graduationYear: raw.graduationYear ? String(raw.graduationYear) : null,
-            preferredRole: raw.preferredRole || null,
-            source: "Bulk Import Wizard",
-            createdById: req.user.id,
-            createdAt: new Date().toISOString(),
-            status: "ACTIVE",
-            organizationId: orgId,
-            isDeleted: false
+          // Check for existing phone number
+          const existing = await prisma.candidate.findFirst({
+            where: { phone, organizationId: orgId, isDeleted: false }
+          });
+          if (existing) {
+            skipped++;
+            continue;
+          }
+
+          const candidate = await prisma.candidate.create({
+            data: {
+              fullName,
+              email: email || "N/A",
+              phone,
+              location: raw.location || null,
+              area: raw.area || null,
+              course: raw.course || null,
+              graduationYear: raw.graduationYear ? String(raw.graduationYear) : null,
+              preferredRole: raw.preferredRole || null,
+              source: "Bulk Import Wizard",
+              createdById: userId,
+              status: "ACTIVE",
+              organizationId: orgId,
+              isDeleted: false
+            }
           });
 
-          await firestore.collection("applications").add({
-            candidateId: candRef.id,
-            jobId: jobId,
-            status: "IN_PIPELINE",
-            createdAt: new Date().toISOString(),
-            organizationId: orgId,
-            isDeleted: false
+          await prisma.application.create({
+            data: {
+              candidateId: candidate.id,
+              jobId: jobId,
+              status: "IN_PIPELINE",
+              organizationId: orgId,
+              isDeleted: false
+            }
           });
 
           inserted++;
@@ -209,14 +234,16 @@ router.post(
 
         importJobs.set(importJobId, { status: 'completed', progress: 100, total: rows.length, inserted, skipped });
         
-        broadcast({ type: 'CANDIDATE_CREATED', count: inserted });
+        await inv.candidateList(orgId);
+        sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', { count: inserted });
 
-        await firestore.collection("notifications").add({
-          userId: req.user.id,
-          title: "Bulk Import Complete",
-          message: `Imported ${inserted} candidates.`,
-          type: "INFO",
-          createdAt: new Date().toISOString()
+        await prisma.notification.create({
+          data: {
+            userId: userId,
+            title: "Bulk Import Complete",
+            message: `Imported ${inserted} candidates.`,
+            type: "INFO",
+          }
         });
 
       } catch (err) {
@@ -238,6 +265,7 @@ router.get(
   })
 );
 
+// POST Create single candidate
 router.post(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -246,49 +274,63 @@ router.post(
     if (!data.fullName) throw new ApiError(400, "fullName is required");
     if (!data.phone) throw new ApiError(400, "Phone number is required");
 
-    // Deduplication by phone
-    const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
-    if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
-
     const orgId = req.user.organizationId || "defaultOrg";
+
+    // Deduplication by phone
+    const existingPhone = await prisma.candidate.findFirst({
+      where: { phone: data.phone.trim(), organizationId: orgId, isDeleted: false }
+    });
+    if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
+
     const candidateData = {
-      ...data,
+      fullName: data.fullName,
       email: data.email || "N/A",
+      phone: data.phone,
+      currentCompany: data.currentCompany || null,
+      totalExperienceYears: data.totalExperienceYears ? parseFloat(data.totalExperienceYears) : null,
+      location: data.location || null,
+      area: data.area || null,
+      course: data.course || null,
+      graduationYear: data.graduationYear ? String(data.graduationYear) : null,
+      preferredRole: data.preferredRole || null,
+      source: data.source || "Manual Entry",
+      jobTitle: data.jobTitle || null,
+      category: data.category || "External",
+      customFields: data.customFields || null,
       createdById: req.user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
       status: "ACTIVE",
       organizationId: orgId,
       isDeleted: false
     };
 
-    const docRef = await firestore.collection("candidates").add(candidateData);
+    const candidate = await prisma.candidate.create({
+      data: candidateData
+    });
 
     await logAudit({
       actorUserId: req.user.id,
       action: "CREATE_CANDIDATE",
       entityType: "CANDIDATE",
-      entityId: docRef.id,
-      newData: candidateData,
+      entityId: candidate.id,
+      newData: candidate,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    // Invalidate cache to ensure dashboard and lists are updated
-    await inv.candidate(orgId, docRef.id);
+    await inv.candidate(orgId, candidate.id);
 
-    // Broadcast to notify frontend to refresh
     sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
-      candidateId: docRef.id,
-      candidate: { id: docRef.id, ...candidateData },
+      candidateId: candidate.id,
+      candidate,
       createdBy: req.user.id,
       createdByName: req.user.fullName || req.user.email,
     });
 
-    res.status(201).json({ success: true, data: { id: docRef.id, ...candidateData } });
+    res.status(201).json({ success: true, data: candidate });
   }),
 );
 
+// POST Create single candidate with resume upload
 router.post(
   "/with-resume-upload",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -298,280 +340,188 @@ router.post(
   },
   upload.single("resume"),
   asyncHandler(async (req, res) => {
-    console.log("📥 Incoming candidate creation request with resume...");
-    const { fullName, email, phone, course, location, preferredRole } = req.body;
-    console.log("📝 Data:", { fullName, email, phone });
+    const { fullName, email, phone, category } = req.body;
 
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!phone) throw new ApiError(400, "Phone number is required");
 
-    const existingPhone = await firestore.collection("candidates").where("phone", "==", phone.trim()).limit(1).get();
-    if (!existingPhone.empty) throw new ApiError(409, "A candidate with this phone number already exists.");
+    const orgId = req.user.organizationId || "defaultOrg";
+
+    const existingPhone = await prisma.candidate.findFirst({
+      where: { phone: phone.trim(), organizationId: orgId, isDeleted: false }
+    });
+    if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
 
     let resumeFileId = null;
-    let storageKey = null;
     if (req.file) {
-      console.log("📄 File received:", req.file.originalname);
       const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-      storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
+      const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
       
       if (!storageKey) {
-        console.error("❌ Storage key is null!");
         throw new ApiError(500, "Failed to upload resume to storage");
       }
 
-      const fileMeta = {
-        storageKey,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        sizeBytes: req.file.size,
-        uploadedById: req.user.id,
-        createdAt: new Date().toISOString()
-      };
-      const fileRef = await firestore.collection("fileMetas").add(fileMeta);
-      resumeFileId = fileRef.id;
+      const fileMeta = await prisma.fileMeta.create({
+        data: {
+          storageKey,
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          sizeBytes: req.file.size,
+          uploadedById: req.user.id,
+        }
+      });
+      resumeFileId = fileMeta.id;
     }
 
-    const orgId = req.user.organizationId || "defaultOrg";
     const candidateData = {
-      ...req.body,
+      fullName,
       email: email || "N/A",
+      phone,
       resumeFileId,
+      currentCompany: req.body.currentCompany || null,
+      totalExperienceYears: req.body.totalExperienceYears ? parseFloat(req.body.totalExperienceYears) : null,
+      location: req.body.location || null,
+      area: req.body.area || null,
+      course: req.body.course || null,
+      graduationYear: req.body.graduationYear ? String(req.body.graduationYear) : null,
+      preferredRole: req.body.preferredRole || null,
+      source: req.body.source || "Manual Entry",
+      jobTitle: req.body.jobTitle || null,
+      category: category || "External",
+      customFields: req.body.customFields ? JSON.parse(req.body.customFields) : null,
       createdById: req.user.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
       status: "ACTIVE",
-      category: req.body.category || "External",
       organizationId: orgId,
       isDeleted: false
     };
 
-    const docRef = await firestore.collection("candidates").add(candidateData);
+    const candidate = await prisma.candidate.create({
+      data: candidateData,
+      include: {
+        resumeFile: true
+      }
+    });
 
     await logAudit({
       actorUserId: req.user.id,
       action: "CREATE_CANDIDATE_WITH_RESUME",
       entityType: "CANDIDATE",
-      entityId: docRef.id,
-      newData: candidateData,
+      entityId: candidate.id,
+      newData: candidate,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
-    await inv.candidate(orgId, docRef.id);
+    await inv.candidate(orgId, candidate.id);
 
     sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
-      candidateId: docRef.id,
-      candidate: { id: docRef.id, ...candidateData },
+      candidateId: candidate.id,
+      candidate,
       createdBy: req.user.id,
       createdByName: req.user.fullName || req.user.email,
     });
 
     res.status(201).json({ 
       success: true, 
-      data: { id: docRef.id, ...candidateData } 
+      data: candidate 
     });
   })
 );
 
-async function populateCandidateRelations(paginatedItems) {
-  if (paginatedItems.length === 0) return;
-  const fileIds = [...new Set(paginatedItems.flatMap(c => [c.resumeFileId, c.profilePhotoFileId]).filter(Boolean))];
-  const candidateIds = paginatedItems.map(c => c.id);
-
-  const [fileMap, appMap] = await Promise.all([
-    (async () => {
-      const map = {};
-      if (fileIds.length > 0) {
-        try {
-          const fileRefs = fileIds.map(id => firestore.collection("fileMetas").doc(id));
-          const snaps = await firestore.getAll(...fileRefs);
-          snaps.forEach(fs => { if (fs.exists && isSafeKey(fs.id)) map[fs.id] = { id: fs.id, ...fs.data() }; });
-        } catch (e) { console.warn("⚠️ File fetch failed:", e.message); }
-      }
-      return map;
-    })(),
-    (async () => {
-      const map = {};
-      try {
-        const appChunks = [];
-        for (let i = 0; i < candidateIds.length; i += 10) appChunks.push(candidateIds.slice(i, i + 10));
-        
-        const allApps = [];
-        await Promise.all(appChunks.map(async (chunk) => {
-          const appSnap = await firestore.collection("applications")
-            .where("candidateId", "in", chunk)
-            .get();
-          appSnap.docs.forEach(doc => {
-            allApps.push({ id: doc.id, ...doc.data() });
-          });
-        }));
-
-        const jobIds = [...new Set(allApps.map(a => a.jobId).filter(Boolean))];
-        const jobMap = {};
-        if (jobIds.length > 0) {
-          try {
-            const jobRefs = jobIds.map(id => firestore.collection("jobs").doc(id));
-            const jobSnaps = await firestore.getAll(...jobRefs);
-            jobSnaps.forEach(js => { if (js.exists && isSafeKey(js.id)) jobMap[js.id] = { id: js.id, ...js.data() }; });
-          } catch (je) { console.warn("⚠️ Job fetch failed inside candidates list:", je.message); }
-        }
-
-        allApps.forEach(app => {
-          app.job = (isSafeKey(app.jobId) && jobMap[app.jobId]) || null;
-          if (isSafeKey(app.candidateId)) {
-            if (!map[app.candidateId]) map[app.candidateId] = [];
-            map[app.candidateId].push(app);
-          }
-        });
-      } catch (e) { console.warn("⚠️ App fetch failed:", e.message); }
-      return map;
-    })(),
-  ]);
-
-  paginatedItems.forEach(c => {
-    if (c.resumeFileId && isSafeKey(c.resumeFileId)) c.resumeFile = fileMap[c.resumeFileId] || null;
-    if (c.profilePhotoFileId && isSafeKey(c.profilePhotoFileId)) c.profilePhotoFile = fileMap[c.profilePhotoFileId] || null;
-    c.applications = (isSafeKey(c.id) && appMap[c.id]) || [];
-  });
-}
-
+// GET List candidates (with filter, search, cursor pagination)
 router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
-    const cursor = req.query.cursor?.trim(); // last doc ID for cursor-based load-more
-    const search = req.query.search?.trim()?.toLowerCase();
+    const cursor = req.query.cursor?.trim(); 
+    const search = req.query.search?.trim();
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    // Cache key includes cursor so each "page" is separately cached
     const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}`;
 
-    const fields = [
-      'fullName', 'email', 'phone', 'status', 'currentStage',
-      'assignedRecruiterId', 'assignedRecruiterName',
-      'source', 'createdAt', 'offerDecision',
-      'location', 'jobTitle', 'graduationYear', 'category', 'mentorId',
-      'resumeFileId', 'profilePhotoFileId'
-    ];
-
     const data = await getCached(cacheKeyStr, async () => {
-      // For search: always in-memory full scan (fast, correct)
+      const where = {
+        organizationId: orgId,
+        isDeleted: false
+      };
+
+      if (status) where.status = status;
+      if (category) where.category = category;
+      if (assignedToMe) where.mentorId = req.user.id;
+
       if (search) {
-        let baseQuery = firestore.collection("candidates")
-          .where("organizationId", "==", orgId)
-          .where("isDeleted", "==", false)
-          .select(...fields);
-        if (status) baseQuery = baseQuery.where("status", "==", status);
-        if (category) baseQuery = baseQuery.where("category", "==", category);
-        if (assignedToMe) baseQuery = baseQuery.where("mentorId", "==", req.user.id);
-
-        let items = [];
-        try {
-          const snap = await baseQuery.orderBy("createdAt", "desc").limit(2000).get();
-          items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        } catch {
-          // Index missing fallback
-          const snap = await firestore.collection("candidates")
-            .where("organizationId", "==", orgId)
-            .where("isDeleted", "==", false)
-            .select(...fields)
-            .limit(2000).get();
-          items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          if (status) items = items.filter(c => c.status === status);
-          if (category) items = items.filter(c => c.category === category);
-          if (assignedToMe) items = items.filter(c => c.mentorId === req.user.id);
-          items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-        }
-
-        // Search filter
-        items = items.filter(c =>
-          (c.fullName && c.fullName.toLowerCase().includes(search)) ||
-          (c.email && c.email.toLowerCase().includes(search)) ||
-          (c.phone && c.phone.includes(search))
-        );
-
-        const total = items.length;
-        await populateCandidateRelations(items);
-        return { items, nextCursor: null, hasMore: false, total };
+        where.OR = [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          { phone: { contains: search } }
+        ];
       }
 
-      // Normal cursor-based pagination
-      let query = firestore.collection("candidates")
-        .where("organizationId", "==", orgId)
-        .where("isDeleted", "==", false)
-        .select(...fields);
+      // Count total matching
+      const total = await prisma.candidate.count({ where });
 
-      if (status) query = query.where("status", "==", status);
-      if (category) query = query.where("category", "==", category);
-      if (assignedToMe) query = query.where("mentorId", "==", req.user.id);
-
-      let paginatedItems = [];
-      let total = 0;
-      let nextCursor = null;
-      let hasMore = false;
-
-      try {
-        let q = query.orderBy("createdAt", "desc");
-
-        // Count query for total
-        try {
-          const countSnap = await q.count().get();
-          total = countSnap.data().count;
-        } catch (cntErr) {
-          console.warn('[Candidates] Count query failed:', cntErr.message);
+      const queryOptions = {
+        where,
+        take: limit + 1,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          fullName: true,
+          preferredRole: true,
+          location: true,
+          area: true,
+          source: true,
+          email: true,
+          phone: true,
+          status: true,
+          createdAt: true,
+          offerDecision: true,
+          doj: true,
+          resumeFile: {
+            select: {
+              storageKey: true
+            }
+          },
+          profilePhotoFile: {
+            select: {
+              storageKey: true
+            }
+          },
+          applications: {
+            where: { isDeleted: false },
+            select: {
+              id: true,
+              status: true,
+              joiningDate: true,
+              job: {
+                select: {
+                  id: true,
+                  title: true
+                }
+              }
+            }
+          }
         }
+      };
 
-        // Use cursor if provided (load more)
-        if (cursor) {
-          // Find the cursor doc index in a local window for Web SDK compat
-          const windowSnap = await q.limit(2000).get();
-          const allDocs = windowSnap.docs;
-          const cursorIdx = allDocs.findIndex(d => d.id === cursor);
-          const startIdx = cursorIdx === -1 ? 0 : cursorIdx + 1;
-          const sliced = allDocs.slice(startIdx, startIdx + limit);
-          paginatedItems = sliced.map(d => ({ id: d.id, ...d.data() }));
-          hasMore = startIdx + limit < allDocs.length;
-          nextCursor = hasMore && sliced[sliced.length - 1] ? sliced[sliced.length - 1].id : null;
-          if (total === 0) total = allDocs.length;
-        } else {
-          const snapshot = await q.limit(limit).get();
-          paginatedItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          hasMore = paginatedItems.length === limit && paginatedItems.length < total;
-          nextCursor = hasMore && snapshot.docs[snapshot.docs.length - 1] ? snapshot.docs[snapshot.docs.length - 1].id : null;
-        }
-      } catch (dbError) {
-        console.warn('[Candidates] Main query failed, index-free fallback. Error:', dbError.message);
-
-        const snap = await firestore.collection("candidates")
-          .where("organizationId", "==", orgId)
-          .where("isDeleted", "==", false)
-          .select(...fields)
-          .limit(5000).get();
-        let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        if (status) items = items.filter(c => c.status === status);
-        if (category) items = items.filter(c => c.category === category);
-        if (assignedToMe) items = items.filter(c => c.mentorId === req.user.id);
-        items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-
-        total = items.length;
-        let startIdx = 0;
-        if (cursor) {
-          const idx = items.findIndex(c => c.id === cursor);
-          if (idx !== -1) startIdx = idx + 1;
-        }
-        paginatedItems = items.slice(startIdx, startIdx + limit);
-        hasMore = startIdx + limit < items.length;
-        nextCursor = hasMore && paginatedItems[paginatedItems.length - 1] ? paginatedItems[paginatedItems.length - 1].id : null;
+      if (cursor) {
+        queryOptions.cursor = { id: cursor };
+        queryOptions.skip = 1;
       }
 
-      await populateCandidateRelations(paginatedItems);
-      return { items: paginatedItems, nextCursor, hasMore, total };
+      const items = await prisma.candidate.findMany(queryOptions);
+      const hasMore = items.length > limit;
+      if (hasMore) {
+        items.pop();
+      }
+
+      const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+      return { items, nextCursor, hasMore, total };
     }, 20000); // 20s cache
 
     const pagination = {
@@ -595,7 +545,7 @@ router.get(
   })
 );
 
-
+// GET Candidate timeline history
 router.get(
   "/:id/history",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -604,74 +554,86 @@ router.get(
     const cacheKey = `candidates:history:${id}`;
 
     const data = await getCached(cacheKey, async () => {
-      // Fetch candidate + applications in parallel
-      const [candDoc, appSnap] = await Promise.all([
-        firestore.collection("candidates").doc(id).get(),
-        firestore.collection("applications").where("candidateId", "==", id).get(),
-      ]);
+      const candidate = await prisma.candidate.findUnique({
+        where: { id },
+        include: {
+          applications: {
+            where: { isDeleted: false },
+            include: {
+              pipelineEvents: {
+                include: {
+                  fromStage: true,
+                  toStage: true
+                }
+              },
+              interviews: true
+            }
+          }
+        }
+      });
 
-      if (!candDoc.exists) throw new ApiError(404, "Candidate not found");
+      if (!candidate) throw new ApiError(404, "Candidate not found");
 
-      const applications = appSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const timeline = applications.map(app => ({
-        type: "APPLICATION_CREATED",
-        at: app.createdAt,
-        applicationId: app.id,
-      }));
+      const timeline = [];
+      
+      candidate.applications.forEach(app => {
+        timeline.push({
+          id: `app_create_${app.id}`,
+          type: "APPLICATION_CREATED",
+          at: app.createdAt,
+          applicationId: app.id,
+        });
 
-      const appIds = applications.map(app => app.id);
+        app.pipelineEvents.forEach(evt => {
+          timeline.push({
+            id: evt.id,
+            type: "PIPELINE_MOVED",
+            at: evt.movedAt,
+            ...evt
+          });
+        });
 
-      if (appIds.length > 0) {
-        // Batch into chunks of 30 (Firestore "in" limit)
-        const chunks = [];
-        for (let i = 0; i < appIds.length; i += 30) chunks.push(appIds.slice(i, i + 30));
-
-        // Run all event + interview batch queries in parallel
-        const [eventsSnaps, interviewsSnaps] = await Promise.all([
-          Promise.all(chunks.map(chunk =>
-            firestore.collection("pipeline_events")
-              .where("applicationId", "in", chunk).get()
-          )),
-          Promise.all(chunks.map(chunk =>
-            firestore.collection("interviews")
-              .where("applicationId", "in", chunk).get()
-          )),
-        ]);
-
-        eventsSnaps.forEach(snap =>
-          snap.docs.forEach(d => timeline.push({ type: "PIPELINE_MOVED", at: d.data().movedAt, ...d.data() }))
-        );
-        interviewsSnaps.forEach(snap =>
-          snap.docs.forEach(d => timeline.push({ type: "INTERVIEW_SCHEDULED", at: d.data().scheduledStart, ...d.data() }))
-        );
-      }
+        app.interviews.forEach(intv => {
+          timeline.push({
+            id: intv.id,
+            type: "INTERVIEW_SCHEDULED",
+            at: intv.scheduledStart || intv.createdAt,
+            ...intv
+          });
+        });
+      });
 
       timeline.sort((a, b) => new Date(b.at) - new Date(a.at));
 
-      return { candidate: candDoc.data(), applications, timeline };
+      return { candidate, applications: candidate.applications, timeline };
     }, 30000); // 30s cache
 
     res.json({ success: true, data });
   }),
 );
 
+// PATCH Update candidate
 router.patch(
   "/:id",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const data = req.body;
+    const orgId = req.user.organizationId || "defaultOrg";
 
-    const candRef = firestore.collection("candidates").doc(id);
-    const doc = await candRef.get();
-    if (!doc.exists) throw new ApiError(404, "Candidate not found");
+    const candidate = await prisma.candidate.findUnique({
+      where: { id }
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
 
     if (data.phone) {
-      const currentPhoneClean = (doc.data().phone || "").replace(/\D/g, "");
+      const currentPhoneClean = (candidate.phone || "").replace(/\D/g, "");
       const newPhoneClean = data.phone.replace(/\D/g, "");
       if (currentPhoneClean !== newPhoneClean) {
-        const existingPhone = await firestore.collection("candidates").where("phone", "==", data.phone.trim()).limit(1).get();
-        if (!existingPhone.empty && existingPhone.docs[0].id !== id) {
+        const existingPhone = await prisma.candidate.findFirst({
+          where: { phone: data.phone.trim(), organizationId: orgId, isDeleted: false }
+        });
+        if (existingPhone && existingPhone.id !== id) {
           throw new ApiError(409, "A candidate with this phone number already exists.");
         }
       }
@@ -681,7 +643,29 @@ router.patch(
       data.email = "N/A";
     }
 
-    await candRef.update({ ...data, updatedAt: new Date().toISOString() });
+    // Prepare fields for Prisma update
+    const updateData = {};
+    const allowedFields = [
+      "fullName", "email", "phone", "currentCompany", "totalExperienceYears",
+      "location", "area", "course", "graduationYear", "preferredRole",
+      "source", "jobTitle", "category", "status", "currentStage", "mentorId",
+      "assignedRecruiterId", "assignedRecruiterName", "customFields", "offerDecision", "doj"
+    ];
+
+    allowedFields.forEach(field => {
+      if (data[field] !== undefined) {
+        if (field === "totalExperienceYears") {
+          updateData[field] = data[field] ? parseFloat(data[field]) : null;
+        } else {
+          updateData[field] = data[field];
+        }
+      }
+    });
+
+    const updatedCandidate = await prisma.candidate.update({
+      where: { id },
+      data: updateData
+    });
 
     await logAudit({
       actorUserId: req.user.id,
@@ -693,12 +677,8 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
-    const orgId = req.user.organizationId || "defaultOrg";
+    res.json({ success: true, data: updatedCandidate });
 
-    // ✨ Respond immediately — don't block on cache invalidation (was causing 5-19s delays)
-    res.json({ success: true, data: { id, ...doc.data(), ...data } });
-
-    // Fire cache invalidation & SSE broadcast AFTER response is sent
     setImmediate(async () => {
       try { await inv.candidate(orgId, id); } catch (_) {}
       sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
@@ -711,44 +691,49 @@ router.patch(
   }),
 );
 
+// GET All candidate distinct categories
 router.get(
   "/categories",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const orgId = req.user.organizationId || "defaultOrg";
-    const snapshot = await firestore.collection("candidates")
-      .where("organizationId", "==", orgId)
-      .where("isDeleted", "==", false)
-      .select("category").get();
-    const list = [...new Set(snapshot.docs.map(doc => doc.data().category).filter(Boolean))];
+    const categories = await prisma.candidate.findMany({
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+        category: { not: null }
+      },
+      select: {
+        category: true
+      },
+      distinct: ['category']
+    });
+    
+    const list = categories.map(c => c.category).filter(Boolean);
     res.json({ success: true, data: list });
   }),
 );
 
+// GET Candidate by ID
 router.get(
   "/:id",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const doc = await firestore.collection("candidates").doc(id).get();
-    if (!doc.exists) throw new ApiError(404, "Candidate not found");
-
-    const data = { id: doc.id, ...doc.data() };
-
-    // Populate file details
-    if (data.resumeFileId) {
-      const resumeDoc = await firestore.collection("fileMetas").doc(data.resumeFileId).get();
-      if (resumeDoc.exists) data.resumeFile = { id: resumeDoc.id, ...resumeDoc.data() };
-    }
-    if (data.profilePhotoFileId) {
-      const photoDoc = await firestore.collection("fileMetas").doc(data.profilePhotoFileId).get();
-      if (photoDoc.exists) data.profilePhotoFile = { id: photoDoc.id, ...photoDoc.data() };
-    }
-
-    res.json({ success: true, data });
+    const candidate = await prisma.candidate.findUnique({
+      where: { id },
+      include: {
+        resumeFile: true,
+        profilePhotoFile: true
+      }
+    });
+    
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+    res.json({ success: true, data: candidate });
   }),
 );
 
+// POST Upload candidate resume after creation
 router.post(
   "/:id/resume",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
@@ -757,8 +742,10 @@ router.post(
     const { id } = req.params;
     if (!req.file) throw new ApiError(400, "No resume file uploaded");
 
-    const doc = await firestore.collection("candidates").doc(id).get();
-    if (!doc.exists) throw new ApiError(404, "Candidate not found");
+    const candidate = await prisma.candidate.findUnique({
+      where: { id }
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
 
     const dest = `resumes/${Date.now()}_${req.file.originalname}`;
     const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
@@ -767,41 +754,52 @@ router.post(
       throw new ApiError(500, "Failed to upload resume to storage");
     }
 
-    const fileMeta = {
-      storageKey,
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      sizeBytes: req.file.size,
-      uploadedById: req.user.id,
-      createdAt: new Date().toISOString()
-    };
-    const fileRef = await firestore.collection("fileMetas").add(fileMeta);
+    const fileMeta = await prisma.fileMeta.create({
+      data: {
+        storageKey,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        uploadedById: req.user.id
+      }
+    });
     
-    await firestore.collection("candidates").doc(id).update({
-      resumeFileId: fileRef.id,
-      updatedAt: new Date().toISOString()
+    await prisma.candidate.update({
+      where: { id },
+      data: {
+        resumeFileId: fileMeta.id
+      }
     });
 
-    res.json({ success: true, data: { resumeFileId: fileRef.id, storageKey } });
+    res.json({ success: true, data: { resumeFileId: fileMeta.id, storageKey } });
   }),
 );
 
+// DELETE Soft delete candidate
 router.delete(
   "/:id",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const doc = await firestore.collection("candidates").doc(id).get();
-    if (!doc.exists) throw new ApiError(404, "Candidate not found");
+    const candidate = await prisma.candidate.findUnique({
+      where: { id }
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
     
-    await firestore.collection("candidates").doc(id).update({ isDeleted: true, deletedAt: new Date().toISOString() });
+    await prisma.candidate.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date()
+      }
+    });
 
     await logAudit({
       actorUserId: req.user.id,
       action: "DELETE_CANDIDATE",
       entityType: "CANDIDATE",
       entityId: id,
-      oldData: doc.data(),
+      oldData: candidate,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -819,45 +817,48 @@ router.delete(
   }),
 );
 
-// DELETE all candidates (admin only - for testing/reset)
+// DELETE all candidates (SUPER_ADMIN only)
 router.delete(
   "/all",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
-    const snapshot = await firestore.collection("candidates").get();
-    const batch = firestore.batch();
-
-    snapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
-    });
-
-    await batch.commit();
+    const count = await prisma.candidate.count();
+    
+    await prisma.candidate.deleteMany();
 
     await logAudit({
       actorUserId: req.user.id,
       action: "DELETE_ALL_CANDIDATES",
       entityType: "CANDIDATE",
-      oldData: { count: snapshot.size },
+      oldData: { count },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     // Invalidate all cache
+    const { invalidateAll } = require("../../utils/cache");
     invalidateAll();
 
-    res.json({ success: true, message: `Deleted ${snapshot.size} candidates` });
+    res.json({ success: true, message: `Deleted ${count} candidates` });
   }),
 );
 
+// GET Export joining candidates as CSV
 router.get(
   "/reports/joining",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { from, to } = req.query;
-    let query = firestore.collection("candidates").where("doj", "!=", null);
+    
+    const candidates = await prisma.candidate.findMany({
+      where: {
+        isDeleted: false,
+        doj: { not: null }
+      },
+      orderBy: { doj: 'asc' }
+    });
 
-    const snapshot = await query.get();
-    let items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let items = candidates;
 
     if (from) items = items.filter(c => new Date(c.doj) >= new Date(from));
     if (to) items = items.filter(c => new Date(c.doj) <= new Date(to));
@@ -875,27 +876,42 @@ router.get(
   })
 );
 
+// POST Transfer candidate to another job (creates application)
 router.post(
   "/:id/transfer",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const { toJobId } = req.body;
+    if (!toJobId) throw new ApiError(400, "toJobId is required");
+
     const orgId = req.user.organizationId || "defaultOrg";
-    const appRef = await firestore.collection("applications").add({
-      candidateId: id,
-      jobId: toJobId,
-      status: "IN_PIPELINE",
-      createdAt: new Date().toISOString()
+
+    const existingApp = await prisma.application.findFirst({
+      where: { candidateId: id, jobId: toJobId, isDeleted: false }
+    });
+    if (existingApp) throw new ApiError(400, "Candidate is already applied to this job.");
+
+    const application = await prisma.application.create({
+      data: {
+        candidateId: id,
+        jobId: toJobId,
+        status: "IN_PIPELINE",
+        organizationId: orgId,
+        isDeleted: false
+      }
     });
 
     await inv.application(orgId, id);
 
     // Fetch job details
-    const jobDoc = await firestore.collection("jobs").doc(toJobId).get();
-    const toJobTitle = jobDoc.exists ? jobDoc.data().title : "New Job";
+    const job = await prisma.job.findUnique({
+      where: { id: toJobId }
+    });
+    const toJobTitle = job ? job.title : "New Job";
 
     sse.broadcastToOrg(orgId, 'APPLICATION_TRANSFERRED', {
-      applicationId: appRef.id,
+      applicationId: application.id,
       candidateId: id,
       toJobId,
       toJobTitle,
@@ -903,7 +919,7 @@ router.post(
       transferredByName: req.user.fullName || req.user.email,
     });
 
-    res.json({ success: true, data: { id: appRef.id } });
+    res.json({ success: true, data: application });
   })
 );
 

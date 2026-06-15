@@ -4,7 +4,7 @@
  * Cache Warmer — pre-populates critical cache keys on server startup.
  * Runs as a background task, non-blocking.
  */
-const { db } = require('../config/firebase');
+const prisma = require('../config/db');
 const { setCache, TTL } = require('./cache');
 
 async function warmCaches() {
@@ -20,7 +20,7 @@ async function warmCaches() {
   let succeeded = 0;
   let failed = 0;
 
-  for (const warmer of warmers) {
+  await Promise.all(warmers.map(async (warmer) => {
     try {
       await warmer();
       succeeded++;
@@ -28,58 +28,51 @@ async function warmCaches() {
       failed++;
       console.error(`[CacheWarmer] ${warmer.name} failed:`, err.message);
     }
-  }
+  }));
 
   const duration = Date.now() - startTime;
   console.log(`[CacheWarmer] Completed in ${duration}ms — ${succeeded} succeeded, ${failed} failed`);
 }
 
 async function warmDashboard() {
-  // Warm per-org dashboard data
-  // Get all unique organizationIds from users collection
-  const usersSnap = await db.collection('users').select('organizationId').get();
-  const orgIds = [...new Set(
-    usersSnap.docs
-      .map(d => d.data().organizationId)
-      .filter(Boolean)
-  )];
+  const { fetchDashboardData } = require('../modules/dashboard/routes');
 
-  for (const orgId of orgIds.slice(0, 10)) { // Limit to 10 orgs on startup
+  // Warm per-org dashboard data using native distinct query
+  const orgs = await prisma.user.findMany({
+    select: { organizationId: true },
+    distinct: ['organizationId'],
+    where: { organizationId: { not: "" } }
+  });
+  
+  const orgIds = orgs.map(o => o.organizationId);
+
+  // Run orgs in parallel
+  await Promise.all(orgIds.slice(0, 10).map(async (orgId) => {
     try {
-      const [candidateCount, jobCount] = await Promise.all([
-        db.collection('candidates').count().get().then(s => s.data().count).catch(() => 0),
-        db.collection('jobs').where('isActive', '==', true).count().get().then(s => s.data().count).catch(() => 0),
-      ]);
-
-      await setCache(`dashboard_init_org:${orgId}`, {
-        _warmed: true,
-        candidateCount,
-        activeJobCount: jobCount,
-        warmedAt: new Date().toISOString(),
-      }, TTL.DASHBOARD);
+      const data = await fetchDashboardData(orgId);
+      await setCache(`dashboard_init_org:${orgId}`, data, TTL.DASHBOARD);
     } catch (err) {
       console.warn(`[CacheWarmer] Dashboard warm failed for org ${orgId}:`, err.message);
     }
-  }
+  }));
 }
 
 async function warmActiveJobs() {
-  const snap = await db.collection('jobs')
-    .where('isActive', '==', true)
-    .limit(200)
-    .get();
+  const jobs = await prisma.job.findMany({
+    where: { isActive: true },
+    take: 200
+  });
 
-  const jobs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  // Don't cache full list — just warm individual job entries
   const { setCache: sc } = require('./cache');
-  for (const job of jobs) {
-    await sc(`jobs:detail:${job.id}`, job, TTL.JOBS);
-  }
+  
+  // Set all job caches in parallel
+  await Promise.all(jobs.map(job => 
+    sc(`jobs:detail:${job.id}`, job, TTL.JOBS).catch(() => {})
+  ));
 }
 
 async function warmPipelineStages() {
-  const snap = await db.collection('pipeline_stages').get();
-  const stages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const stages = await prisma.pipelineStage.findMany();
   await setCache('pipeline:stages:all', stages, 300); // 5 min TTL
 }
 

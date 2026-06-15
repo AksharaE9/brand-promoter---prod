@@ -8,7 +8,7 @@ export const schedulingApi = {
         params.append(key, val);
       }
     });
-    if (!params.has('limit')) params.set('limit', '50'); // default 50 per page
+    if (!params.has('limit')) params.set('limit', '20'); // default 20 per page for fast initial load
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await api.get(`/interviews${qs}`);
     return res.data;
