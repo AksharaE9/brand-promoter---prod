@@ -29,7 +29,10 @@ let syncWorker = null;
 let scheduleSyncJob = null;
 let importWorker = null;
 
-if (!isVercel) {
+const hasRedis = process.env.REDIS_URL || process.env.REDIS_HOST;
+const shouldLoadWorkers = !isVercel && (process.env.NODE_ENV !== 'production' || hasRedis);
+
+if (shouldLoadWorkers) {
   try {
     const syncModule = require("./jobs/schedulingSyncWorker");
     syncWorker = syncModule.worker;
@@ -38,6 +41,8 @@ if (!isVercel) {
   } catch (err) {
     console.warn("[BullMQ] Background workers failed to load:", err.message);
   }
+} else {
+  console.log("[BullMQ] Connection disabled (REDIS_URL is not set in production)");
 }
 const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");

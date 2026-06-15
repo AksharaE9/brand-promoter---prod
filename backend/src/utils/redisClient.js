@@ -23,36 +23,71 @@ const sharedConfig = {
 };
 
 const redisUrl = process.env.REDIS_URL;
+const isProd = process.env.NODE_ENV === 'production';
 
-// Primary client for reads, writes, pipelines
-const client = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
-  host:                   process.env.REDIS_HOST     || '127.0.0.1',
-  port:               parseInt(process.env.REDIS_PORT) || 6379,
-  password:               process.env.REDIS_PASSWORD || undefined,
-  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
-  ...sharedConfig
-});
+let client;
+let subscriberClient;
 
-// Subscriber client ONLY for SSE or pub/sub — never share with regular commands
-// because a subscribed client cannot run other commands
-const subscriberClient = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
-  host:                   process.env.REDIS_HOST     || '127.0.0.1',
-  port:               parseInt(process.env.REDIS_PORT) || 6379,
-  password:               process.env.REDIS_PASSWORD || undefined,
-  tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
-  ...sharedConfig
-});
+const EventEmitter = require('events');
+class MockRedis extends EventEmitter {
+  constructor() {
+    super();
+    this.status = 'end';
+  }
+  async ping() { return 'PONG'; }
+  async get() { return null; }
+  async set() { return 'OK'; }
+  async del() { return 0; }
+  async expire() { return 1; }
+  async mget() { return []; }
+  async setex() { return 'OK'; }
+  pipeline() {
+    return {
+      setex: () => {},
+      exec: async () => []
+    };
+  }
+  call() { return null; }
+}
 
-client.on('connect',      () => console.log('[Redis:primary] Connected'));
-client.on('ready',        () => console.log('[Redis:primary] Ready'));
-client.on('error',        e  => console.error('[Redis:primary] Error:', e.message));
-client.on('reconnecting', () => console.warn('[Redis:primary] Reconnecting'));
+if (isProd && !redisUrl) {
+  console.log('[Redis] Connection disabled (REDIS_URL is not set in production)');
+  client = new MockRedis();
+  subscriberClient = new MockRedis();
+} else {
+  // Primary client for reads, writes, pipelines
+  client = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
+    host:                   process.env.REDIS_HOST     || '127.0.0.1',
+    port:               parseInt(process.env.REDIS_PORT) || 6379,
+    password:               process.env.REDIS_PASSWORD || undefined,
+    tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
+    ...sharedConfig
+  });
 
-subscriberClient.on('connect', () => console.log('[Redis:subscriber] Connected'));
-subscriberClient.on('error',   e  => console.error('[Redis:subscriber] Error:', e.message));
+  // Subscriber client ONLY for SSE or pub/sub — never share with regular commands
+  subscriberClient = redisUrl ? new Redis(redisUrl, sharedConfig) : new Redis({
+    host:                   process.env.REDIS_HOST     || '127.0.0.1',
+    port:               parseInt(process.env.REDIS_PORT) || 6379,
+    password:               process.env.REDIS_PASSWORD || undefined,
+    tls:         process.env.REDIS_TLS === 'true' ? {} : undefined,
+    ...sharedConfig
+  });
+
+  client.on('connect',      () => console.log('[Redis:primary] Connected'));
+  client.on('ready',        () => console.log('[Redis:primary] Ready'));
+  client.on('error',        e  => console.error('[Redis:primary] Error:', e.message));
+  client.on('reconnecting', () => console.warn('[Redis:primary] Reconnecting'));
+
+  subscriberClient.on('connect', () => console.log('[Redis:subscriber] Connected'));
+  subscriberClient.on('error',   e  => console.error('[Redis:subscriber] Error:', e.message));
+}
 
 // Warmup — verify connection before server accepts traffic
 async function warmup() {
+  if (isProd && !redisUrl) {
+    console.log('[Redis] Warmup skipped (Redis disabled)');
+    return;
+  }
   if (client.status !== 'ready') {
     await new Promise((resolve, reject) => {
       const onReady = () => {
@@ -80,6 +115,7 @@ async function warmup() {
 
 // Keep health methods on client for compatibility
 async function isHealthy() {
+  if (isProd && !redisUrl) return false;
   try {
     const result = await client.ping();
     return result === 'PONG';
