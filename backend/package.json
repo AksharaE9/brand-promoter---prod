@@ -9,6 +9,7 @@
     "build": "npm install && npx prisma generate",
     "test": "echo \"Error: no test specified\" && exit 1",
     "ci:smoke": "node scripts/smoke.js",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:deploy": "prisma migrate deploy",
