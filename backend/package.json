@@ -43,7 +43,8 @@
     "redis": "^5.12.1",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5",
-    "prisma": "^6.7.0"
+    "prisma": "^6.7.0",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {},
   "prisma": {
