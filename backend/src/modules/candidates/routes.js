@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const prisma = require("../../config/db");
-const { uploadFileToFirebase } = require("../../config/firebase");
+const { uploadFileToCloudinary } = require("../../config/cloudinary");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
@@ -355,7 +355,7 @@ router.post(
     let resumeFileId = null;
     if (req.file) {
       const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-      const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
+      const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
       
       if (!storageKey) {
         throw new ApiError(500, "Failed to upload resume to storage");
@@ -748,7 +748,7 @@ router.post(
     if (!candidate) throw new ApiError(404, "Candidate not found");
 
     const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-    const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
+    const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
     
     if (!storageKey) {
       throw new ApiError(500, "Failed to upload resume to storage");

@@ -244,55 +244,30 @@ await section('Retry Logic Smoke Test', async () => {
 });
 
 // ──────────────────────────────────────────────────────────
-// 9. Firestore Connectivity (live call)
+// 9. CockroachDB Connectivity (live call)
 // ──────────────────────────────────────────────────────────
-await section('Firestore Connectivity (Live)', async () => {
+await section('CockroachDB Connectivity (Live)', async () => {
   try {
-    const { db: firestore } = require('./src/config/firebase');
-    ok('Firebase module loads', !!firestore);
+    const prisma = require('./src/config/db');
+    ok('Prisma/CockroachDB module loads', !!prisma);
 
-    // Try a lightweight read — just get 1 document from interviews
-    const snap = await firestore.collection('interviews').limit(1).get();
-    ok('Firestore connectivity OK — interviews collection readable', true);
-    ok('Response is a QuerySnapshot', typeof snap.docs === 'object');
-
-    const ivCount = snap.size;
-    console.log(`     ℹ️  interviews collection has (at least): ${ivCount > 0 ? '1+' : '0'} docs`);
+    // Try a lightweight read — count interviews
+    const count = await prisma.interview.count();
+    ok('CockroachDB connectivity OK — interviews table readable', true);
+    console.log(`     ℹ️  interviews table has: ${count} rows`);
 
     // Try candidates
-    const candSnap = await firestore.collection('candidates').limit(1).get();
-    ok('candidates collection readable', true);
-    console.log(`     ℹ️  candidates: ${candSnap.size > 0 ? '1+' : '0'} docs found`);
+    const candCount = await prisma.candidate.count();
+    ok('candidates table readable', true);
+    console.log(`     ℹ️  candidates: ${candCount} rows`);
 
     // Try applications
-    const appSnap = await firestore.collection('applications').limit(1).get();
-    ok('applications collection readable', true);
-    console.log(`     ℹ️  applications: ${appSnap.size > 0 ? '1+' : '0'} docs found`);
-
-    // Try auto-generated doc reference
-    const autoRef = firestore.collection('auditLogs').doc();
-    ok('doc() without args auto-generates ID reference', !!autoRef && typeof autoRef.id === 'string' && autoRef.id.length > 5);
-
-    // Try orderBy on interviews (index check)
-    try {
-      await firestore.collection('interviews').orderBy('scheduledStart', 'desc').limit(1).get();
-      ok('interviews orderBy scheduledStart index EXISTS ✅', true);
-    } catch (idxErr) {
-      ok('interviews orderBy scheduledStart — NO INDEX (fallback will activate)', false,
-        'Create index at: ' + (idxErr.message.match(/https:\/\/[^\s]+/) || ['see Firebase console'])[0]);
-    }
-
-    // Try applications orderBy
-    try {
-      await firestore.collection('applications').orderBy('createdAt', 'desc').limit(1).get();
-      ok('applications orderBy createdAt index EXISTS ✅', true);
-    } catch (_) {
-      ok('applications orderBy createdAt — NO INDEX (fallback will activate)', false,
-        'Fallback active, data will still load but unsorted from DB');
-    }
+    const appCount = await prisma.application.count();
+    ok('applications table readable', true);
+    console.log(`     ℹ️  applications: ${appCount} rows`);
 
   } catch (err) {
-    ok('Firestore connectivity', false, err.message);
+    ok('CockroachDB connectivity', false, err.message);
   }
 });
 

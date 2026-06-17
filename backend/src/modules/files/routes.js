@@ -1,6 +1,6 @@
 const express = require("express");
 const { upload } = require("../../middleware/upload");
-const { uploadFileToFirebase } = require("../../config/firebase");
+const { uploadFileToCloudinary } = require("../../config/cloudinary");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const prisma = require("../../config/db");
@@ -12,7 +12,7 @@ router.post("/profile-photo", upload.single("file"), asyncHandler(async (req, re
   if (!req.file) throw new ApiError(400, "No file uploaded");
   
   const dest = `profile-photos/${Date.now()}_${req.file.originalname}`;
-  const storageKey = await uploadFileToFirebase(req.file.buffer, dest, req.file.mimetype);
+  const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
   if (!storageKey) throw new ApiError(500, "Failed to upload profile photo");
   
   const fileMeta = await prisma.fileMeta.create({

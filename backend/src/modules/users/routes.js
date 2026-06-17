@@ -96,8 +96,8 @@ router.get(
   asyncHandler(async (req, res) => {
     const users = await getCached("users_interviewers", async () => {
       return prisma.user.findMany({
-        where: { role: { in: ["SUPER_ADMIN", "RECRUITER"] }, isDeleted: false, status: "ACTIVE" },
-        select: { id: true, fullName: true, role: true },
+        where: { role: { in: ["SUPER_ADMIN", "RECRUITER"] }, isDeleted: false },
+        select: { id: true, fullName: true, role: true, status: true },
       });
     }, 60000);
     res.json({ success: true, data: users });

@@ -392,11 +392,11 @@ router.post(
     const { data: current } = await cache.getRound(id);
     if (!current) throw new ApiError(404, "Interview not found");
 
-    const { uploadFileToFirebase } = require("../../config/firebase");
+    const { uploadFileToCloudinary } = require("../../config/cloudinary");
     const folder = "interview-recordings";
     const fileName = `interview_${id}_${Date.now()}_${req.file.originalname}`;
     
-    const fileUrl = await uploadFileToFirebase(req.file.buffer, folder, fileName, req.file.mimetype);
+    const fileUrl = await uploadFileToCloudinary(req.file.buffer, folder, fileName, req.file.mimetype);
 
     // Write fileMeta to CockroachDB using Prisma
     const fileMeta = await prisma.fileMeta.create({
