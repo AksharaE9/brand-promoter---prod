@@ -413,6 +413,61 @@ async function getRoundsList(orgId, filters = {}) {
   }
 }
 
+function cleanDatabasePayload(payload) {
+  const allowedFields = [
+    'applicationId',
+    'candidateId',
+    'candidateName',
+    'jobId',
+    'jobTitle',
+    'roundNo',
+    'round',
+    'scheduledStart',
+    'durationMinutes',
+    'mode',
+    'meetingLink',
+    'zohoLink',
+    'status',
+    'result',
+    'outcome',
+    'outcomeSetAt',
+    'notes',
+    'organizationId',
+    'createdById',
+    'interviewerIds',
+    'interviewerNames',
+    'feedback',
+    'rescheduleHistory',
+    'transferHistory',
+    'offerLetterUrl',
+    'voiceRecordingFileId',
+    'voiceRecordingUrl',
+    'createdAt',
+    'updatedAt'
+  ];
+
+  const cleaned = {};
+  allowedFields.forEach(field => {
+    if (payload[field] !== undefined) {
+      cleaned[field] = payload[field];
+    }
+  });
+
+  if (cleaned.scheduledStart) cleaned.scheduledStart = new Date(cleaned.scheduledStart);
+  if (cleaned.outcomeSetAt) cleaned.outcomeSetAt = new Date(cleaned.outcomeSetAt);
+  if (cleaned.createdAt) cleaned.createdAt = new Date(cleaned.createdAt);
+  if (cleaned.updatedAt) cleaned.updatedAt = new Date(cleaned.updatedAt);
+
+  if (cleaned.roundNo !== undefined && cleaned.roundNo !== null) {
+    cleaned.roundNo = parseInt(cleaned.roundNo) || 1;
+  }
+  if (cleaned.durationMinutes !== undefined && cleaned.durationMinutes !== null) {
+    cleaned.durationMinutes = parseInt(cleaned.durationMinutes) || 60;
+  }
+
+  return cleaned;
+}
+
 // ─────────────────────────────────────────────
 // WRITE OPERATIONS — write to Redis, queue DB sync
 // ─────────────────────────────────────────────
@@ -443,16 +498,7 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
     }
 
     if (!redisSuccess) {
-      const cleanUpdate = { ...updated };
-      delete cleanUpdate.id;
-      delete cleanUpdate.application;
-      delete cleanUpdate.interviewers;
-      delete cleanUpdate.feedbacks;
-      delete cleanUpdate._pendingSync;
-      delete cleanUpdate._lastWriteMs;
-      delete cleanUpdate.isDeleted;
-      delete cleanUpdate.deletedAt;
-      delete cleanUpdate.deletedBy;
+      const cleanUpdate = cleanDatabasePayload(updated);
       
       await prisma.interview.update({
         where: { id: roundId },
@@ -515,15 +561,7 @@ async function createRound(roundData, orgId, createdBy) {
 
     let finalRound = { ...newRound };
     if (!redisSuccess) {
-      const cleanRound = { ...newRound };
-      delete cleanRound.id;
-      delete cleanRound.application;
-      delete cleanRound.interviewers;
-      delete cleanRound.feedbacks;
-      delete cleanRound._pendingSync;
-      delete cleanRound._isNew;
-      delete cleanRound._lastWriteMs;
-      delete cleanRound.isDeleted;
+      const cleanRound = cleanDatabasePayload(newRound);
       
       const created = await prisma.interview.create({
         data: cleanRound
