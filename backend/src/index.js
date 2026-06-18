@@ -130,6 +130,7 @@ app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/users", apiLimiter, cc(120), userRoutes);
 app.use("/api/team", apiLimiter, cc(120), require("./modules/team/routes"));
 app.use("/api/settings", apiLimiter, cc(300), require("./modules/settings/routes"));
+app.use("/api/companies", apiLimiter, cc(300), require("./modules/companies/routes")); // Company lookup for candidate combobox
 app.use("/api/jobs", apiLimiter, cc(60), jobRoutes);
 
 // Dynamic endpoints (no browser caching, default rate limiters)

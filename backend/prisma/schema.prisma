@@ -178,6 +178,11 @@ model Candidate {
   // Custom fields as JSON (flexible NoSQL-style)
   customFields        Json?
 
+  // ── Company field: which hiring organization this candidate belongs to ──
+  // e.g. "Akshara Enterprises" or "Vruksha Organics"
+  // Nullable so existing rows are unaffected; backfill script sets defaults.
+  company             String?
+
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 
@@ -185,6 +190,7 @@ model Candidate {
 
   @@index([organizationId])
   @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
+  @@index([organizationId, isDeleted, company, createdAt], map: "idx_candidates_org_company_created")
   @@index([phone])
   @@index([email])
   @@index([status])

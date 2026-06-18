@@ -7,6 +7,7 @@ import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
 import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
+import CompanyDropdownInput from '../components/CompanyDropdownInput';
 
 const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, navigate, currentUser }) => {
   return (
@@ -159,6 +160,7 @@ const CandidateProfile = () => {
         preferredRole: loadedCandidate.preferredRole || '',
         primarySkill: loadedCandidate.primarySkill || '',
         category: loadedCandidate.category || 'Company',
+        company: loadedCandidate.company || '',   // ── NEW field ──
       });
     } catch (err) {
       setError(err.message || 'Failed to load data');
@@ -327,6 +329,16 @@ const CandidateProfile = () => {
                               <input className="os-input w-full" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} placeholder="Email Address" />
                               <input className="os-input w-full" value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} placeholder="Phone Number" />
                               <input className="os-input w-full col-span-2" value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} placeholder="Location" />
+                              {/* ── Company combobox in edit mode ── */}
+                              <div className="col-span-2">
+                                <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-1 block">Company</label>
+                                <CompanyDropdownInput
+                                  value={editForm.company || ''}
+                                  onChange={val => setEditForm({ ...editForm, company: val })}
+                                  placeholder="e.g. Akshara Enterprises"
+                                  inputClass="!rounded-xl !h-10 !text-sm"
+                                />
+                              </div>
                             </div>
                             <div className="flex items-center gap-2 mt-4">
                               <button onClick={handleSaveEdit} disabled={savingEdit} className="os-btn-primary !h-9 !px-4 text-xs">{savingEdit ? 'Saving...' : 'Save Changes'}</button>
@@ -344,6 +356,13 @@ const CandidateProfile = () => {
                               <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">mail</span>{candidate.email}</div>
                               <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">call</span>{candidate.phone}</div>
                               <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">location_on</span>{candidate.location || 'N/A'}</div>
+                              {/* ── Company — 4th item in contact row ── */}
+                              {candidate.company && (
+                                <div className="flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-[#1f52cc] text-base">domain</span>
+                                  {candidate.company}
+                                </div>
+                              )}
                             </div>
                           </>
                         )}

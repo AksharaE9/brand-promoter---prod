@@ -15,6 +15,7 @@ async function warmCaches() {
     warmDashboard,
     warmActiveJobs,
     warmPipelineStages,
+    warmCompanies,
   ];
 
   let succeeded = 0;
@@ -74,6 +75,26 @@ async function warmActiveJobs() {
 async function warmPipelineStages() {
   const stages = await prisma.pipelineStage.findMany();
   await setCache('pipeline:stages:all', stages, 300); // 5 min TTL
+}
+
+async function warmCompanies() {
+  const { getCompaniesForOrg } = require('../modules/companies/routes');
+
+  const orgs = await prisma.user.findMany({
+    select: { organizationId: true },
+    distinct: ['organizationId'],
+    where: { organizationId: { not: "" } }
+  });
+
+  const orgIds = orgs.map(o => o.organizationId);
+
+  await Promise.all(orgIds.map(async (orgId) => {
+    try {
+      await getCompaniesForOrg(orgId);
+    } catch (err) {
+      console.warn(`[CacheWarmer] Companies warm failed for org ${orgId}:`, err.message);
+    }
+  }));
 }
 
 module.exports = { warmCaches };

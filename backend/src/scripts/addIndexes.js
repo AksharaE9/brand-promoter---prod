@@ -26,8 +26,8 @@ const indexes = [
           ON candidates ("organizationId", "isDeleted", status)`,
   },
   {
-    name: 'idx_candidates_org_created',
-    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_created
+    name: 'idx_candidates_org_created_v2',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_created_v2
           ON candidates ("organizationId", "isDeleted", "createdAt" DESC)`,
   },
 
@@ -39,18 +39,18 @@ const indexes = [
     sql: `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
   },
   {
-    name: 'idx_candidates_name_trgm',
-    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_name_trgm
+    name: 'idx_candidates_name_trgm_v2',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_name_trgm_v2
           ON candidates USING GIN ("fullName" gin_trgm_ops)`,
   },
   {
-    name: 'idx_candidates_email_trgm',
-    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_email_trgm
+    name: 'idx_candidates_email_trgm_v2',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_email_trgm_v2
           ON candidates USING GIN (email gin_trgm_ops)`,
   },
   {
-    name: 'idx_candidates_phone_trgm',
-    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_phone_trgm
+    name: 'idx_candidates_phone_trgm_v2',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_phone_trgm_v2
           ON candidates USING GIN (phone gin_trgm_ops)`,
   },
 ];
@@ -59,6 +59,10 @@ const indexes = [
 const analyzeStatements = [
   'ANALYZE candidates',
 ];
+
+function timeout(ms) {
+  return new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms));
+}
 
 async function run() {
   console.log('\n[AddIndexes] Starting CockroachDB index migration...\n');
@@ -69,12 +73,18 @@ async function run() {
 
   for (const { name, sql } of indexes) {
     try {
-      await prisma.$executeRawUnsafe(sql);
+      // Run with a 4-second timeout to prevent blocking server boot
+      await Promise.race([
+        prisma.$executeRawUnsafe(sql),
+        timeout(4000)
+      ]);
       console.log(`  ✅  ${name}`);
       succeeded++;
     } catch (err) {
-      // Some versions of CockroachDB don't support pg_trgm — skip gracefully
-      if (err.message.includes('unknown type') || err.message.includes('does not exist') || err.message.includes('not supported')) {
+      if (err.message === 'Timeout') {
+        console.warn(`  ⚠️   ${name} — skipped due to database timeout (taking too long to create/queue).`);
+        skipped++;
+      } else if (err.message.includes('unknown type') || err.message.includes('does not exist') || err.message.includes('not supported')) {
         console.warn(`  ⚠️   ${name} — skipped (unsupported on this CockroachDB version): ${err.message.slice(0, 120)}`);
         skipped++;
       } else {
@@ -87,10 +97,13 @@ async function run() {
   console.log('\n[AddIndexes] Running ANALYZE for query planner refresh...');
   for (const stmt of analyzeStatements) {
     try {
-      await prisma.$executeRawUnsafe(stmt);
+      await Promise.race([
+        prisma.$executeRawUnsafe(stmt),
+        timeout(4000)
+      ]);
       console.log(`  ✅  ${stmt}`);
     } catch (err) {
-      console.warn(`  ⚠️   ${stmt} — skipped: ${err.message.slice(0, 80)}`);
+      console.warn(`  ⚠️   ${stmt} — skipped/timed out: ${err.message.slice(0, 80)}`);
     }
   }
 
@@ -103,6 +116,9 @@ async function run() {
 }
 
 run()
+  .then(() => {
+    process.exit(0);
+  })
   .catch(err => {
     console.error('[AddIndexes] Fatal error:', err);
     process.exit(1);

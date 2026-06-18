@@ -12,6 +12,10 @@ const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const sse = require("../../utils/sse");
 const { getCached } = require("../../utils/cache");
 const inv = require("../../utils/cacheInvalidation");
+const { upsertCompanyForOrg } = require("../companies/routes");
+
+// Default company — used when none is supplied for backward-compat clients
+const DEFAULT_COMPANY = 'Akshara Enterprises';
 
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
@@ -282,6 +286,9 @@ router.post(
     });
     if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
 
+    // Resolve company — default to org primary if not provided
+    const resolvedCompany = (data.company || '').trim() || DEFAULT_COMPANY;
+
     const candidateData = {
       fullName: data.fullName,
       email: data.email || "N/A",
@@ -297,6 +304,7 @@ router.post(
       jobTitle: data.jobTitle || null,
       category: data.category || "External",
       customFields: data.customFields || null,
+      company: resolvedCompany,           // ── NEW field ──
       createdById: req.user.id,
       status: "ACTIVE",
       organizationId: orgId,
@@ -315,6 +323,10 @@ router.post(
 
     // ── Side effects run AFTER response is on the wire ──
     setImmediate(async () => {
+      // Ensure company name exists in lookup table (non-blocking)
+      upsertCompanyForOrg(orgId, resolvedCompany).catch(err =>
+        console.error('[Candidates:Create] company upsert failed:', err.message)
+      );
       try {
         await logAudit({
           actorUserId: req.user.id,
@@ -381,6 +393,8 @@ router.post(
       resumeFileId = fileMeta.id;
     }
 
+    const resolvedCompanyResume = (req.body.company || '').trim() || DEFAULT_COMPANY;
+
     const candidateData = {
       fullName,
       email: email || "N/A",
@@ -397,6 +411,7 @@ router.post(
       jobTitle: req.body.jobTitle || null,
       category: category || "External",
       customFields: req.body.customFields ? JSON.parse(req.body.customFields) : null,
+      company: resolvedCompanyResume,     // ── NEW field ──
       createdById: req.user.id,
       status: "ACTIVE",
       organizationId: orgId,
@@ -421,6 +436,10 @@ router.post(
 
     // ── Side effects run AFTER response is on the wire ──
     setImmediate(async () => {
+      // Ensure company exists in lookup (non-blocking)
+      upsertCompanyForOrg(orgId, resolvedCompanyResume).catch(err =>
+        console.error('[Candidates:CreateResume] company upsert failed:', err.message)
+      );
       try {
         await logAudit({
           actorUserId: req.user.id,
@@ -454,10 +473,11 @@ router.get(
     const search = req.query.search?.trim();
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
+    const company = req.query.company?.trim();  // ── NEW filter ──
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}`;
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}`;
 
     const data = await getCached(cacheKeyStr, async () => {
       const where = {
@@ -467,6 +487,7 @@ router.get(
 
       if (status) where.status = status;
       if (category) where.category = category;
+      if (company) where.company = company;   // ── NEW: filter by hiring org ──
       if (assignedToMe) where.mentorId = req.user.id;
 
       if (search) {
@@ -497,6 +518,7 @@ router.get(
           createdAt: true,
           offerDecision: true,
           doj: true,
+          company: true,   // ── NEW field ──
           resumeFile: {
             select: {
               storageKey: true
@@ -665,7 +687,8 @@ router.patch(
       "fullName", "email", "phone", "currentCompany", "totalExperienceYears",
       "location", "area", "course", "graduationYear", "preferredRole",
       "source", "jobTitle", "category", "status", "currentStage", "mentorId",
-      "assignedRecruiterId", "assignedRecruiterName", "customFields", "offerDecision", "doj"
+      "assignedRecruiterId", "assignedRecruiterName", "customFields", "offerDecision", "doj",
+      "company"  // ── NEW: client-specified hiring organization ──
     ];
 
     allowedFields.forEach(field => {
@@ -699,6 +722,12 @@ router.patch(
     res.json({ success: true, data: updatedCandidate });
 
     setImmediate(async () => {
+      // If company was changed, ensure it exists in lookup (non-blocking)
+      if (data.company) {
+        upsertCompanyForOrg(orgId, data.company.trim()).catch(err =>
+          console.error('[Candidates:Update] company upsert failed:', err.message)
+        );
+      }
       sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
         candidateId: id,
         changes: data,

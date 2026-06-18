@@ -13,6 +13,8 @@ import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseN
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 import Skeleton, { CardSkeleton } from '../components/Skeleton';
 import { useDeleteCandidate, useAddCandidate } from '../hooks/useCandidateMutations';
+import CompanyDropdownInput from '../components/CompanyDropdownInput';
+import { companyApi } from '../services/companyApi';
 import './OfferDecision.css';
 
 const initialForm = {
@@ -39,6 +41,7 @@ const emptyCreateForm = {
   course: '',
   location: '',
   preferredRole: '',
+  company: '',   // ── NEW field ──
   resume: null
 };
 
@@ -192,6 +195,12 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
                 {candidate.source}
               </div>
             )}
+            {candidate.company && (
+              <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold truncate" style={{ color: '#1f52cc' }}>
+                <span className="material-symbols-outlined text-[11px]" style={{ color: '#1f52cc' }}>domain</span>
+                <span className="truncate">{candidate.company}</span>
+              </div>
+            )}
             {candidate.joiningDate && (
               <div className="mt-2 inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                 <span className="material-symbols-outlined text-[12px]">event_available</span>
@@ -294,6 +303,8 @@ const Candidates = () => {
   const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
   const [roleFilter, setRoleFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
+  const [companyFilter, setCompanyFilter] = useState('All');     // ── NEW ──
+  const [companyOptions, setCompanyOptions] = useState([]);      // ── NEW ──
   const [globalJobs, setGlobalJobs] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
@@ -350,6 +361,7 @@ const Candidates = () => {
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
       if (statFilter && statFilter !== 'All') params.set('status', statFilter);
       if (cursorParam) params.set('cursor', cursorParam);
+      if (companyFilter && companyFilter !== 'All') params.set('company', companyFilter); // ── NEW ──
 
       const res = await apiGet(`/candidates?${params.toString()}`);
 
@@ -418,6 +430,13 @@ const Candidates = () => {
       }
     };
     loadJobs();
+  }, []);
+
+  // Load company options for the filter dropdown
+  useEffect(() => {
+    companyApi.list()
+      .then(res => setCompanyOptions(res.data || []))
+      .catch(() => {});
   }, []);
 
   // Initialize scrollContainerRef on mount
@@ -592,6 +611,7 @@ const Candidates = () => {
       name: c.fullName,
       role: jobTitle || c.preferredRole || 'Candidate',
       location: c.location || c.area || '',
+      company: c.company || '',       // ── NEW field ──
       profilePhotoUrl: c.profilePhotoFile?.storageKey || null,
       resumeUrl: c.resumeFile?.storageKey || null,
       status: matchedApp?.status || 'POOL',
@@ -772,11 +792,27 @@ const Candidates = () => {
               </div>
             )}
 
+            {/* Company filter */}
+            {companyOptions.length > 0 && (
+              <div className="relative flex items-center">
+                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">domain</span>
+                <select
+                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                  value={companyFilter}
+                  onChange={e => { setCompanyFilter(e.target.value); }}
+                >
+                  <option value="All">All Companies</option>
+                  {companyOptions.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+              </div>
+            )}
+
             {/* Clear filters */}
-            {(roleFilter !== 'All' || locationFilter !== 'All') && (
+            {(roleFilter !== 'All' || locationFilter !== 'All' || companyFilter !== 'All') && (
               <button
                 className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all flex items-center gap-1"
-                onClick={() => { setRoleFilter('All'); setLocationFilter('All'); }}
+                onClick={() => { setRoleFilter('All'); setLocationFilter('All'); setCompanyFilter('All'); }}
               >
                 <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
                 Clear
@@ -977,6 +1013,7 @@ const Candidates = () => {
                 formData.append('course', createForm.course);
                 formData.append('location', createForm.location);
                 formData.append('preferredRole', createForm.preferredRole);
+                formData.append('company', createForm.company?.trim() || 'Akshara Enterprises'); // ── NEW ──
                 if (createForm.resume) {
                   formData.append('resume', createForm.resume);
                 }
@@ -993,6 +1030,7 @@ const Candidates = () => {
                   course: createForm.course,
                   location: createForm.location,
                   preferredRole: createForm.preferredRole,
+                  company: createForm.company?.trim() || 'Akshara Enterprises', // ── NEW ──
                 });
               }}>
                 <div className="grid grid-cols-2 gap-5">
@@ -1059,6 +1097,16 @@ const Candidates = () => {
                       onChange={e => setCreateForm(prev => ({...prev, preferredRole: e.target.value}))}
                     />
                   </div>
+                </div>
+
+                {/* ── Company field — full width, below the 2-col row ── */}
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Company</label>
+                  <CompanyDropdownInput
+                    value={createForm.company}
+                    onChange={val => setCreateForm(prev => ({...prev, company: val}))}
+                    placeholder="e.g. Akshara Enterprises"
+                  />
                 </div>
 
                 <div className="space-y-1">
