@@ -12,6 +12,7 @@ import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser }
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 import Skeleton, { CardSkeleton } from '../components/Skeleton';
+import { useDeleteCandidate, useAddCandidate } from '../hooks/useCandidateMutations';
 import './OfferDecision.css';
 
 const initialForm = {
@@ -529,7 +530,6 @@ const Candidates = () => {
       }
 
       setBanner(`Candidate marked as ${status}.`);
-      loadCandidates(debouncedSearch, statusFilter);
       setTimeout(() => setBanner(''), 3000);
     } catch (err) {
       setError(err.message);
@@ -539,11 +539,50 @@ const Candidates = () => {
     }
   }, [debouncedSearch, statusFilter, loadCandidates]);
 
+  // Snapshot ref for delete rollback
+  const itemsSnapshotRef = useRef([]);
+
+  const { deleteCandidate, isDeletingId } = useDeleteCandidate({
+    onOptimisticRemove: (id) => {
+      // Capture snapshot before removing so we can rollback
+      itemsSnapshotRef.current = items;
+      setItems(prev => prev.filter(c => c.id !== id));
+    },
+    onRollback: () => {
+      // Restore from snapshot
+      setItems(itemsSnapshotRef.current);
+    },
+    onError: (err) => {
+      setError(err.message || 'Failed to delete candidate');
+      setTimeout(() => setError(''), 3000);
+    },
+  });
+
   const onDeleteCandidate = useCallback(async (id, name) => {
     if (!window.confirm(`Delete ${name}?`)) return;
-    await apiDelete(`/candidates/${id}`); 
-    loadCandidates(debouncedSearch, statusFilter);
-  }, [debouncedSearch, statusFilter, loadCandidates]);
+    await deleteCandidate(id);
+  }, [deleteCandidate]);
+
+  const { addCandidate, isAdding } = useAddCandidate({
+    onOptimisticAdd: (tempCandidate) => {
+      setItems(prev => [tempCandidate, ...prev]);
+    },
+    onReplace: (tempId, realCandidate) => {
+      setItems(prev => prev.map(c => c.id === tempId ? realCandidate : c));
+    },
+    onRollback: (tempId) => {
+      setItems(prev => prev.filter(c => c.id !== tempId));
+    },
+    onSuccess: () => {
+      setBanner('Candidate created successfully!');
+      setTimeout(() => setBanner(''), 3000);
+    },
+    onError: (err) => {
+      setError(err.message || 'Failed to create candidate');
+      setTimeout(() => setError(''), 3000);
+    },
+  });
+
 
   const allMapped = useMemo(() => items.map(c => {
     const matchedApp = c.applications?.find(a => a.status === statusFilter) || c.applications?.[0];
@@ -929,40 +968,32 @@ const Candidates = () => {
 
               <form className="space-y-5" onSubmit={async (e) => {
                 e.preventDefault();
-                setCreating(true);
-                setError('');
-                try {
-                  const formData = new FormData();
-                  formData.append('fullName', createForm.fullName);
-                  formData.append('email', createForm.email);
-                  formData.append('phone', createForm.phone);
-                  formData.append('course', createForm.course);
-                  formData.append('location', createForm.location);
-                  formData.append('preferredRole', createForm.preferredRole);
-                  if (createForm.resume) {
-                    formData.append('resume', createForm.resume);
-                  }
+                if (isAdding) return;
 
-                  const token = localStorage.getItem('ats_token');
-                  const res = await fetch(`${API_BASE_URL}/candidates/with-resume-upload`, {
-                    method: 'POST',
-                    headers: token ? { Authorization: `Bearer ${token}` } : {},
-                    body: formData,
-                  });
-
-                  const json = await res.json();
-                  if (!res.ok || !json.success) throw new Error(json.message || 'Failed to create candidate');
-
-                  setBanner('Candidate created successfully!');
-                  setShowCreateModal(false);
-                  setCreateForm(emptyCreateForm);
-                  // Real-time update without reload
-                  loadCandidates(debouncedSearch, statusFilter, 1, false, true);
-                } catch (err) {
-                  setError(err.message);
-                } finally {
-                  setCreating(false);
+                const formData = new FormData();
+                formData.append('fullName', createForm.fullName);
+                formData.append('email', createForm.email);
+                formData.append('phone', createForm.phone);
+                formData.append('course', createForm.course);
+                formData.append('location', createForm.location);
+                formData.append('preferredRole', createForm.preferredRole);
+                if (createForm.resume) {
+                  formData.append('resume', createForm.resume);
                 }
+
+                // Close modal and clear form INSTANTLY (optimistic UX)
+                setShowCreateModal(false);
+                setCreateForm(emptyCreateForm);
+
+                // The hook will prepend a ghost card to items[], then swap in real data
+                await addCandidate(formData, {
+                  fullName: createForm.fullName,
+                  email: createForm.email,
+                  phone: createForm.phone,
+                  course: createForm.course,
+                  location: createForm.location,
+                  preferredRole: createForm.preferredRole,
+                });
               }}>
                 <div className="grid grid-cols-2 gap-5">
                   <div className="space-y-1">
@@ -1053,8 +1084,8 @@ const Candidates = () => {
 
                 <div className="flex gap-4 pt-4">
                   <button type="button" className="flex-1 h-12 rounded-2xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all" onClick={() => setShowCreateModal(false)}>Cancel</button>
-                  <button type="submit" className="flex-1 h-12 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={creating}>
-                    {creating ? 'Creating...' : 'Create Candidate'}
+                  <button type="submit" className="flex-1 h-12 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={isAdding}>
+                    {isAdding ? 'Creating...' : 'Create Candidate'}
                   </button>
                 </div>
               </form>

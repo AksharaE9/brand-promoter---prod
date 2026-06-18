@@ -1,14 +1,7 @@
 'use strict';
-const redis = require('./redisClient');
-const zlib = require('zlib');
-const { promisify } = require('util');
-
-const gzip   = promisify(zlib.gzip);
-const gunzip = promisify(zlib.gunzip);
+const l1 = require('./l1Cache');
 
 const DEFAULT_TTL = 60;
-const COMPRESS_THRESHOLD = 1024; // compress values over 1KB
-const COMPRESSED_PREFIX  = 'gz:';
 
 // ── Metrics tracking ──
 const metrics = {
@@ -22,22 +15,13 @@ const metrics = {
 // ── Core operations ──
 async function getCache(key) {
   try {
-    const val = await redis.get(key);
-    if (!val) {
+    const val = l1.get(key);
+    if (val === null) {
       metrics.misses++;
       return null;
     }
-
     metrics.hits++;
-    let json;
-    if (val.startsWith(COMPRESSED_PREFIX)) {
-      const compressed = Buffer.from(val.slice(COMPRESSED_PREFIX.length), 'base64');
-      json = (await gunzip(compressed)).toString();
-    } else {
-      json = val;
-    }
-
-    return JSON.parse(json);
+    return val;
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] getCache error:', key, err.message);
@@ -49,18 +33,7 @@ async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
   try {
     if (data === null || data === undefined) return;
     metrics.sets++;
-
-    const json = JSON.stringify(data);
-    let value;
-
-    if (json.length > COMPRESS_THRESHOLD) {
-      const compressed = await gzip(json);
-      value = COMPRESSED_PREFIX + compressed.toString('base64');
-    } else {
-      value = json;
-    }
-
-    await redis.setex(key, ttlSeconds, value);
+    l1.set(key, data, ttlSeconds * 1000);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] setCache error:', key, err.message);
@@ -70,36 +43,17 @@ async function setCache(key, data, ttlSeconds = DEFAULT_TTL) {
 async function deleteCache(key) {
   try {
     metrics.dels++;
-    await redis.del(key);
+    l1.delete(key);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] deleteCache error:', key, err.message);
   }
 }
 
-
 async function deleteCachePattern(pattern) {
   try {
-    let cursor = '0';
-    const toDelete = [];
-    do {
-      const [next, keys] = await redis.scan(
-        cursor, 'MATCH', pattern, 'COUNT', '200'
-      );
-      cursor = next;
-      if (keys.length) toDelete.push(...keys);
-    } while (cursor !== '0');
-
-    if (toDelete.length === 0) return;
-
-    // Delete in batches of 100 to avoid blocking Redis
-    for (let i = 0; i < toDelete.length; i += 100) {
-      const batch = toDelete.slice(i, i + 100);
-      metrics.dels += batch.length;
-      const pipeline = redis.pipeline();
-      batch.forEach(k => pipeline.del(k));
-      await pipeline.exec();
-    }
+    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+    l1.deletePattern(prefix);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] deleteCachePattern error:', pattern, err.message);
@@ -117,29 +71,20 @@ function cacheKey(...parts) {
   return parts.filter(Boolean).join(':');
 }
 
-// ── Pipeline batch set ──
 async function setCacheMany(entries, ttlSeconds = DEFAULT_TTL) {
   try {
-    const pipeline = redis.pipeline();
     entries.forEach(({ key, data }) => {
       metrics.sets++;
-      pipeline.setex(key, ttlSeconds, JSON.stringify(data));
+      l1.set(key, data, ttlSeconds * 1000);
     });
-    await pipeline.exec();
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] setCacheMany error:', err.message);
   }
 }
 
-// ── Health check ──
 async function pingCache() {
-  try {
-    const result = await redis.ping();
-    return result === 'PONG';
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 function getCacheMetrics() {
@@ -150,91 +95,43 @@ function getCacheMetrics() {
 
 // ── TTL constants ──
 const TTL = {
-  // High volatility — changes many times per day
-  CANDIDATES:       30,   // 30 seconds
+  CANDIDATES:       30,
   APPLICATIONS:     30,
   SCHEDULING_LIST:  30,
-  NOTIFICATIONS:    15,   // 15 seconds — near real-time
+  NOTIFICATIONS:    15,
   DASHBOARD:        45,
   AUDIT:            20,
-
-  // Medium volatility — changes a few times per day
-  ANALYTICS:       120,   // 2 minutes
+  ANALYTICS:       120,
   JOBS:            120,
-  TEAM:            180,   // 3 minutes
+  TEAM:            180,
   DRIVES:          120,
-
-  // Low volatility — changes rarely
-  ORG_SETTINGS:   600,   // 10 minutes
-  PANEL_MEMBERS:  300,   // 5 minutes
+  ORG_SETTINGS:   600,
+  PANEL_MEMBERS:  300,
   JOB_ROLES:      600,
-
-  // Scheduling write-through cache
-  ROUND:         7200,   // 2 hours — rounds stay warm
+  ROUND:         7200,
   ROUND_DETAIL:  7200,
-  DIRTY:         3600,   // 1 hour — dirty queue entries
+  DIRTY:         3600,
 };
 
-// ── Backward-compatible API ──
 async function getCached(key, fetcher, ttlMs = 60000) {
-  const { tieredGet, tieredSet } = require('./tieredCache');
-  const { data } = await tieredGet(key, ttlMs);
-  if (data !== null) {
-    return data;
+  const cached = l1.get(key);
+  if (cached !== null) {
+    return cached;
   }
   const fresh = await fetcher();
-  const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
-  await tieredSet(key, fresh, ttlSec, ttlMs);
+  if (fresh !== null && fresh !== undefined) {
+    l1.set(key, fresh, ttlMs);
+  }
   return fresh;
 }
 
-/**
- * Cache-aside with mutex to prevent stampede.
- */
 async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
-  const cached = await getCache(key);
-  if (cached !== null) return cached;
-
-  const lockKey = `mutex:${key}`;
-  const ttlSec = Math.max(1, Math.round(ttlMs / 1000));
-
-  try {
-    const lockAcquired = await redis.set(lockKey, '1', 'NX', 'EX', 10);
-
-    if (lockAcquired) {
-      try {
-        const data = await fetcher();
-        await setCache(key, data, ttlSec);
-        return data;
-      } finally {
-        await redis.del(lockKey).catch(() => {});
-      }
-    }
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      const retryCache = await getCache(key);
-      if (retryCache !== null) return retryCache;
-    }
-
-    return await fetcher();
-  } catch (err) {
-    console.error('[Cache] getCachedWithMutex error:', key, err.message);
-    return await fetcher();
-  }
+  return getCached(key, fetcher, ttlMs);
 }
 
 async function invalidateAll() {
   try {
-    const prefixes = [
-      'dashboard:*', 'analytics:*', 'candidates:*', 'interviews:*',
-      'team:*', 'jobs:*', 'users_list_*', 'recruiter_summary_*',
-      'candidates_list_*', 'interviews_list_*', 'dashboard_init_*',
-      'analytics_*'
-    ];
-    for (const prefix of prefixes) {
-      await deleteCachePattern(prefix);
-    }
+    l1.store.clear();
   } catch { /* silent */ }
 }
 
@@ -256,7 +153,7 @@ async function invalidateOrgAnalyticsAndReports(orgId) {
       `reports_hiring_progress_${org}`
     ];
     for (const key of keys) {
-      await deleteCache(key);
+      l1.delete(key);
     }
   } catch (e) { /* silent */ }
 }
@@ -265,7 +162,6 @@ module.exports = {
   getCache, setCache, deleteCache, deleteCachePattern,
   deleteManyPatterns, cacheKey, setCacheMany, pingCache, TTL,
   getCacheMetrics,
-  // Backward-compatible API
   getCached,
   getCachedWithMutex,
   invalidate: deleteCache,

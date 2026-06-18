@@ -5,7 +5,8 @@ const path = require("path");
 const http = require("http");
 require("dotenv").config();
 const { initSocket } = require("./config/socket");
-const redis = require("./utils/redisClient");
+const prisma = require("./config/db");
+
 const sse = require("./utils/sse");
 const { warmCaches } = require("./utils/cacheWarmer");
 const { getCacheMetrics } = require("./utils/cache");
@@ -29,21 +30,7 @@ let syncWorker = null;
 let scheduleSyncJob = null;
 let importWorker = null;
 
-const hasRedis = process.env.REDIS_URL || process.env.REDIS_HOST;
-const shouldLoadWorkers = !isVercel && (process.env.NODE_ENV !== 'production' || hasRedis);
-
-if (shouldLoadWorkers) {
-  try {
-    const syncModule = require("./jobs/schedulingSyncWorker");
-    syncWorker = syncModule.worker;
-    scheduleSyncJob = syncModule.scheduleSyncJob;
-    importWorker = require("./jobs/bulkImportWorker").worker;
-  } catch (err) {
-    console.warn("[BullMQ] Background workers failed to load:", err.message);
-  }
-} else {
-  console.log("[BullMQ] Connection disabled (REDIS_URL is not set in production)");
-}
+const shouldLoadWorkers = !isVercel;
 const compression = require("compression");
 const { notFound, errorHandler } = require("./middleware/error-handler");
 const { setSecurityHeaders } = require("./middleware/security");
@@ -119,20 +106,11 @@ app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
 app.get("/api/health", async (req, res) => {
-  let redisHealthy = false;
-  try {
-    redisHealthy = await redis.isHealthy();
-  } catch { /* ignore */ }
-
   res.json({
     success: true,
     message: "ATS Backend is running",
     timestamp: new Date().toISOString(),
     services: {
-      redis: {
-        healthy: redisHealthy,
-        ...redis.getConnectionInfo(),
-      },
       sse: sse.getStats(),
     },
   });
@@ -175,17 +153,46 @@ app.use(errorHandler);
 
 async function bootstrap() {
   try {
-    // Warm up Redis connection asynchronously (non-blocking)
-    redis.warmup()
-      .then(() => {
-        // Pre-warm critical cache keys (non-blocking) only after Redis is confirmed ready
-        warmCaches().catch(err => {
-          console.error('[CacheWarmer] Warm-up failed:', err.message);
-        });
-      })
-      .catch(warmupErr => {
-        console.warn('[Redis] Warmup failed. Server will run without Redis cache/rate-limiter:', warmupErr.message);
-      });
+    // Warm up DB connection pool synchronously before listening, with retries for cold-start resilience
+    const maxRetries = 5;
+    let connected = false;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[Prisma] Connecting to CockroachDB (attempt ${attempt}/${maxRetries})...`);
+        const dbWarmStart = Date.now();
+        await prisma.$connect();
+        console.log(`[Prisma] CockroachDB connection established successfully in ${Date.now() - dbWarmStart}ms`);
+        connected = true;
+        break;
+      } catch (err) {
+        console.warn(`[Prisma] Connection attempt ${attempt} failed:`, err.message);
+        if (attempt < maxRetries) {
+          console.log(`[Prisma] Waiting 3 seconds before next retry...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } else {
+          console.error('[Prisma] CRITICAL: Failed to connect to CockroachDB after multiple retries.');
+          throw err;
+        }
+      }
+    }
+
+    // Pre-warm critical cache keys (non-blocking)
+    warmCaches().catch(err => {
+      console.error('[CacheWarmer] Warm-up failed:', err.message);
+    });
+
+    // Load in-process background workers
+    if (shouldLoadWorkers) {
+      try {
+        const syncModule = require("./jobs/schedulingSyncWorker");
+        syncWorker = syncModule.worker;
+        scheduleSyncJob = syncModule.scheduleSyncJob;
+        importWorker = require("./jobs/bulkImportWorker").worker;
+        console.log('[Workers] In-process background workers loaded successfully.');
+      } catch (err) {
+        console.warn("[Workers] Background workers failed to load:", err.message);
+      }
+    }
 
     const server = http.createServer(app);
     initSocket(server);

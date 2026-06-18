@@ -2,7 +2,7 @@
 const prisma = require("../config/db");
 const { verifyAccessToken } = require("../utils/jwt");
 const { ApiError } = require("../utils/errors");
-const redis = require("../utils/redisClient");
+const l1 = require("../utils/l1Cache");
 
 const USER_CACHE_TTL = 120; // 2 minutes
 
@@ -35,15 +35,10 @@ async function auth(req, res, next) {
 
     // Try user cache before hitting DB
     const userCacheKey = `auth:user:${resolvedUserId}:${payload.sessionId || 'nosession'}`;
-    let cachedUser = null;
-    try {
-      cachedUser = await redis.get(userCacheKey);
-    } catch (redisErr) {
-      console.warn('[AuthCache] Redis get failed, falling back to DB:', redisErr.message);
-    }
+    const cachedUser = l1.get(userCacheKey);
 
     if (cachedUser) {
-      const user = JSON.parse(cachedUser);
+      const user = cachedUser;
       if (user.status !== "ACTIVE" || user.isDeleted === true) {
         return next(new ApiError(401, "Inactive or deleted user account"));
       }
@@ -90,9 +85,9 @@ async function auth(req, res, next) {
     // Cache for 2 minutes
     const userCacheWriteKey = `auth:user:${resolvedUserId}:${payload.sessionId || 'nosession'}`;
     try {
-      await redis.setex(userCacheWriteKey, USER_CACHE_TTL, JSON.stringify(user));
-    } catch (redisErr) {
-      console.warn('[AuthCache] Failed to cache user in Redis:', redisErr.message);
+      l1.set(userCacheWriteKey, user, USER_CACHE_TTL * 1000);
+    } catch (l1Err) {
+      console.warn('[AuthCache] Failed to cache user in L1 cache:', l1Err.message);
     }
 
     req.user = user;
@@ -118,18 +113,7 @@ function requireRoles(...roles) {
 
 async function invalidateUserCache(userId) {
   try {
-    let cursor = '0';
-    const pattern = `auth:user:${userId}:*`;
-    const toDelete = [];
-    do {
-      const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', '100');
-      cursor = next;
-      if (keys.length) toDelete.push(...keys);
-    } while (cursor !== '0');
-
-    if (toDelete.length > 0) {
-      await redis.del(...toDelete);
-    }
+    l1.deletePattern(`auth:user:${userId}:`);
   } catch { /* ignore */ }
 }
 

@@ -63,30 +63,36 @@ router.post(
       },
     });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "CREATE_USER",
-      entityType: "USER",
-      entityId: user.id,
-      newData: { fullName, email: user.email, role },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    const orgId = req.user.organizationId || "defaultOrg";
-    const inv = require("../../utils/cacheInvalidation");
-    await inv.user(orgId, user.id);
-
-    const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, "TEAM_MEMBER_INVITED", {
-      email: user.email,
-      role: user.role,
-      invitedBy: req.user.id,
-      invitedByName: req.user.fullName || req.user.email,
-    });
-
     const { passwordHash: _ph, ...safeUser } = user;
     res.status(201).json({ success: true, data: safeUser });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "CREATE_USER",
+          entityType: "USER",
+          entityId: user.id,
+          newData: { fullName, email: user.email, role },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        const orgId = req.user.organizationId || "defaultOrg";
+        const inv = require("../../utils/cacheInvalidation");
+        await inv.user(orgId, user.id);
+
+        const sse = require("../../utils/sse");
+        sse.broadcastToOrg(orgId, "TEAM_MEMBER_INVITED", {
+          email: user.email,
+          role: user.role,
+          invitedBy: req.user.id,
+          invitedByName: req.user.fullName || req.user.email,
+        });
+      } catch (err) {
+        console.error("[CreateUser] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -132,32 +138,38 @@ router.patch(
       },
     });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "UPDATE_USER",
-      entityType: "USER",
-      entityId: id,
-      oldData: { fullName: existing.fullName, email: existing.email, role: existing.role },
-      newData: { fullName: updated.fullName, email: updated.email, role: updated.role },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, id);
     await invalidateUserCache(id);
 
-    const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", {
-      userId: id,
-      changes: { fullName: updated.fullName, email: updated.email, role: updated.role },
-      updatedBy: req.user.id,
-    });
-    sse.sendToUser(id, "PROFILE_UPDATED", { userId: id });
-
     const { passwordHash: _ph, ...safeUser } = updated;
     res.json({ success: true, data: safeUser });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "UPDATE_USER",
+          entityType: "USER",
+          entityId: id,
+          oldData: { fullName: existing.fullName, email: existing.email, role: existing.role },
+          newData: { fullName: updated.fullName, email: updated.email, role: updated.role },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        const sse = require("../../utils/sse");
+        sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", {
+          userId: id,
+          changes: { fullName: updated.fullName, email: updated.email, role: updated.role },
+          updatedBy: req.user.id,
+        });
+        sse.sendToUser(id, "PROFILE_UPDATED", { userId: id });
+      } catch (err) {
+        console.error("[UpdateUser] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -177,31 +189,37 @@ router.patch(
 
     await prisma.user.update({ where: { id }, data: { status, isActive: status === "ACTIVE" } });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "UPDATE_USER_STATUS",
-      entityType: "USER",
-      entityId: id,
-      oldData: { status: existing.status },
-      newData: { status },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, id);
     await invalidateUserCache(id);
 
-    const sse = require("../../utils/sse");
-    if (status === "INACTIVE") {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: id, deletedBy: req.user.id, deletedByName: req.user.fullName });
-      sse.sendToUser(id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
-    } else {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: id, restoredBy: req.user.id, restoredByName: req.user.fullName });
-    }
-
     res.json({ success: true, data: { id, status } });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "UPDATE_USER_STATUS",
+          entityType: "USER",
+          entityId: id,
+          oldData: { status: existing.status },
+          newData: { status },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        const sse = require("../../utils/sse");
+        if (status === "INACTIVE") {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: id, deletedBy: req.user.id, deletedByName: req.user.fullName });
+          sse.sendToUser(id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+        } else {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: id, restoredBy: req.user.id, restoredByName: req.user.fullName });
+        }
+      } catch (err) {
+        console.error("[UpdateUserStatus] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 

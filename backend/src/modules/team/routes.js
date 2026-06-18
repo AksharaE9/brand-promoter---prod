@@ -1,6 +1,6 @@
 const express = require("express");
 const prisma = require("../../config/db");
-const { auth, requireRoles } = require("../../middleware/auth");
+const { auth, requireRoles, invalidateUserCache } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const sse = require("../../utils/sse");
@@ -89,13 +89,22 @@ router.put("/recruiters/:id", asyncHandler(async (req, res) => {
 
   const updated = await prisma.user.update({ where: { id }, data: payload });
 
+  // Invalidate cache before returning response to avoid race conditions
   const orgId = req.user.organizationId || "defaultOrg";
   await inv.user(orgId, id);
-  sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", { userId: id, changes: payload, updatedBy: req.user.id });
-  sse.sendToUser(id, "PROFILE_UPDATED", { userId: id, changes: payload });
+  await invalidateUserCache(id);
 
   const { passwordHash: _ph, ...safeUser } = updated;
   res.json({ success: true, data: safeUser });
+
+  setImmediate(async () => {
+    try {
+      sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", { userId: id, changes: payload, updatedBy: req.user.id });
+      sse.sendToUser(id, "PROFILE_UPDATED", { userId: id, changes: payload });
+    } catch (err) {
+      console.error("[UpdateRecruiter] Async side-effects failed:", err.message);
+    }
+  });
 }));
 
 router.patch(
@@ -107,16 +116,26 @@ router.patch(
       where: { id: req.params.id },
       data: { status, isActive: status === "ACTIVE" },
     });
+
+    // Invalidate cache before returning response to avoid race conditions
     const orgId = req.user.organizationId || "defaultOrg";
     await inv.user(orgId, req.params.id);
+    await invalidateUserCache(req.params.id);
 
-    if (status === "INACTIVE") {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: req.params.id, deletedBy: req.user.id, deletedByName: req.user.fullName });
-      sse.sendToUser(req.params.id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
-    } else {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: req.params.id, restoredBy: req.user.id, restoredByName: req.user.fullName });
-    }
     res.json({ success: true, data: { status } });
+
+    setImmediate(async () => {
+      try {
+        if (status === "INACTIVE") {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: req.params.id, deletedBy: req.user.id, deletedByName: req.user.fullName });
+          sse.sendToUser(req.params.id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+        } else {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: req.params.id, restoredBy: req.user.id, restoredByName: req.user.fullName });
+        }
+      } catch (err) {
+        console.error("[RecruiterStatus] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -147,13 +166,22 @@ router.put("/interviewers/:id", asyncHandler(async (req, res) => {
 
   const updated = await prisma.user.update({ where: { id }, data: payload });
 
+  // Invalidate cache before returning response to avoid race conditions
   const orgId = req.user.organizationId || "defaultOrg";
   await inv.user(orgId, id);
-  sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", { userId: id, changes: payload, updatedBy: req.user.id });
-  sse.sendToUser(id, "PROFILE_UPDATED", { userId: id, changes: payload });
+  await invalidateUserCache(id);
 
   const { passwordHash: _ph, ...safeUser } = updated;
   res.json({ success: true, data: safeUser });
+
+  setImmediate(async () => {
+    try {
+      sse.broadcastToOrg(orgId, "TEAM_MEMBER_UPDATED", { userId: id, changes: payload, updatedBy: req.user.id });
+      sse.sendToUser(id, "PROFILE_UPDATED", { userId: id, changes: payload });
+    } catch (err) {
+      console.error("[UpdateInterviewer] Async side-effects failed:", err.message);
+    }
+  });
 }));
 
 router.patch(
@@ -162,15 +190,26 @@ router.patch(
   asyncHandler(async (req, res) => {
     const { status } = req.body;
     await prisma.user.update({ where: { id: req.params.id }, data: { status, isActive: status === "ACTIVE" } });
+
+    // Invalidate cache before returning response to avoid race conditions
     const orgId = req.user.organizationId || "defaultOrg";
     await inv.user(orgId, req.params.id);
-    if (status === "INACTIVE") {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: req.params.id });
-      sse.sendToUser(req.params.id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
-    } else {
-      sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: req.params.id });
-    }
+    await invalidateUserCache(req.params.id);
+
     res.json({ success: true, data: { status } });
+
+    setImmediate(async () => {
+      try {
+        if (status === "INACTIVE") {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_DELETED", { userId: req.params.id });
+          sse.sendToUser(req.params.id, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+        } else {
+          sse.broadcastToOrg(orgId, "TEAM_MEMBER_RESTORED", { userId: req.params.id });
+        }
+      } catch (err) {
+        console.error("[InterviewerStatus] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -243,33 +282,44 @@ router.delete(
     if (activeCount > 0)
       throw new ApiError(400, `This recruiter has ${activeCount} active candidates. Reassign them first`, { count: activeCount });
 
-    // Soft delete + revoke sessions
-    await Promise.all([
-      prisma.user.update({
-        where: { id: userId },
-        data: { isDeleted: true, isActive: false, deletedAt: new Date(), deletedBy: req.user.id, status: "INACTIVE" },
-      }),
-      prisma.session.deleteMany({ where: { userId } }),
-    ]);
-
-    logAudit({
-      actorUserId: req.user.id,
-      actorName: req.user.fullName,
-      action: "TEAM_MEMBER_DELETED",
-      entityType: "USER",
-      entityId: userId,
-      entityName: targetUser.fullName,
-      oldData: { isDeleted: false, status: targetUser.status },
-      newData: { isDeleted: true, status: "INACTIVE" },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
+    // Soft delete user record
+    await prisma.user.update({
+      where: { id: userId },
+      data: { isDeleted: true, isActive: false, deletedAt: new Date(), deletedBy: req.user.id, status: "INACTIVE" },
     });
 
+    // Revoke sessions asynchronously in the background to not block the HTTP response
+    prisma.session.deleteMany({ where: { userId } }).catch(err => {
+      console.error("[DeleteMember] Background session delete failed:", err.message);
+    });
+
+    // Invalidate user cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);
-    sse.broadcastToOrg(myOrg, "TEAM_MEMBER_DELETED", { userId, deletedBy: req.user.id, deletedByName: req.user.fullName });
-    sse.sendToUser(userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+    await invalidateUserCache(userId);
 
     res.json({ success: true, message: `${targetUser.fullName} has been removed from the team` });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          actorName: req.user.fullName,
+          action: "TEAM_MEMBER_DELETED",
+          entityType: "USER",
+          entityId: userId,
+          entityName: targetUser.fullName,
+          oldData: { isDeleted: false, status: targetUser.status },
+          newData: { isDeleted: true, status: "INACTIVE" },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        sse.broadcastToOrg(myOrg, "TEAM_MEMBER_DELETED", { userId, deletedBy: req.user.id, deletedByName: req.user.fullName });
+        sse.sendToUser(userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+      } catch (err) {
+        console.error("[DeleteMember] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -290,22 +340,31 @@ router.patch(
       data: { isDeleted: false, isActive: true, deletedAt: null, deletedBy: null, status: "ACTIVE" },
     });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "TEAM_MEMBER_RESTORED",
-      entityType: "USER",
-      entityId: userId,
-      entityName: targetUser.fullName,
-      oldData: { isDeleted: true, status: "INACTIVE" },
-      newData: { isDeleted: false, status: "ACTIVE" },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // Invalidate cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);
-    sse.broadcastToOrg(myOrg, "TEAM_MEMBER_RESTORED", { userId, restoredBy: req.user.id, restoredByName: req.user.fullName });
+    await invalidateUserCache(userId);
 
     res.json({ success: true, message: `${targetUser.fullName} has been restored successfully` });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "TEAM_MEMBER_RESTORED",
+          entityType: "USER",
+          entityId: userId,
+          entityName: targetUser.fullName,
+          oldData: { isDeleted: true, status: "INACTIVE" },
+          newData: { isDeleted: false, status: "ACTIVE" },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        sse.broadcastToOrg(myOrg, "TEAM_MEMBER_RESTORED", { userId, restoredBy: req.user.id, restoredByName: req.user.fullName });
+      } catch (err) {
+        console.error("[RestoreMember] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -332,23 +391,32 @@ router.patch(
 
     await prisma.user.update({ where: { id: userId }, data: { role: targetRole } });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "ROLE_CHANGED",
-      entityType: "USER",
-      entityId: userId,
-      entityName: targetUser.fullName,
-      oldData: { role: targetUser.role },
-      newData: { role: targetRole },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // Invalidate cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);
-    sse.broadcastToOrg(myOrg, "TEAM_ROLE_CHANGED", { userId, previousRole: targetUser.role, newRole: targetRole, changedBy: req.user.id });
-    sse.sendToUser(userId, "YOUR_ROLE_CHANGED", { previousRole: targetUser.role, newRole: targetRole });
+    await invalidateUserCache(userId);
 
     res.json({ success: true, message: `${targetUser.fullName}'s role has been updated to ${targetRole}` });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "ROLE_CHANGED",
+          entityType: "USER",
+          entityId: userId,
+          entityName: targetUser.fullName,
+          oldData: { role: targetUser.role },
+          newData: { role: targetRole },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        sse.broadcastToOrg(myOrg, "TEAM_ROLE_CHANGED", { userId, previousRole: targetUser.role, newRole: targetRole, changedBy: req.user.id });
+        sse.sendToUser(userId, "YOUR_ROLE_CHANGED", { previousRole: targetUser.role, newRole: targetRole });
+      } catch (err) {
+        console.error("[ChangeRole] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -378,31 +446,43 @@ router.patch(
     if (changedFields.length === 0) return res.json({ success: true, data: targetUser });
 
     if (finalUpdates.status === "INACTIVE" || finalUpdates.isActive === false) {
-      await prisma.session.deleteMany({ where: { userId } });
+      // Delete sessions in the background
+      prisma.session.deleteMany({ where: { userId } }).catch(err => {
+        console.error("[UpdateMember] Background session delete failed:", err.message);
+      });
     }
 
     await prisma.user.update({ where: { id: userId }, data: finalUpdates });
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "TEAM_MEMBER_UPDATED",
-      entityType: "USER",
-      entityId: userId,
-      entityName: targetUser.fullName,
-      oldData: Object.fromEntries(changedFields.map(k => [k, targetUser[k]])),
-      newData: finalUpdates,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // Invalidate cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);
-    sse.broadcastToOrg(myOrg, "TEAM_MEMBER_UPDATED", { userId, changes: finalUpdates, updatedBy: req.user.id });
-
-    if (finalUpdates.status === "INACTIVE" || finalUpdates.isActive === false) {
-      sse.sendToUser(userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
-    }
+    await invalidateUserCache(userId);
 
     res.json({ success: true, data: { ...targetUser, ...finalUpdates } });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "TEAM_MEMBER_UPDATED",
+          entityType: "USER",
+          entityId: userId,
+          entityName: targetUser.fullName,
+          oldData: Object.fromEntries(changedFields.map(k => [k, targetUser[k]])),
+          newData: finalUpdates,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        sse.broadcastToOrg(myOrg, "TEAM_MEMBER_UPDATED", { userId, changes: finalUpdates, updatedBy: req.user.id });
+
+        if (finalUpdates.status === "INACTIVE" || finalUpdates.isActive === false) {
+          sse.sendToUser(userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+        }
+      } catch (err) {
+        console.error("[UpdateMember] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 

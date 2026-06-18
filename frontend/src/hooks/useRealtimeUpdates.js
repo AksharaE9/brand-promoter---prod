@@ -125,11 +125,23 @@ export function useRealtimeUpdates() {
     switch (eventName) {
 
       /* ─── CANDIDATES ─── */
-      case 'CANDIDATE_CREATED':
-        qc.invalidateQueries({ queryKey: ['candidates'] });
-        qc.invalidateQueries({ queryKey: ['dashboard'] });
-        addToast({ type:'success', message:`New candidate: ${data.candidate?.fullName || ''}` });
+      case 'CANDIDATE_CREATED': {
+        const { candidate: newCandidate } = data;
+        if (newCandidate?.id) {
+          // Surgically prepend to every cached list without a refetch.
+          // Dedup check ensures the acting user's optimistic entry is not doubled.
+          qc.setQueriesData({ queryKey: ['candidates'] }, (old) => {
+            if (!old?.data) return old;
+            if (old.data.some(c => c.id === newCandidate.id)) return old; // already present
+            return { ...old, data: [newCandidate, ...old.data] };
+          });
+        } else {
+          // Fallback: no candidate payload — do a soft invalidation (no immediate refetch)
+          qc.invalidateQueries({ queryKey: ['candidates'], refetchType: 'none' });
+        }
+        addToast({ type: 'success', message: `New candidate: ${newCandidate?.fullName || ''}` });
         break;
+      }
 
       case 'CANDIDATE_UPDATED':
         qc.setQueriesData({ queryKey:['candidates'] }, o => updateInList(o, data.candidateId, data.changes));
@@ -259,10 +271,22 @@ export function useRealtimeUpdates() {
         break;
       }
 
-      case 'ROUND_CREATED':
-        qc.invalidateQueries({ queryKey:['scheduling','rounds'] });
-        addToast({ type:'success', message:'Interview scheduled' });
+      case 'ROUND_CREATED': {
+        const { round: newRound } = data;
+        if (newRound?.id) {
+          // Surgically prepend to every cached scheduling list without refetch.
+          qc.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) => {
+            if (!old?.data) return old;
+            if (old.data.some(r => r.id === newRound.id)) return old; // dedup
+            return { ...old, data: [newRound, ...old.data] };
+          });
+        } else {
+          // Fallback: mark stale without immediate refetch
+          qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'], refetchType: 'none' });
+        }
+        addToast({ type: 'success', message: 'Interview scheduled' });
         break;
+      }
 
       case 'ROUND_DELETED':
         qc.setQueriesData({ queryKey:['scheduling','rounds'] }, o => removeFromList(o, data.roundId));

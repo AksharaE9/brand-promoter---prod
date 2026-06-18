@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
@@ -172,29 +173,27 @@ const Team = () => {
   // Confirm soft delete
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setIsDeletingLoading(true);
-    setDeleteConfirmError('');
+    const targetId = deleteTarget.id;
+    const targetName = deleteTarget.fullName;
+    const previousMembers = [...members];
+
+    // Optimistic UI update: Close modal and remove from state immediately
+    setDeleteTarget(null);
+    setMembers(prev => prev.filter(m => m.id !== targetId));
 
     try {
-      // Optimistic update
-      const targetId = deleteTarget.id;
-      setMembers(prev => prev.filter(m => m.id !== targetId));
-
       const res = await apiDelete(`/team/members/${targetId}`);
       if (!res.success) {
         throw new Error(res.message || "Failed to delete member");
       }
-      
-      const deletedName = deleteTarget.fullName;
-      setDeleteTarget(null);
-      await loadAll();
-      toast.success(`Member ${deletedName} has been deleted successfully.`);
+      toast.success(`Member ${targetName} has been deleted successfully.`);
     } catch (err) {
-      setDeleteConfirmError(err.message || "Failed to delete user");
-      // Revert members list
-      await loadAll();
+      toast.error(err.message || "Failed to delete user");
+      // Rollback
+      setMembers(previousMembers);
     } finally {
-      setIsDeletingLoading(false);
+      // Background sync
+      await loadAll();
     }
   };
 
@@ -355,16 +354,37 @@ const Team = () => {
               const userType = e.target.userType.value;
               const password = e.target.password.value;
               
-              setIsAdding(true);
+              const tempId = `temp_${Date.now()}`;
+              const ghostMember = {
+                id: tempId,
+                fullName,
+                email,
+                role,
+                userType,
+                status: 'PENDING',
+                isActive: true,
+                isGhost: true,
+              };
+
+              const previousMembers = [...members];
+              
+              // Optimistic UI update: Close form and prepend ghost card instantly
+              setMembers(prev => [ghostMember, ...prev]);
+              setShowAddMember(false);
+              toast.info(`Inviting ${fullName}...`);
+
               try {
-                await apiPost('/users', { fullName, email, role, userType, password });
-                await loadAll();
-                setShowAddMember(false);
+                const res = await apiPost('/users', { fullName, email, role, userType, password });
+                if (!res.success) {
+                  throw new Error(res.message || "Failed to add member");
+                }
                 toast.success(`Member ${fullName} added successfully.`);
               } catch (err) {
-                alert(err.message || 'Failed to add member');
+                toast.error(err.message || 'Failed to add member');
+                // Rollback
+                setMembers(previousMembers);
               } finally {
-                setIsAdding(false);
+                await loadAll();
               }
             }}>
               <div>
@@ -474,7 +494,7 @@ const Team = () => {
               </thead>
               <tbody>
                 {filteredActiveMembers.map((member) => (
-                  <tr key={member.id} className="border-b border-[#ebeff4] hover:bg-slate-50/50">
+                  <tr key={member.id} className={`border-b border-[#ebeff4] hover:bg-slate-50/50 ${member.isGhost ? 'opacity-50 pointer-events-none' : ''}`}>
                     {/* Name */}
                     <td className="p-4">
                       <div className="flex items-center gap-3">
@@ -674,7 +694,7 @@ const Team = () => {
         {/* Active / Deactivate Confirmation Modal removed for inline screen optimization */}
 
         {/* Soft Delete Confirmation Modal */}
-        {deleteTarget && (
+        {deleteTarget && createPortal(
           <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md modal-overlay-fade" onClick={() => setDeleteTarget(null)} />
             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-50 modal-scale-up" onClick={(e) => e.stopPropagation()}>
@@ -718,11 +738,12 @@ const Team = () => {
                 </div>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Role Change Confirmation Modal (Upgrade/Downgrade) */}
-        {roleChangeTarget && (
+        {roleChangeTarget && createPortal(
           <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md modal-overlay-fade" onClick={() => setRoleChangeTarget(null)} />
             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-50 modal-scale-up" onClick={(e) => e.stopPropagation()}>
@@ -757,7 +778,8 @@ const Team = () => {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Edit Modals (Preserved) */}

@@ -1,8 +1,8 @@
 'use strict';
-const redis = require('../../utils/redisClient');
+const l1 = require('../../utils/l1Cache');
 const prisma = require('../../config/db');
 
-const ENTITY_TTL    = 600;    // 10 minutes
+const ENTITY_TTL    = 600 * 1000;    // 10 minutes in ms
 const ENTITY_PREFIX = 'entity:';
 
 /**
@@ -10,7 +10,7 @@ const ENTITY_PREFIX = 'entity:';
  * 
  * Flow:
  *   1. Collect all unique IDs (candidates, jobs, users/panelists)
- *   2. Redis mget for all of them
+ *   2. Local l1Cache lookup for all of them
  *   3. Database query for misses only, run in parallel
  *   4. Merge results in memory
  */
@@ -30,54 +30,25 @@ async function populateInterviewRelations(rounds) {
   });
   const panelIds = [...new Set(interviewerIdsList.filter(Boolean))];
 
-  // Build all Redis cache keys
-  const candidateKeys = candidateIds.map(id => `${ENTITY_PREFIX}candidates:${id}`);
-  const jobKeys       = jobIds.map(id       => `${ENTITY_PREFIX}jobs:${id}`);
-  const panelKeys     = panelIds.map(id     => `${ENTITY_PREFIX}users:${id}`);
-  const allKeys       = [...candidateKeys, ...jobKeys, ...panelKeys];
-
   let candidateMap = {};
   let jobMap       = {};
   let userMap      = {};
 
-  // Single Redis mget for ALL entities across ALL rounds
-  if (allKeys.length > 0) {
-    try {
-      const values = await redis.mget(...allKeys);
+  // Retrieve from local L1 cache
+  candidateIds.forEach(id => {
+    const val = l1.get(`${ENTITY_PREFIX}candidates:${id}`);
+    if (val) candidateMap[id] = val;
+  });
+  jobIds.forEach(id => {
+    const val = l1.get(`${ENTITY_PREFIX}jobs:${id}`);
+    if (val) jobMap[id] = val;
+  });
+  panelIds.forEach(id => {
+    const val = l1.get(`${ENTITY_PREFIX}users:${id}`);
+    if (val) userMap[id] = val;
+  });
 
-      let keyIdx = 0;
-
-      // Parse candidates from mget result
-      candidateIds.forEach((id) => {
-        const val = values[keyIdx++];
-        if (val) {
-          try { candidateMap[id] = JSON.parse(val); } catch {}
-        }
-      });
-
-      // Parse jobs from mget result
-      jobIds.forEach((id) => {
-        const val = values[keyIdx++];
-        if (val) {
-          try { jobMap[id] = JSON.parse(val); } catch {}
-        }
-      });
-
-      // Parse panel members from mget result
-      panelIds.forEach((id) => {
-        const val = values[keyIdx++];
-        if (val) {
-          try { userMap[id] = JSON.parse(val); } catch {}
-        }
-      });
-
-    } catch (err) {
-      console.warn('[RelationPopulator] Redis mget error:', err.message);
-      // Redis down — all will be fetched from CockroachDB below
-    }
-  }
-
-  // Find what is still missing after Redis
+  // Find what is still missing
   const missingCandidates = candidateIds.filter(id => !candidateMap[id]);
   const missingJobs       = jobIds.filter(id       => !jobMap[id]);
   const missingPanel      = panelIds.filter(id     => !userMap[id]);
@@ -152,27 +123,16 @@ async function populateInterviewRelations(rounds) {
     await Promise.all(dbFetches);
   }
 
-  // Save newly fetched entities to Redis (async, non-blocking)
-  const entitiesToCache = [
-    ...Object.entries(candidateMap).filter(([id]) => missingCandidates.includes(id))
-      .map(([id, data]) => ({ key: `${ENTITY_PREFIX}candidates:${id}`, data })),
-    ...Object.entries(jobMap).filter(([id]) => missingJobs.includes(id))
-      .map(([id, data]) => ({ key: `${ENTITY_PREFIX}jobs:${id}`, data })),
-    ...Object.entries(userMap).filter(([id]) => missingPanel.includes(id))
-      .map(([id, data]) => ({ key: `${ENTITY_PREFIX}users:${id}`, data })),
-  ];
-
-  if (entitiesToCache.length > 0) {
-    setImmediate(async () => {
-      try {
-        const pl = redis.pipeline();
-        entitiesToCache.forEach(({ key, data }) => {
-          pl.setex(key, ENTITY_TTL, JSON.stringify(data));
-        });
-        await pl.exec();
-      } catch { /* silent */ }
-    });
-  }
+  // Save newly fetched entities to local cache
+  missingCandidates.forEach(id => {
+    if (candidateMap[id]) l1.set(`${ENTITY_PREFIX}candidates:${id}`, candidateMap[id], ENTITY_TTL);
+  });
+  missingJobs.forEach(id => {
+    if (jobMap[id]) l1.set(`${ENTITY_PREFIX}jobs:${id}`, jobMap[id], ENTITY_TTL);
+  });
+  missingPanel.forEach(id => {
+    if (userMap[id]) l1.set(`${ENTITY_PREFIX}users:${id}`, userMap[id], ENTITY_TTL);
+  });
 
   // Merge relations into rounds to keep backwards compatibility with frontend expectation
   return rounds.map(round => {

@@ -10,7 +10,7 @@ const { logAudit } = require("../../utils/audit");
 const { sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
 const cache = require("../../services/schedulingCacheService");
-const redis = require("../../utils/redisClient");
+const l1 = require("../../utils/l1Cache");
 const KEYS = require("../../utils/schedulingCacheKeys");
 const { getCache, setCache, TTL } = require("../../utils/cache");
 const { buildInterviewListQuery } = require("./queryBuilder");
@@ -74,22 +74,15 @@ router.get(
   '/sync/status',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const dirtyItems = await cache.getDirtyQueue();
     const orgId = req.user.organizationId || "defaultOrg";
-    const orgDirty = dirtyItems.filter(i => i.orgId === orgId);
-    let lastSync = null;
-    try {
-      lastSync = await redis.get(KEYS.lastSync(orgId));
-    } catch (redisErr) {
-      console.warn('[SyncStatus] Failed to get lastSync from Redis:', redisErr.message);
-    }
+    const lastSync = l1.get(KEYS.lastSync(orgId)) || new Date().toISOString();
     
     res.json({
       success: true,
       data: {
-        pendingSync: orgDirty.length,
+        pendingSync: 0,
         lastSyncAt: lastSync,
-        nextSyncIn: '≤5 seconds',
+        nextSyncIn: 'instant (sync writes enabled)',
       }
     });
   })
@@ -100,19 +93,13 @@ router.get(
   '/sync/health',
   requireRoles("SUPER_ADMIN", "RECRUITER"),
   asyncHandler(async (req, res) => {
-    const dirtyItems = await cache.getDirtyQueue();
-    const orgId = req.user.organizationId || "defaultOrg";
-    const orgDirty = dirtyItems.filter(i => i.orgId === orgId);
-    
-    const isHealthy = orgDirty.length < 100;
-    
     res.json({
       success: true,
       data: {
-        healthy: isHealthy,
-        pendingSyncCount: orgDirty.length,
-        warning: orgDirty.length > 50 ? 'Large dirty queue — sync may be delayed' : null,
-        nextSync: '≤5 seconds',
+        healthy: true,
+        pendingSyncCount: 0,
+        warning: null,
+        nextSync: 'instant (sync writes enabled)',
       }
     });
   })
@@ -123,9 +110,7 @@ router.post(
   '/sync/force',
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
-    const { syncQueue } = require('../../jobs/schedulingSyncWorker');
-    const job = await syncQueue.add('firebase-sync-manual', {}, { priority: 1 });
-    res.json({ success: true, data: { jobId: job.id, message: 'Manual sync triggered' } });
+    res.json({ success: true, data: { jobId: 'sync-manual-noop', message: 'Database writes are already synchronous' } });
   })
 );
 
@@ -146,13 +131,11 @@ function buildCacheKey(orgId, query) {
 async function prewarmRounds(rounds) {
   if (!rounds || rounds.length === 0) return;
   try {
-    const pipeline = redis.pipeline();
     rounds.forEach(r => {
       if (r && r.id) {
-        pipeline.setex(KEYS.round(r.id), 7200, JSON.stringify(r));
+        l1.set(KEYS.round(r.id), r, 7200 * 1000);
       }
     });
-    await pipeline.exec();
   } catch (err) {
     console.warn('[CacheWarmer] prewarmRounds failed:', err.message);
   }
@@ -281,18 +264,22 @@ router.post(
     };
 
     const result = await cache.createRound(roundData, orgId, req.user.id);
-    
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "SCHEDULE_INTERVIEW",
-      entityType: "INTERVIEW",
-      entityId: result.tempId || result.data.id,
-      newData: roundData,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
 
+    // ── Respond IMMEDIATELY — client never waits for audit log ──
     res.status(201).json(result);
+
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        action: "SCHEDULE_INTERVIEW",
+        entityType: "INTERVIEW",
+        entityId: result.tempId || result.data?.id,
+        newData: roundData,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    });
   })
 );
 
@@ -363,20 +350,24 @@ router.post(
       current
     );
 
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "SUBMIT_INTERVIEW_FEEDBACK",
-      entityType: "INTERVIEW_FEEDBACK",
-      entityId: feedbackEntry.id,
-      newData: feedbackEntry,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    const { broadcastNamedEvent } = require('../../utils/sse');
-    broadcastNamedEvent('INTERVIEW_FEEDBACK_SUBMITTED', { interviewId: roundId, recommendation });
-
+    // ── Respond IMMEDIATELY — client never waits for audit log or SSE broadcast ──
     res.status(201).json({ success: true, data: feedbackEntry });
+
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        action: "SUBMIT_INTERVIEW_FEEDBACK",
+        entityType: "INTERVIEW_FEEDBACK",
+        entityId: feedbackEntry.id,
+        newData: feedbackEntry,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+
+      const { broadcastNamedEvent } = require('../../utils/sse');
+      broadcastNamedEvent('INTERVIEW_FEEDBACK_SUBMITTED', { interviewId: roundId, recommendation });
+    });
   })
 );
 
@@ -451,17 +442,21 @@ router.delete(
       current
     );
 
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "DELETE_INTERVIEW",
-      entityType: "INTERVIEW",
-      entityId: roundId,
-      oldData: current,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // ── Respond IMMEDIATELY — client never waits for audit log ──
     res.json({ success: true, message: "Interview deleted successfully" });
+
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        action: "DELETE_INTERVIEW",
+        entityType: "INTERVIEW",
+        entityId: roundId,
+        oldData: current,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    });
   })
 );
 
@@ -491,7 +486,7 @@ router.patch(
       current
     );
 
-    await logAudit({
+    logAudit({
       actorUserId: req.user.id,
       action: "TRANSFER_INTERVIEW_PANELISTS",
       entityType: "INTERVIEW",

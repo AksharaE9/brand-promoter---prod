@@ -54,15 +54,30 @@ async function fetchDashboardData(orgId) {
     }),
   ]);
 
-  // Stage counts
-  const stageCounts = await Promise.all(
-    stages.map(async (s) => {
-      const count = await prisma.application.count({
-        where: { organizationId: orgId, isDeleted: false, status: "IN_PIPELINE", currentStageId: s.id },
-      });
-      return { id: s.id, name: (s.name || "").toLowerCase(), count };
-    })
-  );
+  // Stage counts (Optimized: group by currentStageId in a single query to prevent N+1 queries)
+  const stageCountsRaw = await prisma.application.groupBy({
+    by: ["currentStageId"],
+    where: {
+      organizationId: orgId,
+      isDeleted: false,
+      status: "IN_PIPELINE",
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  const stageCountsMap = {};
+  stageCountsRaw.forEach((item) => {
+    if (item.currentStageId) {
+      stageCountsMap[item.currentStageId] = item._count._all;
+    }
+  });
+
+  const stageCounts = stages.map((s) => {
+    const count = stageCountsMap[s.id] || 0;
+    return { id: s.id, name: (s.name || "").toLowerCase(), count };
+  });
 
   // Build funnel
   let pendingCount = pendingStatusCount;

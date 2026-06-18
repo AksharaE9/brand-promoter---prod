@@ -1,5 +1,5 @@
 'use strict';
-const redis = require('../utils/redisClient');
+const l1 = require('../utils/l1Cache');
 const jwt = require('jsonwebtoken');
 
 // Routes eligible for deduplication — GET only, idempotent
@@ -30,25 +30,21 @@ function dedupMiddleware(req, res, next) {
 
   const key = `dedup:${userKey}:${req.method}:${req.originalUrl}`;
 
-  redis.get(key).then(cached => {
-    if (cached) {
-      try {
-        const data = JSON.parse(cached);
-        return res.json(data);
-      } catch { /* fall through */ }
+  const cached = l1.get(key);
+  if (cached !== null) {
+    return res.json(cached);
+  }
+
+  // Override res.json to capture response and store it
+  const originalJson = res.json;
+  res.json = function(body) {
+    if (res.statusCode === 200 && body && body.success) {
+      l1.set(key, body, 3000); // 3 seconds TTL
     }
+    return originalJson.call(this, body);
+  };
 
-    // Override res.json to capture response and store it
-    const originalJson = res.json;
-    res.json = function(body) {
-      if (res.statusCode === 200 && body && body.success) {
-        redis.setex(key, 3, JSON.stringify(body)).catch(() => {});
-      }
-      return originalJson.call(this, body);
-    };
-
-    next();
-  }).catch(() => next());
+  next();
 }
 
 module.exports = dedupMiddleware;

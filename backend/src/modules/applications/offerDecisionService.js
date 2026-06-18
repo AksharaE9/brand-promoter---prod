@@ -54,37 +54,39 @@ async function markAsJoined(req, res) {
   const orgId = req.user.organizationId || 'defaultOrg';
   await inv.application(orgId, app.candidateId);
 
-  logAudit({
-    actorUserId: decidedByUserId,
-    action: 'MARK_AS_JOINED',
-    entityType: 'APPLICATION',
-    entityId: applicationId,
-    oldData: { status: app.status },
-    newData: { status: 'JOINED' },
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
-
-  sse.broadcastToOrg(orgId, 'CANDIDATE_JOINED', {
-    candidateId: app.candidateId,
-    decision: 'JOINED',
-    dateOfJoining: dateOfJoining || null,
-    decidedBy: decidedByUserId,
-    decidedByName: req.user.fullName || req.user.email,
-  });
-
-  try {
-    await notifyAdmins({
-      title: 'Candidate Joined',
-      message: `${candidateName} has joined for the role of ${jobTitle}`,
-      link: `/candidates?status=JOINED&highlight=${applicationId}`,
-      type: 'STAGE_CHANGE',
-    });
-  } catch (err) {
-    console.error('[OFFER] Notification failed (non-fatal):', err.message);
-  }
-
   res.json({ success: true, data: updated });
+
+  setImmediate(async () => {
+    try {
+      logAudit({
+        actorUserId: decidedByUserId,
+        action: 'MARK_AS_JOINED',
+        entityType: 'APPLICATION',
+        entityId: applicationId,
+        oldData: { status: app.status },
+        newData: { status: 'JOINED' },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      sse.broadcastToOrg(orgId, 'CANDIDATE_JOINED', {
+        candidateId: app.candidateId,
+        decision: 'JOINED',
+        dateOfJoining: dateOfJoining || null,
+        decidedBy: decidedByUserId,
+        decidedByName: req.user.fullName || req.user.email,
+      });
+
+      await notifyAdmins({
+        title: 'Candidate Joined',
+        message: `${candidateName} has joined for the role of ${jobTitle}`,
+        link: `/candidates?status=JOINED&highlight=${applicationId}`,
+        type: 'STAGE_CHANGE',
+      });
+    } catch (err) {
+      console.error('[OFFER] markAsJoined async side-effects failed:', err.message);
+    }
+  });
 }
 
 async function markAsRejected(req, res) {
@@ -116,38 +118,40 @@ async function markAsRejected(req, res) {
   const orgId = req.user.organizationId || 'defaultOrg';
   await inv.application(orgId, app.candidateId);
 
-  logAudit({
-    actorUserId: decidedByUserId,
-    action: 'MARK_AS_REJECTED',
-    entityType: 'APPLICATION',
-    entityId: applicationId,
-    oldData: { status: app.status },
-    newData: { status: 'REJECTED', rejectionReason },
-    metadata: { rejectionReason, notes: notes || null },
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
-
-  sse.broadcastToOrg(orgId, 'CANDIDATE_REJECTED', {
-    candidateId: app.candidateId,
-    decision: 'REJECTED',
-    rejectionReason,
-    decidedBy: decidedByUserId,
-    decidedByName: req.user.fullName || req.user.email,
-  });
-
-  try {
-    await notifyAdmins({
-      title: 'Offer Rejected',
-      message: `The offer for ${candidateName} (${jobTitle}) was rejected — ${rejectionReason.replace(/_/g, ' ')}`,
-      link: `/candidates?status=REJECTED&highlight=${applicationId}`,
-      type: 'REJECTION',
-    });
-  } catch (err) {
-    console.error('[OFFER] Notification failed (non-fatal):', err.message);
-  }
-
   res.json({ success: true, data: updated });
+
+  setImmediate(async () => {
+    try {
+      logAudit({
+        actorUserId: decidedByUserId,
+        action: 'MARK_AS_REJECTED',
+        entityType: 'APPLICATION',
+        entityId: applicationId,
+        oldData: { status: app.status },
+        newData: { status: 'REJECTED', rejectionReason },
+        metadata: { rejectionReason, notes: notes || null },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      sse.broadcastToOrg(orgId, 'CANDIDATE_REJECTED', {
+        candidateId: app.candidateId,
+        decision: 'REJECTED',
+        rejectionReason,
+        decidedBy: decidedByUserId,
+        decidedByName: req.user.fullName || req.user.email,
+      });
+
+      await notifyAdmins({
+        title: 'Offer Rejected',
+        message: `The offer for ${candidateName} (${jobTitle}) was rejected — ${rejectionReason.replace(/_/g, ' ')}`,
+        link: `/candidates?status=REJECTED&highlight=${applicationId}`,
+        type: 'REJECTION',
+      });
+    } catch (err) {
+      console.error('[OFFER] markAsRejected async side-effects failed:', err.message);
+    }
+  });
 }
 
 module.exports = { markAsJoined: asyncHandler(markAsJoined), markAsRejected: asyncHandler(markAsRejected) };

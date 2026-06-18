@@ -195,14 +195,27 @@ const CandidateProfile = () => {
   }, [loadAll]);
 
   const handleUpdateLinks = useCallback(async (interviewId, links) => {
+    const previousInterviews = [...interviews];
+    
+    // Optimistic Update: merge links into local interviews state
+    setInterviews(prev => prev.map(iv => 
+      iv.id === interviewId 
+        ? { ...iv, ...links } 
+        : iv
+    ));
+    setBanner('Interview links updated.');
+
     try {
-      await apiPatch(`/interviews/${interviewId}`, links);
-      setBanner('Interview links updated.');
-      loadAll();
+      const res = await apiPatch(`/interviews/${interviewId}`, links);
+      if (!res.success) throw new Error(res.message || "Failed to update links");
     } catch (err) {
       setError(err.message);
+      setBanner('');
+      setInterviews(previousInterviews);
+    } finally {
+      await loadAll();
     }
-  }, [loadAll]);
+  }, [interviews, loadAll]);
 
   const handleUploadRecording = useCallback(async (interviewId, file) => {
     if (!file) return;
@@ -228,16 +241,25 @@ const CandidateProfile = () => {
   }, [loadAll]);
 
   const handleSaveEdit = async () => {
+    const previousCandidate = candidate;
+    const previousEditForm = { ...editForm };
+    
+    // Optimistic Update: close edit and merge details into local state immediately
+    setCandidate(prev => ({ ...prev, ...editForm }));
+    setIsEditing(false);
+    setBanner('Profile updated successfully.');
+
     try {
-      setSavingEdit(true);
-      await apiPatch(`/candidates/${id}`, editForm);
-      setBanner('Profile updated successfully.');
-      setIsEditing(false);
-      loadAll();
+      const res = await apiPatch(`/candidates/${id}`, editForm);
+      if (!res.success) throw new Error(res.message || "Failed to update profile");
     } catch (err) {
       setError(err.message || 'Failed to update profile');
+      setBanner('');
+      setCandidate(previousCandidate);
+      setEditForm(previousEditForm);
+      setIsEditing(true);
     } finally {
-      setSavingEdit(false);
+      await loadAll();
     }
   };
 

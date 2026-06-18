@@ -117,27 +117,33 @@ router.post(
       },
     });
 
-    const orgId = req.user.organizationId || "defaultOrg";
-    const inv = require("../../utils/cacheInvalidation");
-    await inv.job(orgId, job.id);
-
-    await notifyAdmins({
-      title: "New Job Posted",
-      message: `A new job "${title}" has been posted by ${req.user.fullName}`,
-      type: "JOB_POSTED",
-      link: `/jobs/${job.id}`,
-    });
-
-    const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, "JOB_CREATED", {
-      jobId: job.id,
-      title,
-      status: "ACTIVE",
-      createdBy: req.user.id,
-      createdByName: req.user.fullName,
-    });
-
     res.status(201).json({ success: true, data: job });
+
+    setImmediate(async () => {
+      try {
+        const orgId = req.user.organizationId || "defaultOrg";
+        const inv = require("../../utils/cacheInvalidation");
+        await inv.job(orgId, job.id);
+
+        await notifyAdmins({
+          title: "New Job Posted",
+          message: `A new job "${title}" has been posted by ${req.user.fullName}`,
+          type: "JOB_POSTED",
+          link: `/jobs/${job.id}`,
+        });
+
+        const sse = require("../../utils/sse");
+        sse.broadcastToOrg(orgId, "JOB_CREATED", {
+          jobId: job.id,
+          title,
+          status: "ACTIVE",
+          createdBy: req.user.id,
+          createdByName: req.user.fullName,
+        });
+      } catch (err) {
+        console.error("[CreateJob] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -163,17 +169,24 @@ router.patch(
 
     await prisma.job.update({ where: { id }, data: updateData });
 
-    const orgId = req.user.organizationId || "defaultOrg";
-    const inv = require("../../utils/cacheInvalidation");
-    await inv.job(orgId, id);
-
-    const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, "JOB_UPDATED", {
-      jobId: id,
-      changes: updateData,
-      updatedBy: req.user.id,
-    });
     res.json({ success: true, message: "Job updated successfully" });
+
+    setImmediate(async () => {
+      try {
+        const orgId = req.user.organizationId || "defaultOrg";
+        const inv = require("../../utils/cacheInvalidation");
+        await inv.job(orgId, id);
+
+        const sse = require("../../utils/sse");
+        sse.broadcastToOrg(orgId, "JOB_UPDATED", {
+          jobId: id,
+          changes: updateData,
+          updatedBy: req.user.id,
+        });
+      } catch (err) {
+        console.error("[UpdateJob] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -195,30 +208,36 @@ router.patch(
       data: { isActive },
     });
 
-    const orgId = req.user.organizationId || "defaultOrg";
-    const inv = require("../../utils/cacheInvalidation");
-    await inv.job(orgId, id);
-
-    logAudit({
-      actorUserId: req.user.id,
-      action: "UPDATE_JOB_STATUS",
-      entityType: "JOB",
-      entityId: id,
-      oldData: { isActive: existing.isActive },
-      newData: { isActive },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    const sse = require("../../utils/sse");
-    sse.broadcastToOrg(orgId, "JOB_STATUS_CHANGED", {
-      jobId: id,
-      status: isActive ? "ACTIVE" : "INACTIVE",
-      changedBy: req.user.id,
-      changedByName: req.user.fullName,
-    });
-
     res.json({ success: true, data: updated });
+
+    setImmediate(async () => {
+      try {
+        const orgId = req.user.organizationId || "defaultOrg";
+        const inv = require("../../utils/cacheInvalidation");
+        await inv.job(orgId, id);
+
+        logAudit({
+          actorUserId: req.user.id,
+          action: "UPDATE_JOB_STATUS",
+          entityType: "JOB",
+          entityId: id,
+          oldData: { isActive: existing.isActive },
+          newData: { isActive },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        const sse = require("../../utils/sse");
+        sse.broadcastToOrg(orgId, "JOB_STATUS_CHANGED", {
+          jobId: id,
+          status: isActive ? "ACTIVE" : "INACTIVE",
+          changedBy: req.user.id,
+          changedByName: req.user.fullName,
+        });
+      } catch (err) {
+        console.error("[UpdateJobStatus] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 

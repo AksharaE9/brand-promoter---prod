@@ -57,46 +57,87 @@ const JobDetailModule = () => {
 
   const handleAddDocument = async (e) => {
     e.preventDefault();
-    if (!docLink.trim()) return;
+    const link = docLink.trim();
+    if (!link) return;
+    
+    const tempId = `temp_${Date.now()}`;
+    const newDoc = {
+      id: tempId,
+      type: activeTab,
+      googleDriveLink: link,
+      _optimistic: true,
+    };
+    
+    const previousDocs = [...documents];
+    setDocuments(prev => [...prev, newDoc]);
+    setDocLink('');
+    
     try {
-      await apiPost(`/jobs/${id}/documents`, { type: activeTab, googleDriveLink: docLink });
-      setDocLink('');
-      await loadData();
+      const res = await apiPost(`/jobs/${id}/documents`, { type: activeTab, googleDriveLink: link });
+      if (!res.success) throw new Error(res.message || "Failed to add link");
+      const realDoc = res.data;
+      setDocuments(prev => prev.map(d => d.id === tempId ? realDoc : d));
     } catch (err) {
       alert(err.message || 'Failed to add document');
+      setDocuments(previousDocs);
     }
   };
 
   const handleDeleteDocument = async (docId) => {
     if (!window.confirm("Are you sure?")) return;
+    const previousDocs = [...documents];
+    setDocuments(prev => prev.filter(d => d.id !== docId));
+    
     try {
-      await apiDelete(`/jobs/${id}/documents/${docId}`);
-      await loadData();
+      const res = await apiDelete(`/jobs/${id}/documents/${docId}`);
+      if (!res.success) throw new Error(res.message || "Failed to delete link");
     } catch (err) {
       alert(err.message || 'Failed to delete');
+      setDocuments(previousDocs);
     }
   };
 
   const handleAddQuestion = async (e) => {
     e.preventDefault();
-    if (!qText.trim()) return;
+    const text = qText.trim();
+    if (!text) return;
+    
+    const tempId = `temp_${Date.now()}`;
+    const newQuestion = {
+      id: tempId,
+      question: text,
+      competency: qType,
+      difficulty: qSkill || null,
+      _optimistic: true,
+    };
+    
+    const previousQuestions = [...questions];
+    setQuestions(prev => [...prev, newQuestion]);
+    setQText('');
+    setQSkill('');
+    
     try {
-      await apiPost(`/jobs/${id}/questions`, { question: qText, competency: qType, difficulty: qSkill });
-      setQText('');
-      setQSkill('');
-      await loadData();
+      const res = await apiPost(`/jobs/${id}/questions`, { question: text, competency: qType, difficulty: qSkill });
+      if (!res.success) throw new Error(res.message || "Failed to add question");
+      const realQuestion = res.data;
+      setQuestions(prev => prev.map(q => q.id === tempId ? realQuestion : q));
     } catch (err) {
       alert(err.message || 'Failed to add question');
+      setQuestions(previousQuestions);
     }
   };
 
   const handleDeleteQuestion = async (qId) => {
     if (!window.confirm("Are you sure?")) return;
+    const previousQuestions = [...questions];
+    setQuestions(prev => prev.filter(q => q.id !== qId));
+    
     try {
-      await apiDelete(`/jobs/${id}/questions/${qId}`);
-      await loadData();
+      const res = await apiDelete(`/jobs/${id}/questions/${qId}`);
+      if (!res.success) throw new Error(res.message || "Failed to delete question");
     } catch (err) {
       alert(err.message || 'Failed to delete');
+      setQuestions(previousQuestions);
     }
   };
 
@@ -122,7 +163,7 @@ const JobDetailModule = () => {
 
             <div className="grid gap-3">
               {currentDocs.map(doc => (
-                <div key={doc.id} className="os-card p-4 flex justify-between items-center group">
+                <div key={doc.id} className={`os-card p-4 flex justify-between items-center group ${doc._optimistic ? 'opacity-50 pointer-events-none' : ''}`}>
                   <a href={doc.googleDriveLink} target="_blank" rel="noreferrer" className="text-[#1f52cc] hover:underline font-medium text-sm flex items-center gap-2">
                     <span className="material-symbols-outlined text-lg">link</span>
                     {doc.googleDriveLink}
@@ -166,7 +207,7 @@ const JobDetailModule = () => {
 
             <div className="grid gap-3">
               {questions.map(q => (
-                <div key={q.id} className="os-card p-4 flex justify-between items-center group">
+                <div key={q.id} className={`os-card p-4 flex justify-between items-center group ${q._optimistic ? 'opacity-50 pointer-events-none' : ''}`}>
                   <div>
                     <div className="font-semibold text-sm mb-1">{q.question}</div>
                     <div className="flex gap-2">
@@ -198,7 +239,7 @@ const JobDetailModule = () => {
 
         <div className="grid gap-3">
           {currentDocs.map(doc => (
-            <div key={doc.id} className="os-card p-4 flex justify-between items-center group">
+            <div key={doc.id} className={`os-card p-4 flex justify-between items-center group ${doc._optimistic ? 'opacity-50 pointer-events-none' : ''}`}>
               <a href={doc.googleDriveLink} target="_blank" rel="noreferrer" className="text-[#1f52cc] hover:underline font-medium text-sm flex items-center gap-2">
                 <span className="material-symbols-outlined text-lg">link</span>
                 {doc.googleDriveLink}

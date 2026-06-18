@@ -77,36 +77,63 @@ const JobsManager = () => {
     setError('');
     setBanner('');
 
+    const tempId = `temp_${Date.now()}`;
+    const tempJob = {
+      id: tempId,
+      title: form.title.trim(),
+      department: form.department.trim() || null,
+      location: form.location.trim() || null,
+      employmentType: form.employmentType.trim() || 'Full-time',
+      openingsCount: Number(form.openingsCount) || 1,
+      description: form.description.trim() || null,
+      isActive: true,
+      createdBy: { fullName: currentUser?.fullName || 'You' },
+      _count: { applications: 0, shortlisted: 0 },
+      _optimistic: true,
+    };
+
+    // Optimistic Update: Close form immediately & Prepend job
+    setForm(defaultJobForm);
+    setShowCreate(false);
+    setItems(prev => [tempJob, ...prev]);
+    setBanner('Job created successfully.');
+
     try {
-      setSaving(true);
-      await apiPost('/jobs', {
-        title: form.title.trim(),
-        department: form.department.trim() || null,
-        location: form.location.trim() || null,
-        employmentType: form.employmentType.trim() || null,
-        openingsCount: Number(form.openingsCount) || 1,
-        description: form.description.trim() || null,
+      const res = await apiPost('/jobs', {
+        title: tempJob.title,
+        department: tempJob.department,
+        location: tempJob.location,
+        employmentType: tempJob.employmentType,
+        openingsCount: tempJob.openingsCount,
+        description: tempJob.description,
       });
 
-      await loadJobs();
-      setForm(defaultJobForm);
-      setShowCreate(false);
-      setBanner('Job created successfully.');
+      // Swap temp ID with server ID
+      const realJob = res.data;
+      setItems(prev => prev.map(item => item.id === tempId ? { ...realJob, createdBy: { fullName: currentUser?.fullName || 'You' } } : item));
     } catch (err) {
+      // Rollback
+      setItems(prev => prev.filter(item => item.id !== tempId));
+      setBanner('');
       setError(err.message || 'Failed to create job');
-    } finally {
-      setSaving(false);
     }
   };
 
   const onToggleStatus = async (job) => {
     setError('');
     setBanner('');
+    const newActiveState = !job.isActive;
+
+    // Optimistic Update: flip active status locally
+    setItems(prev => prev.map(item => item.id === job.id ? { ...item, isActive: newActiveState } : item));
+    setBanner(`Job "${job.title}" moved to ${newActiveState ? 'Active' : 'Closed'}.`);
+
     try {
-      await apiPatch(`/jobs/${job.id}/status`, { isActive: !job.isActive });
-      await loadJobs();
-      setBanner(`Job "${job.title}" moved to ${job.isActive ? 'Closed' : 'Active'}.`);
+      await apiPatch(`/jobs/${job.id}/status`, { isActive: newActiveState });
     } catch (err) {
+      // Rollback on failure
+      setItems(prev => prev.map(item => item.id === job.id ? { ...item, isActive: job.isActive } : item));
+      setBanner('');
       setError(err.message || 'Failed to update job status');
     }
   };
@@ -124,6 +151,7 @@ const JobsManager = () => {
           // Shortlist count comes from the job document — no extra fetch needed
           shortlisted: job._count?.shortlisted || shortlistByJob[job.id] || 0,
           isActive: Boolean(job.isActive),
+          _optimistic: Boolean(job._optimistic),
         }))
         .sort((a, b) => {
           if (sortBy === 'title') return a.title.localeCompare(b.title);
@@ -284,7 +312,7 @@ const JobsManager = () => {
           {jobs.map((row, idx) => (
             <Reveal key={row.id} delay={idx * 0.04}>
               <div 
-                className="os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4"
+                className={`os-card px-5 py-4 grid grid-cols-1 md:grid-cols-[1.8fr_.55fr_.72fr_.9fr] items-start md:items-center gap-4 ${row._optimistic ? 'opacity-60 pointer-events-none' : ''}`}
                 onMouseEnter={() => prefetchJobDetails(row.id)}
               >
                 <div>

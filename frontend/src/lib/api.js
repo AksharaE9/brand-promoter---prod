@@ -155,6 +155,14 @@ function invalidateRelated(path) {
   for (const key of apiCache.keys()) {
     if (key.includes(resource)) apiCache.delete(key);
   }
+  // Cross-invalidation for user/team
+  if (resource === '/team' || resource === '/users') {
+    for (const key of apiCache.keys()) {
+      if (key.includes('/team') || key.includes('/users')) {
+        apiCache.delete(key);
+      }
+    }
+  }
   // Clear analytics and dashboard cache on any candidate, application, job, or interview mutation
   if (['/candidates', '/applications', '/jobs', '/interviews'].includes(resource)) {
     for (const key of apiCache.keys()) {

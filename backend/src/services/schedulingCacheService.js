@@ -1,5 +1,5 @@
 // src/services/schedulingCacheService.js
-const redis = require('../utils/redisClient');
+const l1 = require('../utils/l1Cache');
 const KEYS = require('../utils/schedulingCacheKeys');
 const prisma = require('../config/db');
 const sse = require('../utils/sse');
@@ -12,30 +12,21 @@ const LIST_TTL = 300;                  // 5 minutes — list cache
 const DIRTY_TTL = 60 * 60;             // 1 hour — dirty queue entries
 
 // ─────────────────────────────────────────────
-// POPULATION HELPER (Matches original populator, optimized via Redis entity caching)
+// POPULATION HELPER (Matches original populator, optimized via l1 cache)
 // ─────────────────────────────────────────────
 
 async function getEntitiesCached(collectionName, ids) {
   if (!ids || ids.length === 0) return {};
 
-  const redisKeys = ids.map(id => `entity:${collectionName}:${id}`);
-  let cachedVals = [];
-  try {
-    cachedVals = await redis.mget(...redisKeys);
-  } catch (err) {
-    console.warn(`[SchedulingCache] mget failed for ${collectionName}:`, err.message);
-    cachedVals = new Array(ids.length).fill(null);
-  }
-
   const resultMap = {};
   const missingIds = [];
 
-  cachedVals.forEach((val, index) => {
-    const id = ids[index];
-    if (val && isSafeKey(id)) {
-      try {
-        resultMap[id] = JSON.parse(val);
-      } catch (_) {
+  ids.forEach(id => {
+    if (isSafeKey(id)) {
+      const cached = l1.get(`entity:${collectionName}:${id}`);
+      if (cached) {
+        resultMap[id] = cached;
+      } else {
         missingIds.push(id);
       }
     } else {
@@ -59,12 +50,10 @@ async function getEntitiesCached(collectionName, ids) {
         fetched = await prisma.user.findMany({ where: { id: { in: missingIds } } });
       }
 
-      const pipeline = redis.pipeline();
       fetched.forEach(item => {
         resultMap[item.id] = item;
-        pipeline.setex(`entity:${collectionName}:${item.id}`, 600, JSON.stringify(item)); // 10 min TTL
+        l1.set(`entity:${collectionName}:${item.id}`, item, 600 * 1000); // 10 min TTL
       });
-      await pipeline.exec();
     } catch (err) {
       console.error(`[SchedulingCache] Entity fetch error for ${collectionName}:`, err.message);
     }
@@ -173,36 +162,14 @@ async function populateInterviews(rounds, { skipFeedbacks = false } = {}) {
 
 async function getRound(roundId, includeDeleted = false) {
   try {
-    // 1. Check Redis first
-    let cached = null;
-    try {
-      cached = await redis.get(KEYS.round(roundId));
-    } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis getRound failed, falling back to database:', redisErr.message);
-    }
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (parsed.isDeleted && !includeDeleted) return { source: 'cache', data: null };
-      return { source: 'cache', data: parsed };
-    }
-    
-    // 2. Cache miss — fetch from CockroachDB
     const round = await prisma.interview.findUnique({
       where: { id: roundId }
     });
     if (!round) return { source: 'db', data: null };
     
-    if (round.isDeleted) {
-      try {
-        await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify({ ...round, isDeleted: true }));
-      } catch (_) {}
-      if (!includeDeleted) return { source: 'db', data: null };
+    if (round.isDeleted && !includeDeleted) {
+      return { source: 'db', data: null };
     }
-    
-    // 3. Populate cache for next read
-    try {
-      await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(round));
-    } catch (_) {}
     
     return { source: 'db', data: round };
   } catch (err) {
@@ -212,26 +179,11 @@ async function getRound(roundId, includeDeleted = false) {
 }
 
 async function getRoundsList(orgId, filters = {}) {
-  const filterHash = hashFilters(filters);
-  const cacheKey = KEYS.roundsList(orgId, filterHash);
-  const isSearch = !!(filters.search && filters.search.trim());
-
-  // Pagination params
   const limit = Math.min(200, parseInt(filters.limit, 10) || 50);
   const cursor = filters.cursor?.trim();
+  const isSearch = !!(filters.search && filters.search.trim());
 
   try {
-    // 1. Try Redis list cache
-    if (!isSearch) {
-      try {
-        const cached = await redis.get(cacheKey);
-        if (cached) return { source: 'cache', data: JSON.parse(cached) };
-      } catch (redisErr) {
-        console.warn('[SchedulingCache] Redis getRoundsList read failed:', redisErr.message);
-      }
-    }
-
-    // 2. Build Prisma query where clause
     const where = {
       organizationId: orgId
     };
@@ -240,7 +192,6 @@ async function getRoundsList(orgId, filters = {}) {
       where.status = filters.status;
     }
 
-    // Build application relation filters
     const applicationWhere = {};
     if (filters.candidateId) {
       applicationWhere.candidateId = filters.candidateId;
@@ -280,7 +231,6 @@ async function getRoundsList(orgId, filters = {}) {
       };
     }
 
-    // Retrieve limit + 1 items to see if there is a next page
     const take = limit + 1;
 
     const queryParams = {
@@ -360,53 +310,21 @@ async function getRoundsList(orgId, filters = {}) {
 
     const rounds = await prisma.interview.findMany(queryParams);
 
-    // 3. Merge dirty queue (Redis caches for unsynced/optimistic rounds)
-    let merged = await mergeWithDirtyQueue(rounds, orgId);
-    let activeRounds = merged.filter(r => !r.isDeleted);
-
-    // If cursor is active, filter out any new rounds that might have been prepended from the dirty queue
-    // because they are only meant for the first page.
-    if (cursor) {
-      activeRounds = activeRounds.filter(r => !r._isNew || rounds.some(fr => fr.id === r.id));
-    }
-
-    // Slice active rounds to the page limit
-    const pageRounds = activeRounds.slice(0, limit);
-
-    // Determine hasMore: if either activeRounds has items beyond the limit, or database returned limit + 1
-    const hasMore = activeRounds.length > limit || rounds.length > limit;
+    const hasMore = rounds.length > limit;
+    const pageRounds = rounds.slice(0, limit);
     const nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
 
-    // 4. Populate details (like feedbacks and interviewers) only for the sliced page
     const populated = await populateInterviews(pageRounds, { skipFeedbacks: true });
 
-    // Pre-warm individual round caches asynchronously
-    setImmediate(() => {
-      if (populated.length > 0) {
-        const prewarmPipeline = redis.pipeline();
-        populated.forEach(r => {
-          if (isSafeKey(r.id)) prewarmPipeline.setex(KEYS.round(r.id), ROUND_TTL, JSON.stringify(r));
-        });
-        prewarmPipeline.exec().catch(err => console.warn('[SchedulingCache] Pre-warm failed:', err.message));
+    return {
+      source: 'db',
+      data: {
+        data: populated,
+        nextCursor,
+        hasMore,
+        pagination: { total: populated.length, hasMore }
       }
-    });
-
-    const result = {
-      data: populated,
-      nextCursor,
-      hasMore,
-      pagination: { total: activeRounds.length, hasMore }
     };
-
-    // Cache only first-page queries
-    if (!cursor) {
-      try {
-        await redis.setex(cacheKey, LIST_TTL, JSON.stringify(result));
-        await redis.sadd(`scheduling:rounds:lists:${orgId}`, cacheKey);
-      } catch (_) {}
-    }
-
-    return { source: 'db', data: result };
   } catch (err) {
     console.error('[SchedulingCache] getRoundsList error:', err);
     throw err;
@@ -469,7 +387,7 @@ function cleanDatabasePayload(payload) {
 }
 
 // ─────────────────────────────────────────────
-// WRITE OPERATIONS — write to Redis, queue DB sync
+// WRITE OPERATIONS
 // ─────────────────────────────────────────────
 
 async function writeRound(roundId, updatePayload, performedBy, orgId, currentData = null) {
@@ -485,31 +403,12 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
       lastModifiedBy: performedBy,
     };
     
-    let redisSuccess = false;
-    try {
-      updated._pendingSync = true;
-      updated._lastWriteMs = Date.now();
-      await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(updated));
-      await logWrite(roundId, updatePayload, performedBy, timestamp);
-      await addToDirtyQueue(roundId, orgId);
-      redisSuccess = true;
-    } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis writeRound failed, writing directly to DB:', redisErr.message);
-    }
-
-    if (!redisSuccess) {
-      const cleanUpdate = cleanDatabasePayload(updated);
-      
-      await prisma.interview.update({
-        where: { id: roundId },
-        data: cleanUpdate
-      });
-    }
+    const cleanUpdate = cleanDatabasePayload(updated);
     
-    try {
-      await redis.del(`entity:feedbacks:${roundId}`);
-      await invalidateListCaches(orgId);
-    } catch (_) {}
+    await prisma.interview.update({
+      where: { id: roundId },
+      data: cleanUpdate
+    });
     
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
@@ -524,7 +423,7 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
       timestamp,
     });
     
-    return { success: true, data: updated, syncPending: redisSuccess };
+    return { success: true, data: updated, syncPending: false };
   } catch (err) {
     console.error('[SchedulingCache] writeRound error:', err);
     throw err;
@@ -533,12 +432,10 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
 
 async function createRound(roundData, orgId, createdBy) {
   try {
-    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const timestamp = new Date().toISOString();
     
     const newRound = {
       ...roundData,
-      id: tempId,
       organizationId: orgId,
       createdById: createdBy,
       createdAt: timestamp,
@@ -547,44 +444,24 @@ async function createRound(roundData, orgId, createdBy) {
       isDeleted: false,
     };
     
-    let redisSuccess = false;
-    try {
-      newRound._pendingSync = true;
-      newRound._isNew = true;
-      newRound._lastWriteMs = Date.now();
-      await redis.setex(KEYS.round(tempId), ROUND_TTL, JSON.stringify(newRound));
-      await addToDirtyQueue(tempId, orgId, true);
-      redisSuccess = true;
-    } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis createRound failed, writing directly to DB:', redisErr.message);
-    }
-
-    let finalRound = { ...newRound };
-    if (!redisSuccess) {
-      const cleanRound = cleanDatabasePayload(newRound);
-      
-      const created = await prisma.interview.create({
-        data: cleanRound
-      });
-      finalRound.id = created.id;
-    }
+    const cleanRound = cleanDatabasePayload(newRound);
     
-    try {
-      await invalidateListCaches(orgId);
-    } catch (_) {}
+    const created = await prisma.interview.create({
+      data: cleanRound
+    });
     
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     });
     
     sse.broadcastToOrg(orgId, 'ROUND_CREATED', {
-      roundId: finalRound.id,
-      round: finalRound,
+      roundId: created.id,
+      round: created,
       orgId,
       timestamp,
     });
     
-    return { success: true, data: finalRound, tempId: redisSuccess ? tempId : undefined };
+    return { success: true, data: created };
   } catch (err) {
     console.error('[SchedulingCache] createRound error:', err);
     throw err;
@@ -593,37 +470,9 @@ async function createRound(roundData, orgId, createdBy) {
 
 async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
   try {
-    const current = currentData || (await getRound(roundId, true)).data;
-    if (!current) throw new Error(`Round ${roundId} not found`);
-    
-    const updated = {
-      ...current,
-      isDeleted: true,
-      deletedAt: new Date().toISOString(),
-      deletedBy,
-    };
-    
-    let redisSuccess = false;
-    try {
-      updated._pendingSync = true;
-      updated._lastWriteMs = Date.now();
-      await redis.setex(KEYS.round(roundId), ROUND_TTL, JSON.stringify(updated));
-      await addToDirtyQueue(roundId, orgId);
-      redisSuccess = true;
-    } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis deleteRound failed, deleting directly in DB:', redisErr.message);
-    }
-
-    if (!redisSuccess) {
-      await prisma.interview.delete({
-        where: { id: roundId }
-      }).catch(() => {});
-    }
-    
-    try {
-      await redis.del(`entity:feedbacks:${roundId}`);
-      await invalidateListCaches(orgId);
-    } catch (_) {}
+    await prisma.interview.delete({
+      where: { id: roundId }
+    });
     
     inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     
@@ -644,141 +493,27 @@ async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
 // ─────────────────────────────────────────────
 
 async function addToDirtyQueue(roundId, orgId, isNew = false) {
-  const field = `${orgId}:${roundId}`;
-  const value = JSON.stringify({
-    roundId,
-    orgId,
-    isNew,
-    queuedAt: Date.now(),
-  });
-  
-  try {
-    const pipeline = redis.pipeline();
-    pipeline.hset(KEYS.dirtyQueue(), field, value);
-    pipeline.expire(KEYS.dirtyQueue(), DIRTY_TTL);
-    await pipeline.exec();
-  } catch (redisErr) {
-    console.warn('[SchedulingCache] Redis addToDirtyQueue failed:', redisErr.message);
-    throw redisErr;
-  }
+  return;
 }
 
 async function getDirtyQueue() {
-  let hash = null;
-  try {
-    hash = await redis.hgetall(KEYS.dirtyQueue());
-  } catch (redisErr) {
-    console.warn('[SchedulingCache] Redis getDirtyQueue failed:', redisErr.message);
-  }
-  if (!hash || Object.keys(hash).length === 0) return [];
-  
-  return Object.entries(hash).map(([field, val]) => {
-    try {
-      const parsed = JSON.parse(val);
-      return {
-        orgId: parsed.orgId,
-        roundId: parsed.roundId,
-        isNew: parsed.isNew,
-        raw: field,
-      };
-    } catch {
-      const [orgId, roundId] = field.split(':');
-      return { orgId, roundId, isNew: false, raw: field };
-    }
-  });
+  return [];
 }
 
 async function removeFromDirtyQueue(rawKeys) {
-  if (rawKeys.length === 0) return;
-  try {
-    await redis.hdel(KEYS.dirtyQueue(), ...rawKeys);
-  } catch (redisErr) {
-    console.warn('[SchedulingCache] Redis removeFromDirtyQueue failed:', redisErr.message);
-  }
+  return;
 }
 
 async function mergeWithDirtyQueue(dbRounds, orgId) {
-  try {
-    let hash = null;
-    try {
-      hash = await redis.hgetall(KEYS.dirtyQueue());
-    } catch (redisErr) {
-      console.warn('[SchedulingCache] Redis hgetall in mergeWithDirtyQueue failed:', redisErr.message);
-    }
-    if (!hash || Object.keys(hash).length === 0) return dbRounds;
-    
-    const dirtyRoundIds = Object.keys(hash)
-      .filter(field => field.startsWith(`${orgId}:`))
-      .map(field => field.split(':')[1]);
-    
-    if (dirtyRoundIds.length === 0) return dbRounds;
-    
-    const dirtyRounds = await Promise.all(
-      dirtyRoundIds.map(async id => {
-        try {
-          const cached = await redis.get(KEYS.round(id));
-          return cached ? JSON.parse(cached) : null;
-        } catch (_) {
-          return null;
-        }
-      })
-    );
-    
-    const dirtyMap = {};
-    dirtyRounds.filter(Boolean).forEach(r => { if (isSafeKey(r.id)) dirtyMap[r.id] = r; });
-    
-    const merged = dbRounds.map(r => (isSafeKey(r.id) && dirtyMap[r.id]) || r);
-    
-    const newRounds = Object.values(dirtyMap).filter(r => 
-      r._isNew && !dbRounds.find(fr => fr.id === r.id)
-    );
-    
-    return [...newRounds, ...merged];
-  } catch (err) {
-    console.error('[SchedulingCache] mergeWithDirtyQueue error:', err);
-    return dbRounds;
-  }
+  return dbRounds;
 }
 
 async function invalidateListCaches(orgId) {
-  try {
-    const setKey = `scheduling:rounds:lists:${orgId}`;
-    const keys = await redis.smembers(setKey);
-    if (keys.length > 0) {
-      const pipeline = redis.pipeline();
-      pipeline.del(...keys);
-      pipeline.del(setKey);
-      await pipeline.exec();
-    }
-  } catch (err) {
-    console.warn('[SchedulingCache] Redis invalidateListCaches failed:', err.message);
-  }
+  return;
 }
 
 async function invalidateRound(roundId) {
-  try {
-    await redis.del(KEYS.round(roundId));
-  } catch (redisErr) {
-    console.warn('[SchedulingCache] Redis invalidateRound failed:', redisErr.message);
-  }
-}
-
-async function logWrite(roundId, payload, performedBy, timestamp) {
-  try {
-    const logKey = KEYS.writeLog(roundId);
-    const entry = JSON.stringify({ payload: Object.keys(payload), performedBy, timestamp });
-    const pipeline = redis.pipeline();
-    pipeline.lpush(logKey, entry);
-    pipeline.ltrim(logKey, 0, 9);
-    pipeline.expire(logKey, 3600);
-    await pipeline.exec();
-  } catch (redisErr) {
-    console.warn('[SchedulingCache] Redis logWrite failed:', redisErr.message);
-  }
-}
-
-function hashFilters(filters) {
-  return Buffer.from(JSON.stringify(filters)).toString('base64').slice(0, 20);
+  return;
 }
 
 module.exports = {

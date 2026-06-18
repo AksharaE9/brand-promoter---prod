@@ -82,34 +82,42 @@ router.post(
       },
     });
 
+    // Invalidate cache before returning response to avoid race conditions
     await inv.application(orgId, candidateId);
-    sse.broadcastToOrg(orgId, "APPLICATION_CREATED", {
-      applicationId: application.id,
-      candidateId,
-      candidateName: candidate.fullName,
-      jobId,
-      jobTitle: job.title,
-      createdBy: req.user.id,
-      createdByName: req.user.fullName,
-    });
-
-    logAudit({
-      actorUserId: req.user.id,
-      action: "CREATE_APPLICATION",
-      entityType: "APPLICATION",
-      entityId: application.id,
-      newData: application,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    await notifyAdmins({
-      title: "New Application",
-      message: `${candidate.fullName} applied for ${job.title}`,
-      link: `/candidates/${candidateId}`,
-    });
 
     res.status(201).json({ success: true, data: application });
+
+    setImmediate(async () => {
+      try {
+        sse.broadcastToOrg(orgId, "APPLICATION_CREATED", {
+          applicationId: application.id,
+          candidateId,
+          candidateName: candidate.fullName,
+          jobId,
+          jobTitle: job.title,
+          createdBy: req.user.id,
+          createdByName: req.user.fullName,
+        });
+
+        logAudit({
+          actorUserId: req.user.id,
+          action: "CREATE_APPLICATION",
+          entityType: "APPLICATION",
+          entityId: application.id,
+          newData: application,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        await notifyAdmins({
+          title: "New Application",
+          message: `${candidate.fullName} applied for ${job.title}`,
+          link: `/candidates/${candidateId}`,
+        });
+      } catch (err) {
+        console.error("[CreateApplication] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -172,24 +180,31 @@ router.patch(
 
     const orgId = req.user.organizationId || "defaultOrg";
     await inv.application(orgId, existing.candidateId);
-    sse.broadcastToOrg(orgId, "APPLICATION_UPDATED", {
-      applicationId: id,
-      candidateId: existing.candidateId,
-      changes: { shortlisted },
-      updatedBy: req.user.id,
-    });
-
-    logAudit({
-      actorUserId: req.user.id,
-      action: shortlisted ? "SHORTLIST_APPLICATION" : "UNSHORTLIST_APPLICATION",
-      entityType: "APPLICATION",
-      entityId: id,
-      oldData: { shortlisted: existing.shortlisted },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
 
     res.json({ success: true, data: { id, ...existing, shortlisted } });
+
+    setImmediate(async () => {
+      try {
+        sse.broadcastToOrg(orgId, "APPLICATION_UPDATED", {
+          applicationId: id,
+          candidateId: existing.candidateId,
+          changes: { shortlisted },
+          updatedBy: req.user.id,
+        });
+
+        logAudit({
+          actorUserId: req.user.id,
+          action: shortlisted ? "SHORTLIST_APPLICATION" : "UNSHORTLIST_APPLICATION",
+          entityType: "APPLICATION",
+          entityId: id,
+          oldData: { shortlisted: existing.shortlisted },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+      } catch (err) {
+        console.error("[ShortlistApplication] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 
@@ -219,25 +234,31 @@ router.patch(
     const orgId = req.user.organizationId || "defaultOrg";
     await inv.application(orgId, existing.candidateId);
 
-    logAudit({
-      actorUserId: req.user.id,
-      action: "UPDATE_APPLICATION_STATUS",
-      entityType: "APPLICATION",
-      entityId: id,
-      oldData: { status: existing.status },
-      newData: { status },
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    sse.broadcastToOrg(orgId, "APPLICATION_STATUS_CHANGED", {
-      applicationId: id,
-      candidateId: existing.candidateId,
-      status,
-      changedBy: req.user.id,
-    });
-
     res.json({ success: true, data: { id, status } });
+
+    setImmediate(async () => {
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          action: "UPDATE_APPLICATION_STATUS",
+          entityType: "APPLICATION",
+          entityId: id,
+          oldData: { status: existing.status },
+          newData: { status },
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+
+        sse.broadcastToOrg(orgId, "APPLICATION_STATUS_CHANGED", {
+          applicationId: id,
+          candidateId: existing.candidateId,
+          status,
+          changedBy: req.user.id,
+        });
+      } catch (err) {
+        console.error("[UpdateApplicationStatus] Async side-effects failed:", err.message);
+      }
+    });
   }),
 );
 

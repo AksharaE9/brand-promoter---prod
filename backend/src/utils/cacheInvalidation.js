@@ -4,18 +4,19 @@ const { tieredDelete: deleteCache, tieredDeletePattern: deleteCachePattern } = r
 async function runInvalidations(patterns) {
   const unique = [...new Set(patterns.filter(Boolean))];
   
-  // Execute invalidations in the background to avoid blocking HTTP responses
-  setImmediate(() => {
-    Promise.all(unique.map(p => {
+  // Run invalidations synchronously (without setImmediate) since L1 tiered cache is in-memory
+  // and completes in <1ms. This avoids race conditions on follow-up client requests.
+  try {
+    await Promise.all(unique.map(p => {
       if (p.includes('*')) {
         return deleteCachePattern(p);
       } else {
         return deleteCache(p);
       }
-    })).catch(err => {
-      console.error('[CacheInvalidation] runInvalidations background error:', err.message);
-    });
-  });
+    }));
+  } catch (err) {
+    console.error('[CacheInvalidation] runInvalidations error:', err.message);
+  }
 }
 
 const inv = {
@@ -68,6 +69,7 @@ const inv = {
 
   async interview(orgId) {
     await runInvalidations([
+      `interviews:list:${orgId}:*`,
       `scheduling:rounds:list:${orgId}:*`,
       `analytics:iload:${orgId}*`,
       `analytics:rperf:${orgId}*`,

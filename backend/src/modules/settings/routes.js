@@ -3,7 +3,6 @@ const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
-const redis = require("../../utils/redisClient");
 
 const router = express.Router();
 router.use(auth);
@@ -28,26 +27,41 @@ const DEFAULT_ORG = {
 };
 
 async function getOrCreateOrg(orgId) {
-  try {
-    const cached = await redis.get(`${ORG_CACHE_PREFIX}${orgId}`);
-    if (cached) return JSON.parse(cached);
-  } catch (_) {}
-
-  const data = { ...DEFAULT_ORG, id: orgId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-
-  try {
-    await redis.setex(`${ORG_CACHE_PREFIX}${orgId}`, ORG_CACHE_TTL, JSON.stringify(data));
-  } catch (_) {}
-
-  return data;
+  let org = await prisma.organization.findUnique({
+    where: { id: orgId }
+  });
+  if (!org) {
+    org = await prisma.organization.create({
+      data: {
+        id: orgId,
+        name: DEFAULT_ORG.name,
+        contactInfo: DEFAULT_ORG.contactInfo,
+        branding: DEFAULT_ORG.branding,
+        preferences: DEFAULT_ORG.preferences,
+      }
+    });
+  }
+  return org;
 }
 
 async function saveOrg(orgId, data) {
-  const withTs = { ...data, updatedAt: new Date().toISOString() };
-  try {
-    await redis.setex(`${ORG_CACHE_PREFIX}${orgId}`, ORG_CACHE_TTL, JSON.stringify(withTs));
-  } catch (_) {}
-  return withTs;
+  const saved = await prisma.organization.upsert({
+    where: { id: orgId },
+    update: {
+      name: data.name,
+      contactInfo: data.contactInfo,
+      branding: data.branding,
+      preferences: data.preferences,
+    },
+    create: {
+      id: orgId,
+      name: data.name,
+      contactInfo: data.contactInfo,
+      branding: data.branding,
+      preferences: data.preferences,
+    }
+  });
+  return saved;
 }
 
 // GET /settings/profile

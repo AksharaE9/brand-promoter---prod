@@ -184,6 +184,7 @@ model Candidate {
   applications        Application[]
 
   @@index([organizationId])
+  @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
   @@index([phone])
   @@index([email])
   @@index([status])
@@ -593,4 +594,16 @@ model SalesActivity {
 
   @@index([productId])
   @@map("sales_activities")
+}
+
+model Organization {
+  id          String   @id
+  name        String   @default("My Organization")
+  contactInfo Json?
+  branding    Json?
+  preferences Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("organizations")
 }

@@ -43,7 +43,8 @@ class L1Cache {
     this.store.delete(key);
   }
 
-  deletePattern(prefix) {
+  deletePattern(pattern) {
+    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) this.store.delete(key);
     }

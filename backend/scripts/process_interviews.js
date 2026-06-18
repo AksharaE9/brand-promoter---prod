@@ -309,17 +309,6 @@ async function run() {
 
   if (liveMode) {
     console.log(`\n🎉 Successfully scheduled ${successfulSchedulesCount} interviews in the database!`);
-    try {
-      const redis = require("../src/utils/redisClient");
-      const keys = await redis.keys("scheduling:rounds:list:*");
-      if (keys.length > 0) {
-        await redis.del(...keys);
-        console.log(`[Redis] Invalidated ${keys.length} list cache keys.`);
-      }
-      await redis.quit();
-    } catch (redisErr) {
-      console.error("[Redis] Failed to invalidate cache keys:", redisErr.message);
-    }
   }
 }
 

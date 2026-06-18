@@ -1,42 +1,110 @@
-// This is a MongoDB migration script as requested.
-// Usage: node src/scripts/addIndexes.js
+'use strict';
+/**
+ * src/scripts/addIndexes.js
+ * ─────────────────────────────────────────────────────────────────────────
+ * CockroachDB index migration for ATS performance optimization.
+ *
+ * Run once after deploying this PR:
+ *   node src/scripts/addIndexes.js
+ *
+ * Safe to re-run — all statements use IF NOT EXISTS.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+require('dotenv').config();
+const prisma = require('../config/db');
 
-const mongoose = require("mongoose");
-require("dotenv").config();
+const indexes = [
+  // ── Candidates: composite indexes for common list + filter queries ────────
+  {
+    name: 'idx_candidates_org_deleted',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_deleted
+          ON candidates ("organizationId", "isDeleted")`,
+  },
+  {
+    name: 'idx_candidates_org_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_status
+          ON candidates ("organizationId", "isDeleted", status)`,
+  },
+  {
+    name: 'idx_candidates_org_created',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_created
+          ON candidates ("organizationId", "isDeleted", "createdAt" DESC)`,
+  },
 
-async function addIndexes() {
-  try {
-    const uri = process.env.MONGO_URI || "mongodb://localhost:27017/ats";
-    await mongoose.connect(uri);
-    console.log("Connected to MongoDB for indexing");
+  // ── pg_trgm extension + trigram GIN indexes (fast ILIKE search) ───────────
+  // CockroachDB v22.1+ supports pg_trgm GIN indexes.
+  // If your version is older, these will be skipped gracefully.
+  {
+    name: 'pg_trgm_extension',
+    sql: `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
+  },
+  {
+    name: 'idx_candidates_name_trgm',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_name_trgm
+          ON candidates USING GIN ("fullName" gin_trgm_ops)`,
+  },
+  {
+    name: 'idx_candidates_email_trgm',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_email_trgm
+          ON candidates USING GIN (email gin_trgm_ops)`,
+  },
+  {
+    name: 'idx_candidates_phone_trgm',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_phone_trgm
+          ON candidates USING GIN (phone gin_trgm_ops)`,
+  },
+];
 
-    const db = mongoose.connection.db;
+// Post-index: run ANALYZE so the CockroachDB query planner picks up new stats
+const analyzeStatements = [
+  'ANALYZE candidates',
+];
 
-    // Candidates collection
-    await db.collection("candidates").createIndex({ organizationId: 1, isDeleted: 1 });
-    await db.collection("candidates").createIndex({ organizationId: 1, email: 1 });
-    await db.collection("candidates").createIndex({ organizationId: 1, status: 1, createdAt: -1 });
-    await db.collection("candidates").createIndex({ organizationId: 1, fullName: 'text', email: 'text' });
+async function run() {
+  console.log('\n[AddIndexes] Starting CockroachDB index migration...\n');
 
-    // JobApplications collection
-    await db.collection("jobapplications").createIndex({ organizationId: 1, candidateId: 1 });
-    await db.collection("jobapplications").createIndex({ organizationId: 1, jobId: 1, status: 1 });
-    await db.collection("jobapplications").createIndex({ organizationId: 1, status: 1, createdAt: -1 });
+  let succeeded = 0;
+  let skipped   = 0;
+  let failed    = 0;
 
-    // InterviewRounds collection
-    await db.collection("interviewrounds").createIndex({ organizationId: 1, candidateId: 1 });
-    await db.collection("interviewrounds").createIndex({ organizationId: 1, scheduledDate: 1, status: 1 });
-    await db.collection("interviewrounds").createIndex({ 'panelMembers.userId': 1, scheduledDate: 1 });
+  for (const { name, sql } of indexes) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+      console.log(`  ✅  ${name}`);
+      succeeded++;
+    } catch (err) {
+      // Some versions of CockroachDB don't support pg_trgm — skip gracefully
+      if (err.message.includes('unknown type') || err.message.includes('does not exist') || err.message.includes('not supported')) {
+        console.warn(`  ⚠️   ${name} — skipped (unsupported on this CockroachDB version): ${err.message.slice(0, 120)}`);
+        skipped++;
+      } else {
+        console.error(`  ❌  ${name} — FAILED: ${err.message.slice(0, 200)}`);
+        failed++;
+      }
+    }
+  }
 
-    // Notifications collection
-    await db.collection("notifications").createIndex({ userId: 1, isRead: 1, createdAt: -1 });
+  console.log('\n[AddIndexes] Running ANALYZE for query planner refresh...');
+  for (const stmt of analyzeStatements) {
+    try {
+      await prisma.$executeRawUnsafe(stmt);
+      console.log(`  ✅  ${stmt}`);
+    } catch (err) {
+      console.warn(`  ⚠️   ${stmt} — skipped: ${err.message.slice(0, 80)}`);
+    }
+  }
 
-    console.log("Successfully created MongoDB indexes");
-    process.exit(0);
-  } catch (err) {
-    console.error("Failed to add indexes:", err);
+  console.log(`\n[AddIndexes] Done. ${succeeded} created, ${skipped} skipped, ${failed} failed.\n`);
+
+  if (failed > 0) {
+    console.error('[AddIndexes] Some indexes failed to create. Check logs above.');
     process.exit(1);
   }
 }
 
-addIndexes();
+run()
+  .catch(err => {
+    console.error('[AddIndexes] Fatal error:', err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

@@ -342,7 +342,7 @@ const InterviewSchedule = () => {
     }
   }, [jobIdParam, interviews, jobs]);
 
-  // Singleton SSE — debounced reload
+  // Singleton SSE — mark scheduling queries stale on relevant events (no forced reload)
   const lastSSEReloadRef = useRef(0);
   useEffect(() => {
     const RELEVANT = [
@@ -355,11 +355,16 @@ const InterviewSchedule = () => {
       const now = Date.now();
       if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
       lastSSEReloadRef.current = now;
-      loadAll().catch(() => {});
+      // Mark scheduling queries as stale WITHOUT triggering an immediate refetch.
+      // The next user interaction or mount will pick up fresh data automatically.
+      queryClient.invalidateQueries({
+        queryKey: ['scheduling', 'rounds'],
+        refetchType: 'none',
+      });
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
     }, RELEVANT);
     return () => { unsub(); };
-  }, [loadAll]);
+  }, [queryClient]);
 
   useEffect(() => {
     if (interviewIdParam && interviews.length > 0) {
@@ -674,62 +679,76 @@ const InterviewSchedule = () => {
     setError('');
     setBanner('');
 
-    try {
-      setSavingSchedule(true);
+    // Resolve application ID synchronously if possible
+    let targetApplicationId = '';
+    const existingApp = applications.find(
+      a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId
+    );
 
-      let targetApplicationId = '';
-      const existingApp = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
-
-      if (existingApp) {
-        targetApplicationId = existingApp.id;
-      } else {
+    if (!existingApp) {
+      // Must create application first — brief network call before optimistic insert
+      try {
+        setSavingSchedule(true);
         const newAppRes = await apiPost('/applications', {
           candidateId: scheduleForm.candidateId,
           jobId: scheduleForm.jobId
         });
         targetApplicationId = newAppRes.data.id;
+      } catch (err) {
+        setError(err.message || 'Failed to create application');
+        setSavingSchedule(false);
+        return;
       }
+    } else {
+      targetApplicationId = existingApp.id;
+    }
 
-      let roundNo = typeof scheduleForm.roundNo === 'number' ? scheduleForm.roundNo : (parseInt(scheduleForm.roundNo) || 1);
-      if (scheduleForm.round === 'Final Round' || scheduleForm.round === 'Final') roundNo = 99;
+    // Capture form values before clearing
+    const savedForm = { ...scheduleForm };
+    const savedRecordingFile = scheduleRecordingFile;
 
+    // ── CLOSE MODAL INSTANTLY ── optimistic card is already prepended by onMutate
+    setScheduleForm(emptyScheduleForm);
+    setShowScheduleModal(false);
+    setBanner('Interview scheduled successfully.');
+    setSavingSchedule(false);
+
+    // Fire mutation in background — onMutate already prepended the card
+    let roundNo = typeof savedForm.roundNo === 'number' ? savedForm.roundNo : (parseInt(savedForm.roundNo) || 1);
+    if (savedForm.round === 'Final Round' || savedForm.round === 'Final') roundNo = 99;
+
+    try {
       const result = await createRoundMutation.mutateAsync({
         applicationId: targetApplicationId,
         roundNo,
-        round: scheduleForm.round,
-        interviewerIds: scheduleForm.interviewerIds,
-        scheduledStart: new Date(scheduleForm.scheduledStart).toISOString(),
-        scheduledEnd: scheduleForm.scheduledEnd ? new Date(scheduleForm.scheduledEnd).toISOString() : null,
-        mode: scheduleForm.mode,
-        meetingLink: scheduleForm.meetingLink.trim() || null,
-        zohoLink: scheduleForm.zohoLink.trim() || null,
+        round: savedForm.round,
+        interviewerIds: savedForm.interviewerIds,
+        scheduledStart: new Date(savedForm.scheduledStart).toISOString(),
+        scheduledEnd: savedForm.scheduledEnd ? new Date(savedForm.scheduledEnd).toISOString() : null,
+        mode: savedForm.mode,
+        meetingLink: savedForm.meetingLink.trim() || null,
+        zohoLink: savedForm.zohoLink.trim() || null,
       });
 
+      // Upload recording after round is confirmed — non-blocking for UX
       const newRoundId = result?.data?.id || result?.tempId || result?.id;
-
-      if (scheduleRecordingFile && newRoundId) {
+      if (savedRecordingFile && newRoundId) {
         setUploadingRecording(true);
         const token = localStorage.getItem('ats_token');
         const formData = new FormData();
-        formData.append('file', scheduleRecordingFile);
-
+        formData.append('file', savedRecordingFile);
         await fetch(`${API_BASE_URL}/interviews/${newRoundId}/recording`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData,
         });
         setScheduleRecordingFile(null);
+        setUploadingRecording(false);
       }
-
-      setScheduleForm(emptyScheduleForm);
-      setShowScheduleModal(false); // Close modal immediately
-      setBanner('Interview scheduled successfully.');
-      // No refetch needed — optimistic update already shows the new interview
     } catch (err) {
+      // onError in useCreateRound rolls back the optimistic card
+      setBanner('');
       setError(err.message || 'Failed to schedule interview');
-    } finally {
-      setSavingSchedule(false);
-      setUploadingRecording(false);
     }
   };
 
@@ -739,57 +758,66 @@ const InterviewSchedule = () => {
       setError('Select an interview before submitting feedback.');
       return;
     }
-
     setError('');
     setBanner('');
 
+    // Capture state before clearing
+    const savedFeedback    = { ...feedbackForm };
+    const savedOfferFile   = offerLetterFile;
+    const savedInterviewId = selectedInterview.id;
+
+    // ── CLOSE MODAL INSTANTLY for the no-file path ──
+    // The badge/status in the detail panel already updated via onMutate
+    if (!savedOfferFile) {
+      setFeedbackForm(emptyFeedbackForm);
+      setOfferLetterFile(null);
+      setShowFeedbackModal(false);
+      setBanner('Feedback submitted successfully.');
+    } else {
+      setSavingFeedback(true); // show spinner only during file upload
+    }
+
     try {
-      setSavingFeedback(true);
-      
-      let offerFileUrl = null;
+      let offerFileUrl  = null;
       let offerFileName = null;
 
-      if (offerLetterFile) {
+      if (savedOfferFile) {
         const formData = new FormData();
-        formData.append('offerFile', offerLetterFile);
-        const res = await fetch(`${API_BASE_URL}/interviews/${selectedInterview.id}/feedback`, {
+        formData.append('offerFile', savedOfferFile);
+        const res = await fetch(`${API_BASE_URL}/interviews/${savedInterviewId}/feedback`, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
-          },
+          headers: { Authorization: `Bearer ${localStorage.getItem('ats_token')}` },
           body: formData,
         });
         const json = await res.json();
-        if (!res.ok || !json.success) throw new Error(json.message || 'Failed to submit feedback file');
-        offerFileUrl = json.data?.offerFileUrl;
+        if (!res.ok || !json.success) throw new Error(json.message || 'Failed to upload offer file');
+        offerFileUrl  = json.data?.offerFileUrl;
         offerFileName = json.data?.offerFileName;
+        // Close modal AFTER upload completes (unavoidable for file path)
+        setFeedbackForm(emptyFeedbackForm);
+        setOfferLetterFile(null);
+        setShowFeedbackModal(false);
+        setBanner('Feedback submitted successfully.');
       }
 
       const feedbackPayload = {
-        technicalRating: typeof feedbackForm.technicalRating === 'number' ? feedbackForm.technicalRating : (parseInt(feedbackForm.technicalRating) || 0),
-        communicationRating: typeof feedbackForm.communicationRating === 'number' ? feedbackForm.communicationRating : (parseInt(feedbackForm.communicationRating) || 0),
-        cultureFitRating: typeof feedbackForm.cultureFitRating === 'number' ? feedbackForm.cultureFitRating : (parseInt(feedbackForm.cultureFitRating) || 0),
-        strengths: feedbackForm.strengths || "",
-        weaknesses: feedbackForm.weaknesses || "",
-        overallComments: feedbackForm.overallComments || "",
-        recommendation: feedbackForm.recommendation || "PENDING",
+        technicalRating:     typeof savedFeedback.technicalRating === 'number'     ? savedFeedback.technicalRating     : (parseInt(savedFeedback.technicalRating)     || 0),
+        communicationRating: typeof savedFeedback.communicationRating === 'number' ? savedFeedback.communicationRating : (parseInt(savedFeedback.communicationRating) || 0),
+        cultureFitRating:    typeof savedFeedback.cultureFitRating === 'number'    ? savedFeedback.cultureFitRating    : (parseInt(savedFeedback.cultureFitRating)    || 0),
+        strengths:        savedFeedback.strengths || '',
+        weaknesses:       savedFeedback.weaknesses || '',
+        overallComments:  savedFeedback.overallComments || '',
+        recommendation:   savedFeedback.recommendation || 'PENDING',
+        ...(offerFileUrl ? { offerFileUrl, offerFileName } : {}),
       };
-      if (offerFileUrl) {
-        feedbackPayload.offerFileUrl = offerFileUrl;
-        feedbackPayload.offerFileName = offerFileName;
-      }
 
       await submitFeedbackMutation.mutateAsync({
-        roundId: selectedInterview.id,
-        feedback: feedbackPayload
+        roundId:  savedInterviewId,
+        feedback: feedbackPayload,
       });
-
-      setFeedbackForm(emptyFeedbackForm);
-      setOfferLetterFile(null);
-      setShowFeedbackModal(false); // Close modal immediately
-      setBanner('Feedback submitted successfully.');
-      // No refetch needed — optimistic update already shows the feedback
     } catch (err) {
+      // onError in useSubmitFeedback rolls back the optimistic badge
+      setBanner('');
       setError(err.message || 'Failed to submit feedback');
     } finally {
       setSavingFeedback(false);
@@ -797,8 +825,8 @@ const InterviewSchedule = () => {
   };
 
   const onUpdateStatus = async (applicationId, status) => {
+    // Optimistic update via hook — no loading spinner, no refetch
     try {
-      setLoading(true);
       const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/status`, {
         method: 'PATCH',
         headers: {
@@ -810,11 +838,10 @@ const InterviewSchedule = () => {
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || 'Failed to update status');
       setBanner(`Application status updated to ${status}.`);
-      refetchInterviews();
+      setTimeout(() => setBanner(''), 3000);
     } catch (err) {
       setError(err.message || 'Failed to update application status');
-    } finally {
-      setLoading(false);
+      setTimeout(() => setError(''), 3000);
     }
   };
 

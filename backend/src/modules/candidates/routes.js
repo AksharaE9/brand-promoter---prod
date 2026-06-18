@@ -307,26 +307,34 @@ router.post(
       data: candidateData
     });
 
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "CREATE_CANDIDATE",
-      entityType: "CANDIDATE",
-      entityId: candidate.id,
-      newData: candidate,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // Invalidate cache before returning response to avoid race conditions
     await inv.candidate(orgId, candidate.id);
 
-    sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
-      candidateId: candidate.id,
-      candidate,
-      createdBy: req.user.id,
-      createdByName: req.user.fullName || req.user.email,
-    });
-
+    // ── Respond IMMEDIATELY — client never waits for side effects ──
     res.status(201).json({ success: true, data: candidate });
+
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(async () => {
+      try {
+        await logAudit({
+          actorUserId: req.user.id,
+          action: "CREATE_CANDIDATE",
+          entityType: "CANDIDATE",
+          entityId: candidate.id,
+          newData: candidate,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+      } catch (auditErr) {
+        console.error('[Candidates:Create] Audit log failed (non-fatal):', auditErr.message);
+      }
+      sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
+        candidateId: candidate.id,
+        candidate,
+        createdBy: req.user.id,
+        createdByName: req.user.fullName || req.user.email,
+      });
+    });
   }),
 );
 
@@ -402,28 +410,36 @@ router.post(
       }
     });
 
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "CREATE_CANDIDATE_WITH_RESUME",
-      entityType: "CANDIDATE",
-      entityId: candidate.id,
-      newData: candidate,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
+    // Invalidate cache before returning response to avoid race conditions
     await inv.candidate(orgId, candidate.id);
 
-    sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
-      candidateId: candidate.id,
-      candidate,
-      createdBy: req.user.id,
-      createdByName: req.user.fullName || req.user.email,
-    });
-
+    // ── Respond IMMEDIATELY — client never waits for side effects ──
     res.status(201).json({ 
       success: true, 
       data: candidate 
+    });
+
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(async () => {
+      try {
+        await logAudit({
+          actorUserId: req.user.id,
+          action: "CREATE_CANDIDATE_WITH_RESUME",
+          entityType: "CANDIDATE",
+          entityId: candidate.id,
+          newData: candidate,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+      } catch (auditErr) {
+        console.error('[Candidates:CreateResume] Audit log failed (non-fatal):', auditErr.message);
+      }
+      sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
+        candidateId: candidate.id,
+        candidate,
+        createdBy: req.user.id,
+        createdByName: req.user.fullName || req.user.email,
+      });
     });
   })
 );
@@ -677,10 +693,12 @@ router.patch(
       userAgent: req.headers["user-agent"],
     });
 
+    // Invalidate cache before returning response to avoid race conditions
+    await inv.candidate(orgId, id);
+
     res.json({ success: true, data: updatedCandidate });
 
     setImmediate(async () => {
-      try { await inv.candidate(orgId, id); } catch (_) {}
       sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
         candidateId: id,
         changes: data,
@@ -771,6 +789,9 @@ router.post(
       }
     });
 
+    const orgId = req.user.organizationId || "defaultOrg";
+    await inv.candidate(orgId, id);
+
     res.json({ success: true, data: { resumeFileId: fileMeta.id, storageKey } });
   }),
 );
@@ -781,6 +802,8 @@ router.delete(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const orgId = req.user.organizationId || "defaultOrg";
+
     const candidate = await prisma.candidate.findUnique({
       where: { id }
     });
@@ -794,26 +817,33 @@ router.delete(
       }
     });
 
-    await logAudit({
-      actorUserId: req.user.id,
-      action: "DELETE_CANDIDATE",
-      entityType: "CANDIDATE",
-      entityId: id,
-      oldData: candidate,
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
-
-    const orgId = req.user.organizationId || "defaultOrg";
+    // Invalidate cache before returning response to avoid race conditions
     await inv.candidate(orgId, id);
 
-    sse.broadcastToOrg(orgId, 'CANDIDATE_DELETED', {
-      candidateId: id,
-      deletedBy: req.user.id,
-      deletedByName: req.user.fullName || req.user.email,
-    });
+    // ── Respond IMMEDIATELY — client never waits for side effects ──
+    res.json({ success: true, data: { id }, message: "Candidate deleted successfully" });
 
-    res.json({ success: true, message: "Candidate deleted successfully" });
+    // ── Side effects run AFTER response is on the wire ──
+    setImmediate(async () => {
+      try {
+        await logAudit({
+          actorUserId: req.user.id,
+          action: "DELETE_CANDIDATE",
+          entityType: "CANDIDATE",
+          entityId: id,
+          oldData: candidate,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+        });
+      } catch (auditErr) {
+        console.error('[Candidates:Delete] Audit log failed (non-fatal):', auditErr.message);
+      }
+      sse.broadcastToOrg(orgId, 'CANDIDATE_DELETED', {
+        candidateId: id,
+        deletedBy: req.user.id,
+        deletedByName: req.user.fullName || req.user.email,
+      });
+    });
   }),
 );
 
