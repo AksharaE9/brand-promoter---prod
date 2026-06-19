@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export const create = (createState) => {
   let state;
@@ -30,17 +30,20 @@ export const create = (createState) => {
   state = createState(setState, getState, api);
 
   const useStore = (selector) => {
+    const selectorRef = useRef(selector);
+    selectorRef.current = selector;
     const [slice, setSlice] = useState(() => (selector ? selector(state) : state));
 
     useEffect(() => {
       const listener = () => {
-        setSlice(selector ? selector(state) : state);
+        const nextSlice = selectorRef.current ? selectorRef.current(state) : state;
+        setSlice(nextSlice);
       };
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
       };
-    }, [selector]);
+    }, []);
 
     return slice;
   };

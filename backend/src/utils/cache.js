@@ -52,8 +52,7 @@ async function deleteCache(key) {
 
 async function deleteCachePattern(pattern) {
   try {
-    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
-    l1.deletePattern(prefix);
+    l1.deletePattern(pattern);
   } catch (err) {
     metrics.errors++;
     console.error('[Cache] deleteCachePattern error:', pattern, err.message);

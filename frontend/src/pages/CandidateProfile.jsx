@@ -28,13 +28,25 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {iv.result === 'PASS' ? (
+          {iv.result === 'PASS' || iv.result === 'SELECTED' ? (
             <div className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">check_circle</span> SELECTED
             </div>
-          ) : iv.result === 'FAIL' ? (
+          ) : iv.result === 'OFFER_LETTER' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">card_membership</span> OFFER LETTER
+            </div>
+          ) : iv.result === 'FAIL' || iv.result === 'REJECTED' ? (
             <div className="px-3 py-1.5 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">cancel</span> REJECTED
+            </div>
+          ) : iv.result === 'ON_HOLD' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">pause_circle</span> ON HOLD
+            </div>
+          ) : iv.result === 'NOT_INTERESTED' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">sentiment_dissatisfied</span> NOT INTERESTED
             </div>
           ) : (
             <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold">PENDING</div>
@@ -44,21 +56,73 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
 
       <div className="mt-5 grid md:grid-cols-2 gap-6">
         <div className="space-y-4">
-          <div>
-            <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Interviewer Feedback</label>
-            <div className="mt-1.5 text-sm text-[#334155] leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-              {iv.feedbackText || "Waiting for feedback submission..."}
+          <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Interviewer Feedback</label>
+          {iv.feedbacks && iv.feedbacks.length > 0 ? (
+            <div className="space-y-3">
+              {iv.feedbacks.map((f, fIdx) => (
+                <div key={f.id || fIdx} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-all space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-xs font-bold text-[#1f52cc]">
+                        {(f.submittedBy?.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-[#10193f]">{f.submittedBy?.fullName || 'Interviewer'}</div>
+                        <div className="text-[9px] text-[#7a88a3]">{f.submittedAt ? new Date(f.submittedAt).toLocaleString() : ''}</div>
+                      </div>
+                    </div>
+                    <div className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase ${
+                      f.recommendation === 'SELECTED' || f.recommendation === 'PASS' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                      f.recommendation === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                      f.recommendation === 'REJECTED' || f.recommendation === 'FAIL' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                      f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                      f.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-700 border border-slate-200' :
+                      'bg-slate-50 text-slate-500'
+                    }`}>
+                      {f.recommendation}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Tech</div>
+                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.technical || f.technicalRating || 0}/5</div>
+                    </div>
+                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Comm</div>
+                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.communication || f.communicationRating || 0}/5</div>
+                    </div>
+                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Culture</div>
+                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.culture || f.cultureFitRating || 0}/5</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs">
+                    {f.strengths && (
+                      <div>
+                        <span className="font-bold text-[#10193f]">Strengths: </span>
+                        <span className="text-slate-600">{f.strengths}</span>
+                      </div>
+                    )}
+                    {f.concerns && (
+                      <div>
+                        <span className="font-bold text-[#10193f]">Concerns: </span>
+                        <span className="text-slate-600">{f.concerns}</span>
+                      </div>
+                    )}
+                    {f.notes && (
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-100 italic text-slate-600 mt-1">
+                        "{f.notes}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-          {iv.interviewerRating && (
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] uppercase tracking-widest font-bold text-slate-400">Rating:</label>
-              <div className="flex gap-0.5">
-                {[1,2,3,4,5].map(star => (
-                  <span key={star} className={`material-symbols-outlined text-sm ${star <= iv.interviewerRating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'}`}>star</span>
-                ))}
-              </div>
-              <span className="text-xs font-bold text-slate-600">{iv.interviewerRating}/5</span>
+          ) : (
+            <div className="mt-1.5 text-sm text-[#7a88a3] italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+              Waiting for feedback submission...
             </div>
           )}
         </div>
@@ -145,9 +209,9 @@ const CandidateProfile = () => {
       setJobs(jobsRes.data || []);
       
       const allInterviews = interviewsRes.data || [];
-      const filteredInterviews = allInterviews.filter(iv => 
-        iv.interviewers?.some(u => u.id === currentUser?.id)
-      );
+      const filteredInterviews = currentUser?.role === 'INTERVIEWER'
+        ? allInterviews.filter(iv => iv.interviewers?.some(u => u.id === currentUser?.id))
+        : allInterviews;
       setInterviews(filteredInterviews);
       setCustomValues(loadedCandidate.customFields || {});
       setEditForm({

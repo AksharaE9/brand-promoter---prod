@@ -1426,8 +1426,13 @@ const InterviewSchedule = () => {
                           </>
                         )}
                       </div>
-                      <div className={`w-fit px-2 py-0.5 rounded text-[10px] font-bold ${selectedInterview?.result === 'PASS' ? 'bg-[#e8f5ed] text-[#2ca764]' :
-                          selectedInterview?.result === 'FAIL' ? 'bg-[#fbeaea] text-[#cf3a3a]' : 'bg-[#fef4e8] text-[#f2994a]'
+                      <div className={`w-fit px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          selectedInterview?.result === 'PASS' || selectedInterview?.result === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
+                          selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                          selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
+                          selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                          selectedInterview?.result === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                          'bg-[#fef4e8] text-[#f2994a]'
                         }`}>
                         {selectedInterview?.result || 'PENDING'}
                       </div>
@@ -1482,7 +1487,7 @@ const InterviewSchedule = () => {
 
                       <div className="space-y-2">
                         <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Recommendation</label>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                           <button 
                             type="button" 
                             className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'SELECTED' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
@@ -1498,6 +1503,22 @@ const InterviewSchedule = () => {
                           >
                             <span className="material-symbols-outlined text-lg">card_membership</span>
                             Offer Letter
+                          </button>
+                          <button 
+                            type="button" 
+                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'ON_HOLD' ? 'bg-amber-50 border-amber-500 text-amber-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'ON_HOLD' }))}
+                          >
+                            <span className="material-symbols-outlined text-lg">pause_circle</span>
+                            On Hold
+                          </button>
+                          <button 
+                            type="button" 
+                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'NOT_INTERESTED' }))}
+                          >
+                            <span className="material-symbols-outlined text-lg">sentiment_dissatisfied</span>
+                            Not Interested
                           </button>
                           <button 
                             type="button" 
@@ -1619,9 +1640,13 @@ const InterviewSchedule = () => {
                             </div>
                             <div className="text-sm font-medium text-[#142651]">{f.submittedBy?.fullName}</div>
                           </div>
-                          <div className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                               ['PASS', 'SELECTED', 'OFFER_SENT'].includes(f.recommendation) ? 'bg-[#e8f5ed] text-[#2ca764]' :
-                              f.recommendation === 'FAIL' || f.recommendation === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' : 'bg-[#fef4e8] text-[#f2994a]'
+                              f.recommendation === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                              f.recommendation === 'FAIL' || f.recommendation === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
+                              f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                              f.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                              'bg-[#fef4e8] text-[#f2994a]'
                             }`}>
                             {f.recommendation}
                           </div>

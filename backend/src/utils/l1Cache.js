@@ -44,9 +44,11 @@ class L1Cache {
   }
 
   deletePattern(pattern) {
-    const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$';
+    const regex = new RegExp(regexStr);
     for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
+      if (regex.test(key)) this.store.delete(key);
     }
   }
 
