@@ -44,9 +44,9 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
             <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">pause_circle</span> ON HOLD
             </div>
-          ) : iv.result === 'NOT_INTERESTED' ? (
+          ) : iv.result === 'DIDNT_JOIN' ? (
             <div className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1">
-              <span className="material-symbols-outlined text-sm">sentiment_dissatisfied</span> NOT INTERESTED
+              <span className="material-symbols-outlined text-sm">sentiment_dissatisfied</span> DIDN'T JOIN
             </div>
           ) : (
             <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold">PENDING</div>
@@ -76,10 +76,10 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
                       f.recommendation === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
                       f.recommendation === 'REJECTED' || f.recommendation === 'FAIL' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                       f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                      f.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-700 border border-slate-200' :
+                      f.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-700 border border-slate-200' :
                       'bg-slate-50 text-slate-500'
                     }`}>
-                      {f.recommendation}
+                      {f.recommendation === 'DIDNT_JOIN' ? "DIDN'T JOIN" : f.recommendation}
                     </div>
                   </div>
 

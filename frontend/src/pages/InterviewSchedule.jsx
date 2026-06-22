@@ -1431,10 +1431,10 @@ const InterviewSchedule = () => {
                           selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
                           selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
                           selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                          selectedInterview?.result === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                          selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                           'bg-[#fef4e8] text-[#f2994a]'
                         }`}>
-                        {selectedInterview?.result || 'PENDING'}
+                        {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
                       </div>
                     </div>
                     <div className="interview-meta-grid text-xs sm:text-sm">
@@ -1514,11 +1514,11 @@ const InterviewSchedule = () => {
                           </button>
                           <button 
                             type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'NOT_INTERESTED' }))}
+                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'DIDNT_JOIN' }))}
                           >
                             <span className="material-symbols-outlined text-lg">sentiment_dissatisfied</span>
-                            Not Interested
+                            Didn't Join
                           </button>
                           <button 
                             type="button" 
@@ -1645,10 +1645,10 @@ const InterviewSchedule = () => {
                               f.recommendation === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
                               f.recommendation === 'FAIL' || f.recommendation === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
                               f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                              f.recommendation === 'NOT_INTERESTED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                              f.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                               'bg-[#fef4e8] text-[#f2994a]'
                             }`}>
-                            {f.recommendation}
+                            {f.recommendation === 'DIDNT_JOIN' ? "DIDN'T JOIN" : f.recommendation}
                           </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mb-3">

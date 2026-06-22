@@ -15,7 +15,7 @@ function deriveApplicationStatus(stageName) {
   const normalized = (stageName || "").toLowerCase();
   if (normalized === "selected") return "SELECTED";
   if (normalized === "joined") return "JOINED";
-  if (normalized === "rejected") return "REJECTED";
+  if (normalized === "rejected" || normalized === "didn't join" || normalized === "did not join") return "REJECTED";
   return "IN_PIPELINE";
 }
 
