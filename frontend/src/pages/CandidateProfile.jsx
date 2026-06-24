@@ -191,15 +191,15 @@ const CandidateProfile = () => {
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
 
-  const loadAll = useCallback(async () => {
+  const loadAll = useCallback(async (showLoader = false) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
       const [candidateRes, definitionRes, teamRes, jobsRes, interviewsRes] = await Promise.all([
-        apiGet(`/candidates/${id}`),
-        apiGet('/candidates/custom-fields/definitions'),
-        apiGet('/users/interviewers'),
-        apiGet('/jobs?limit=100&isActive=true'),
-        apiGet(`/interviews?candidateId=${id}&limit=50`)
+        apiGet(`/candidates/${id}`, !showLoader ? false : true),
+        apiGet('/candidates/custom-fields/definitions', !showLoader ? false : true),
+        apiGet('/users/interviewers', !showLoader ? false : true),
+        apiGet('/jobs?limit=100&isActive=true', !showLoader ? false : true),
+        apiGet(`/interviews?candidateId=${id}&limit=50`, !showLoader ? false : true)
       ]);
       const loadedCandidate = candidateRes.data;
       if (!loadedCandidate) throw new Error('Candidate dossier not found');
@@ -229,7 +229,7 @@ const CandidateProfile = () => {
     } catch (err) {
       setError(err.message || 'Failed to load data');
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }, [id, currentUser?.id, currentUser?.role]);
 
@@ -248,7 +248,7 @@ const CandidateProfile = () => {
       });
       if (!response.ok) throw new Error('Resume upload failed');
       setBanner('Resume uploaded successfully.');
-      loadAll();
+      loadAll(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -257,7 +257,7 @@ const CandidateProfile = () => {
   }, [id, loadAll]);
 
   useEffect(() => {
-    loadAll();
+    loadAll(true);
   }, [loadAll]);
 
   const handleUpdateLinks = useCallback(async (interviewId, links) => {
@@ -274,12 +274,17 @@ const CandidateProfile = () => {
     try {
       const res = await apiPatch(`/interviews/${interviewId}`, links);
       if (!res.success) throw new Error(res.message || "Failed to update links");
+      if (res.data) {
+        setInterviews(prev => prev.map(iv => 
+          iv.id === interviewId ? { ...iv, ...res.data } : iv
+        ));
+      }
     } catch (err) {
       setError(err.message);
       setBanner('');
       setInterviews(previousInterviews);
     } finally {
-      await loadAll();
+      await loadAll(false);
     }
   }, [interviews, loadAll]);
 
@@ -298,7 +303,7 @@ const CandidateProfile = () => {
       });
       if (!response.ok) throw new Error('Upload failed');
       setBanner('Recording uploaded successfully.');
-      loadAll();
+      loadAll(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -318,6 +323,9 @@ const CandidateProfile = () => {
     try {
       const res = await apiPatch(`/candidates/${id}`, editForm);
       if (!res.success) throw new Error(res.message || "Failed to update profile");
+      if (res.data) {
+        setCandidate(prev => ({ ...prev, ...res.data }));
+      }
     } catch (err) {
       setError(err.message || 'Failed to update profile');
       setBanner('');
@@ -325,7 +333,7 @@ const CandidateProfile = () => {
       setEditForm(previousEditForm);
       setIsEditing(true);
     } finally {
-      await loadAll();
+      await loadAll(false);
     }
   };
 
