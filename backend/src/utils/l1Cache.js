@@ -45,7 +45,7 @@ class L1Cache {
 
   deletePattern(pattern) {
     const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$';
+    const regexStr = '^' + escaped.replace(/\*/g, '.*') + (pattern.includes('*') ? '$' : '.*');
     const regex = new RegExp(regexStr);
     for (const key of this.store.keys()) {
       if (regex.test(key)) this.store.delete(key);

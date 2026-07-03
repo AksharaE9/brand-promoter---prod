@@ -254,7 +254,7 @@ All test dummy records inserted during the audit were successfully deleted/prune
   // Write report to artifacts folder
   const fs = require('fs');
   const path = require('path');
-  const artifactPath = path.join('C:', 'Users', 'jishn', '.gemini', 'antigravity-ide', 'brain', '01db0566-4cd7-4fd7-a1f4-f7fba9390bf2', 'system_performance_audit.md');
+  const artifactPath = path.join('C:', 'Users', 'jishn', '.gemini', 'antigravity-ide', 'brain', 'e143cb0a-8e32-42e9-a970-35f5494432d2', 'system_performance_audit.md');
   fs.writeFileSync(artifactPath, report, 'utf8');
   console.log(`\n💾 Saved performance audit to: ${artifactPath}`);
 }
