@@ -189,7 +189,7 @@ const CandidateProfile = () => {
   const [loading, setLoading] = useState(true);
 
   const currentUser = useMemo(() => getStoredUser(), []);
-  const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role), [currentUser]);
+  const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role), [currentUser]);
 
   const loadAll = useCallback(async (showLoader = false) => {
     try {
