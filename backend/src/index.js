@@ -29,6 +29,7 @@ const isVercel = !!process.env.VERCEL;
 let syncWorker = null;
 let scheduleSyncJob = null;
 let importWorker = null;
+let notificationScheduler = null;
 
 const shouldLoadWorkers = !isVercel;
 const compression = require("compression");
@@ -189,6 +190,7 @@ async function bootstrap() {
         syncWorker = syncModule.worker;
         scheduleSyncJob = syncModule.scheduleSyncJob;
         importWorker = require("./jobs/bulkImportWorker").worker;
+        notificationScheduler = require("./jobs/notificationScheduler");
         console.log('[Workers] In-process background workers loaded successfully.');
       } catch (err) {
         console.warn("[Workers] Background workers failed to load:", err.message);
@@ -209,12 +211,18 @@ async function bootstrap() {
       });
     }
 
+    // Start the notification scheduler (only if not on Vercel)
+    if (notificationScheduler) {
+      notificationScheduler.startScheduler();
+    }
+
     // Handle graceful shutdown
     const shutdown = async () => {
       console.log('[Server] Shutting down, closing workers...');
       try {
         if (syncWorker) await syncWorker.close();
         if (importWorker) await importWorker.close();
+        if (notificationScheduler) notificationScheduler.stopScheduler();
         console.log('[Server] Workers closed successfully.');
       } catch (err) {
         console.error('[Server] Error closing workers:', err);

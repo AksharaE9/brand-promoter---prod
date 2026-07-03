@@ -360,6 +360,8 @@ function cleanDatabasePayload(payload) {
     'offerLetterUrl',
     'voiceRecordingFileId',
     'voiceRecordingUrl',
+    'round1SMSAlertSent',
+    'round2EmailAlertSent',
     'createdAt',
     'updatedAt'
   ];

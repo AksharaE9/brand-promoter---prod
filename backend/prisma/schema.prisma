@@ -251,6 +251,7 @@ model Application {
   joiningDate     String?
   organizationId  String            @default("defaultOrg")
   isDeleted       Boolean           @default(false)
+  offerReminderSent Boolean         @default(false)
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -357,6 +358,8 @@ model Interview {
   offerLetterUrl   String?
   voiceRecordingFileId String?
   voiceRecordingUrl    String?
+  round1SMSAlertSent   Boolean        @default(false)
+  round2EmailAlertSent Boolean        @default(false)
 
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
