@@ -171,12 +171,14 @@ const InterviewSchedule = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferringInterview, setTransferringInterview] = useState(null);
   const [editingInterviewId, setEditingInterviewId] = useState(null);
+  const [isEditingFeedback, setIsEditingFeedback] = useState(false);
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
   // Infinite scroll: how many items to show
   const [visibleCount, setVisibleCount] = useState(20);
   const listEndRef = useRef(null);        // sentinel for IntersectionObserver
   const listPanelRef = useRef(null);     // scrollable container ref for IntersectionObserver root
+  const lastCandidateJobKeyRef = useRef('');
   const currentUser = getStoredUser();
   const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
   const recorderRef = useRef(null);
@@ -187,10 +189,6 @@ const InterviewSchedule = () => {
   const canScheduleInterview = true;
   const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
 
-  const loadAll = useCallback(async () => {
-    // Refresh the queries list
-    refetchInterviews();
-  }, [refetchInterviews]);
 
   // Load-more: fetch next page using cursor
   const loadMoreInterviews = useCallback(async () => {
@@ -414,6 +412,7 @@ const InterviewSchedule = () => {
       }
       const group = map.get(cId);
       group.interviews.push(interview);
+      group.interviews.sort((a, b) => a.roundNo - b.roundNo);
       if (!group.latestInterview || new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
         group.latestInterview = interview;
         if (!group.application?.id) {
@@ -565,6 +564,29 @@ const InterviewSchedule = () => {
   const selectedCandidate = selectedGroup?.application?.candidate;
   const latestInterview = selectedGroup?.latestInterview;
 
+  const loadCandidateInterviews = useCallback(async (candidateId) => {
+    if (!candidateId) return;
+    try {
+      const res = await apiGet(`/interviews?candidateId=${candidateId}&limit=100`);
+      const list = res.data || res.items || [];
+      setAllInterviews(prev => {
+        const map = new Map(prev.map(i => [i.id, i]));
+        list.forEach(i => map.set(i.id, i));
+        return Array.from(map.values());
+      });
+    } catch (err) {
+      console.error('Failed to load candidate interviews:', err);
+    }
+  }, []);
+
+  const loadAll = useCallback(async () => {
+    // Refresh the queries list
+    refetchInterviews();
+    if (selectedCandidate?.id) {
+      loadCandidateInterviews(selectedCandidate.id);
+    }
+  }, [refetchInterviews, selectedCandidate?.id, loadCandidateInterviews]);
+
   // For the individual interview context (e.g. feedback submission), default to latest
   useEffect(() => {
     if (latestInterview) {
@@ -580,14 +602,35 @@ const InterviewSchedule = () => {
   const selectedInterview = useMemo(
     () => {
       const list = selectedGroup?.interviews || [];
+      const activeIv = list.find(i => i.id === activeInterviewId);
+      if (activeIv) return activeIv;
+
       const filtered = filterMine ? list.filter(iv => iv.interviewerIds?.includes(currentUser?.id)) : list;
-      return filtered.find(i => i.id === (activeInterviewId || latestInterview?.id)) || filtered[0] || latestInterview;
+      return filtered.find(i => i.id === latestInterview?.id) || filtered[0] || latestInterview;
     },
     [selectedGroup, activeInterviewId, latestInterview, filterMine, currentUser?.id]
   );
 
-  const selectedFeedbacks = selectedInterview?.feedbacks || [];
-  const myFeedback = selectedFeedbacks.find(f => f.submittedById === currentUser?.id);
+  const selectedFeedbacks = React.useMemo(() => {
+    const raw = selectedInterview?.feedback;
+    if (!raw) return [];
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        return [];
+      }
+    }
+    return Array.isArray(raw) ? raw : [];
+  }, [selectedInterview?.feedback]);
+
+  const myFeedback = React.useMemo(() => {
+    const byMe = selectedFeedbacks.find(
+      f => (f.submittedById === currentUser?.id || f.submittedBy?.id === currentUser?.id || f.submittedBy === currentUser?.id)
+    );
+    if (byMe) return byMe;
+    return selectedFeedbacks[0] || null;
+  }, [selectedFeedbacks, currentUser?.id]);
 
   const loadCandidateHistory = async (candidateId) => {
     if (!candidateId) return;
@@ -603,12 +646,14 @@ const InterviewSchedule = () => {
   };
 
   useEffect(() => {
+    setIsEditingFeedback(false);
     if (selectedCandidate?.id) {
       loadCandidateHistory(selectedCandidate.id);
+      loadCandidateInterviews(selectedCandidate.id);
     } else {
       setCandidateHistory([]);
     }
-  }, [selectedCandidate?.id]);
+  }, [selectedCandidate?.id, loadCandidateInterviews]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch) return candidates;
@@ -625,26 +670,27 @@ const InterviewSchedule = () => {
     );
   }, [jobs, jobSearch]);
 
-  // Auto-sync round number based on application history
+  // Auto-sync round number based on application history (only defaults once when candidate/job selection changes)
   useEffect(() => {
-    if (showScheduleModal && scheduleForm.candidateId && scheduleForm.jobId) {
-       const app = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
-       if (app) {
-         const appInterviews = interviews.filter(iv => iv.applicationId === app.id);
-         const nextRound = appInterviews.length + 1;
-         if (scheduleForm.roundNo !== nextRound && scheduleForm.roundNo !== 99) { // 99 is Final
-            setScheduleForm(prev => ({ 
-              ...prev, 
-              roundNo: nextRound,
-              round: `Round ${nextRound}`
-            }));
-         }
-       } else {
-         // No application found (e.g. fresh candidate not in pipeline yet for this job)
-         if (scheduleForm.roundNo !== 1 && scheduleForm.roundNo !== 99) {
-            setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
-         }
-       }
+    if (!showScheduleModal) {
+      lastCandidateJobKeyRef.current = '';
+      return;
+    }
+    const currentKey = `${scheduleForm.candidateId}_${scheduleForm.jobId}`;
+    if (scheduleForm.candidateId && scheduleForm.jobId && currentKey !== lastCandidateJobKeyRef.current) {
+      lastCandidateJobKeyRef.current = currentKey;
+      const app = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
+      if (app) {
+        const appInterviews = interviews.filter(iv => iv.applicationId === app.id);
+        const nextRound = appInterviews.length + 1;
+        setScheduleForm(prev => ({ 
+          ...prev, 
+          roundNo: nextRound,
+          round: `Round ${nextRound}`
+        }));
+      } else {
+        setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
+      }
     }
   }, [scheduleForm.candidateId, scheduleForm.jobId, showScheduleModal, applications, interviews]);
 
@@ -697,7 +743,7 @@ const InterviewSchedule = () => {
       } catch (err) {
         setError(err.message || 'Failed to create application');
         setSavingSchedule(false);
-        return;
+        return false;
       }
     } else {
       targetApplicationId = existingApp.id;
@@ -706,14 +752,8 @@ const InterviewSchedule = () => {
     // Capture form values before clearing
     const savedForm = { ...scheduleForm };
     const savedRecordingFile = scheduleRecordingFile;
+    setSavingSchedule(true);
 
-    // ── CLOSE MODAL INSTANTLY ── optimistic card is already prepended by onMutate
-    setScheduleForm(emptyScheduleForm);
-    setShowScheduleModal(false);
-    setBanner('Interview scheduled successfully.');
-    setSavingSchedule(false);
-
-    // Fire mutation in background — onMutate already prepended the card
     let roundNo = typeof savedForm.roundNo === 'number' ? savedForm.roundNo : (parseInt(savedForm.roundNo) || 1);
     if (savedForm.round === 'Final Round' || savedForm.round === 'Final') roundNo = 99;
 
@@ -726,8 +766,8 @@ const InterviewSchedule = () => {
         scheduledStart: new Date(savedForm.scheduledStart).toISOString(),
         scheduledEnd: savedForm.scheduledEnd ? new Date(savedForm.scheduledEnd).toISOString() : null,
         mode: savedForm.mode,
-        meetingLink: savedForm.meetingLink.trim() || null,
-        zohoLink: savedForm.zohoLink.trim() || null,
+        meetingLink: savedForm.meetingLink ? savedForm.meetingLink.trim() : null,
+        zohoLink: savedForm.zohoLink ? savedForm.zohoLink.trim() : null,
       });
 
       // Upload recording after round is confirmed — non-blocking for UX
@@ -745,10 +785,16 @@ const InterviewSchedule = () => {
         setScheduleRecordingFile(null);
         setUploadingRecording(false);
       }
+
+      setScheduleForm(emptyScheduleForm);
+      setBanner('Interview scheduled successfully.');
+      return true;
     } catch (err) {
-      // onError in useCreateRound rolls back the optimistic card
       setBanner('');
       setError(err.message || 'Failed to schedule interview');
+      return false;
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -756,7 +802,7 @@ const InterviewSchedule = () => {
     event.preventDefault();
     if (!selectedInterview) {
       setError('Select an interview before submitting feedback.');
-      return;
+      return false;
     }
     setError('');
     setBanner('');
@@ -766,16 +812,7 @@ const InterviewSchedule = () => {
     const savedOfferFile   = offerLetterFile;
     const savedInterviewId = selectedInterview.id;
 
-    // ── CLOSE MODAL INSTANTLY for the no-file path ──
-    // The badge/status in the detail panel already updated via onMutate
-    if (!savedOfferFile) {
-      setFeedbackForm(emptyFeedbackForm);
-      setOfferLetterFile(null);
-      setShowFeedbackModal(false);
-      setBanner('Feedback submitted successfully.');
-    } else {
-      setSavingFeedback(true); // show spinner only during file upload
-    }
+    setSavingFeedback(true);
 
     try {
       let offerFileUrl  = null;
@@ -793,11 +830,6 @@ const InterviewSchedule = () => {
         if (!res.ok || !json.success) throw new Error(json.message || 'Failed to upload offer file');
         offerFileUrl  = json.data?.offerFileUrl;
         offerFileName = json.data?.offerFileName;
-        // Close modal AFTER upload completes (unavoidable for file path)
-        setFeedbackForm(emptyFeedbackForm);
-        setOfferLetterFile(null);
-        setShowFeedbackModal(false);
-        setBanner('Feedback submitted successfully.');
       }
 
       const feedbackPayload = {
@@ -815,10 +847,18 @@ const InterviewSchedule = () => {
         roundId:  savedInterviewId,
         feedback: feedbackPayload,
       });
+
+      await loadAll();
+      setFeedbackForm(emptyFeedbackForm);
+      setOfferLetterFile(null);
+      setShowFeedbackModal(false);
+      setIsEditingFeedback(false);
+      setBanner('Feedback submitted successfully.');
+      return true;
     } catch (err) {
-      // onError in useSubmitFeedback rolls back the optimistic badge
       setBanner('');
       setError(err.message || 'Failed to submit feedback');
+      return false;
     } finally {
       setSavingFeedback(false);
     }
@@ -1380,7 +1420,7 @@ const InterviewSchedule = () => {
                     .map((iv) => (
                       <button
                         key={iv.id}
-                        className={`round-tab-btn py-3 px-4 rounded-[14px] text-xs font-bold uppercase tracking-wider transition-all duration-300 ${activeInterviewId === iv.id ? 'bg-[#1f52cc] text-white shadow-lg shadow-blue-200 translate-y-[-1px]' : 'text-[#64748b] hover:bg-white hover:text-[#1f52cc]'}`}
+                        className={`round-tab-btn py-3 px-4 rounded-[14px] text-xs font-bold uppercase tracking-wider transition-all duration-300 ${selectedInterview?.roundNo === iv.roundNo ? 'bg-[#1f52cc] text-white shadow-lg shadow-blue-200 translate-y-[-1px]' : 'text-[#64748b] hover:bg-white hover:text-[#1f52cc]'}`}
                         onClick={() => setActiveInterviewId(iv.id)}
                       >
                         Round {iv.roundNo === 99 ? 'Final' : iv.roundNo}
@@ -1388,217 +1428,239 @@ const InterviewSchedule = () => {
                     ))}
                 </div>
 
-                <div className="interview-detail-card os-card p-4 text-sm text-[#2a344f]">
-                  <div className="interview-detail-card-inner">
-                    <div className="flex-0 flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <div className="font-semibold text-[#142651]">Interview Details ({selectedInterview?.round || `Round ${selectedInterview?.roundNo}`})</div>
-                        {selectedInterview && (
-                          <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
-                        )}
-                        {canScheduleInterview && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setTransferringInterview(selectedInterview);
-                                setShowTransferModal(true);
-                              }}
-                              className="text-blue-500 hover:text-blue-700 p-1 flex items-center ml-2"
-                              title="Transfer Interviewer"
-                            >
-                              <span className="material-symbols-outlined text-sm">swap_horiz</span>
-                              <span className="text-[10px] ml-1 font-bold">Transfer</span>
-                            </button>
-                            <button
-                              onClick={() => setEditingInterviewId(selectedInterview.id)}
-                              className="text-slate-500 hover:text-slate-700 p-1 flex items-center"
-                              title="Edit Interview"
-                            >
-                              <span className="material-symbols-outlined text-sm">edit</span>
-                            </button>
-                            <button
-                              onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.round || `Round ${selectedInterview.roundNo}`)}
-                              className="text-red-500 hover:text-red-700 p-1 flex items-center"
-                              title="Delete this interview"
-                            >
-                              <span className="material-symbols-outlined text-sm">delete</span>
-                            </button>
-                          </>
-                        )}
+                <div className="os-card p-6 bg-gradient-to-br from-white to-[#f8fafc] border-t-4 border-t-[#1f52cc] text-sm text-[#2a344f]">
+                  {/* Header: Title and Actions */}
+                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="font-bold text-base text-[#142651]">
+                        Interview Details ({selectedInterview?.round || `Round ${selectedInterview?.roundNo}`})
                       </div>
-                      <div className={`w-fit px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          selectedInterview?.result === 'PASS' || selectedInterview?.result === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
-                          selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                          selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
-                          selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                          selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
-                          'bg-[#fef4e8] text-[#f2994a]'
-                        }`}>
-                        {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
-                      </div>
-                    </div>
-                    <div className="interview-meta-grid text-xs sm:text-sm">
-                      <div className="text-[#6d7893]">Role:</div> <div>{selectedInterview?.application?.job?.title || '-'}</div>
-                      <div className="text-[#6d7893]">Interviewers:</div> <div>{selectedInterview?.interviewers?.map(u => u.fullName).join(', ') || '-'}</div>
-                      <div className="text-[#6d7893]">Mode:</div> <div>{selectedInterview?.mode || '-'}</div>
-                      <div className="text-[#6d7893]">Date:</div> <div>{selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString() : '-'}</div>
-                      {selectedInterview?.zohoLink && (
-                        <>
-                          <div className="text-[#6d7893]">Zoho Meet:</div> 
-                          <div className="truncate text-blue-600 font-bold cursor-pointer" onClick={() => window.open(selectedInterview.zohoLink, '_blank')}>
-                            Join via Zoho
-                          </div>
-                        </>
+                      {selectedInterview && (
+                        <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
                       )}
                     </div>
-                  </div>
-                </div>
-
-                {/* Inline Assessment Form (If No Feedback Exists yet) */}
-                {selectedFeedbacks.length === 0 && selectedInterview && !savingFeedback && (
-                  <div className="submit-assessment-card os-card p-6 bg-gradient-to-br from-white to-[#f8fafc] border-l-4 border-l-[#1f52cc]">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-lg font-bold text-[#142651]">Submit Assessment (Round {selectedInterview.roundNo === 99 ? 'Final' : selectedInterview.roundNo})</h3>
-                        <p className="text-xs text-slate-500 mt-1">Review candidate performance for this specific round</p>
-                      </div>
-                    </div>
-                    <form className="space-y-4" onSubmit={onFeedbackSubmit}>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-1 text-center">
-                          <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
-                            {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                          </select>
-                        </div>
-                        <div className="space-y-1 text-center">
-                          <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
-                            {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                          </select>
-                        </div>
-                        <div className="space-y-1 text-center">
-                          <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
-                          <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
-                            {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Recommendation</label>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                          <button 
-                            type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'SELECTED' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'SELECTED' }))}
-                          >
-                            <span className="material-symbols-outlined text-lg">verified</span>
-                            Selected
-                          </button>
-                          <button 
-                            type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'OFFER_LETTER' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'OFFER_LETTER' }))}
-                          >
-                            <span className="material-symbols-outlined text-lg">card_membership</span>
-                            Offer Letter
-                          </button>
-                          <button 
-                            type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'ON_HOLD' ? 'bg-amber-50 border-amber-500 text-amber-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'ON_HOLD' }))}
-                          >
-                            <span className="material-symbols-outlined text-lg">pause_circle</span>
-                            On Hold
-                          </button>
-                          <button 
-                            type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'DIDNT_JOIN' }))}
-                          >
-                            <span className="material-symbols-outlined text-lg">sentiment_dissatisfied</span>
-                            Didn't Join
-                          </button>
-                          <button 
-                            type="button" 
-                            className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${feedbackForm.recommendation === 'REJECTED' ? 'bg-rose-50 border-rose-500 text-rose-700 shadow-inner' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
-                            onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: 'REJECTED' }))}
-                          >
-                            <span className="material-symbols-outlined text-lg">block</span>
-                            Rejected
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Key Strengths</label>
-                          <textarea 
-                            className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                            placeholder="What did they do well?"
-                            value={feedbackForm.strengths}
-                            onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))}
-                            required
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Concerns / Weaknesses</label>
-                          <textarea 
-                            className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                            placeholder="Any red flags?"
-                            value={feedbackForm.weaknesses}
-                            onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))}
-                            required
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Summary</label>
-                        <textarea 
-                          className="w-full rounded-2xl border border-slate-200 p-4 text-sm min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                          placeholder="Final verdict and detailed notes..."
-                          value={feedbackForm.overallComments}
-                          onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))}
-                          required
-                        />
-                      </div>
-
-                      {/* Optional Offer Letter Attachment */}
-                      <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 hover:border-[#1f52cc]/40 hover:bg-blue-50/20 transition-all">
-                        <span className="material-symbols-outlined text-slate-400 text-xl">attach_file</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] uppercase font-bold text-slate-400">Attach Document <span className="normal-case font-normal text-slate-300">(optional — offer letter, assessment sheet, etc.)</span></div>
-                          {offerLetterFile && (
-                            <div className="text-xs text-[#1f52cc] font-semibold mt-0.5 truncate">{offerLetterFile.name}</div>
-                          )}
-                        </div>
-                        <input 
-                          type="file" 
-                          className="hidden" 
-                          id="offer-upload" 
-                          onChange={(e) => setOfferLetterFile(e.target.files[0])}
-                          accept=".pdf,.doc,.docx"
-                        />
-                        <label htmlFor="offer-upload" className="shrink-0 px-4 h-8 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 flex items-center cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
-                          {offerLetterFile ? 'Change' : 'Browse'}
-                        </label>
-                        {offerLetterFile && (
-                          <button type="button" onClick={() => setOfferLetterFile(null)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 flex items-center justify-center transition-all">
-                            <span className="material-symbols-outlined text-sm">close</span>
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="pt-2">
-                        <button type="submit" className="w-full h-12 rounded-xl bg-[#2ca764] text-white font-bold shadow-lg shadow-emerald-200 hover:bg-[#258a52] transition-all disabled:opacity-50" disabled={savingFeedback}>
-                          {savingFeedback ? 'Submitting...' : 'Submit ASSESSMENT For This Round'}
+                    
+                    {/* Actions */}
+                    {canScheduleInterview && selectedInterview && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setTransferringInterview(selectedInterview);
+                            setShowTransferModal(true);
+                          }}
+                          className="px-2 py-1 rounded bg-blue-50 text-[11px] font-semibold text-blue-600 hover:bg-blue-100 flex items-center gap-0.5"
+                          title="Transfer Interviewer"
+                        >
+                          <span className="material-symbols-outlined text-xs">swap_horiz</span>
+                          Transfer
+                        </button>
+                        <button
+                          onClick={() => setEditingInterviewId(selectedInterview.id)}
+                          className="px-2 py-1 rounded bg-slate-100 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 flex items-center gap-0.5"
+                          title="Edit Schedule Details"
+                        >
+                          <span className="material-symbols-outlined text-xs">edit</span>
+                          Change Schedule
+                        </button>
+                        <button
+                          onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.round || `Round ${selectedInterview.roundNo}`)}
+                          className="px-1.5 py-1 rounded bg-red-50 text-[11px] font-semibold text-red-600 hover:bg-red-100 flex items-center"
+                          title="Delete this interview"
+                        >
+                          <span className="material-symbols-outlined text-xs">delete</span>
                         </button>
                       </div>
-                    </form>
+                    )}
                   </div>
-                )}
+
+                  {/* Split Columns Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    
+                    {/* Left Column: Schedule Details */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">Schedule Details</h3>
+                        <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            selectedInterview?.result === 'PASS' || selectedInterview?.result === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
+                            selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                            selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
+                            selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                            selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                            'bg-[#fef4e8] text-[#f2994a]'
+                          }`}>
+                          {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3 text-sm">
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Role:</span>
+                          <span className="text-[#142651] font-semibold">{selectedInterview?.application?.job?.title || '-'}</span>
+                        </div>
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Interviewers:</span>
+                          <span className="text-[#142651] font-semibold">{selectedInterview?.interviewers?.map(u => u.fullName).join(', ') || '-'}</span>
+                        </div>
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Mode:</span>
+                          <span className="text-[#142651] font-semibold">{selectedInterview?.mode || '-'}</span>
+                        </div>
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Date/Time:</span>
+                          <span className="text-[#142651] font-semibold">
+                            {selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString() : '-'}
+                          </span>
+                        </div>
+                        {selectedInterview?.zohoLink && (
+                          <div className="flex pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Zoho Meet:</span>
+                            <span className="truncate text-blue-600 font-bold cursor-pointer hover:underline" onClick={() => window.open(selectedInterview.zohoLink, '_blank')}>
+                              Join via Zoho
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right Column: Divider + Form or Details */}
+                    <div className="border-t md:border-t-0 md:border-l border-slate-200 pt-6 md:pt-0 md:pl-6">
+                      {selectedInterview && (!myFeedback || isEditingFeedback) && !savingFeedback && (
+                        <div className="space-y-4">
+                          <div>
+                            <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">
+                              {isEditingFeedback ? 'Edit Assessment' : 'Submit Assessment'}
+                            </h3>
+                            <p className="text-[10px] text-slate-500 mt-0.5">
+                              {isEditingFeedback ? 'Update candidate performance details for this round' : `Review candidate performance for Round ${selectedInterview.roundNo === 99 ? 'Final' : selectedInterview.roundNo}`}
+                            </p>
+                          </div>
+                          <form className="space-y-4" onSubmit={onFeedbackSubmit}>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="space-y-0.5 text-center">
+                                <label className="text-[9px] uppercase font-bold text-slate-400">Technical</label>
+                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
+                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                </select>
+                              </div>
+                              <div className="space-y-0.5 text-center">
+                                <label className="text-[9px] uppercase font-bold text-slate-400">Comm.</label>
+                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
+                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                </select>
+                              </div>
+                              <div className="space-y-0.5 text-center">
+                                <label className="text-[9px] uppercase font-bold text-slate-400">Culture</label>
+                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
+                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] uppercase font-bold text-slate-400">Recommendation</label>
+                              <select className="h-8 w-full rounded-lg border border-slate-200 px-2 text-xs focus:border-[#1f52cc] outline-none font-semibold text-slate-700" value={feedbackForm.recommendation} onChange={e => setFeedbackForm(prev => ({...prev, recommendation: e.target.value}))}>
+                                <option value="SELECTED">Selected</option>
+                                <option value="OFFER_LETTER">Offer Letter</option>
+                                <option value="ON_HOLD">On Hold</option>
+                                <option value="DIDNT_JOIN">Didn't Join</option>
+                                <option value="REJECTED">Rejected</option>
+                              </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-0.5">
+                                <label className="text-[9px] uppercase font-bold text-slate-400">Strengths</label>
+                                <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Key strengths..." value={feedbackForm.strengths} onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))} required />
+                              </div>
+                              <div className="space-y-0.5">
+                                <label className="text-[9px] uppercase font-bold text-slate-400">Concerns</label>
+                                <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Any red flags..." value={feedbackForm.weaknesses} onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))} required />
+                              </div>
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <label className="text-[9px] uppercase font-bold text-slate-400">Overall Summary</label>
+                              <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Notes..." value={feedbackForm.overallComments} onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))} required />
+                            </div>
+
+                            <div className="flex gap-2">
+                              {isEditingFeedback && (
+                                <button type="button" onClick={() => setIsEditingFeedback(false)} className="flex-1 h-10 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs hover:bg-slate-200 transition-all">
+                                  Cancel
+                                </button>
+                              )}
+                              <button type="submit" className="flex-1 h-10 rounded-xl bg-[#2ca764] text-white font-bold text-xs shadow-md shadow-emerald-100 hover:bg-[#258a52] transition-all" disabled={savingFeedback}>
+                                {savingFeedback ? 'Saving...' : (isEditingFeedback ? 'Save Changes' : 'Submit Assessment')}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+
+                      {selectedInterview && myFeedback && !savingFeedback && !isEditingFeedback && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <div>
+                              <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">Assessment Submitted</h3>
+                              <p className="text-[10px] text-emerald-600 mt-0.5 font-medium flex items-center gap-1">
+                                <span className="material-symbols-outlined text-xs">check_circle</span>
+                                Recorded
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFeedbackForm({
+                                  technicalRating: myFeedback.ratings?.technical || myFeedback.technicalRating || 4,
+                                  communicationRating: myFeedback.ratings?.communication || myFeedback.communicationRating || 4,
+                                  cultureFitRating: myFeedback.ratings?.culture || myFeedback.cultureFitRating || 4,
+                                  strengths: myFeedback.strengths || '',
+                                  weaknesses: myFeedback.concerns || myFeedback.weaknesses || '',
+                                  recommendation: myFeedback.recommendation || 'SELECTED',
+                                  overallComments: myFeedback.notes || myFeedback.overallComments || '',
+                                });
+                                setIsEditingFeedback(true);
+                              }}
+                              className="px-2.5 h-7 rounded-lg bg-blue-50 border border-blue-200 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-all flex items-center gap-0.5"
+                            >
+                              <span className="material-symbols-outlined text-xs">edit</span>
+                              Change
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Tech</div>
+                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.technical || myFeedback.technicalRating || 0)} / 5</div>
+                            </div>
+                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Comm</div>
+                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.communication || myFeedback.communicationRating || 0)} / 5</div>
+                            </div>
+                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Culture</div>
+                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.culture || myFeedback.cultureFitRating || 0)} / 5</div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 text-xs text-[#5e6a85]">
+                            <div>
+                              <span className="font-semibold text-[#142651]">Strengths:</span> {myFeedback.strengths || '-'}
+                            </div>
+                            <div>
+                              <span className="font-semibold text-[#142651]">Concerns:</span> {(myFeedback.concerns || myFeedback.weaknesses || '-')}
+                            </div>
+                            <div>
+                              <span className="font-semibold text-[#142651]">Overall Summary:</span>
+                              <p className="text-[#5e6a85] mt-1 italic bg-white border border-slate-100 p-2 rounded-lg text-[11px] leading-relaxed">
+                                "{(myFeedback.notes || myFeedback.overallComments || 'No additional comments.')}"
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}      </div>
+                  </div>
+                </div>
 
                 {selectedInterview?.voiceRecordingFile?.storageKey ? (
                     <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl">
@@ -1627,62 +1689,7 @@ const InterviewSchedule = () => {
                       </div>
                     </div>
                   ) : null}
-                {/* Multiple Feedback Display */}
-                {selectedFeedbacks.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="text-xs font-bold uppercase text-[#8b95ad] tracking-wider ml-1">Interviewer Assessments ({selectedFeedbacks.length})</div>
-                    {selectedFeedbacks.map((f) => (
-                      <div key={f.id} className="os-card p-4 transition-all hover:shadow-md border-l-4 border-[#2ca764]">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-[#eef3ff] flex items-center justify-center text-[10px] font-bold text-[#1f52cc]">
-                              {(f.submittedBy?.fullName || 'U').split(' ').map(n => n[0]).join('')}
-                            </div>
-                            <div className="text-sm font-medium text-[#142651]">{f.submittedBy?.fullName}</div>
-                          </div>
-                          <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              ['PASS', 'SELECTED', 'OFFER_SENT'].includes(f.recommendation) ? 'bg-[#e8f5ed] text-[#2ca764]' :
-                              f.recommendation === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                              f.recommendation === 'FAIL' || f.recommendation === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
-                              f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                              f.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
-                              'bg-[#fef4e8] text-[#f2994a]'
-                            }`}>
-                            {f.recommendation === 'DIDNT_JOIN' ? "DIDN'T JOIN" : f.recommendation}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                          <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                            <div className="text-[10px] text-[#868fa0] uppercase tracking-wider">Technical Proficiency</div>
-                            <div className="text-xs font-bold text-[#142651]">{f.technicalRating} / 5</div>
-                          </div>
-                          <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                            <div className="text-[10px] text-[#868fa0] uppercase tracking-wider">Communication Skills</div>
-                            <div className="text-xs font-bold text-[#142651]">{f.communicationRating} / 5</div>
-                          </div>
-                          <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                            <div className="text-[10px] text-[#868fa0] uppercase tracking-wider">Cultural Fit</div>
-                            <div className="text-xs font-bold text-[#142651]">{f.cultureFitRating} / 5</div>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="text-xs">
-                            <span className="font-semibold text-[#142651]">Strengths:</span>
-                            <span className="text-[#5e6a85] ml-1">{f.strengths || '-'}</span>
-                          </div>
-                          <div className="text-xs">
-                            <span className="font-semibold text-[#142651]">Concerns:</span>
-                            <span className="text-[#5e6a85] ml-1">{f.weaknesses || '-'}</span>
-                          </div>
-                          <div className="text-xs">
-                            <span className="font-semibold text-[#142651]">Comments:</span>
-                            <p className="text-[#5e6a85] mt-1 italic text-[13px]">"{f.overallComments || 'No additional comments provided.'}"</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+
 
 
               </div>
@@ -1709,8 +1716,10 @@ const InterviewSchedule = () => {
                 </button>
               </div>
               <form className="space-y-4" onSubmit={async (e) => {
-                await onScheduleSubmit(e);
-                setShowScheduleModal(false);
+                const success = await onScheduleSubmit(e);
+                if (success) {
+                  setShowScheduleModal(false);
+                }
               }}>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1 relative">
@@ -1971,6 +1980,164 @@ const InterviewSchedule = () => {
         onClose={() => setEditingInterviewId(null)}
         onUpdate={loadAll}
       />
+
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowFeedbackModal(false)} />
+          <Reveal className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-[#0f1b3d]">Update Assessment (Round {selectedInterview?.roundNo === 99 ? 'Final' : selectedInterview?.roundNo})</h2>
+                  <p className="text-xs text-slate-500 mt-1">Modify candidate performance details for this round</p>
+                </div>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowFeedbackModal(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <form className="space-y-4" onSubmit={async (e) => {
+                const success = await onFeedbackSubmit(e);
+                if (success) {
+                  setShowFeedbackModal(false);
+                }
+              }}>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1 text-center">
+                    <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
+                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
+                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
+                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
+                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
+                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
+                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Recommendation</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                    {['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'REJECTED'].map(rec => {
+                      const icons = {
+                        SELECTED: 'verified',
+                        OFFER_LETTER: 'card_membership',
+                        ON_HOLD: 'pause_circle',
+                        DIDNT_JOIN: 'sentiment_dissatisfied',
+                        REJECTED: 'block'
+                      };
+                      const labels = {
+                        SELECTED: 'Selected',
+                        OFFER_LETTER: 'Offer Letter',
+                        ON_HOLD: 'On Hold',
+                        DIDNT_JOIN: "Didn't Join",
+                        REJECTED: 'Rejected'
+                      };
+                      return (
+                        <button 
+                          key={rec}
+                          type="button" 
+                          className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${
+                            feedbackForm.recommendation === rec 
+                              ? rec === 'DIDNT_JOIN' 
+                                ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner'
+                                : rec === 'SELECTED'
+                                  ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-inner'
+                                  : rec === 'OFFER_LETTER'
+                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-inner'
+                                    : rec === 'ON_HOLD'
+                                      ? 'bg-amber-50 border-amber-500 text-amber-700 shadow-inner'
+                                      : 'bg-rose-50 border-rose-500 text-rose-700 shadow-inner'
+                              : 'border-slate-100 text-slate-400 hover:bg-slate-50'
+                          }`}
+                          onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: rec }))}
+                        >
+                          <span className="material-symbols-outlined text-lg">{icons[rec]}</span>
+                          {labels[rec]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Key Strengths</label>
+                    <textarea 
+                      className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
+                      placeholder="What did they do well?"
+                      value={feedbackForm.strengths}
+                      onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Concerns / Weaknesses</label>
+                    <textarea 
+                      className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
+                      placeholder="Any red flags?"
+                      value={feedbackForm.weaknesses}
+                      onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Summary</label>
+                  <textarea 
+                    className="w-full rounded-2xl border border-slate-200 p-4 text-sm min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
+                    placeholder="Final verdict and detailed notes..."
+                    value={feedbackForm.overallComments}
+                    onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))}
+                    required
+                  />
+                </div>
+
+                {/* Optional Offer Letter Attachment */}
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 hover:border-[#1f52cc]/40 hover:bg-blue-50/20 transition-all">
+                  <span className="material-symbols-outlined text-slate-400 text-xl">attach_file</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase font-bold text-slate-400">Attach Document <span className="normal-case font-normal text-slate-300">(optional)</span></div>
+                    {offerLetterFile && (
+                      <div className="text-xs text-[#1f52cc] font-semibold mt-0.5 truncate">{offerLetterFile.name}</div>
+                    )}
+                  </div>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    id="modal-offer-upload" 
+                    onChange={(e) => setOfferLetterFile(e.target.files[0])}
+                    accept=".pdf,.doc,.docx"
+                  />
+                  <label htmlFor="modal-offer-upload" className="shrink-0 px-4 h-8 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 flex items-center cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
+                    {offerLetterFile ? 'Change' : 'Browse'}
+                  </label>
+                  {offerLetterFile && (
+                    <button type="button" onClick={() => setOfferLetterFile(null)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 flex items-center justify-center transition-all">
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button type="button" className="flex-1 h-12 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all" onClick={() => setShowFeedbackModal(false)}>Cancel</button>
+                  <button type="submit" className="flex-1 h-12 rounded-xl bg-[#2ca764] text-white font-bold shadow-lg shadow-emerald-200 hover:bg-[#258a52] transition-all disabled:opacity-50" disabled={savingFeedback}>
+                    {savingFeedback ? 'Saving...' : 'Save Assessment'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </Reveal>
+        </div>
+      )}
 
     </EnterpriseLayout>
   );

@@ -28,7 +28,16 @@ async function populateInterviewRelations(rounds) {
     } catch (_) {}
     return Array.isArray(ids) ? ids : [];
   });
-  const panelIds = [...new Set(interviewerIdsList.filter(Boolean))];
+
+  const feedbackUserIds = rounds.flatMap(r => {
+    let list = [];
+    try {
+      list = typeof r.feedback === 'string' ? JSON.parse(r.feedback) : r.feedback;
+    } catch (_) {}
+    return Array.isArray(list) ? list.map(f => f.submittedBy || f.submittedById).filter(Boolean) : [];
+  });
+
+  const panelIds = [...new Set([...interviewerIdsList, ...feedbackUserIds].filter(Boolean))];
 
   let candidateMap = {};
   let jobMap       = {};
@@ -150,6 +159,22 @@ async function populateInterviewRelations(rounds) {
 
     const interviewers = interviewerIds.map(id => userMap[id]).filter(Boolean);
 
+    let feedback = [];
+    try {
+      feedback = typeof round.feedback === 'string' ? JSON.parse(round.feedback) : round.feedback;
+    } catch (_) {}
+    if (!Array.isArray(feedback)) feedback = [];
+
+    const populatedFeedback = feedback.map(f => {
+      const userId = f.submittedBy || f.submittedById;
+      const user = userId ? userMap[userId] : null;
+      return {
+        ...f,
+        submittedById: userId,
+        submittedBy: user || { id: userId, fullName: 'Unknown Interviewer' }
+      };
+    });
+
     // Frontend accesses nested object: round.application.candidate
     const application = round.applicationId ? {
       id: round.applicationId,
@@ -167,6 +192,7 @@ async function populateInterviewRelations(rounds) {
       candidate,
       job,
       interviewers,
+      feedback: populatedFeedback,
       application,
       _candidateName: candidate?.fullName || round.candidateName || null,
       _jobTitle: job?.title || round.jobTitle || null,

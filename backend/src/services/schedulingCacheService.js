@@ -233,12 +233,17 @@ async function getRoundsList(orgId, filters = {}) {
 
     const take = limit + 1;
 
+    const orderBy = [];
+    if (filters.candidateId || filters.applicationId) {
+      orderBy.push({ roundNo: 'asc' });
+    } else {
+      orderBy.push({ scheduledStart: 'desc' });
+      orderBy.push({ id: 'desc' });
+    }
+
     const queryParams = {
       where,
-      orderBy: [
-        { scheduledStart: 'desc' },
-        { id: 'desc' }
-      ],
+      orderBy,
       take,
       select: {
         id: true,

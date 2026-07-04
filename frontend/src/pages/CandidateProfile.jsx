@@ -212,7 +212,8 @@ const CandidateProfile = () => {
       const filteredInterviews = currentUser?.role === 'INTERVIEWER'
         ? allInterviews.filter(iv => iv.interviewers?.some(u => u.id === currentUser?.id))
         : allInterviews;
-      setInterviews(filteredInterviews);
+      const sortedInterviews = [...filteredInterviews].sort((a, b) => a.roundNo - b.roundNo);
+      setInterviews(sortedInterviews);
       setCustomValues(loadedCandidate.customFields || {});
       setEditForm({
         fullName: loadedCandidate.fullName || '',

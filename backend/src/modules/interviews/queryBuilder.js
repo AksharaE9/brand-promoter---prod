@@ -49,6 +49,7 @@ async function buildInterviewListQuery({
   status,
   jobId,
   candidateId,
+  applicationId,
   interviewerId,
   search,
   cursor,
@@ -64,6 +65,9 @@ async function buildInterviewListQuery({
   // Apply filters
   if (status) {
     where.status = status;
+  }
+  if (applicationId) {
+    where.applicationId = applicationId;
   }
 
   // Apply candidateId, jobId, and search via the application relation
@@ -148,12 +152,17 @@ async function buildInterviewListQuery({
     }
   }
 
+  const orderBy = [];
+  if (candidateId || applicationId) {
+    orderBy.push({ roundNo: 'asc' });
+  } else {
+    orderBy.push({ scheduledStart: 'desc' });
+    orderBy.push({ id: 'desc' });
+  }
+
   const queryParams = {
     where,
-    orderBy: [
-      { scheduledStart: 'desc' },
-      { id: 'desc' }
-    ],
+    orderBy,
     take: lim,
     select: LIST_SELECT_FIELDS,
   };

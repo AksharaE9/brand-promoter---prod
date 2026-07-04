@@ -166,6 +166,7 @@ router.get(
       status:        req.query.status,
       jobId:         req.query.jobId,
       candidateId:   req.query.candidateId,
+      applicationId: req.query.applicationId,
       interviewerId,
       search:        req.query.search,
       cursor:        req.query.cursor,
@@ -251,11 +252,25 @@ router.post(
       throw new ApiError(400, "Missing required fields");
     }
 
+    const roundNo = parseInt(req.body.roundNo) || 1;
+
+    // Check if this exact round already exists (Duplicate Check)
+    const existingRound = await prisma.interview.findFirst({
+      where: {
+        applicationId,
+        roundNo,
+        status: { not: "CANCELLED" }
+      }
+    });
+    if (existingRound) {
+      throw new ApiError(409, `Round ${roundNo} is already scheduled or completed for this candidate (Duplicate).`);
+    }
+
     const orgId = req.user.organizationId || "defaultOrg";
     const roundData = {
       ...req.body,
-      roundNo: parseInt(req.body.roundNo) || 1,
-      round: req.body.round || `Round ${req.body.roundNo || 1}`,
+      roundNo,
+      round: req.body.round || `Round ${roundNo}`,
       meetingLink: req.body.meetingLink || "",
       zohoLink: req.body.zohoLink || "",
       createdById: req.user.id,
@@ -329,10 +344,42 @@ router.post(
     } catch (_) {}
     if (!Array.isArray(currentFeedbacks)) currentFeedbacks = [];
 
+    const existingIndex = currentFeedbacks.findIndex(f => f.submittedBy === req.user.id);
+    let targetIndex = existingIndex;
+    if (targetIndex === -1 && currentFeedbacks.length > 0 && req.user.role === 'SUPER_ADMIN') {
+      targetIndex = 0;
+    }
+
+    let finalFeedbacks = [];
+    let savedFeedbackEntry = feedbackEntry;
+    if (targetIndex !== -1) {
+      savedFeedbackEntry = {
+        ...currentFeedbacks[targetIndex],
+        ratings: {
+          technical: parseInt(technicalRating) || 0,
+          communication: parseInt(communicationRating) || 0,
+          culture: parseInt(cultureFitRating) || 0,
+        },
+        recommendation: recommendation || "PENDING",
+        strengths: strengths || "",
+        concerns: weaknesses || req.body.concerns || "",
+        notes: overallComments || "",
+        updatedAt: new Date().toISOString(),
+      };
+      if (req.file) {
+        savedFeedbackEntry.offerFileUrl = req.file.path;
+        savedFeedbackEntry.offerFileName = req.file.originalname;
+      }
+      currentFeedbacks[targetIndex] = savedFeedbackEntry;
+      finalFeedbacks = currentFeedbacks;
+    } else {
+      finalFeedbacks = [...currentFeedbacks, feedbackEntry];
+    }
+
     const updatePayload = {
       status: "COMPLETED",
       result: recommendation || "PENDING",
-      feedback: [...currentFeedbacks, feedbackEntry],
+      feedback: finalFeedbacks,
       outcome: recommendation || "PENDING",
       outcomeSetAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -351,7 +398,7 @@ router.post(
     );
 
     // ── Respond IMMEDIATELY — client never waits for audit log or SSE broadcast ──
-    res.status(201).json({ success: true, data: feedbackEntry });
+    res.status(201).json({ success: true, data: savedFeedbackEntry });
 
     // ── Side effects run AFTER response is on the wire ──
     setImmediate(() => {
@@ -530,12 +577,12 @@ router.put(
       throw new ApiError(400, "Panel members array must contain at least one member");
     }
 
-    if (!["IN_PERSON", "VIRTUAL", "PHONE"].includes(data.mode)) {
-      throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, PHONE");
+    if (!["IN_PERSON", "VIRTUAL", "PHONE", "ONLINE", "DRIVE"].includes(data.mode)) {
+      throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, ONLINE, PHONE, DRIVE");
     }
 
-    if (data.mode === "VIRTUAL" && !data.meetingLink) {
-      throw new ApiError(422, "Meeting link is required for virtual interviews");
+    if ((data.mode === "VIRTUAL" || data.mode === "ONLINE") && !data.meetingLink) {
+      throw new ApiError(422, "Meeting link is required for virtual/online interviews");
     }
 
     const durationMinutes = data.durationMinutes || 60;

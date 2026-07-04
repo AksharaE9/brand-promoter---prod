@@ -344,7 +344,10 @@ export function useSubmitFeedback() {
       toast.error('Failed to submit feedback');
     },
 
-    onSuccess: () => toast.success('Feedback submitted'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      toast.success('Feedback submitted');
+    },
   });
 }
 

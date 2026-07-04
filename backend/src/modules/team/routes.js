@@ -87,6 +87,12 @@ router.put("/recruiters/:id", asyncHandler(async (req, res) => {
     PROTECTED.forEach(k => delete payload[k]);
   }
 
+  if (payload.password) {
+    const bcrypt = require("bcryptjs");
+    payload.passwordHash = await bcrypt.hash(payload.password, 12);
+    delete payload.password;
+  }
+
   const updated = await prisma.user.update({ where: { id }, data: payload });
 
   // Invalidate cache before returning response to avoid race conditions
@@ -162,6 +168,12 @@ router.put("/interviewers/:id", asyncHandler(async (req, res) => {
   const payload = { ...req.body };
   if (!isSuperAdmin) {
     ["role", "userType", "department", "designation", "employeeId", "reportingTo", "isActive", "status"].forEach(k => delete payload[k]);
+  }
+
+  if (payload.password) {
+    const bcrypt = require("bcryptjs");
+    payload.passwordHash = await bcrypt.hash(payload.password, 12);
+    delete payload.password;
   }
 
   const updated = await prisma.user.update({ where: { id }, data: payload });

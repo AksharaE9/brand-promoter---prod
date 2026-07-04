@@ -113,6 +113,12 @@ async function run() {
   async function resolveInterviewer(name) {
     const cleanName = String(name || "Hiring Team Interviewer").trim().toLowerCase();
     
+    // Special mapping for Shishan/Gautami (Shreesha/Gouthami) to Super Admin
+    if (cleanName.includes("shishan") || cleanName.includes("gautami") || cleanName.includes("shreesha") || cleanName.includes("gouthami")) {
+      console.log(`[RESOLVER] Mapping interviewer "${name}" to SUPER_ADMIN user ID.`);
+      return "73783a2b-0045-431c-9b71-75aeab0b6840";
+    }
+
     // Find system user
     let user = users.find(u => u.name.toLowerCase().includes(cleanName));
     if (user) return user.id;

@@ -47,7 +47,9 @@ router.post(
     const duplicate = await prisma.application.findFirst({
       where: { candidateId, jobId },
     });
-    if (duplicate) throw new ApiError(409, "Application already exists for this candidate and job");
+    if (duplicate) {
+      return res.status(200).json({ success: true, data: duplicate });
+    }
 
     let stageId = currentStageId;
     if (!stageId) {

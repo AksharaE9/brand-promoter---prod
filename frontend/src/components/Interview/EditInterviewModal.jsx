@@ -8,26 +8,43 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [interviewers, setInterviewers] = useState([]);
+  const [interviewerSearch, setInterviewerSearch] = useState('');
   
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (isOpen && interviewId) {
       fetchInterview();
+      fetchInterviewers();
     }
   }, [isOpen, interviewId]);
+
+  const fetchInterviewers = async () => {
+    try {
+      const { data } = await api.get('/users/interviewers');
+      setInterviewers(data.data || []);
+    } catch (err) {
+      console.error('Failed to load interviewers:', err);
+    }
+  };
 
   const fetchInterview = async () => {
     setIsLoading(true);
     try {
       const { data } = await api.get(`/interviews/${interviewId}`);
+      const dateObj = data.data.scheduledStart ? new Date(data.data.scheduledStart) : new Date();
+      const scheduledDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      const scheduledTime = !isNaN(dateObj.getTime()) ? dateObj.toTimeString().substring(0, 5) : '10:00';
+      
       const initial = {
         roundName: data.data.round || `Round ${data.data.roundNo}`,
-        scheduledDate: new Date(data.data.scheduledStart).toISOString().split('T')[0],
-        scheduledTime: new Date(data.data.scheduledStart).toTimeString().substring(0, 5),
+        scheduledDate,
+        scheduledTime,
         durationMinutes: data.data.durationMinutes || 60,
-        mode: data.data.mode || 'VIRTUAL',
+        mode: data.data.mode || 'ONLINE',
         meetingLink: data.data.meetingLink || '',
+        zohoLink: data.data.zohoLink || '',
         venue: data.data.venue || '',
         interviewerIds: data.data.interviewerIds || [],
         rescheduleReason: '',
@@ -43,7 +60,13 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
     }
   };
 
-  const hasChanged = (field) => formData[field] !== originalData[field];
+  const hasChanged = (field) => {
+    if (Array.isArray(formData[field])) {
+      if (formData[field].length !== originalData[field]?.length) return true;
+      return !formData[field].every(val => originalData[field]?.includes(val));
+    }
+    return formData[field] !== originalData[field];
+  };
   
   const anyChanged = useMemo(() => {
     return Object.keys(originalData).some(key => {
@@ -69,9 +92,18 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
     setError('');
 
     try {
-      const scheduledStart = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00.000Z`).toISOString();
+      if (!formData.scheduledDate || !formData.scheduledTime) {
+        setError("Scheduled date and time are required.");
+        setIsSaving(false);
+        return;
+      }
+      const [year, month, day] = formData.scheduledDate.split('-').map(Number);
+      const [hours, minutes] = formData.scheduledTime.split(':').map(Number);
+      const scheduledStart = new Date(year, month - 1, day, hours, minutes).toISOString();
+      
       const payload = {
         ...formData,
+        round: formData.roundName, // MAP roundName to round
         scheduledStart
       };
 
@@ -135,9 +167,11 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Mode {hasChanged('mode') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>
                 <select name="mode" value={formData.mode} onChange={handleChange} className="w-full os-input">
+                  <option value="ONLINE">Online Meeting</option>
                   <option value="VIRTUAL">Virtual</option>
                   <option value="IN_PERSON">In Person</option>
                   <option value="PHONE">Phone Call</option>
+                  <option value="DRIVE">Drive Meeting</option>
                 </select>
               </div>
               <div>
@@ -150,10 +184,16 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
               </div>
             </div>
 
-            {formData.mode === 'VIRTUAL' && (
-              <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Meeting Link {hasChanged('meetingLink') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>
-                <input type="url" name="meetingLink" value={formData.meetingLink} onChange={handleChange} className="w-full os-input" />
+            {(formData.mode === 'VIRTUAL' || formData.mode === 'ONLINE') && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Meeting Link {hasChanged('meetingLink') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>
+                  <input type="url" name="meetingLink" value={formData.meetingLink} onChange={handleChange} className="w-full os-input" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Zoho Link {hasChanged('zohoLink') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>
+                  <input type="url" name="zohoLink" value={formData.zohoLink} onChange={handleChange} className="w-full os-input" />
+                </div>
               </div>
             )}
             
@@ -163,6 +203,39 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
                 <input type="text" name="venue" value={formData.venue} onChange={handleChange} className="w-full os-input" />
               </div>
             )}
+
+            {/* Interviewer checklist */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-500">Interviewers (Multiple) {hasChanged('interviewerIds') && <span className="w-2 h-2 rounded-full bg-blue-500 inline-block ml-1"/>}</label>
+                <input 
+                  className="text-xs border-b border-slate-200 focus:border-blue-400 outline-none w-28 animate-none"
+                  placeholder="Filter..."
+                  value={interviewerSearch}
+                  onChange={(e) => setInterviewerSearch(e.target.value)}
+                />
+              </div>
+              <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 custom-scrollbar">
+                {interviewers
+                  .filter(p => p.fullName.toLowerCase().includes(interviewerSearch.toLowerCase()))
+                  .map((person) => (
+                  <label key={person.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded-lg transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={formData.interviewerIds?.includes(person.id)}
+                      onChange={(e) => {
+                        const ids = e.target.checked
+                          ? [...formData.interviewerIds, person.id]
+                          : formData.interviewerIds.filter(id => id !== person.id);
+                        setFormData(prev => ({ ...prev, interviewerIds: ids }));
+                      }}
+                      className="rounded-md h-4 w-4 text-[#1f52cc] border-slate-300 focus:ring-[#1f52cc]"
+                    />
+                    <span className="text-sm font-medium text-slate-700">{person.fullName} <span className="text-[10px] text-slate-400 font-normal">({person.role})</span></span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
             {timeOrDateChanged && (
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
@@ -188,6 +261,5 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
     </div>
   );
 };
-
 
 export default React.memo(EditInterviewModal);

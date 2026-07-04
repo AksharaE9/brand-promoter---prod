@@ -109,7 +109,12 @@ async function verify() {
 
     // Resolve Interviewer
     const excelInterviewer = String(row["Interviewers"] || "Hiring Team Interviewer").trim().toLowerCase();
-    const interviewer = users.find(u => u.name.toLowerCase().includes(excelInterviewer));
+    let interviewer;
+    if (excelInterviewer.includes("shishan") || excelInterviewer.includes("gautami") || excelInterviewer.includes("shreesha") || excelInterviewer.includes("gouthami")) {
+      interviewer = users.find(u => u.id === "73783a2b-0045-431c-9b71-75aeab0b6840" || u.name === "Super Admin");
+    } else {
+      interviewer = users.find(u => u.name.toLowerCase().includes(excelInterviewer));
+    }
     if (!interviewer) {
       mismatchCount++;
       discrepancies.push({ row: rowIndex, name: candidateName, issue: `Interviewer "${row["Interviewers"]}" not found in DB` });

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../services/api';
 
 const EditRecruiterModal = ({ isOpen, onClose, userId, onUpdate }) => {
@@ -34,7 +35,11 @@ const EditRecruiterModal = ({ isOpen, onClose, userId, onUpdate }) => {
     setIsSaving(true);
     setError('');
     try {
-      await api.put(`/team/recruiters/${userId}`, formData);
+      const payload = { ...formData };
+      if (!payload.password || !payload.password.trim()) {
+        delete payload.password;
+      }
+      await api.put(`/team/recruiters/${userId}`, payload);
       if (onUpdate) onUpdate();
       onClose();
     } catch (err) {
@@ -46,7 +51,7 @@ const EditRecruiterModal = ({ isOpen, onClose, userId, onUpdate }) => {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm modal-overlay-fade"
@@ -80,6 +85,17 @@ const EditRecruiterModal = ({ isOpen, onClose, userId, onUpdate }) => {
                 <label className="text-xs font-bold text-slate-500 mb-1 block">Department</label>
                 <input type="text" name="department" value={formData.department || ''} onChange={handleChange} className="w-full os-input" />
               </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">Change Password</label>
+                <input 
+                  type="password" 
+                  name="password" 
+                  value={formData.password || ''} 
+                  onChange={handleChange} 
+                  placeholder="Leave blank to keep same"
+                  className="w-full os-input" 
+                />
+              </div>
               <div className="col-span-2">
                 <label className="text-xs font-bold text-slate-500 mb-1 block">Bio</label>
                 <textarea name="bio" value={formData.bio || ''} onChange={handleChange} className="w-full os-input" rows="3" maxLength="500"></textarea>
@@ -95,9 +111,9 @@ const EditRecruiterModal = ({ isOpen, onClose, userId, onUpdate }) => {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
-
 
 export default React.memo(EditRecruiterModal);

@@ -112,16 +112,32 @@ const TTL = {
   DIRTY:         3600,
 };
 
+const inFlightPromises = new Map();
+
 async function getCached(key, fetcher, ttlMs = 60000) {
   const cached = l1.get(key);
   if (cached !== null) {
     return cached;
   }
-  const fresh = await fetcher();
-  if (fresh !== null && fresh !== undefined) {
-    l1.set(key, fresh, ttlMs);
+
+  if (inFlightPromises.has(key)) {
+    return inFlightPromises.get(key);
   }
-  return fresh;
+
+  const promise = (async () => {
+    try {
+      const fresh = await fetcher();
+      if (fresh !== null && fresh !== undefined) {
+        l1.set(key, fresh, ttlMs);
+      }
+      return fresh;
+    } finally {
+      inFlightPromises.delete(key);
+    }
+  })();
+
+  inFlightPromises.set(key, promise);
+  return promise;
 }
 
 async function getCachedWithMutex(key, fetcher, ttlMs = 60000) {
