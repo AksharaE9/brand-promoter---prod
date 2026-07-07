@@ -39,6 +39,7 @@ async function processAlerts() {
     await checkRound1FeedbackAlerts();
     await checkRound2FeedbackAlerts();
     await checkOfferLetterAlerts();
+    await checkDelayedFeedbackAlerts();
   } catch (error) {
     console.error('[NotificationScheduler] Error during processing:', error);
   }
@@ -513,6 +514,138 @@ async function checkOfferLetterAlerts() {
 
   // Execute tasks concurrently with a limit of 5
   await limitConcurrency(tasks, 5);
+}
+
+/**
+ * Delayed Feedback Alerts (Rounds >= 2)
+ * Trigger: 2 days after scheduledStart has passed.
+ * Condition: roundNo >= 2 or roundNo === 99, status = SCHEDULED/RESCHEDULED, feedback is empty.
+ * Action: SMTP email sent to Subramanya (TARGET_ALERT_EMAIL) and all HR Admin users.
+ */
+async function checkDelayedFeedbackAlerts() {
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  
+  const interviews = await prisma.interview.findMany({
+    where: {
+      OR: [
+        { roundNo: { gte: 2 } },
+        { roundNo: 99 }
+      ],
+      status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+      scheduledStart: {
+        lte: twoDaysAgo,
+        lt: new Date('2026-07-07T00:00:00.000Z') // Only for meetings scheduled before July 7, 2026
+      }
+    },
+    include: {
+      application: {
+        include: {
+          candidate: true,
+          job: true
+        }
+      }
+    }
+  });
+
+  if (interviews.length === 0) return;
+  console.log(`[NotificationScheduler] Found ${interviews.length} interviews pending delayed feedback alert check`);
+
+  // Find all active super admins
+  const hrAdmins = await prisma.user.findMany({
+    where: {
+      role: 'SUPER_ADMIN',
+      status: 'ACTIVE',
+      isDeleted: false
+    },
+    select: { email: true, fullName: true }
+  });
+
+  const adminEmails = hrAdmins.map(u => u.email).filter(Boolean);
+  const recipients = [...new Set([...adminEmails, 'Subramanya@aksharaenterprises.info'])];
+
+  for (const interview of interviews) {
+    try {
+      // 1. Verify if feedback has already been submitted
+      let feedbackList = [];
+      try {
+        feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
+      } catch (_) {}
+      if (Array.isArray(feedbackList) && feedbackList.length > 0) {
+        continue;
+      }
+
+      // 2. Read notes to check if alert was already sent
+      let notesObj = {};
+      try {
+        notesObj = JSON.parse(interview.notes || '{}');
+      } catch (e) {}
+
+      if (notesObj.feedbackDelayedAlertSent) {
+        continue;
+      }
+
+      const candidateName = interview.candidateName || interview.application?.candidate?.fullName || 'Candidate';
+      const jobTitle = interview.jobTitle || interview.application?.job?.title || 'Applied Position';
+      const scheduledTime = interview.scheduledStart ? new Date(interview.scheduledStart).toLocaleString() : 'N/A';
+      const roundLabel = interview.roundNo === 99 ? 'Final Round' : `Round ${interview.roundNo}`;
+
+      // 3. Send email to HR Admin & Subramanya
+      const emailSubject = `[URGENT Alert] Missed Interview Feedback (>2 Days): ${candidateName}`;
+      const emailHtml = `
+        <h2>Delayed Interview Assessment Alert</h2>
+        <p>Dear Admin & Subramanya,</p>
+        <p>This is an automated system alert. The interview feedback form for <strong>${candidateName}</strong> has not been submitted for more than <strong>two days</strong> after the scheduled interview time.</p>
+        <table border="1" cellpadding="6" cellspacing="0" style="border-collapse: collapse; border-color: #e2e8f0; width: 100%; max-width: 500px;">
+          <tr style="background-color: #f8fafc;">
+            <td><strong>Candidate</strong></td>
+            <td>${candidateName}</td>
+          </tr>
+          <tr>
+            <td><strong>Job Role</strong></td>
+            <td>${jobTitle}</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td><strong>Round</strong></td>
+            <td>${roundLabel}</td>
+          </tr>
+          <tr>
+            <td><strong>Scheduled Time</strong></td>
+            <td>${scheduledTime}</td>
+          </tr>
+          <tr style="background-color: #f8fafc;">
+            <td><strong>Status</strong></td>
+            <td style="color: #cf3a3a; font-weight: bold;">Feedback Pending > 48 Hours</td>
+          </tr>
+        </table>
+        <p>Please log in to the ATS portal to coordinate feedback submission immediately.</p>
+        <p>Best regards,<br/>ATS Alert Daemon</p>
+      `;
+
+      console.log(`[NotificationScheduler] Sending delayed feedback alert for candidate ${candidateName} to ${recipients.join(', ')}`);
+
+      for (const email of recipients) {
+        try {
+          await sendEmail({
+            to: email,
+            subject: emailSubject,
+            html: emailHtml
+          });
+        } catch (emailErr) {
+          console.error(`[NotificationScheduler] Failed to send email to ${email}:`, emailErr.message);
+        }
+      }
+
+      // 4. Mark alert as sent inside notes JSON to prevent duplicate alerts
+      notesObj.feedbackDelayedAlertSent = true;
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: { notes: JSON.stringify(notesObj) }
+      });
+
+    } catch (err) {
+      console.error(`[NotificationScheduler] Error processing delayed feedback alert for interview ${interview.id}:`, err);
+    }
+  }
 }
 
 /**

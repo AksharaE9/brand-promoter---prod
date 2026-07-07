@@ -9,10 +9,14 @@ const QUERY_KEYS = {
 
 // ── Fetch rounds list ──
 export function useRoundsList(filters = {}) {
-  const isSearch = !!(filters.search && filters.search.trim());
+  // Pass null to completely disable this query instance (e.g. when search is empty)
+  const enabled = filters !== null;
+  const safeFilters = filters ?? {};
+  const isSearch = !!(safeFilters.search && safeFilters.search.trim());
   return useQuery({
-    queryKey: QUERY_KEYS.rounds(filters),
-    queryFn: () => schedulingApi.getRounds(filters),
+    queryKey: QUERY_KEYS.rounds(safeFilters),
+    queryFn: () => schedulingApi.getRounds(safeFilters),
+    enabled,
     // Search results must always be fresh — no caching. Normal list: 60s stale time.
     staleTime: isSearch ? 0 : 60_000,
     gcTime: isSearch ? 0 : 5 * 60_000,
@@ -351,7 +355,7 @@ export function useSubmitFeedback() {
   });
 }
 
-// ── Create round (optimistic) — interview appears INSTANTLY, server syncs in background ──
+// ── Create round — interview appears INSTANTLY in sorted order, server confirms in ~2s ──
 /**
  * @returns {import('@tanstack/react-query').UseMutationResult<any, any, any, any>}
  */
@@ -376,12 +380,14 @@ export function useCreateRound() {
         createdAt: new Date().toISOString(),
       };
 
-      // Immediately inject into every rounds list in cache
+      // Insert in ascending roundNo order — never prepend blindly
       queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
         const list = old?.data ?? old;
-        if (!Array.isArray(list)) return [tempRound];
-        const updated = [tempRound, ...list];
-        return old?.data ? { ...old, data: updated } : updated;
+        if (!Array.isArray(list)) return { data: [tempRound], hasMore: false, nextCursor: null };
+        const merged = [...list, tempRound];
+        // Sort so newest round for each application appears in ascending roundNo order
+        merged.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
+        return old?.data ? { ...old, data: merged } : merged;
       });
 
       return { previousLists, tempId: tempRound.id };
@@ -394,7 +400,7 @@ export function useCreateRound() {
     },
 
     onSuccess: (data, variables, context) => {
-      // Replace the temp entry with the real server data
+      // Replace the temp entry with the real server data — no _optimistic flag kept
       const realId = data?.data?.id || data?.tempId || data?.id;
       const responseData = data?.data ?? data;
       if (realId && context?.tempId) {
@@ -404,9 +410,21 @@ export function useCreateRound() {
           const updated = list.map((r) =>
             r.id === context.tempId ? { ...responseData, _optimistic: false } : r
           );
+          // Re-sort after replacement to keep ascending roundNo order
+          updated.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
           return old?.data ? { ...old, data: updated } : updated;
         });
       }
+
+      // 2-3 second background sync: fetch authoritative data from server silently
+      const delay = 2000 + Math.random() * 1000; // 2–3s
+      setTimeout(() => {
+        queryClient.invalidateQueries({
+          queryKey: ['scheduling', 'rounds'],
+          refetchType: 'active',
+        });
+      }, delay);
+
       toast.success('Interview scheduled ✓');
     },
   });

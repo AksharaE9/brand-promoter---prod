@@ -14,17 +14,27 @@ async function main() {
   console.log('🛡️  ATS ROUTING & PRODUCTION PERFORMANCE AUDIT');
   console.log('==========================================================');
 
-  // 1. Resolve test user
-  const user = await prisma.user.findFirst({
+  // Resolve an existing user to match organization mapping
+  const referenceUser = await prisma.user.findFirst({
     where: { isActive: true, isDeleted: false },
     orderBy: { id: 'asc' }
   });
 
-  if (!user) {
-    console.error('❌ Error: No active user found for routing audit.');
-    process.exit(1);
-  }
-  console.log(`👤 Active Test User: ${user.fullName} (${user.role})`);
+  const orgId = referenceUser ? referenceUser.organizationId : null;
+
+  // 1. Create a single temporary test user
+  console.log('👤 Creating temporary test user...');
+  const tempUser = await prisma.user.create({
+    data: {
+      email: `perf_audit_finger_${Date.now()}@ats.local`,
+      fullName: 'Finger Performance Test User',
+      role: 'SUPER_ADMIN',
+      status: 'ACTIVE',
+      passwordHash: '$2b$10$dummyhashplaceholder', // basic placeholder
+      organizationId: orgId
+    }
+  });
+  console.log(`👤 Created Temporary Test User: ${tempUser.fullName} (${tempUser.email})`);
 
   // 2. Resolve dummy candidate
   const candidate = await prisma.candidate.findFirst({
@@ -34,16 +44,18 @@ async function main() {
 
   if (!candidate) {
     console.error('❌ Error: No candidate found to test details routing.');
+    // Cleanup user before exit
+    await prisma.user.delete({ where: { id: tempUser.id } });
     process.exit(1);
   }
   console.log(`🎯 Active Dummy Candidate: ${candidate.fullName} (ID: ${candidate.id})`);
 
-  // 3. Generate Auth headers
+  // 3. Generate Auth headers using the temporary user
   const token = signAccessToken({
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    organizationId: user.organizationId
+    id: tempUser.id,
+    email: tempUser.email,
+    role: tempUser.role,
+    organizationId: tempUser.organizationId
   });
 
   const headers = {
@@ -57,40 +69,49 @@ async function main() {
     { name: 'Candidates List Page', url: `${baseUrl}/candidates?limit=20`, method: 'GET' },
     { name: 'Candidate Details Page', url: `${baseUrl}/candidates/${candidate.id}`, method: 'GET' },
     { name: 'Interviews Schedule Page', url: `${baseUrl}/interviews?limit=20`, method: 'GET' },
-    { name: 'Recruiter Profile Page', url: `${baseUrl}/team/recruiters/${user.id}`, method: 'GET' }
+    { name: 'Recruiter Profile Page', url: `${baseUrl}/team/recruiters/${tempUser.id}`, method: 'GET' }
   ];
 
   const results = [];
   console.log('\n🏃 Running routing checks & measuring performance latency...');
 
-  for (const route of routes) {
-    const start = performance.now();
-    let status = 0;
-    let success = false;
-    let errorMsg = null;
+  try {
+    for (const route of routes) {
+      const start = performance.now();
+      let status = 0;
+      let success = false;
+      let errorMsg = null;
 
-    try {
-      const res = await fetch(route.url, { method: route.method, headers });
-      status = res.status;
-      const data = await res.json();
-      success = res.ok && data.success !== false;
-      if (!success) {
-        errorMsg = data.message || 'API responded with success: false';
+      try {
+        const res = await fetch(route.url, { method: route.method, headers });
+        status = res.status;
+        const data = await res.json();
+        success = res.ok && data.success !== false;
+        if (!success) {
+          errorMsg = data.message || 'API responded with success: false';
+        }
+      } catch (err) {
+        errorMsg = err.message;
       }
-    } catch (err) {
-      errorMsg = err.message;
-    }
-    const end = performance.now();
-    const duration = end - start;
+      const end = performance.now();
+      const duration = end - start;
 
-    console.log(`   [${status}] ${route.name.padEnd(26)} : ${duration.toFixed(2)}ms ${success ? '✓' : '❌'}`);
-    results.push({
-      ...route,
-      status,
-      success,
-      duration,
-      errorMsg
+      console.log(`   [${status}] ${route.name.padEnd(26)} : ${duration.toFixed(2)}ms ${success ? '✓' : '❌'}`);
+      results.push({
+        ...route,
+        status,
+        success,
+        duration,
+        errorMsg
+      });
+    }
+  } finally {
+    // Always cleanup the temporary user
+    console.log('\n🧹 Cleaning up temporary test user...');
+    await prisma.user.delete({
+      where: { id: tempUser.id }
     });
+    console.log('🧹 Cleanup completed.');
   }
 
   // 5. Verify target threshold (2-3 seconds as requested by user)
@@ -101,14 +122,14 @@ async function main() {
   console.log(`📊 PERFORMANCE STATUS: ${allPassed ? 'PASSED (All routes loaded under 3s) 🎉' : 'FAILED ⚠️'}`);
   console.log('==========================================================');
 
-  // 6. Write Markdown Report
-  const reportPath = path.join('C:', 'Users', 'jishn', '.gemini', 'antigravity-ide', 'brain', 'fe0f3ad7-51ec-4278-a32b-de8389cfa855', 'routing_perf_report.md');
+  // 6. Write Markdown Report to the current conversation folder
+  const reportPath = path.join('C:', 'Users', 'jishn', '.gemini', 'antigravity-ide', 'brain', '48197e13-587f-45bc-91c1-efdc83099085', 'routing_perf_report.md');
   const reportContent = `# ATS Routing & Production Performance Audit Report
 
 This report documents the routing validation and latency tests for the ATS application.
 
 ## Test Configuration
-- **Logged-in Test User**: ${user.fullName} (\`${user.role}\`)
+- **Logged-in Test User**: ${tempUser.fullName} (\`${tempUser.role}\` - Cleaned up/Removed)
 - **Target Dummy Candidate**: ${candidate.fullName} (\`${candidate.id}\`)
 - **Maximum Loading Target**: < 3.0 seconds (3,000 ms)
 

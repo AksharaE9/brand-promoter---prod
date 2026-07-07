@@ -19,6 +19,39 @@ import { useDebounce } from '../hooks/useDebounce';
 
 const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
 
+// File upload/download helpers for follow-ups (base64 storage for performance and zero DB schema breakage)
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve({ name: file.name, data: reader.result, type: file.type });
+    reader.onerror = error => reject(error);
+  });
+};
+
+const downloadBase64File = (fileName, base64Data) => {
+  const link = document.createElement('a');
+  link.href = base64Data;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const parseNotesSafely = (notesStr) => {
+  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null };
+  try {
+    const parsed = JSON.parse(notesStr);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        phoneFollowUp: parsed.phoneFollowUp || null,
+        emailFollowUp: parsed.emailFollowUp || null
+      };
+    }
+  } catch (e) {}
+  return { phoneFollowUp: null, emailFollowUp: null };
+};
+
 const emptyScheduleForm = {
   candidateId: '',
   jobId: '',
@@ -30,6 +63,7 @@ const emptyScheduleForm = {
   mode: 'ONLINE',
   meetingLink: '',
   zohoLink: '',
+  slotNo: 1,   // auto-computed slot number for the chosen time
 };
 
 const emptyFeedbackForm = {
@@ -40,6 +74,8 @@ const emptyFeedbackForm = {
   weaknesses: '',
   recommendation: 'SELECTED',
   overallComments: '',
+  offerPhoneFollowUp: null,
+  offerEmailFollowUp: null,
 };
 
 /**
@@ -84,6 +120,470 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, data }) {
 }
 
 const MemoizedCalendarCell = React.memo(CalendarCell);
+
+/**
+ * ScheduleModal — fully extracted & memoized so form-field changes don't
+ * re-render the entire InterviewSchedule page. This is the key fix for the
+ * "glitching" the user reported.
+ */
+const ScheduleModal = React.memo(function ScheduleModal({
+  scheduleForm,
+  setScheduleForm,
+  candidateSearch,
+  setCandidateSearch,
+  jobSearch,
+  setJobSearch,
+  interviewerSearch,
+  setInterviewerSearch,
+  showCandidateList,
+  setShowCandidateList,
+  showJobList,
+  setShowJobList,
+  candidateSuggestions,
+  jobSuggestions,
+  interviewers,
+  searchingCandidates,
+  searchingJobs,
+  savingSchedule,
+  onClose,
+  onSubmit,
+  allInterviews,
+}) {
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
+
+  const handleRoundChange = React.useCallback((e) => {
+    const val = e.target.value;
+    setScheduleForm(prev => ({
+      ...prev,
+      roundNo: val === 'Final' ? 99 : parseInt(val, 10),
+      round: val === 'Final' ? 'Final Round' : `Round ${val}`,
+    }));
+  }, [setScheduleForm]);
+
+  const handleModeChange = React.useCallback((e) => {
+    setScheduleForm(prev => ({ ...prev, mode: e.target.value }));
+  }, [setScheduleForm]);
+
+  const handleStartChange = React.useCallback((e) => {
+    setScheduleForm(prev => ({ ...prev, scheduledStart: e.target.value }));
+  }, [setScheduleForm]);
+
+  const handleMeetingLinkChange = React.useCallback((e) => {
+    setScheduleForm(prev => ({ ...prev, meetingLink: e.target.value }));
+  }, [setScheduleForm]);
+
+  const handleZohoLinkChange = React.useCallback((e) => {
+    setScheduleForm(prev => ({ ...prev, zohoLink: e.target.value }));
+  }, [setScheduleForm]);
+
+  const handleCandidateSearchChange = React.useCallback((e) => {
+    setCandidateSearch(e.target.value);
+  }, [setCandidateSearch]);
+
+  const handleJobSearchChange = React.useCallback((e) => {
+    setJobSearch(e.target.value);
+  }, [setJobSearch]);
+
+  const handleInterviewerSearchChange = React.useCallback((e) => {
+    setInterviewerSearch(e.target.value);
+  }, [setInterviewerSearch]);
+
+  const handleInterviewerToggle = React.useCallback((personId, checked) => {
+    setScheduleForm(prev => {
+      const ids = checked
+        ? [...prev.interviewerIds, personId]
+        : prev.interviewerIds.filter(id => id !== personId);
+      return { ...prev, interviewerIds: ids };
+    });
+  }, [setScheduleForm]);
+
+  const handleCandidateSelect = React.useCallback((c) => {
+    const candInterviews = allInterviews.filter(
+      iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id && !iv._optimistic
+    );
+    const nextRound = candInterviews.length + 1;
+    setScheduleForm(prev => ({
+      ...prev,
+      candidateId: c.id,
+      roundNo: nextRound,
+      round: `Round ${nextRound}`,
+    }));
+    setCandidateSearch(c.fullName);
+    setShowCandidateList(false);
+  }, [allInterviews, setScheduleForm, setCandidateSearch, setShowCandidateList]);
+
+  const handleJobSelect = React.useCallback((j) => {
+    setScheduleForm(prev => ({ ...prev, jobId: j.id }));
+    setJobSearch(j.title);
+    setShowJobList(false);
+  }, [setScheduleForm, setJobSearch, setShowJobList]);
+
+  const filteredInterviewerList = React.useMemo(() => {
+    if (!interviewerSearch) return interviewers;
+    const q = interviewerSearch.toLowerCase();
+    return interviewers.filter(p =>
+      p.fullName.toLowerCase().includes(q) || p.role.toLowerCase().includes(q)
+    );
+  }, [interviewers, interviewerSearch]);
+
+  // ── Slot computation: same-hour bookings ──
+  // Returns { slotNo, slotCount, slotExceeded } based on scheduledStart + existing interviews
+  const slotInfo = React.useMemo(() => {
+    if (!scheduleForm.scheduledStart) return { slotNo: 1, slotCount: 0, slotExceeded: false };
+    const chosenDate = new Date(scheduleForm.scheduledStart);
+    const chosenDateKey = chosenDate.toDateString();
+    const chosenHour   = chosenDate.getHours();
+
+    // Count real (non-optimistic) interviews already in the same date+hour bucket
+    const sameSlotInterviews = allInterviews.filter(iv => {
+      if (iv._optimistic) return false;
+      const d = new Date(iv.scheduledStart);
+      return d.toDateString() === chosenDateKey && d.getHours() === chosenHour;
+    });
+    const slotCount = sameSlotInterviews.length;
+    const slotNo    = slotCount + 1;
+    return { slotNo, slotCount, slotExceeded: slotNo > 7 };
+  }, [scheduleForm.scheduledStart, allInterviews]);
+
+  // Keep scheduleForm.slotNo in sync with computed slotInfo (only when scheduledStart is set)
+  React.useEffect(() => {
+    if (!scheduleForm.scheduledStart) return;
+    setScheduleForm(prev => ({ ...prev, slotNo: slotInfo.slotNo }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotInfo.slotNo, scheduleForm.scheduledStart]);
+
+  return (
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
+      <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
+        <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-[#0f1b3d]">Schedule Interview</h2>
+              <p className="text-xs text-slate-500 mt-1">Book a new session for this candidate</p>
+            </div>
+            <button
+              className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"
+              onClick={onClose}
+              type="button"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <form className="space-y-4" onSubmit={onSubmit}>
+            <div className="grid grid-cols-2 gap-4">
+              {/* Candidate */}
+              <div className="space-y-1 relative">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Candidate</label>
+                <div className="relative">
+                  <input
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
+                    placeholder="Select or search candidate..."
+                    value={candidateSearch}
+                    onChange={handleCandidateSearchChange}
+                    onFocus={() => setShowCandidateList(true)}
+                    onBlur={() => setTimeout(() => setShowCandidateList(false), 200)}
+                    autoComplete="off"
+                  />
+                  <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
+                </div>
+                {showCandidateList && (
+                  <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
+                    {searchingCandidates ? (
+                      <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
+                    ) : (
+                      candidateSuggestions.map(c => (
+                        <div
+                          key={c.id}
+                          className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
+                          onMouseDown={(e) => { e.preventDefault(); handleCandidateSelect(c); }}
+                        >
+                          <div className="font-medium text-slate-700">{c.fullName}</div>
+                          <div className="text-[10px] text-slate-400">{c.email || 'No Email'}</div>
+                        </div>
+                      ))
+                    )}
+                    {!searchingCandidates && candidateSuggestions.length === 0 && (
+                      <div className="p-4 text-center text-xs text-slate-400 italic">No candidates found</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Job Role */}
+              <div className="space-y-1 relative">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Job Role</label>
+                <div className="relative">
+                  <input
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
+                    placeholder="Select or search job..."
+                    value={jobSearch}
+                    onChange={handleJobSearchChange}
+                    onFocus={() => setShowJobList(true)}
+                    onBlur={() => setTimeout(() => setShowJobList(false), 200)}
+                    autoComplete="off"
+                  />
+                  <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
+                </div>
+                {showJobList && (
+                  <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
+                    {searchingJobs ? (
+                      <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
+                    ) : (
+                      jobSuggestions.map(j => (
+                        <div
+                          key={j.id}
+                          className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
+                          onMouseDown={(e) => { e.preventDefault(); handleJobSelect(j); }}
+                        >
+                          <div className="font-medium text-slate-700">{j.title}</div>
+                          <div className="text-[10px] text-slate-400">{j.location || 'Remote'}</div>
+                        </div>
+                      ))
+                    )}
+                    {!searchingJobs && jobSuggestions.length === 0 && (
+                      <div className="p-4 text-center text-xs text-slate-400 italic">No jobs found</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Round & Mode */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Interview Round</label>
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
+                  value={scheduleForm.roundNo === 99 ? 'Final' : scheduleForm.roundNo}
+                  onChange={handleRoundChange}
+                >
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                    <option key={n} value={n}>Round {n}</option>
+                  ))}
+                  <option value="Final">Final Round</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Mode</label>
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
+                  value={scheduleForm.mode}
+                  onChange={handleModeChange}
+                >
+                  <option value="ONLINE">Online Meeting</option>
+                  <option value="IN_PERSON">In Person</option>
+                  <option value="PHONE">Phone Call</option>
+                  <option value="DRIVE">Drive Meeting</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Interviewers */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between ml-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500">Interviewers (Multiple)</label>
+                <input
+                  className="text-[10px] border-b border-slate-200 focus:border-blue-400 outline-none w-24"
+                  placeholder="Filter..."
+                  value={interviewerSearch}
+                  onChange={handleInterviewerSearchChange}
+                />
+              </div>
+              <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 custom-scrollbar">
+                {filteredInterviewerList.map((person) => (
+                  <label key={person.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded-lg transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={scheduleForm.interviewerIds.includes(person.id)}
+                      onChange={(e) => handleInterviewerToggle(person.id, e.target.checked)}
+                      className="rounded-md h-4 w-4 text-[#1f52cc] border-slate-300 focus:ring-[#1f52cc]"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      {person.fullName} <span className="text-[10px] text-slate-400 font-normal">({person.role})</span>
+                    </span>
+                  </label>
+                ))}
+                {filteredInterviewerList.length === 0 && (
+                  <div className="text-xs text-slate-400 text-center py-2 italic">No interviewers match filter</div>
+                )}
+              </div>
+            </div>
+
+            {/* Date/Time + Slot */}
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Start Date &amp; Time</label>
+              <input
+                type="datetime-local"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none"
+                required
+                value={scheduleForm.scheduledStart}
+                onChange={handleStartChange}
+              />
+
+              {/* Auto-computed slot indicator */}
+              {scheduleForm.scheduledStart && (
+                <div className={`flex items-center gap-2 mt-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
+                  slotInfo.slotExceeded
+                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                    : slotInfo.slotNo >= 5
+                      ? 'bg-amber-50 border-amber-200 text-amber-700'
+                      : 'bg-blue-50 border-blue-200 text-blue-700'
+                }`}>
+                  <span className="material-symbols-outlined text-sm">
+                    {slotInfo.slotExceeded ? 'block' : 'confirmation_number'}
+                  </span>
+                  {slotInfo.slotExceeded
+                    ? `Slot limit exceeded — ${slotInfo.slotCount} interviews already booked for this hour (max 7). Please choose a different time.`
+                    : slotInfo.slotNo === 1
+                      ? 'Slot 1 — first booking for this time slot'
+                      : `Slot ${slotInfo.slotNo} — ${slotInfo.slotCount} other interview${slotInfo.slotCount !== 1 ? 's' : ''} already in this hour`
+                  }
+                </div>
+              )}
+            </div>
+
+            {/* Links */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Link</label>
+                <input
+                  type="url"
+                  className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none"
+                  placeholder="e.g. Google Meet / Zoom"
+                  value={scheduleForm.meetingLink}
+                  onChange={handleMeetingLinkChange}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Zoho Link</label>
+                <input
+                  type="url"
+                  className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none"
+                  placeholder="e.g. Zoho Meeting URL"
+                  value={scheduleForm.zohoLink}
+                  onChange={handleZohoLinkChange}
+                />
+              </div>
+            </div>
+
+            {/* Phone & Email Follow-ups */}
+            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Phone Follow-up</label>
+                {scheduleForm.phoneFollowUp ? (
+                  <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                    <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.phoneFollowUp.name}</span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setScheduleForm(prev => ({ ...prev, phoneFollowUp: null }))}
+                        className="text-red-500 hover:text-red-700 flex items-center justify-center"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {isAdmin ? (
+                      <>
+                        <input
+                          type="file"
+                          id="phone-followup-upload"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const base64 = await fileToBase64(file);
+                              setScheduleForm(prev => ({ ...prev, phoneFollowUp: base64 }));
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor="phone-followup-upload"
+                          className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-sm">add</span> Add phone follow-up
+                        </label>
+                      </>
+                    ) : null}
+                    <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Email Follow-up</label>
+                {scheduleForm.emailFollowUp ? (
+                  <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                    <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.emailFollowUp.name}</span>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => setScheduleForm(prev => ({ ...prev, emailFollowUp: null }))}
+                        className="text-red-500 hover:text-red-700 flex items-center justify-center"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {isAdmin ? (
+                      <>
+                        <input
+                          type="file"
+                          id="email-followup-upload"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const base64 = await fileToBase64(file);
+                              setScheduleForm(prev => ({ ...prev, emailFollowUp: base64 }));
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor="email-followup-upload"
+                          className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-sm">add</span> Add email follow-up
+                        </label>
+                      </>
+                    ) : null}
+                    <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+
+
+            <div className="flex gap-3 pt-6">
+              <button
+                type="button"
+                className="flex-1 h-11 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all"
+                onClick={onClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 h-11 rounded-xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50"
+                disabled={savingSchedule || slotInfo.slotExceeded}
+                title={slotInfo.slotExceeded ? 'Slot limit exceeded for this time — choose a different hour' : ''}
+              >
+                {savingSchedule ? 'Scheduling...' : slotInfo.slotExceeded ? 'Slot Full' : 'Confirm Schedule'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const InterviewSchedule = () => {
   const navigate = useNavigate();
@@ -180,6 +680,7 @@ const InterviewSchedule = () => {
   const listPanelRef = useRef(null);     // scrollable container ref for IntersectionObserver root
   const lastCandidateJobKeyRef = useRef('');
   const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
   const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -378,14 +879,22 @@ const InterviewSchedule = () => {
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
 
-  // ── Search: re-fetch from server when debounced search changes ──
+  // ── Search: re-fetch from server ONLY when there is an active query ──
+  // Using `enabled: false` equivalent — only pass filters when debouncedSearch exists.
+  // This prevents a second /interviews request on every render when idle.
   const { data: searchResponse, isFetching: isSearching } = useRoundsList(
-    debouncedSearch ? { search: debouncedSearch, limit: 50, ...(filterMine ? { interviewerId: currentUser?.id } : {}) } : {}
+    debouncedSearch
+      ? { search: debouncedSearch, limit: 50, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
+      : null  // null → hook is disabled (handled in useRoundsList)
   );
   const searchedInterviews = searchResponse?.data ?? [];
 
-  // The actual list to render: if searching, use search results; otherwise use base accumulated list
-  const displayInterviews = debouncedSearch ? searchedInterviews : interviews;
+  // The actual list to render:
+  // — While actively searching: show search results (but keep previous list visible until results arrive)
+  // — When search clears: immediately fall back to accumulated base list (no flicker)
+  const displayInterviews = debouncedSearch
+    ? (isSearching && searchedInterviews.length === 0 ? interviews : searchedInterviews)
+    : interviews;
 
 
   // ── groupedApplications: built purely from interviews data, no candidates limit ──
@@ -411,9 +920,17 @@ const InterviewSchedule = () => {
         });
       }
       const group = map.get(cId);
-      group.interviews.push(interview);
-      group.interviews.sort((a, b) => a.roundNo - b.roundNo);
-      if (!group.latestInterview || new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart)) {
+      // Skip duplicate temp entries that got replaced by server data
+      if (!group.interviews.find(iv => iv.id === interview.id)) {
+        group.interviews.push(interview);
+      }
+      // Always keep ascending roundNo order — this is the source of truth for tab rendering
+      group.interviews.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
+
+      // Track latest interview by scheduledStart date for sidebar sorting
+      const isCurrent = !group.latestInterview || 
+        new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart);
+      if (isCurrent) {
         group.latestInterview = interview;
         if (!group.application?.id) {
           group.application = interview.application;
@@ -422,6 +939,7 @@ const InterviewSchedule = () => {
       }
     });
 
+    // Sort groups: most recent interview first (descending date)
     return Array.from(map.values()).sort((a, b) => {
       const dateA = a.latestInterview?.scheduledStart || a.createdAt;
       const dateB = b.latestInterview?.scheduledStart || b.createdAt;
@@ -671,6 +1189,8 @@ const InterviewSchedule = () => {
   }, [jobs, jobSearch]);
 
   // Auto-sync round number based on application history (only defaults once when candidate/job selection changes)
+  // NOTE: `interviews` intentionally omitted from deps — we only want this to fire when candidate/job changes,
+  // not every time the interviews list updates (which would cause cascading re-renders & glitching).
   useEffect(() => {
     if (!showScheduleModal) {
       lastCandidateJobKeyRef.current = '';
@@ -681,10 +1201,11 @@ const InterviewSchedule = () => {
       lastCandidateJobKeyRef.current = currentKey;
       const app = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
       if (app) {
-        const appInterviews = interviews.filter(iv => iv.applicationId === app.id);
-        const nextRound = appInterviews.length + 1;
-        setScheduleForm(prev => ({ 
-          ...prev, 
+        // Read interviews from cache to avoid stale closure; fall back to 1
+        const appInterviewsCount = allInterviews.filter(iv => iv.applicationId === app.id && !iv._optimistic).length;
+        const nextRound = appInterviewsCount + 1;
+        setScheduleForm(prev => ({
+          ...prev,
           roundNo: nextRound,
           round: `Round ${nextRound}`
         }));
@@ -692,7 +1213,8 @@ const InterviewSchedule = () => {
         setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
       }
     }
-  }, [scheduleForm.candidateId, scheduleForm.jobId, showScheduleModal, applications, interviews]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleForm.candidateId, scheduleForm.jobId, showScheduleModal, applications]);
 
   const filteredInterviewersList = useMemo(() => {
     if (!interviewerSearch) return interviewers;
@@ -756,6 +1278,10 @@ const InterviewSchedule = () => {
 
     let roundNo = typeof savedForm.roundNo === 'number' ? savedForm.roundNo : (parseInt(savedForm.roundNo) || 1);
     if (savedForm.round === 'Final Round' || savedForm.round === 'Final') roundNo = 99;
+    const notesPayload = JSON.stringify({
+      phoneFollowUp: savedForm.phoneFollowUp || null,
+      emailFollowUp: savedForm.emailFollowUp || null,
+    });
 
     try {
       const result = await createRoundMutation.mutateAsync({
@@ -768,6 +1294,8 @@ const InterviewSchedule = () => {
         mode: savedForm.mode,
         meetingLink: savedForm.meetingLink ? savedForm.meetingLink.trim() : null,
         zohoLink: savedForm.zohoLink ? savedForm.zohoLink.trim() : null,
+        slotNo: savedForm.slotNo || 1,  // time-slot position (1–7 per hour)
+        notes: notesPayload,
       });
 
       // Upload recording after round is confirmed — non-blocking for UX
@@ -840,6 +1368,8 @@ const InterviewSchedule = () => {
         weaknesses:       savedFeedback.weaknesses || '',
         overallComments:  savedFeedback.overallComments || '',
         recommendation:   savedFeedback.recommendation || 'PENDING',
+        offerPhoneFollowUp: savedFeedback.offerPhoneFollowUp || null,
+        offerEmailFollowUp: savedFeedback.offerEmailFollowUp || null,
         ...(offerFileUrl ? { offerFileUrl, offerFileName } : {}),
       };
 
@@ -1081,8 +1611,8 @@ const InterviewSchedule = () => {
       }
       contentClassName="!p-0"
     >
-      <div className="flex items-center justify-between px-5 h-14 bg-white border-b border-[#e4ebf1]">
-        <div className="flex gap-2">
+      <div className="flex flex-col md:flex-row md:items-center justify-between px-5 py-3 md:py-0 md:h-14 bg-white border-b border-[#e4ebf1] gap-3 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           <button
             className={`os-btn-outline !h-9 ${viewMode === 'list' ? '!bg-[#1f52cc] !text-white' : ''}`}
             onClick={() => setViewMode('list')}
@@ -1106,7 +1636,7 @@ const InterviewSchedule = () => {
             My Interviews
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-between md:justify-end">
           <div className="text-sm font-semibold text-[#142651]">
             {viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
           </div>
@@ -1124,6 +1654,7 @@ const InterviewSchedule = () => {
           </button>
         </div>
       </div>
+
       <PageEnter className={`schedule-page h-[calc(100vh-126px)] overflow-hidden`}>
         {viewMode === 'list' && (
           <Reveal ref={listPanelRef} className="candidate-list-panel bg-white p-4 h-full">
@@ -1174,6 +1705,16 @@ const InterviewSchedule = () => {
             {visibleGroups.map((group) => {
               const candidate = group.application?.candidate;
               const candidateId = group.candidateId;
+              const activeInterviews = (group.interviews || []).filter(iv => {
+                const isCancelled = iv.status === 'CANCELLED';
+                const isDeleted = iv.isDeleted;
+                return !isCancelled && !isDeleted;
+              });
+              const uniqueRounds = activeInterviews.reduce((acc, curr) => {
+                if (!acc.find(item => item.roundNo === curr.roundNo)) acc.push(curr);
+                return acc;
+              }, []);
+              const roundCount = uniqueRounds.length;
               return (
                 <button
                   key={candidateId}
@@ -1184,8 +1725,10 @@ const InterviewSchedule = () => {
                   }`}
                   onClick={() => {
                     setSelectedId(candidateId);
-                    if (group.latestInterview?.id) {
-                      setActiveInterviewId(group.latestInterview.id);
+                    // Select the last round (highest roundNo) as active
+                    const lastRound = group.interviews[group.interviews.length - 1];
+                    if (lastRound?.id) {
+                      setActiveInterviewId(lastRound.id);
                     }
                   }}
                   type="button"
@@ -1201,12 +1744,10 @@ const InterviewSchedule = () => {
                     <div className="text-sm font-medium truncate">{candidate?.fullName || 'Candidate'}</div>
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded inline-block">
-                        {group.latestInterview ? `Round ${group.latestInterview.roundNo || 1}` : 'Not Scheduled'}
+                      {/* Show as plain ordinal count, not "Round N" — less noisy, more scannable */}
+                      <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold inline-block">
+                        {roundCount > 0 ? `${roundCount} round${roundCount !== 1 ? 's' : ''}` : 'Not Scheduled'}
                       </div>
-                      {group.latestInterview && (
-                        <SyncIndicator isPending={group.latestInterview._pendingSync || group.latestInterview._optimistic} />
-                      )}
                     </div>
                   </div>
                 </button>
@@ -1285,23 +1826,87 @@ const InterviewSchedule = () => {
                                 <div className="grid gap-3">
                                   {[...dayInterviews]
                                     .sort((a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime())
-                                    .map((iv) => (
-                                      <div key={iv.id} className="os-card p-5 flex items-center justify-between border-blue-100 bg-blue-50/20">
-                                        <div className="flex items-center gap-4">
-                                          <div className="w-12 h-12 rounded-2xl bg-white border border-[#e2e8f0] flex flex-col items-center justify-center text-[#1f52cc]">
-                                            <div className="text-[10px] font-bold leading-none">{new Date(iv.scheduledStart).getHours() % 12 || 12}</div>
-                                            <div className="text-[9px] uppercase font-black">{new Date(iv.scheduledStart).getHours() >= 12 ? 'PM' : 'AM'}</div>
-                                          </div>
-                                          <div>
-                                            <div className="text-base font-bold text-[#10193f]">{iv.application?.candidate?.fullName}</div>
-                                            <div className="text-xs text-[#6f7d98] mt-0.5">{iv.round} • {iv.mode}</div>
+                                    .map((iv, ivIdx, sortedList) => {
+                                      const startDate = new Date(iv.scheduledStart);
+                                      const hr = startDate.getHours();
+                                      const min = startDate.getMinutes();
+                                      const isPM = hr >= 12;
+                                      const hr12 = hr % 12 || 12;
+                                      const minStr = min > 0 ? `:${String(min).padStart(2, '0')}` : '';
+                                      const panelists = (iv.interviewers || []).map(u => u.fullName).filter(Boolean);
+                                      const jobTitle = iv.application?.job?.title || iv.jobTitle || '';
+                                      const resultColor =
+                                        iv.result === 'PASS' || iv.result === 'SELECTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        iv.result === 'FAIL' || iv.result === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                        iv.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                        iv.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        'bg-slate-50 text-slate-500 border-slate-200';
+                                      const resultLabel = iv.result === 'DIDNT_JOIN' ? "Didn't Join" : (iv.result || 'Scheduled');
+                                      // Compute slot: position among same-hour interviews on this day
+                                      const slotNo = iv.slotNo || (sortedList.filter(s =>
+                                        new Date(s.scheduledStart).getHours() === hr &&
+                                        new Date(s.scheduledStart) <= startDate
+                                      ).length);
+                                      const slotColor = slotNo >= 6 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                                      return (
+                                        <div key={iv.id} className="os-card p-4 border-blue-100 bg-blue-50/20 hover:shadow-md transition-shadow">
+                                          <div className="flex items-start justify-between gap-3">
+                                            {/* Time block */}
+                                            <div className="w-14 h-14 rounded-2xl bg-white border border-[#e2e8f0] flex flex-col items-center justify-center text-[#1f52cc] shrink-0 shadow-sm">
+                                              <div className="text-sm font-extrabold leading-none">{hr12}{minStr}</div>
+                                              <div className="text-[9px] uppercase font-black tracking-widest mt-0.5">{isPM ? 'PM' : 'AM'}</div>
+                                            </div>
+
+                                            {/* Main info */}
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="text-base font-bold text-[#10193f] truncate">{iv.application?.candidate?.fullName}</div>
+                                                <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${resultColor}`}>
+                                                  {resultLabel}
+                                                </span>
+                                              </div>
+
+                                              {/* Role */}
+                                              {jobTitle && (
+                                                <div className="flex items-center gap-1 mt-1">
+                                                  <span className="material-symbols-outlined text-[11px] text-[#1f52cc]">work</span>
+                                                  <span className="text-[11px] font-semibold text-[#1f52cc] truncate">{jobTitle}</span>
+                                                </div>
+                                              )}
+
+                                              {/* Round & Mode */}
+                                              <div className="text-xs text-[#6f7d98] mt-0.5 flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[12px]">layers</span>
+                                                <span>{iv.round || `Round ${iv.roundNo}`}</span>
+                                                <span className="text-slate-300">•</span>
+                                                <span className="material-symbols-outlined text-[12px]">{iv.mode === 'ONLINE' ? 'videocam' : iv.mode === 'PHONE' ? 'phone' : 'location_on'}</span>
+                                                <span>{iv.mode === 'ONLINE' ? 'Online' : iv.mode === 'IN_PERSON' ? 'In Person' : iv.mode === 'PHONE' ? 'Phone' : iv.mode}</span>
+                                              </div>
+
+                                              {/* Panelists */}
+                                              {panelists.length > 0 && (
+                                                <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                                  <span className="material-symbols-outlined text-[11px] text-slate-400">supervisor_account</span>
+                                                  {panelists.map((name, idx) => (
+                                                    <span key={idx} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                                                      {name}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            {/* Profile button */}
+                                            <button
+                                              className="os-btn-outline !h-8 !px-4 !text-xs shrink-0"
+                                              onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}
+                                            >
+                                              Profile
+                                            </button>
                                           </div>
                                         </div>
-                                        <button className="os-btn-outline !h-9 !px-5" onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}>
-                                          Profile
-                                        </button>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                 </div>
                               </div>
                             )}
@@ -1410,9 +2015,12 @@ const InterviewSchedule = () => {
                 {banner ? <div className="os-card p-3 text-xs text-[#2454cf]">{banner}</div> : null}
 
                 {/* Rounds Tab Bar */}
-                <div className="round-tabs-bar bg-[#f1f5f9] rounded-[20px] p-1.5 gap-1.5 border border-[#e2e8f0]">
+                <div className="round-tabs-bar flex flex-row flex-wrap items-center bg-[#f1f5f9] rounded-[20px] p-1.5 gap-1.5 border border-[#e2e8f0]">
                   {(selectedGroup?.interviews || [])
                     .reduce((acc, curr) => {
+                      const isCancelled = curr.status === 'CANCELLED';
+                      const isDeleted = curr.isDeleted;
+                      if (isCancelled || isDeleted) return acc;
                       if (!acc.find(item => item.roundNo === curr.roundNo)) acc.push(curr);
                       return acc;
                     }, [])
@@ -1420,10 +2028,23 @@ const InterviewSchedule = () => {
                     .map((iv) => (
                       <button
                         key={iv.id}
-                        className={`round-tab-btn py-3 px-4 rounded-[14px] text-xs font-bold uppercase tracking-wider transition-all duration-300 ${selectedInterview?.roundNo === iv.roundNo ? 'bg-[#1f52cc] text-white shadow-lg shadow-blue-200 translate-y-[-1px]' : 'text-[#64748b] hover:bg-white hover:text-[#1f52cc]'}`}
+                        className={`round-tab-btn py-2.5 px-4 rounded-[14px] text-xs font-bold uppercase tracking-wider transition-all duration-300 flex flex-col items-center gap-0.5 ${
+                          selectedInterview?.roundNo === iv.roundNo
+                            ? 'bg-[#1f52cc] text-white shadow-lg shadow-blue-200 translate-y-[-1px]'
+                            : 'text-[#64748b] hover:bg-white hover:text-[#1f52cc]'
+                        }`}
                         onClick={() => setActiveInterviewId(iv.id)}
                       >
-                        Round {iv.roundNo === 99 ? 'Final' : iv.roundNo}
+                        <span>Round {iv.roundNo === 99 ? 'Final' : iv.roundNo}</span>
+                        {iv.slotNo > 0 && (
+                          <span className={`text-[9px] font-semibold tracking-normal normal-case px-1.5 py-0.5 rounded-full ${
+                            selectedInterview?.roundNo === iv.roundNo
+                              ? 'bg-white/20 text-white'
+                              : 'bg-blue-100 text-blue-600'
+                          }`}>
+                            Slot {iv.slotNo}
+                          </span>
+                        )}
                       </button>
                     ))}
                 </div>
@@ -1511,6 +2132,117 @@ const InterviewSchedule = () => {
                             {selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString() : '-'}
                           </span>
                         </div>
+                        {/* Slot number row */}
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Time Slot:</span>
+                          <span className="flex items-center gap-1.5">
+                            {selectedInterview?.slotNo > 0 ? (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                selectedInterview.slotNo >= 6
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}>
+                                Slot {selectedInterview.slotNo}
+                              </span>
+                            ) : (
+                              <span className="text-[#142651] font-semibold">Slot 1</span>
+                            )}
+                            {selectedInterview?.slotNo >= 6 && (
+                              <span className="text-[10px] text-amber-600 font-medium">(near capacity)</span>
+                            )}
+                          </span>
+                        </div>
+                        {/* Phone Follow-up row */}
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Phone Follow-up:</span>
+                          {(() => {
+                            const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
+                            return phoneFollowUp ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => downloadBase64File(phoneFollowUp.name, phoneFollowUp.data)}
+                                  className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
+                                >
+                                  <span className="material-symbols-outlined text-xs">attachment</span>
+                                  <span className="truncate max-w-[150px]">{phoneFollowUp.name}</span>
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const updatedNotes = JSON.stringify({ phoneFollowUp: null, emailFollowUp });
+                                      const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                      await schedulingApi.updateRound(selectedInterview.id, {
+                                        applicationId: selectedInterview.applicationId,
+                                        roundNo: selectedInterview.roundNo,
+                                        round: selectedInterview.round,
+                                        interviewerIds,
+                                        scheduledStart: selectedInterview.scheduledStart,
+                                        mode: selectedInterview.mode,
+                                        meetingLink: selectedInterview.meetingLink,
+                                        zohoLink: selectedInterview.zohoLink,
+                                        notes: updatedNotes
+                                      });
+                                      await loadAll();
+                                    }}
+                                    className="text-red-500 hover:text-red-700 text-xs font-semibold"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-rose-500 font-bold text-xs">Didn't upload</span>
+                            );
+                          })()}
+                        </div>
+                        {/* Email Follow-up row */}
+                        <div className="flex border-b border-slate-50 pb-2">
+                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Email Follow-up:</span>
+                          {(() => {
+                            const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
+                            return emailFollowUp ? (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => downloadBase64File(emailFollowUp.name, emailFollowUp.data)}
+                                  className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
+                                >
+                                  <span className="material-symbols-outlined text-xs">attachment</span>
+                                  <span className="truncate max-w-[150px]">{emailFollowUp.name}</span>
+                                </button>
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: null });
+                                      const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                      await schedulingApi.updateRound(selectedInterview.id, {
+                                        applicationId: selectedInterview.applicationId,
+                                        roundNo: selectedInterview.roundNo,
+                                        round: selectedInterview.round,
+                                        interviewerIds,
+                                        scheduledStart: selectedInterview.scheduledStart,
+                                        mode: selectedInterview.mode,
+                                        meetingLink: selectedInterview.meetingLink,
+                                        zohoLink: selectedInterview.zohoLink,
+                                        notes: updatedNotes
+                                      });
+                                      await loadAll();
+                                    }}
+                                    className="text-red-500 hover:text-red-700 text-xs font-semibold"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-rose-500 font-bold text-xs">Didn't upload</span>
+                            );
+                          })()}
+                        </div>
+
                         {selectedInterview?.zohoLink && (
                           <div className="flex pb-2">
                             <span className="w-28 text-[#6d7893] shrink-0 font-medium">Zoho Meet:</span>
@@ -1583,13 +2315,118 @@ const InterviewSchedule = () => {
                               <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Notes..." value={feedbackForm.overallComments} onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))} required />
                             </div>
 
+                            {/* Offer Letter Required Uploads */}
+                            {feedbackForm.recommendation === 'OFFER_LETTER' && (
+                              <div className="space-y-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                                <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-wider">Offer Letter Attachments Required</div>
+                                
+                                {/* Offer Phone Follow-up File */}
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 block">Offer Letter Phone Follow-up</label>
+                                  {feedbackForm.offerPhoneFollowUp ? (
+                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
+                                      <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerPhoneFollowUp.name}</span>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: null }))}
+                                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
+                                        >
+                                          <span className="material-symbols-outlined text-sm">delete</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      {isAdmin ? (
+                                        <>
+                                          <input
+                                            type="file"
+                                            id="offer-phone-followup"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (file) {
+                                                const base64 = await fileToBase64(file);
+                                                setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: base64 }));
+                                              }
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor="offer-phone-followup"
+                                            className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                                          >
+                                            <span className="material-symbols-outlined text-sm">add</span> Upload phone follow-up
+                                          </label>
+                                        </>
+                                      ) : null}
+                                      <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Offer Email Follow-up File */}
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-bold text-slate-500 block">Offer Letter Email Follow-up</label>
+                                  {feedbackForm.offerEmailFollowUp ? (
+                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
+                                      <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerEmailFollowUp.name}</span>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: null }))}
+                                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
+                                        >
+                                          <span className="material-symbols-outlined text-sm">delete</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      {isAdmin ? (
+                                        <>
+                                          <input
+                                            type="file"
+                                            id="offer-email-followup"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (file) {
+                                                const base64 = await fileToBase64(file);
+                                                setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: base64 }));
+                                              }
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor="offer-email-followup"
+                                            className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                                          >
+                                            <span className="material-symbols-outlined text-sm">add</span> Upload email follow-up
+                                          </label>
+                                        </>
+                                      ) : null}
+                                      <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+
                             <div className="flex gap-2">
                               {isEditingFeedback && (
                                 <button type="button" onClick={() => setIsEditingFeedback(false)} className="flex-1 h-10 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs hover:bg-slate-200 transition-all">
                                   Cancel
                                 </button>
                               )}
-                              <button type="submit" className="flex-1 h-10 rounded-xl bg-[#2ca764] text-white font-bold text-xs shadow-md shadow-emerald-100 hover:bg-[#258a52] transition-all" disabled={savingFeedback}>
+                              <button
+                                type="submit"
+                                className="flex-1 h-10 rounded-xl bg-[#2ca764] text-white font-bold text-xs shadow-md shadow-emerald-100 hover:bg-[#258a52] transition-all disabled:opacity-50"
+                                disabled={
+                                  savingFeedback ||
+                                  (feedbackForm.recommendation === 'OFFER_LETTER' && (!feedbackForm.offerPhoneFollowUp || !feedbackForm.offerEmailFollowUp))
+                                }
+                              >
                                 {savingFeedback ? 'Saving...' : (isEditingFeedback ? 'Save Changes' : 'Submit Assessment')}
                               </button>
                             </div>
@@ -1618,6 +2455,8 @@ const InterviewSchedule = () => {
                                   weaknesses: myFeedback.concerns || myFeedback.weaknesses || '',
                                   recommendation: myFeedback.recommendation || 'SELECTED',
                                   overallComments: myFeedback.notes || myFeedback.overallComments || '',
+                                  offerPhoneFollowUp: myFeedback.offerPhoneFollowUp || null,
+                                  offerEmailFollowUp: myFeedback.offerEmailFollowUp || null,
                                 });
                                 setIsEditingFeedback(true);
                               }}
@@ -1656,8 +2495,77 @@ const InterviewSchedule = () => {
                                 "{(myFeedback.notes || myFeedback.overallComments || 'No additional comments.')}"
                               </p>
                             </div>
+
+                            {myFeedback.recommendation === 'OFFER_LETTER' && (
+                              <div className="space-y-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 mt-3 text-xs">
+                                <div className="font-bold text-[#1f52cc] text-[10px] uppercase tracking-wider">Offer Letter Attachments</div>
+                                
+                                <div className="flex justify-between items-center py-1 border-b border-blue-50">
+                                  <span className="text-slate-500 font-medium">Phone Follow-up:</span>
+                                  {myFeedback.offerPhoneFollowUp ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => downloadBase64File(myFeedback.offerPhoneFollowUp.name, myFeedback.offerPhoneFollowUp.data)}
+                                        className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
+                                      >
+                                        <span className="material-symbols-outlined text-xs">attachment</span>
+                                        <span className="truncate max-w-[120px]">{myFeedback.offerPhoneFollowUp.name}</span>
+                                      </button>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const updatedFeedback = { ...myFeedback, offerPhoneFollowUp: null };
+                                            await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
+                                            await loadAll();
+                                          }}
+                                          className="text-red-500 hover:text-red-700 text-[10px] font-semibold"
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-rose-500 font-bold text-[10px]">Didn't upload</span>
+                                  )}
+                                </div>
+
+                                <div className="flex justify-between items-center py-1">
+                                  <span className="text-slate-500 font-medium">Email Follow-up:</span>
+                                  {myFeedback.offerEmailFollowUp ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => downloadBase64File(myFeedback.offerEmailFollowUp.name, myFeedback.offerEmailFollowUp.data)}
+                                        className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
+                                      >
+                                        <span className="material-symbols-outlined text-xs">attachment</span>
+                                        <span className="truncate max-w-[120px]">{myFeedback.offerEmailFollowUp.name}</span>
+                                      </button>
+                                      {isAdmin && (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            const updatedFeedback = { ...myFeedback, offerEmailFollowUp: null };
+                                            await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
+                                            await loadAll();
+                                          }}
+                                          className="text-red-500 hover:text-red-700 text-[10px] font-semibold"
+                                        >
+                                          Delete
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-rose-500 font-bold text-[10px]">Didn't upload</span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
+
                       )}      </div>
                   </div>
                 </div>
@@ -1702,225 +2610,32 @@ const InterviewSchedule = () => {
 
       {/* MODALS */}
       {showScheduleModal && (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowScheduleModal(false)} />
-          <Reveal className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
-            <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-[#0f1b3d]">Schedule Interview</h2>
-                  <p className="text-xs text-slate-500 mt-1">Book a new session for this candidate</p>
-                </div>
-                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowScheduleModal(false)}>
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-              <form className="space-y-4" onSubmit={async (e) => {
-                const success = await onScheduleSubmit(e);
-                if (success) {
-                  setShowScheduleModal(false);
-                }
-              }}>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1 relative">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Candidate</label>
-                    <div className="relative">
-                      <input 
-                        className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
-                        placeholder="Select or search candidate..."
-                        value={candidateSearch}
-                        onChange={(e) => setCandidateSearch(e.target.value)}
-                        onFocus={() => setShowCandidateList(true)}
-                        onBlur={() => setTimeout(() => setShowCandidateList(false), 200)}
-                      />
-                      <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
-                    </div>
-                    {showCandidateList && (
-                      <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                        {searchingCandidates ? (
-                          <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
-                        ) : (
-                          candidateSuggestions.map(c => (
-                            <div 
-                              key={c.id} 
-                              className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
-                              onClick={() => {
-                                const candInterviews = interviews.filter(iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id);
-                                const nextRound = candInterviews.length + 1;
-                                setScheduleForm(prev => ({ 
-                                  ...prev, 
-                                  candidateId: c.id,
-                                  roundNo: nextRound,
-                                  round: `Round ${nextRound}`
-                                }));
-                                setCandidateSearch(c.fullName);
-                                setShowCandidateList(false);
-                              }}
-                            >
-                              <div className="font-medium text-slate-700">{c.fullName}</div>
-                              <div className="text-[10px] text-slate-400">{c.email || 'No Email'}</div>
-                            </div>
-                          ))
-                        )}
-                        {!searchingCandidates && candidateSuggestions.length === 0 && (
-                          <div className="p-4 text-center text-xs text-slate-400 italic">No candidates found</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-1 relative">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Job Role</label>
-                    <div className="relative">
-                      <input 
-                        className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
-                        placeholder="Select or search job..."
-                        value={jobSearch}
-                        onChange={(e) => setJobSearch(e.target.value)}
-                        onFocus={() => setShowJobList(true)}
-                        onBlur={() => setTimeout(() => setShowJobList(false), 200)}
-                      />
-                      <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
-                    </div>
-                    {showJobList && (
-                      <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                        {searchingJobs ? (
-                          <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
-                        ) : (
-                          jobSuggestions.map(j => (
-                            <div 
-                              key={j.id} 
-                              className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
-                              onClick={() => {
-                                setScheduleForm(prev => ({ ...prev, jobId: j.id }));
-                                setJobSearch(j.title);
-                                setShowJobList(false);
-                              }}
-                            >
-                              <div className="font-medium text-slate-700">{j.title}</div>
-                              <div className="text-[10px] text-slate-400">{j.location || 'Remote'}</div>
-                            </div>
-                          ))
-                        )}
-                        {!searchingJobs && jobSuggestions.length === 0 && (
-                          <div className="p-4 text-center text-xs text-slate-400 italic">No jobs found</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Interview Round</label>
-                    <select 
-                      className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
-                      value={scheduleForm.roundNo}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setScheduleForm(prev => ({ 
-                          ...prev, 
-                          roundNo: val === 'Final' ? 99 : parseInt(val), 
-                          round: val === 'Final' ? 'Final Round' : `Round ${val}` 
-                        }));
-                      }}
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                        <option key={n} value={n}>Round {n}</option>
-                      ))}
-                      <option value="Final">Final Round</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Mode</label>
-                    <select 
-                      className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
-                      value={scheduleForm.mode}
-                      onChange={(e) => setScheduleForm(prev => ({ ...prev, mode: e.target.value }))}
-                    >
-                      <option value="ONLINE">Online Meeting</option>
-                      <option value="IN_PERSON">In Person</option>
-                      <option value="PHONE">Phone Call</option>
-                      <option value="DRIVE">Drive Meeting</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between ml-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Interviewers (Multiple)</label>
-                    <input 
-                      className="text-[10px] border-b border-slate-200 focus:border-blue-400 outline-none w-24"
-                      placeholder="Filter..."
-                      value={interviewerSearch}
-                      onChange={(e) => setInterviewerSearch(e.target.value)}
-                    />
-                  </div>
-                  <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 custom-scrollbar">
-                    {interviewers
-                      .filter(p => p.fullName.toLowerCase().includes(interviewerSearch.toLowerCase()))
-                      .map((person) => (
-                      <label key={person.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded-lg transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={scheduleForm.interviewerIds.includes(person.id)}
-                          onChange={(e) => {
-                            const ids = e.target.checked
-                              ? [...scheduleForm.interviewerIds, person.id]
-                              : scheduleForm.interviewerIds.filter(id => id !== person.id);
-                            setScheduleForm(prev => ({ ...prev, interviewerIds: ids }));
-                          }}
-                          className="rounded-md h-4 w-4 text-[#1f52cc] border-slate-300 focus:ring-[#1f52cc]"
-                        />
-                        <span className="text-sm font-medium text-slate-700">{person.fullName} <span className="text-[10px] text-slate-400 font-normal">({person.role})</span></span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Start Date & Time</label>
-                  <input 
-                    type="datetime-local" 
-                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none" 
-                    required
-                    value={scheduleForm.scheduledStart}
-                    onChange={(e) => setScheduleForm(prev => ({ ...prev, scheduledStart: e.target.value }))}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Link</label>
-                    <input 
-                      type="url" 
-                      className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none" 
-                      placeholder="e.g. Google Meet / Zoom"
-                      value={scheduleForm.meetingLink}
-                      onChange={(e) => setScheduleForm(prev => ({ ...prev, meetingLink: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Zoho Link</label>
-                    <input 
-                      type="url" 
-                      className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none" 
-                      placeholder="e.g. Zoho Meeting URL"
-                      value={scheduleForm.zohoLink}
-                      onChange={(e) => setScheduleForm(prev => ({ ...prev, zohoLink: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-6">
-                  <button type="button" className="flex-1 h-11 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all" onClick={() => setShowScheduleModal(false)}>Cancel</button>
-                  <button type="submit" className="flex-1 h-11 rounded-xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={savingSchedule}>
-                    {savingSchedule ? 'Scheduling...' : 'Confirm Schedule'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </Reveal>
-        </div>
+        <ScheduleModal
+          scheduleForm={scheduleForm}
+          setScheduleForm={setScheduleForm}
+          candidateSearch={candidateSearch}
+          setCandidateSearch={setCandidateSearch}
+          jobSearch={jobSearch}
+          setJobSearch={setJobSearch}
+          interviewerSearch={interviewerSearch}
+          setInterviewerSearch={setInterviewerSearch}
+          showCandidateList={showCandidateList}
+          setShowCandidateList={setShowCandidateList}
+          showJobList={showJobList}
+          setShowJobList={setShowJobList}
+          candidateSuggestions={candidateSuggestions}
+          jobSuggestions={jobSuggestions}
+          interviewers={interviewers}
+          searchingCandidates={searchingCandidates}
+          searchingJobs={searchingJobs}
+          savingSchedule={savingSchedule}
+          allInterviews={allInterviews}
+          onClose={() => setShowScheduleModal(false)}
+          onSubmit={async (e) => {
+            const success = await onScheduleSubmit(e);
+            if (success) setShowScheduleModal(false);
+          }}
+        />
       )}
 
 
