@@ -8,7 +8,6 @@ const LandingPage = lazy(() => import('./pages/LandingPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const RecruiterDashboard = lazy(() => import('./pages/RecruiterDashboard'));
 // const Pipeline = lazy(() => import('./pages/Pipeline'));
 const CandidateProfile = lazy(() => import('./pages/CandidateProfile'));
 const Candidates = lazy(() => import('./pages/Candidates'));
@@ -62,11 +61,7 @@ const App = () => {
 
 
           <Route path="/workspaces" element={protectedElement(<WorkspaceSelector />)} />
-          <Route path="/dashboard" element={
-            currentUser?.role === 'RECRUITER' 
-              ? protectedElement(<RecruiterDashboard />) 
-              : protectedElement(<Dashboard />)
-          } />
+          <Route path="/dashboard" element={protectedElement(<Dashboard />)} />
           {/* <Route path="/pipeline" element={protectedElement(<Pipeline />)} /> */}
           <Route path="/candidates" element={protectedElement(<Candidates />)} />
           <Route path="/candidate/:id" element={protectedElement(<CandidateProfile />)} />
