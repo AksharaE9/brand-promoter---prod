@@ -184,142 +184,123 @@ async function getRoundsList(orgId, filters = {}) {
   const isSearch = !!(filters.search && filters.search.trim());
 
   try {
-    const where = {
-      organizationId: orgId
-    };
+    // ─── Build base WHERE for interviews ─────────────────────────────────────
+    const where = { organizationId: orgId };
 
-    if (filters.status) {
-      where.status = filters.status;
-    }
+    if (filters.status) where.status = filters.status;
 
     const applicationWhere = {};
-    if (filters.candidateId) {
-      applicationWhere.candidateId = filters.candidateId;
-    }
-    if (filters.jobId) {
-      applicationWhere.jobId = filters.jobId;
-    }
+    if (filters.candidateId)   applicationWhere.candidateId = filters.candidateId;
+    if (filters.jobId)         applicationWhere.jobId = filters.jobId;
+
     if (isSearch) {
       const q = filters.search.trim();
       applicationWhere.OR = [
-        {
-          candidate: {
-            fullName: {
-              contains: q,
-              mode: 'insensitive'
-            }
-          }
-        },
-        {
-          job: {
-            title: {
-              contains: q,
-              mode: 'insensitive'
-            }
-          }
-        }
+        { candidate: { fullName: { contains: q, mode: 'insensitive' } } },
+        { job:       { title:    { contains: q, mode: 'insensitive' } } },
       ];
     }
+    if (Object.keys(applicationWhere).length > 0) where.application = applicationWhere;
+    if (filters.interviewerId)  where.interviewerIds = { array_contains: filters.interviewerId };
 
-    if (Object.keys(applicationWhere).length > 0) {
-      where.application = applicationWhere;
-    }
-
-    if (filters.interviewerId) {
-      where.interviewerIds = {
-        array_contains: filters.interviewerId
+    // ─── When fetching for a specific candidate/application, return all rounds ─
+    // (no grouping needed — just return all matching, ordered by roundNo)
+    if (filters.candidateId || filters.applicationId) {
+      if (filters.applicationId) where.applicationId = filters.applicationId;
+      const rounds = await prisma.interview.findMany({
+        where,
+        orderBy: [{ roundNo: 'asc' }],
+        select: interviewSelectFields(),
+      });
+      const populated = await populateInterviews(rounds, { skipFeedbacks: true });
+      return {
+        source: 'db',
+        data: { data: populated, nextCursor: null, hasMore: false, pagination: { total: populated.length, hasMore: false } }
       };
     }
 
-    const take = limit + 1;
+    // ─── GROUP-BASED PAGINATION ────────────────────────────────────────────────
+    // Strategy:
+    //   1. Find the `limit` most-recent DISTINCT applicationIds (ordered by their
+    //      latest scheduledStart), applying cursor for pagination.
+    //   2. Fetch ALL interviews for those applicationIds in one query.
+    //   3. This guarantees every candidate card always shows ALL their rounds.
 
-    const orderBy = [];
-    if (filters.candidateId || filters.applicationId) {
-      orderBy.push({ roundNo: 'asc' });
-    } else {
-      orderBy.push({ scheduledStart: 'desc' });
-      orderBy.push({ id: 'desc' });
-    }
+    // Step 1: Get latest scheduledStart per applicationId (for ordering & cursor)
+    // We do this by fetching interviews ordered by scheduledStart desc, collecting
+    // unique applicationIds until we have `limit+1` of them.
+    const SCAN_LIMIT = (limit + 1) * 15; // scan enough rows to find limit distinct apps
+    const scanWhere = { ...where };
 
-    const queryParams = {
-      where,
-      orderBy,
-      take,
-      select: {
-        id: true,
-        applicationId: true,
-        candidateId: true,
-        candidateName: true,
-        jobId: true,
-        jobTitle: true,
-        roundNo: true,
-        round: true,
-        scheduledStart: true,
-        durationMinutes: true,
-        mode: true,
-        meetingLink: true,
-        zohoLink: true,
-        status: true,
-        result: true,
-        outcome: true,
-        outcomeSetAt: true,
-        notes: true,
-        organizationId: true,
-        createdById: true,
-        interviewerIds: true,
-        interviewerNames: true,
-        feedback: true,
-        rescheduleHistory: true,
-        transferHistory: true,
-        offerLetterUrl: true,
-        voiceRecordingFileId: true,
-        voiceRecordingUrl: true,
-        createdAt: true,
-        updatedAt: true,
-        application: {
-          select: {
-            id: true,
-            candidateId: true,
-            jobId: true,
-            status: true,
-            candidate: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-                phone: true,
-                profilePhotoFile: {
-                  select: {
-                    storageKey: true
-                  }
-                }
-              }
-            },
-            job: {
-              select: {
-                id: true,
-                title: true,
-                department: true,
-                location: true
-              }
-            }
-          }
-        }
-      }
-    };
-
+    // Cursor: we store the last applicationId and its latest scheduledStart
+    let cursorAppId = null;
+    let cursorDate  = null;
     if (cursor) {
-      queryParams.cursor = { id: cursor };
-      queryParams.skip = 1;
+      try {
+        const decoded = Buffer.from(cursor, 'base64').toString('utf8');
+        const parsed  = JSON.parse(decoded);
+        cursorAppId   = parsed.appId;
+        cursorDate    = parsed.date;
+      } catch (_) { /* invalid cursor — start from beginning */ }
     }
 
-    const rounds = await prisma.interview.findMany(queryParams);
+    // Apply date cursor to the where clause
+    if (cursorDate && cursorAppId) {
+      scanWhere.OR = [
+        { scheduledStart: { lt: cursorDate } },
+        { scheduledStart: cursorDate, applicationId: { lt: cursorAppId } },
+      ];
+    }
 
-    const hasMore = rounds.length > limit;
-    const pageRounds = rounds.slice(0, limit);
-    const nextCursor = hasMore && pageRounds[pageRounds.length - 1] ? pageRounds[pageRounds.length - 1].id : null;
+    const scanned = await prisma.interview.findMany({
+      where: scanWhere,
+      orderBy: [{ scheduledStart: 'desc' }, { applicationId: 'desc' }],
+      take: SCAN_LIMIT,
+      select: { id: true, applicationId: true, scheduledStart: true },
+    });
 
-    const populated = await populateInterviews(pageRounds, { skipFeedbacks: true });
+    // Collect distinct applicationIds in order, up to limit+1
+    const seenApps    = new Set();
+    const orderedApps = []; // [{ appId, latestDate }]
+    for (const iv of scanned) {
+      if (!iv.applicationId || seenApps.has(iv.applicationId)) continue;
+      seenApps.add(iv.applicationId);
+      orderedApps.push({ appId: iv.applicationId, latestDate: iv.scheduledStart });
+      if (orderedApps.length >= limit + 1) break;
+    }
+
+    const hasMore   = orderedApps.length > limit;
+    const pageApps  = orderedApps.slice(0, limit);
+    const pageAppIds = pageApps.map(a => a.appId);
+
+    // Next cursor = last item on this page
+    let nextCursor = null;
+    if (hasMore && pageApps.length > 0) {
+      const last = pageApps[pageApps.length - 1];
+      nextCursor = Buffer.from(JSON.stringify({ appId: last.appId, date: last.latestDate })).toString('base64');
+    }
+
+    // Step 2: Fetch ALL rounds for these applicationIds
+    let allRounds = [];
+    if (pageAppIds.length > 0) {
+      allRounds = await prisma.interview.findMany({
+        where: { applicationId: { in: pageAppIds } },
+        orderBy: [{ applicationId: 'asc' }, { roundNo: 'asc' }],
+        select: interviewSelectFields(),
+      });
+    }
+
+    // Step 3: Populate and return
+    const populated = await populateInterviews(allRounds, { skipFeedbacks: true });
+
+    // Re-order: preserve the page order (most-recent application first)
+    const appOrder = new Map(pageAppIds.map((id, idx) => [id, idx]));
+    populated.sort((a, b) => {
+      const oa = appOrder.get(a.applicationId) ?? 9999;
+      const ob = appOrder.get(b.applicationId) ?? 9999;
+      if (oa !== ob) return oa - ob;
+      return (a.roundNo ?? 0) - (b.roundNo ?? 0); // rounds within same app: ascending
+    });
 
     return {
       source: 'db',
@@ -335,6 +316,35 @@ async function getRoundsList(orgId, filters = {}) {
     throw err;
   }
 }
+
+// Shared select fields for interview queries
+function interviewSelectFields() {
+  return {
+    id: true, applicationId: true, candidateId: true, candidateName: true,
+    jobId: true, jobTitle: true, roundNo: true, round: true,
+    scheduledStart: true, durationMinutes: true, mode: true,
+    meetingLink: true, zohoLink: true, status: true, result: true,
+    outcome: true, outcomeSetAt: true, notes: true, organizationId: true,
+    createdById: true, interviewerIds: true, interviewerNames: true,
+    feedback: true, rescheduleHistory: true, transferHistory: true,
+    offerLetterUrl: true, voiceRecordingFileId: true, voiceRecordingUrl: true,
+    createdAt: true, updatedAt: true,
+    application: {
+      select: {
+        id: true, candidateId: true, jobId: true, status: true,
+        candidate: {
+          select: {
+            id: true, fullName: true, email: true, phone: true,
+            profilePhotoFile: { select: { storageKey: true } }
+          }
+        },
+        job: { select: { id: true, title: true, department: true, location: true } }
+      }
+    }
+  };
+}
+
+
 
 function cleanDatabasePayload(payload) {
   const allowedFields = [
