@@ -682,6 +682,7 @@ const InterviewSchedule = () => {
   const currentUser = getStoredUser();
   const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
   const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
+  const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
@@ -939,18 +940,33 @@ const InterviewSchedule = () => {
       }
     });
 
+    let groupsList = Array.from(map.values());
+
+    if (roundFilter !== 'all') {
+      const targetRound = parseInt(roundFilter, 10);
+      groupsList = groupsList.filter(group => {
+        const activeInterviews = (group.interviews || []).filter(iv => {
+          const isCancelled = iv.status === 'CANCELLED';
+          const isDeleted = iv.isDeleted;
+          return !isCancelled && !isDeleted;
+        });
+        const maxRoundNo = activeInterviews.reduce((max, iv) => Math.max(max, iv.roundNo || 0), 0);
+        return maxRoundNo === targetRound;
+      });
+    }
+
     // Sort groups: most recent interview first (descending date)
-    return Array.from(map.values()).sort((a, b) => {
+    return groupsList.sort((a, b) => {
       const dateA = a.latestInterview?.scheduledStart || a.createdAt;
       const dateB = b.latestInterview?.scheduledStart || b.createdAt;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
-  }, [displayInterviews, filterMine, currentUser?.id]);
+  }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
 
   // ── Infinite scroll: reset visible count when list changes ──
   useEffect(() => {
     setVisibleCount(20);
-  }, [debouncedSearch, filterMine]);
+  }, [debouncedSearch, filterMine, roundFilter]);
 
   // ── Live refs — always hold latest values so the observer never uses stale closures ──
   const serverHasMoreRef = useRef(serverHasMore);
@@ -1635,6 +1651,16 @@ const InterviewSchedule = () => {
           <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(true)}>
             My Interviews
           </button>
+          <span className="h-4 w-[1px] bg-slate-200 self-center hidden sm:inline-block"></span>
+          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === 'all' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('all')}>
+            All Rounds
+          </button>
+          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === '1' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('1')}>
+            Round 1
+          </button>
+          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === '2' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('2')}>
+            Round 2
+          </button>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-between md:justify-end">
           <div className="text-sm font-semibold text-[#142651]">
@@ -1710,11 +1736,7 @@ const InterviewSchedule = () => {
                 const isDeleted = iv.isDeleted;
                 return !isCancelled && !isDeleted;
               });
-              const uniqueRounds = activeInterviews.reduce((acc, curr) => {
-                if (!acc.find(item => item.roundNo === curr.roundNo)) acc.push(curr);
-                return acc;
-              }, []);
-              const roundCount = uniqueRounds.length;
+              const roundCount = activeInterviews.reduce((max, iv) => Math.max(max, iv.roundNo || 0), 0);
               return (
                 <button
                   key={candidateId}
@@ -1744,9 +1766,8 @@ const InterviewSchedule = () => {
                     <div className="text-sm font-medium truncate">{candidate?.fullName || 'Candidate'}</div>
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
                     <div className="flex items-center gap-2 mt-1">
-                      {/* Show as plain ordinal count, not "Round N" — less noisy, more scannable */}
                       <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold inline-block">
-                        {roundCount > 0 ? `${roundCount} round${roundCount !== 1 ? 's' : ''}` : 'Not Scheduled'}
+                        {roundCount > 0 ? `Round ${roundCount === 99 ? 'Final' : roundCount}` : 'Not Scheduled'}
                       </div>
                     </div>
                   </div>
