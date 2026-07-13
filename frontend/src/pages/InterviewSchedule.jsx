@@ -10,6 +10,8 @@ import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser 
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import EditInterviewModal from '../components/Interview/EditInterviewModal';
 import { subscribeSSE } from '../lib/sse';
+import ExcelView from '../components/Interview/ExcelView';
+import { groupInterviewsByDate, toDateKey, formatTime12h, getStatusStyle, getCandidateInitials } from '../lib/groupInterviewsByDate';
 
 import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
 import { schedulingApi } from '../services/schedulingApi';
@@ -79,15 +81,22 @@ const emptyFeedbackForm = {
 };
 
 /**
+ * CalendarCell — renders a single day cell in the Calendar Grid view.
+ *
  * @param {object} props
- * @param {Date} props.date
- * @param {boolean} props.isCurrentMonth
- * @param {boolean} props.isToday
- * @param {Function} props.onSelectDate
- * @param {any} props.data
+ * @param {Date}     props.date           - The calendar date this cell represents
+ * @param {boolean}  props.isCurrentMonth - Whether this date is in the displayed month
+ * @param {boolean}  props.isToday        - Whether this date is today
+ * @param {Function} props.onSelectDate   - Called when the cell is clicked
+ * @param {object[]} props.cellInterviews - Already-filtered interviews for this specific date
+ * @param {object[]} props.cellJoinings   - Application joinings for this date
+ * @param {Function} props.onChipClick    - Called when an interview chip is clicked: (candidateId, interviewId)
  */
-function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, data }) {
-  const { interviews: cellInterviews = [], joinings: cellJoinings = [] } = data || {};
+function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellInterviews = [], cellJoinings = [], onChipClick }) {
+  const [showPopover, setShowPopover] = React.useState(false);
+  const MAX_CHIPS = 3;
+  const visible = cellInterviews.slice(0, MAX_CHIPS);
+  const overflow = cellInterviews.length - MAX_CHIPS;
 
   return (
     <div
@@ -96,24 +105,104 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, data }) {
       } ${isToday ? 'ring-2 ring-inset ring-[#1f52cc] z-10 shadow-lg' : ''}`}
       onClick={() => onSelectDate(date)}
     >
-      <div className="flex justify-between items-start">
+      {/* Date number + joining badge */}
+      <div className="flex justify-between items-start mb-1">
         <span className={`text-sm font-semibold ${isToday ? 'text-[#1f52cc]' : 'text-[#64748b]'}`}>
           {date.getDate()}
         </span>
-        <div className="flex flex-col gap-1">
-          {cellInterviews.length > 0 && (
-            <div className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded flex items-center gap-1">
-              <span className="material-symbols-outlined text-[10px]">event</span>
-              {cellInterviews.length}
-            </div>
-          )}
-          {cellJoinings.length > 0 && (
-            <div className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded flex items-center gap-1">
-              <span className="material-symbols-outlined text-[10px]">celebration</span>
-              {cellJoinings.length}
-            </div>
-          )}
-        </div>
+        {cellJoinings.length > 0 && (
+          <div className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[9px] font-bold rounded flex items-center gap-1">
+            <span className="material-symbols-outlined text-[10px]">celebration</span>
+            {cellJoinings.length}
+          </div>
+        )}
+      </div>
+
+      {/* Interview event chips — up to MAX_CHIPS visible */}
+      <div className="flex flex-col gap-[3px]">
+        {visible.map((iv) => {
+          const name = iv.application?.candidate?.fullName || iv.candidateName || '?';
+          const initials = getCandidateInitials(name);
+          const roundLabel = iv.roundNo === 99 ? 'F' : `R${iv.roundNo || 1}`;
+          const timeLabel = iv.scheduledStart ? formatTime12h(new Date(iv.scheduledStart)) : '';
+          const { bg, text, dot } = getStatusStyle(iv.result);
+          return (
+            <button
+              key={iv.id}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const cId = iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId;
+                onChipClick(cId, iv.id);
+              }}
+              className={`w-full flex items-center gap-1 px-1.5 py-[2px] rounded text-left transition-all hover:brightness-95 ${bg}`}
+              title={`${name} — ${roundLabel} — ${timeLabel}`}
+            >
+              {/* Status dot */}
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+              {/* Initials avatar */}
+              <span className={`text-[8px] font-bold shrink-0 ${text}`}>{initials}</span>
+              {/* Name truncated */}
+              <span className={`text-[9px] font-semibold truncate flex-1 ${text}`}>
+                {name.split(' ')[0]}
+              </span>
+              {/* Round badge */}
+              <span className={`text-[8px] font-bold shrink-0 ${text} opacity-70`}>{roundLabel}</span>
+            </button>
+          );
+        })}
+
+        {/* +N more pill */}
+        {overflow > 0 && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowPopover((v) => !v); }}
+              className="w-full text-center text-[9px] font-bold text-[#1f52cc] bg-blue-50 hover:bg-blue-100 rounded py-[2px] transition-all"
+            >
+              +{overflow} more
+            </button>
+            {showPopover && (
+              <div
+                className="absolute left-0 top-full mt-1 z-50 bg-white rounded-xl shadow-2xl border border-[#e4ebf1] p-2 w-56 space-y-1"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-[9px] uppercase font-bold text-slate-400 px-1 pb-1 border-b border-slate-100">
+                  {date.getDate()} {date.toLocaleString('default', { month: 'short' })} — All Interviews
+                </div>
+                {cellInterviews.map((iv) => {
+                  const name = iv.application?.candidate?.fullName || iv.candidateName || '?';
+                  const { bg, text } = getStatusStyle(iv.result);
+                  const rLabel = iv.roundNo === 99 ? 'Final' : `Round ${iv.roundNo || 1}`;
+                  const tLabel = iv.scheduledStart ? formatTime12h(new Date(iv.scheduledStart)) : '';
+                  return (
+                    <button
+                      key={iv.id}
+                      type="button"
+                      onClick={() => {
+                        setShowPopover(false);
+                        const cId = iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId;
+                        onChipClick(cId, iv.id);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:brightness-95 transition-all ${bg}`}
+                    >
+                      <span className={`text-[9px] font-bold ${text} truncate flex-1`}>{name}</span>
+                      <span className={`text-[8px] font-semibold ${text} shrink-0`}>{rLabel}</span>
+                      <span className={`text-[8px] ${text} shrink-0 opacity-70`}>{tLabel}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => { setShowPopover(false); onSelectDate(date); }}
+                  className="w-full text-[9px] text-slate-400 hover:text-slate-600 pt-1 border-t border-slate-100 text-center"
+                >
+                  View all for this day
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -726,6 +815,50 @@ const InterviewSchedule = () => {
     }
   }, [serverNextCursor, serverHasMore, debouncedSearch, filterMine, currentUser?.id, queryClient]);
 
+  // ── Calendar/Excel bulk-load: when user switches to a non-list view, immediately
+  // fetch all remaining pages so every interview is visible in the grid.
+  // This prevents the "only 20 interviews shown" problem caused by pagination.
+  const bulkLoadAllRef = useRef(false);
+  useEffect(() => {
+    if (viewMode !== 'calendar' && viewMode !== 'excel') {
+      bulkLoadAllRef.current = false; // reset so next calendar visit re-triggers
+      return;
+    }
+    if (bulkLoadAllRef.current) return;   // already triggered for this session
+    if (!serverHasMore || !serverNextCursor) return; // nothing more to load
+
+    bulkLoadAllRef.current = true;
+
+    const fetchAllRemaining = async () => {
+      let cursor = serverNextCursor;
+      let hasMore = serverHasMore;
+      while (hasMore && cursor) {
+        try {
+          const res = await schedulingApi.getRounds({ cursor, limit: 100 });
+          const nextPage = res?.data || [];
+          if (nextPage.length > 0) {
+            setAllInterviews(prev => {
+              // Merge without duplicates using a Map keyed by id
+              const map = new Map(prev.map(iv => [iv.id, iv]));
+              nextPage.forEach(iv => map.set(iv.id, iv));
+              return Array.from(map.values());
+            });
+          }
+          hasMore = res?.hasMore || false;
+          cursor  = res?.nextCursor || null;
+          setServerHasMore(hasMore);
+          setServerNextCursor(cursor);
+        } catch (err) {
+          console.error('[InterviewSchedule] calendar bulk-load error:', err);
+          break;
+        }
+      }
+    };
+
+    fetchAllRemaining();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, serverHasMore, serverNextCursor]);
+
 
   const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
 
@@ -897,6 +1030,21 @@ const InterviewSchedule = () => {
     ? (isSearching && searchedInterviews.length === 0 ? interviews : searchedInterviews)
     : interviews;
 
+  // ── filteredForViews: single source of truth for Calendar + Excel (respects filterMine + roundFilter) ──
+  // This is the same filtering logic used by groupedApplications but returns a flat array.
+  const filteredForViews = useMemo(() => {
+    let filtered = filterMine
+      ? displayInterviews.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
+      : displayInterviews;
+
+    if (roundFilter !== 'all') {
+      const targetRound = parseInt(roundFilter, 10);
+      filtered = filtered.filter(iv => (iv.roundNo || 0) === targetRound);
+    }
+
+    return filtered;
+  }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
+
 
   // ── groupedApplications: built purely from interviews data, no candidates limit ──
   const groupedApplications = useMemo(() => {
@@ -1013,40 +1161,6 @@ const InterviewSchedule = () => {
     [groupedApplications, visibleCount]
   );
 
-  const downloadDailyPdf = async () => {
-    try {
-      const start = new Date(viewDate);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(viewDate);
-      end.setHours(23, 59, 59, 999);
-
-      const startISO = start.toISOString();
-      const endISO = end.toISOString();
-
-      // Standardize date for filename (YYYY-MM-DD)
-      const year = start.getFullYear();
-      const month = String(start.getMonth() + 1).padStart(2, '0');
-      const day = String(start.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-
-      const path = `/reports/export?report=dailyinterviews&start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}&date=${encodeURIComponent(dateStr)}`;
-
-      const blob = await apiGetBlob(path);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `interviews-${dateStr}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-
-      setBanner(`Interviews for ${dateStr} export started.`);
-    } catch (err) {
-      setError(err.message || 'Failed to start download');
-    }
-  };
-
   const calendarDays = useMemo(() => {
     const year = viewDate.getFullYear();
     const month = viewDate.getMonth();
@@ -1071,23 +1185,29 @@ const InterviewSchedule = () => {
 
 
 
-  // Optimization: Pre-calculate schedules per date to avoid filtering in render
+  // ── scheduleData: unified calendar grouping using filteredForViews ──
+  // Uses the same toDateKey() helper (local Date methods, IST-safe) for BOTH
+  // the grouping here and the key lookup in the render loop, so they always match.
   const scheduleData = useMemo(() => {
+    // Group filtered interviews by 'YYYY-MM-DD' date key
+    const interviewsByDate = groupInterviewsByDate(filteredForViews, viewDate);
+
+    // Build the final Map: keys are still toDateKey strings, values have {interviews, joinings}
     const data = new Map();
-    interviews.forEach(iv => {
-      const dateKey = new Date(iv.scheduledStart).toDateString();
-      if (!data.has(dateKey)) data.set(dateKey, { interviews: [], joinings: [] });
-      data.get(dateKey).interviews.push(iv);
+    interviewsByDate.forEach((ivList, dateKey) => {
+      data.set(dateKey, { interviews: ivList, joinings: [] });
     });
+
+    // Add joinings (applications with a doj date) — not affected by interview filters
     applications.forEach(app => {
-      if (app.doj) {
-        const dateKey = new Date(app.doj).toDateString();
-        if (!data.has(dateKey)) data.set(dateKey, { interviews: [], joinings: [] });
-        data.get(dateKey).joinings.push(app);
-      }
+      if (!app.doj) return;
+      const dateKey = toDateKey(new Date(app.doj));
+      if (!data.has(dateKey)) data.set(dateKey, { interviews: [], joinings: [] });
+      data.get(dateKey).joinings.push(app);
     });
+
     return data;
-  }, [interviews, applications]);
+  }, [filteredForViews, viewDate, applications]);
 
   const selectedGroupId = selectedId || groupedApplications[0]?.applicationId || '';
   const selectedGroup = useMemo(
@@ -1578,31 +1698,11 @@ const InterviewSchedule = () => {
     recorderRef.current.stop();
   };
 
-  // Optimization: Pre-calculate calendar counts to avoid filtering in render loop
-  useEffect(() => {
-    const counts = new Map();
-    interviews.forEach(item => {
-      const d = new Date(item.scheduledStart);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!counts.has(key)) {
-        counts.set(key, { r1: 0, r2: 0, pass: 0, doj: 0 });
-      }
-      const val = counts.get(key);
-      if (item.roundNo === 1) val.r1++;
-      if (item.roundNo === 2) val.r2++;
-      if (item.result === 'PASS') val.pass++;
-    });
-    applications.forEach(app => {
-      if (!app.doj) return;
-      const d = new Date(app.doj);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if (!counts.has(key)) {
-        counts.set(key, { r1: 0, r2: 0, pass: 0, doj: 0 });
-      }
-      counts.get(key).doj++;
-    });
-    setCalendarData(counts);
-  }, [interviews, applications]);
+  // NOTE: calendarData useEffect REMOVED — scheduleData useMemo now handles all
+  // calendar grouping using filteredForViews + groupInterviewsByDate. The
+  // setCalendarData state is no longer updated here; calendarData state is kept
+  // for backwards-compat with any code that might reference it but the primary
+  // calendar rendering now uses scheduleData directly.
 
   const handleSelectDate = useCallback((date) => {
     setSelectedCalendarDate(date);
@@ -1645,6 +1745,14 @@ const InterviewSchedule = () => {
             <span className="material-symbols-outlined text-sm">calendar_month</span>
             Calendar Grid
           </button>
+          <button
+            className={`os-btn-outline !h-9 ${viewMode === 'excel' ? '!bg-[#1f52cc] !text-white' : ''}`}
+            onClick={() => setViewMode('excel')}
+            type="button"
+          >
+            <span className="material-symbols-outlined text-sm">table_view</span>
+            Excel View
+          </button>
           <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${!filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(false)}>
             All
           </button>
@@ -1674,10 +1782,6 @@ const InterviewSchedule = () => {
               <span className="material-symbols-outlined text-sm">chevron_right</span>
             </button>
           </div>
-          <button className="os-btn-primary !h-9" onClick={downloadDailyPdf}>
-            <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
-            Daily PDF
-          </button>
         </div>
       </div>
 
@@ -1789,22 +1893,49 @@ const InterviewSchedule = () => {
           </Reveal>
         )}
 
+        {viewMode === 'excel' && (
+          <Reveal delay={0.04} className="bg-white w-full h-full flex flex-col overflow-hidden">
+            <ExcelView
+              interviews={filteredForViews}
+              viewDate={viewDate}
+              onSelectCandidate={(candidateId, interviewId) => {
+                setViewMode('list');
+                setSelectedId(candidateId);
+                if (interviewId) setActiveInterviewId(interviewId);
+              }}
+            />
+          </Reveal>
+        )}
+
         {viewMode === 'calendar' ? (
           <Reveal delay={0.06} className="bg-white p-6 overflow-auto w-full h-full">
             <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
                 <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
               ))}
-              {calendarDays.map((cell, idx) => (
-                <MemoizedCalendarCell 
-                  key={`${cell.month}-${cell.day}-${idx}`}
-                  date={cell.date}
-                  isCurrentMonth={cell.month === 'current'}
-                  isToday={new Date().toDateString() === cell.date.toDateString()}
-                  onSelectDate={handleSelectDate}
-                  data={scheduleData.get(cell.date.toDateString())}
-                />
-              ))}
+              {calendarDays.map((cell, idx) => {
+                // Use toDateKey() (local-timezone 'YYYY-MM-DD') — same function used
+                // when building scheduleData, so the lookup always matches.
+                const dateKey = toDateKey(cell.date);
+                const cellData = scheduleData.get(dateKey) || { interviews: [], joinings: [] };
+                return (
+                  <MemoizedCalendarCell
+                    key={`${cell.month}-${cell.day}-${idx}`}
+                    date={cell.date}
+                    isCurrentMonth={cell.month === 'current'}
+                    isToday={new Date().toDateString() === cell.date.toDateString()}
+                    onSelectDate={handleSelectDate}
+                    cellInterviews={cellData.interviews}
+                    cellJoinings={cellData.joinings}
+                    onChipClick={(candidateId, interviewId) => {
+                      // Switch to List View and select the candidate
+                      setViewMode('list');
+                      setSelectedId(candidateId);
+                      if (interviewId) setActiveInterviewId(interviewId);
+                    }}
+                  />
+                );
+              })}
             </div>
 
             {/* Activity Modal Pop-up */}
@@ -1830,7 +1961,7 @@ const InterviewSchedule = () => {
                     <div className="space-y-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                       {/* Interviews Section */}
                       {(() => {
-                        const dayData = scheduleData.get(selectedCalendarDate.toDateString()) || { interviews: [], joinings: [] };
+                        const dayData = scheduleData.get(toDateKey(selectedCalendarDate)) || { interviews: [], joinings: [] };
                         const dayInterviews = dayData.interviews || [];
                         const dayJoinings = dayData.joinings || [];
                         const hasInterviews = dayInterviews.length > 0;
