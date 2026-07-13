@@ -70,14 +70,6 @@ async function buildInterviewListQuery({
     where.applicationId = applicationId;
   }
 
-  // Apply candidateId, jobId, and search via the application relation
-  const applicationWhere = {};
-  if (candidateId) {
-    applicationWhere.candidateId = candidateId;
-  }
-  if (jobId) {
-    applicationWhere.jobId = jobId;
-  }
   if (search && search.trim()) {
     const q = search.trim();
     where.OR = [
