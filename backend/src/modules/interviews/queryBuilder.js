@@ -80,28 +80,56 @@ async function buildInterviewListQuery({
   }
   if (search && search.trim()) {
     const q = search.trim();
-    applicationWhere.OR = [
+    where.OR = [
       {
-        candidate: {
-          fullName: {
-            contains: q,
-            mode: 'insensitive'
+        candidateName: {
+          contains: q,
+          mode: 'insensitive'
+        }
+      },
+      {
+        jobTitle: {
+          contains: q,
+          mode: 'insensitive'
+        }
+      },
+      {
+        application: {
+          candidate: {
+            fullName: {
+              contains: q,
+              mode: 'insensitive'
+            }
           }
         }
       },
       {
-        job: {
-          title: {
-            contains: q,
-            mode: 'insensitive'
+        application: {
+          job: {
+            title: {
+              contains: q,
+              mode: 'insensitive'
+            }
           }
         }
       }
     ];
   }
 
+  const applicationWhere = {};
+  if (candidateId) {
+    applicationWhere.candidateId = candidateId;
+  }
+  if (jobId) {
+    applicationWhere.jobId = jobId;
+  }
+
   if (Object.keys(applicationWhere).length > 0) {
-    where.application = applicationWhere;
+    if (where.AND) {
+      where.AND.push({ application: applicationWhere });
+    } else {
+      where.application = applicationWhere;
+    }
   }
 
   if (interviewerId) {

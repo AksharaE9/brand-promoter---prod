@@ -699,14 +699,7 @@ const InterviewSchedule = () => {
   const transferCandidateMutation = useTransferCandidate();
   const deleteRoundMutation = useDeleteRound();
 
-  // When base query returns, seed allInterviews with first page
-  useEffect(() => {
-    if (!roundsResponse) return;
-    const firstPage = roundsResponse.data || [];
-    setAllInterviews(firstPage);
-    setServerHasMore(roundsResponse.hasMore || false);
-    setServerNextCursor(roundsResponse.nextCursor || null);
-  }, [roundsResponse]);
+  // Base query page 1 seed — handled below in the unified useEffect to avoid TDZ issues.
 
   useEffect(() => {
     if (queryError) {
@@ -786,9 +779,19 @@ const InterviewSchedule = () => {
     if (!serverHasMore || loadingMore || !serverNextCursor) return;
     setLoadingMore(true);
     try {
-      const res = await schedulingApi.getRounds({ cursor: serverNextCursor, limit: 20 });
+      const nextFilters = {
+        cursor: serverNextCursor,
+        limit: 20,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        ...(filterMine ? { interviewerId: currentUser?.id } : {})
+      };
+      const res = await schedulingApi.getRounds(nextFilters);
       const nextPage = res?.data || [];
-      setAllInterviews(prev => [...prev, ...nextPage]);
+      setAllInterviews(prev => {
+        const map = new Map(prev.map(iv => [iv.id, iv]));
+        nextPage.forEach(iv => map.set(iv.id, iv));
+        return Array.from(map.values());
+      });
       setServerHasMore(res?.hasMore || false);
       setServerNextCursor(res?.nextCursor || null);
       setVisibleCount(prev => prev + nextPage.length);
@@ -797,14 +800,15 @@ const InterviewSchedule = () => {
     } finally {
       setLoadingMore(false);
     }
-  }, [serverHasMore, loadingMore, serverNextCursor]);
+  }, [serverHasMore, loadingMore, serverNextCursor, debouncedSearch, filterMine, currentUser?.id]);
 
   // Prefetch next page silently when current page is loaded
   useEffect(() => {
-    if (serverHasMore && serverNextCursor && !debouncedSearch) {
+    if (serverHasMore && serverNextCursor) {
       const nextFilters = {
         cursor: serverNextCursor,
         limit: 20,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
         ...(filterMine ? { interviewerId: currentUser?.id } : {})
       };
       queryClient.prefetchQuery({
@@ -1018,17 +1022,21 @@ const InterviewSchedule = () => {
   // This prevents a second /interviews request on every render when idle.
   const { data: searchResponse, isFetching: isSearching } = useRoundsList(
     debouncedSearch
-      ? { search: debouncedSearch, limit: 50, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
+      ? { search: debouncedSearch, limit: 100, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
       : null  // null → hook is disabled (handled in useRoundsList)
   );
-  const searchedInterviews = searchResponse?.data ?? [];
 
-  // The actual list to render:
-  // — While actively searching: show search results (but keep previous list visible until results arrive)
-  // — When search clears: immediately fall back to accumulated base list (no flicker)
-  const displayInterviews = debouncedSearch
-    ? (isSearching && searchedInterviews.length === 0 ? interviews : searchedInterviews)
-    : interviews;
+  // Unified useEffect to handle page 1 results for both normal and search lists
+  useEffect(() => {
+    const activeResponse = debouncedSearch ? searchResponse : roundsResponse;
+    if (!activeResponse) return;
+    const firstPage = activeResponse.data || [];
+    setAllInterviews(firstPage);
+    setServerHasMore(activeResponse.hasMore || false);
+    setServerNextCursor(activeResponse.nextCursor || null);
+  }, [roundsResponse, searchResponse, debouncedSearch]);
+
+  const displayInterviews = interviews;
 
   // ── filteredForViews: single source of truth for Calendar + Excel (respects filterMine + roundFilter) ──
   // This is the same filtering logic used by groupedApplications but returns a flat array.
@@ -1907,7 +1915,7 @@ const InterviewSchedule = () => {
           </Reveal>
         )}
 
-        {viewMode === 'calendar' ? (
+        {viewMode === 'calendar' && (
           <Reveal delay={0.06} className="bg-white p-6 overflow-auto w-full h-full">
             <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
@@ -2108,7 +2116,9 @@ const InterviewSchedule = () => {
               </div>
             )}
           </Reveal>
-        ) : (
+        )}
+
+        {viewMode === 'list' && (
           <>
 
             <Reveal delay={0.04} className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full">
