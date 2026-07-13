@@ -270,6 +270,46 @@ const ALL_COLUMNS = [
     },
   },
   {
+    key: 'nextSchedule',
+    label: 'Next Schedule',
+    width: 180,
+    filterType: 'text',
+    getValue: (iv) => {
+      if (iv.roundNo === 1 || iv.roundNo === '1') return '-';
+      const { nextSchedule } = parseNotesSafely(iv?.notes);
+      return nextSchedule || '';
+    },
+    render: (iv) => {
+      if (iv.roundNo === 1 || iv.roundNo === '1') {
+        return <span style={{ color: '#64748b' }}>-</span>;
+      }
+      const { nextSchedule } = parseNotesSafely(iv?.notes);
+      const text = nextSchedule || '';
+      return (
+        <input
+          type="text"
+          readOnly
+          value={text || '-'}
+          title={text}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.target.select();
+          }}
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            outline: 'none',
+            fontSize: '11px',
+            color: '#334155',
+            cursor: 'text',
+            textOverflow: 'ellipsis',
+          }}
+        />
+      );
+    },
+  },
+  {
     key: 'overallSummary',
     label: 'Overall Summary',
     width: 200,
@@ -283,9 +323,26 @@ const ALL_COLUMNS = [
       const fb = getFirstFeedback(iv);
       const text = fb?.notes || '';
       return (
-        <span title={text} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190, fontSize: 11 }}>
-          {text || '-'}
-        </span>
+        <input
+          type="text"
+          readOnly
+          value={text || '-'}
+          title={text}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.target.select();
+          }}
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            outline: 'none',
+            fontSize: '11px',
+            color: '#334155',
+            cursor: 'text',
+            textOverflow: 'ellipsis',
+          }}
+        />
       );
     },
   },
@@ -367,7 +424,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
   );
 
   // ── Sort state ──
-  const [sort, setSort] = useState({ key: null, dir: null });
+  const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
   const handleSort = useCallback((key) => {
     setSort((prev) => {
       if (prev.key !== key) return { key, dir: 'asc' };
@@ -437,6 +494,11 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
       const col = ALL_COLUMNS.find((c) => c.key === sort.key);
       if (col) {
         rows = [...rows].sort((a, b) => {
+          if (col.key === 'date' || col.key === 'time') {
+            const timeA = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0;
+            const timeB = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0;
+            return sort.dir === 'asc' ? timeA - timeB : timeB - timeA;
+          }
           const cmp = String(col.getValue(a)).localeCompare(String(col.getValue(b)), undefined, { numeric: true });
           return sort.dir === 'asc' ? cmp : -cmp;
         });

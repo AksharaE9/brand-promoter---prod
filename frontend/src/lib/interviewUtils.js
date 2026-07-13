@@ -18,17 +18,18 @@
  * @returns {{ phoneFollowUp: object|null, emailFollowUp: object|null }}
  */
 export function parseNotesSafely(notesStr) {
-  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null };
+  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
   try {
     const parsed = JSON.parse(notesStr);
     if (parsed && typeof parsed === 'object') {
       return {
         phoneFollowUp:  parsed.phoneFollowUp  || null,
         emailFollowUp:  parsed.emailFollowUp  || null,
+        nextSchedule:   parsed.nextSchedule   || null,
       };
     }
   } catch (_) {}
-  return { phoneFollowUp: null, emailFollowUp: null };
+  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
 }
 
 /**

@@ -76,6 +76,7 @@ async function populateInterviewRelations(rounds) {
           phone: true,
           status: true,
           currentStage: true,
+          source: true,
           profilePhotoFile: {
             select: {
               storageKey: true

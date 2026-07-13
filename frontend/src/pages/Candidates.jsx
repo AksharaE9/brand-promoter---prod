@@ -42,6 +42,7 @@ const emptyCreateForm = {
   location: '',
   preferredRole: '',
   company: '',   // ── NEW field ──
+  source: '',
   resume: null
 };
 
@@ -1014,6 +1015,7 @@ const Candidates = () => {
                 formData.append('location', createForm.location);
                 formData.append('preferredRole', createForm.preferredRole);
                 formData.append('company', createForm.company?.trim() || 'Akshara Enterprises'); // ── NEW ──
+                formData.append('source', createForm.source || 'Manual Entry');
                 if (createForm.resume) {
                   formData.append('resume', createForm.resume);
                 }
@@ -1031,6 +1033,7 @@ const Candidates = () => {
                   location: createForm.location,
                   preferredRole: createForm.preferredRole,
                   company: createForm.company?.trim() || 'Akshara Enterprises', // ── NEW ──
+                  source: createForm.source || 'Manual Entry',
                 });
               }}>
                 <div className="grid grid-cols-2 gap-5">
@@ -1099,14 +1102,24 @@ const Candidates = () => {
                   </div>
                 </div>
 
-                {/* ── Company field — full width, below the 2-col row ── */}
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Company</label>
-                  <CompanyDropdownInput
-                    value={createForm.company}
-                    onChange={val => setCreateForm(prev => ({...prev, company: val}))}
-                    placeholder="e.g. Akshara Enterprises"
-                  />
+                <div className="grid grid-cols-2 gap-5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Company</label>
+                    <CompanyDropdownInput
+                      value={createForm.company}
+                      onChange={val => setCreateForm(prev => ({...prev, company: val}))}
+                      placeholder="e.g. Akshara Enterprises"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Source</label>
+                    <input
+                      className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none transition-all"
+                      placeholder="e.g. LinkedIn, Referral, Direct"
+                      value={createForm.source}
+                      onChange={e => setCreateForm(prev => ({...prev, source: e.target.value}))}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-1">

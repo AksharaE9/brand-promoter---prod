@@ -41,17 +41,18 @@ const downloadBase64File = (fileName, base64Data) => {
 };
 
 const parseNotesSafely = (notesStr) => {
-  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null };
+  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
   try {
     const parsed = JSON.parse(notesStr);
     if (parsed && typeof parsed === 'object') {
       return {
         phoneFollowUp: parsed.phoneFollowUp || null,
-        emailFollowUp: parsed.emailFollowUp || null
+        emailFollowUp: parsed.emailFollowUp || null,
+        nextSchedule: parsed.nextSchedule || null
       };
     }
   } catch (e) {}
-  return { phoneFollowUp: null, emailFollowUp: null };
+  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
 };
 
 const emptyScheduleForm = {
@@ -66,6 +67,7 @@ const emptyScheduleForm = {
   meetingLink: '',
   zohoLink: '',
   slotNo: 1,   // auto-computed slot number for the chosen time
+  nextSchedule: '',
 };
 
 const emptyFeedbackForm = {
@@ -648,7 +650,17 @@ const ScheduleModal = React.memo(function ScheduleModal({
               </div>
             </div>
 
-
+            {scheduleForm.roundNo > 1 && (
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Next Schedule</label>
+                <textarea
+                  className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[60px] focus:border-[#1f52cc] outline-none transition-all"
+                  placeholder="Enter details for the next schedule..."
+                  value={scheduleForm.nextSchedule || ''}
+                  onChange={(e) => setScheduleForm(prev => ({ ...prev, nextSchedule: e.target.value }))}
+                />
+              </div>
+            )}
 
             <div className="flex gap-3 pt-6">
               <button
@@ -707,7 +719,37 @@ const InterviewSchedule = () => {
     }
   }, [queryError]);
 
-  const interviews = allInterviews;
+  const interviews = useMemo(() => {
+    const groups = {};
+    allInterviews.forEach(iv => {
+      if (!iv.scheduledStart || iv._optimistic) return;
+      const d = new Date(iv.scheduledStart);
+      const key = `${d.toDateString()}_${d.getHours()}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(iv);
+    });
+
+    Object.values(groups).forEach(list => {
+      list.sort((a, b) => {
+        const timeA = new Date(a.scheduledStart).getTime();
+        const timeB = new Date(b.scheduledStart).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a.id).localeCompare(String(b.id));
+      });
+    });
+
+    return allInterviews.map(iv => {
+      if (!iv.scheduledStart) return iv;
+      const d = new Date(iv.scheduledStart);
+      const key = `${d.toDateString()}_${d.getHours()}`;
+      const list = groups[key] || [];
+      const idx = list.findIndex(item => item.id === iv.id);
+      return {
+        ...iv,
+        slotNo: idx !== -1 ? idx + 1 : iv.slotNo || 1
+      };
+    });
+  }, [allInterviews]);
 
   const [applications, setApplications] = useState([]);
   const [candidates, setCandidates] = useState([]);
@@ -1425,6 +1467,7 @@ const InterviewSchedule = () => {
     const notesPayload = JSON.stringify({
       phoneFollowUp: savedForm.phoneFollowUp || null,
       emailFollowUp: savedForm.emailFollowUp || null,
+      nextSchedule: savedForm.nextSchedule || null,
     });
 
     try {
@@ -2404,6 +2447,33 @@ const InterviewSchedule = () => {
                             );
                           })()}
                         </div>
+
+                        {(() => {
+                          const { nextSchedule } = parseNotesSafely(selectedInterview?.notes);
+                          return nextSchedule ? (
+                            <div className="flex border-b border-slate-50 pb-2">
+                              <span className="w-28 text-[#6d7893] shrink-0 font-medium">Next Schedule:</span>
+                              <input
+                                type="text"
+                                readOnly
+                                value={nextSchedule}
+                                title={nextSchedule}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.target.select();
+                                }}
+                                className="text-slate-800 text-xs font-semibold focus:outline-none"
+                                style={{
+                                  border: 'none',
+                                  background: 'transparent',
+                                  outline: 'none',
+                                  cursor: 'text',
+                                  width: '100%',
+                                }}
+                              />
+                            </div>
+                          ) : null;
+                        })()}
 
                         {selectedInterview?.zohoLink && (
                           <div className="flex pb-2">

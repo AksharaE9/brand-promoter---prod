@@ -54,6 +54,17 @@ function normalizeFieldValue(value) {
   }
 }
 
+function getFieldVal(raw, possibleNames) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const keys = Object.keys(raw);
+  const normalizedNames = possibleNames.map(n => n.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const foundKey = keys.find(k => {
+    const normalizedK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return normalizedNames.includes(normalizedK);
+  });
+  return foundKey ? raw[foundKey] : undefined;
+}
+
 // POST Bulk candidate upload (from XLSX)
 router.post(
   "/bulk-upload",
@@ -93,9 +104,12 @@ router.post(
 
     for (let i = 0; i < allRows.length; i += 1) {
       const raw = allRows[Number(i)];
-      const fullName = String(raw.fullName || raw.name || "").trim();
-      const email = String(raw.email || "").trim().toLowerCase() || null;
-      const phone = String(raw.phone || "").trim() || null;
+      const rawFullName = getFieldVal(raw, ['fullName', 'full name', 'name']);
+      const fullName = rawFullName ? String(rawFullName).trim() : "";
+      const rawEmail = getFieldVal(raw, ['email', 'email address', 'emailid']);
+      const email = rawEmail ? String(rawEmail).trim().toLowerCase() : null;
+      const rawPhone = getFieldVal(raw, ['phone', 'phone number', 'contact', 'mobile']);
+      const phone = rawPhone ? String(rawPhone).trim() : null;
       const sheetInfo = `[Sheet: ${raw._sheetName}, Row ${raw._rowIndex}]`;
 
       if (!fullName || !phone) {
@@ -119,13 +133,22 @@ router.post(
         continue;
       }
 
+      const rawCompany = getFieldVal(raw, ['currentCompany', 'current company', 'company']);
+      const currentCompany = rawCompany ? String(rawCompany).trim() : null;
+
+      const rawExp = getFieldVal(raw, ['totalExperienceYears', 'experienceYears', 'experience years', 'experience', 'total experience']);
+      const totalExperienceYears = rawExp ? parseFloat(rawExp) : null;
+
+      const rawSource = getFieldVal(raw, ['source', 'candidateSource', 'candidate source', 'candidate_source']);
+      const source = rawSource ? String(rawSource).trim() : null;
+
       bulkData.push({
         fullName,
         email: email || "N/A",
         phone,
-        currentCompany: String(raw.currentCompany || "").trim() || null,
-        totalExperienceYears: raw.totalExperienceYears || raw.experienceYears ? parseFloat(raw.totalExperienceYears || raw.experienceYears) : null,
-        source: String(raw.source || "Excel Upload").trim(),
+        currentCompany,
+        totalExperienceYears,
+        source,
         createdById: req.user.id,
         status: "ACTIVE",
         organizationId: orgId,
@@ -186,9 +209,12 @@ router.post(
       try {
         for (let i = 0; i < rows.length; i++) {
           const raw = rows[Number(i)];
-          const fullName = String(raw.fullName || raw.name || "").trim();
-          const email = String(raw.email || "").trim().toLowerCase() || null;
-          const phone = String(raw.phone || "").trim() || null;
+          const rawFullName = getFieldVal(raw, ['fullName', 'full name', 'name']);
+          const fullName = rawFullName ? String(rawFullName).trim() : "";
+          const rawEmail = getFieldVal(raw, ['email', 'email address', 'emailid']);
+          const email = rawEmail ? String(rawEmail).trim().toLowerCase() : null;
+          const rawPhone = getFieldVal(raw, ['phone', 'phone number', 'contact', 'mobile']);
+          const phone = rawPhone ? String(rawPhone).trim() : null;
 
           if (!fullName || !phone) {
             skipped++;
@@ -204,17 +230,35 @@ router.post(
             continue;
           }
 
+          const rawLocation = getFieldVal(raw, ['location', 'place', 'city']);
+          const location = rawLocation ? String(rawLocation).trim() : null;
+
+          const rawArea = getFieldVal(raw, ['area', 'region']);
+          const area = rawArea ? String(rawArea).trim() : null;
+
+          const rawCourse = getFieldVal(raw, ['course', 'graduation course', 'degree']);
+          const course = rawCourse ? String(rawCourse).trim() : null;
+
+          const rawGradYear = getFieldVal(raw, ['graduationYear', 'graduation year', 'grad year']);
+          const graduationYear = rawGradYear ? String(rawGradYear).trim() : null;
+
+          const rawPreferredRole = getFieldVal(raw, ['preferredRole', 'preferred role', 'role']);
+          const preferredRole = rawPreferredRole ? String(rawPreferredRole).trim() : null;
+
+          const rawSource = getFieldVal(raw, ['source', 'candidateSource', 'candidate source', 'candidate_source']);
+          const source = rawSource ? String(rawSource).trim() : "Bulk Import Wizard";
+
           const candidate = await prisma.candidate.create({
             data: {
               fullName,
               email: email || "N/A",
               phone,
-              location: raw.location || null,
-              area: raw.area || null,
-              course: raw.course || null,
-              graduationYear: raw.graduationYear ? String(raw.graduationYear) : null,
-              preferredRole: raw.preferredRole || null,
-              source: "Bulk Import Wizard",
+              location,
+              area,
+              course,
+              graduationYear,
+              preferredRole,
+              source,
               createdById: userId,
               status: "ACTIVE",
               organizationId: orgId,
@@ -300,7 +344,7 @@ router.post(
       course: data.course || null,
       graduationYear: data.graduationYear ? String(data.graduationYear) : null,
       preferredRole: data.preferredRole || null,
-      source: data.source || "Manual Entry",
+      source: data.source || null,
       jobTitle: data.jobTitle || null,
       category: data.category || "External",
       customFields: data.customFields || null,
@@ -407,7 +451,7 @@ router.post(
       course: req.body.course || null,
       graduationYear: req.body.graduationYear ? String(req.body.graduationYear) : null,
       preferredRole: req.body.preferredRole || null,
-      source: req.body.source || "Manual Entry",
+      source: req.body.source || null,
       jobTitle: req.body.jobTitle || null,
       category: category || "External",
       customFields: req.body.customFields ? JSON.parse(req.body.customFields) : null,
