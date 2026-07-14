@@ -5,7 +5,7 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
-import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser } from '../lib/api';
+import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser, getStoredToken } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CompanyDropdownInput from '../components/CompanyDropdownInput';
 
@@ -502,7 +502,7 @@ const CandidateProfile = () => {
                    {candidate.resumeFile?.storageKey ? (
                      <div className="space-y-2">
                        <a 
-                         href={candidate.resumeFile.storageKey} 
+                         href={`${API_BASE_URL}/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`} 
                          download={candidate.resumeFile.originalName || `${candidate.fullName}-resume`}
                          target="_blank"
                          rel="noreferrer"

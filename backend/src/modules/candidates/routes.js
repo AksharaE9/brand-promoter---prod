@@ -824,6 +824,50 @@ router.get(
   }),
 );
 
+// GET Download candidate resume
+router.get(
+  "/:id/resume/download",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const candidate = await prisma.candidate.findUnique({
+      where: { id },
+      include: {
+        resumeFile: true
+      }
+    });
+
+    if (!candidate) {
+      throw new ApiError(404, "Candidate not found");
+    }
+
+    if (!candidate.resumeFile || !candidate.resumeFile.storageKey) {
+      throw new ApiError(404, "Resume file not found for this candidate");
+    }
+
+    const { storageKey, originalName, mimeType } = candidate.resumeFile;
+
+    try {
+      const response = await fetch(storageKey);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file from storage: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(originalName || 'resume.pdf')}"`);
+      res.setHeader("Content-Type", mimeType || "application/octet-stream");
+      res.send(buffer);
+    } catch (err) {
+      console.error("Error downloading resume from Cloudinary:", err);
+      // Fallback: redirect user directly to the storage key URL
+      res.redirect(storageKey);
+    }
+  }),
+);
+
+
 // POST Upload candidate resume after creation
 router.post(
   "/:id/resume",
