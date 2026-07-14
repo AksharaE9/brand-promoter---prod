@@ -424,7 +424,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
   );
 
   // ── Sort state ──
-  const [sort, setSort] = useState({ key: 'date', dir: 'asc' });
+  const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
   const handleSort = useCallback((key) => {
     setSort((prev) => {
       if (prev.key !== key) return { key, dir: 'asc' };

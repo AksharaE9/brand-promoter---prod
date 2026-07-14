@@ -1141,11 +1141,11 @@ const InterviewSchedule = () => {
       });
     }
 
-    // Sort groups: oldest interview first (ascending date)
+    // Sort groups: newest interview first (descending date, highest to lowest)
     return groupsList.sort((a, b) => {
       const dateA = a.latestInterview?.scheduledStart || a.createdAt;
       const dateB = b.latestInterview?.scheduledStart || b.createdAt;
-      return new Date(dateA).getTime() - new Date(dateB).getTime();
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
   }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
 
