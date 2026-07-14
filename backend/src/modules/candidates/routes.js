@@ -848,7 +848,32 @@ router.get(
     const { storageKey, originalName, mimeType } = candidate.resumeFile;
 
     try {
-      const response = await fetch(storageKey);
+      let downloadUrl = storageKey;
+
+      // Check if it's a Cloudinary URL and generate a signed private download URL if so
+      if (storageKey.includes("res.cloudinary.com")) {
+        const cloudinary = require("../../config/cloudinary");
+        const decoded = decodeURIComponent(storageKey);
+        const match = decoded.match(/res\.cloudinary\.com\/[^/]+\/([^/]+)\/([^/]+)\/(?:v\d+\/)?(.+)$/);
+        if (match) {
+          const resourceType = match[1]; // 'image' or 'raw'
+          const type = match[2]; // 'upload', 'private', 'authenticated'
+          const remaining = match[3];
+          
+          const extMatch = remaining.match(/\.([a-zA-Z0-9]+)$/);
+          const format = extMatch ? extMatch[1] : null;
+          const publicId = format ? remaining.slice(0, -(format.length + 1)) : remaining;
+
+          downloadUrl = cloudinary.utils.private_download_url(publicId, format || 'pdf', {
+            resource_type: resourceType,
+            type: type,
+            expires_at: Math.floor(Date.now() / 1000) + 300, // Expires in 5 minutes
+            attachment: true
+          });
+        }
+      }
+
+      const response = await fetch(downloadUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch file from storage: ${response.statusText}`);
       }
@@ -860,7 +885,7 @@ router.get(
       res.setHeader("Content-Type", mimeType || "application/octet-stream");
       res.send(buffer);
     } catch (err) {
-      console.error("Error downloading resume from Cloudinary:", err);
+      console.error("Error downloading resume from storage:", err);
       // Fallback: redirect user directly to the storage key URL
       res.redirect(storageKey);
     }

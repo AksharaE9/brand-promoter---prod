@@ -10,12 +10,15 @@ cloudinary.config({
 async function uploadFileToCloudinary(buffer, destination, contentType) {
   console.log(`🚀 Storage: Starting upload to Cloudinary at ${destination} (${contentType})...`);
   try {
+    const baseName = path.basename(destination, path.extname(destination));
+    const sanitizedPublicId = baseName.replace(/[^a-zA-Z0-9-_]/g, '_');
+
     const result = await new Promise((resolve) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { 
           resource_type: "auto",
           folder: "ats-resumes",
-          public_id: path.basename(destination, path.extname(destination))
+          public_id: sanitizedPublicId
         },
         (error, result) => {
           if (error) {
