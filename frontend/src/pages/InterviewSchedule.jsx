@@ -125,7 +125,7 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
 
   const MAX_CHIPS = 4;
   const visible = uniqueInterviews.slice(0, MAX_CHIPS);
-  const overflow = uniqueInterviews.length - MAX_CHIPS;
+  const overflow = cellInterviews.length - visible.length;
 
   return (
     <div
