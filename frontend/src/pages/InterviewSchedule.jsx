@@ -690,7 +690,7 @@ const InterviewSchedule = () => {
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverNextCursor, setServerNextCursor] = useState(null);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 10000 });
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 50 });
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -812,7 +812,7 @@ const InterviewSchedule = () => {
     try {
       const nextFilters = {
         cursor: serverNextCursor,
-        limit: 20,
+        limit: 200,
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
         ...(filterMine ? { interviewerId: currentUser?.id } : {})
       };
@@ -869,7 +869,10 @@ const InterviewSchedule = () => {
       let hasMore = serverHasMore;
       while (hasMore && cursor) {
         try {
-          const res = await schedulingApi.getRounds({ cursor, limit: 100 });
+          // Non-blocking 1s delay to load down pages slowly in the background
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          const res = await schedulingApi.getRounds({ cursor, limit: 200 });
           const nextPage = res?.data || [];
           if (nextPage.length > 0) {
             setAllInterviews(prev => {

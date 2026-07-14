@@ -55,7 +55,7 @@ async function buildInterviewListQuery({
   cursor,
   limit = 20,
 }) {
-  const lim = Math.min(100, Math.max(1, parseInt(limit) || 20));
+  const lim = Math.min(10000, Math.max(1, parseInt(limit) || 20));
 
   // Base query filter
   const where = {
