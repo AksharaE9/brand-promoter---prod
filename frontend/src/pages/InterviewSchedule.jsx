@@ -96,7 +96,7 @@ const emptyFeedbackForm = {
  */
 function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellInterviews = [], cellJoinings = [], onChipClick }) {
   const [showPopover, setShowPopover] = React.useState(false);
-  const MAX_CHIPS = 3;
+  const MAX_CHIPS = 100;
   const visible = cellInterviews.slice(0, MAX_CHIPS);
   const overflow = cellInterviews.length - MAX_CHIPS;
 
