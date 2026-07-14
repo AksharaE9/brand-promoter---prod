@@ -690,7 +690,7 @@ const InterviewSchedule = () => {
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverNextCursor, setServerNextCursor] = useState(null);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 20 });
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 10000 });
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -1023,11 +1023,10 @@ const InterviewSchedule = () => {
       const now = Date.now();
       if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
       lastSSEReloadRef.current = now;
-      // Mark scheduling queries as stale WITHOUT triggering an immediate refetch.
-      // The next user interaction or mount will pick up fresh data automatically.
+      // Mark scheduling queries as stale and trigger immediate refetch for real-time sync.
       queryClient.invalidateQueries({
         queryKey: ['scheduling', 'rounds'],
-        refetchType: 'none',
+        refetchType: 'active',
       });
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
     }, RELEVANT);
@@ -1053,7 +1052,7 @@ const InterviewSchedule = () => {
   // This prevents a second /interviews request on every render when idle.
   const { data: searchResponse, isFetching: isSearching } = useRoundsList(
     debouncedSearch
-      ? { search: debouncedSearch, limit: 100, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
+      ? { search: debouncedSearch, limit: 10000, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
       : null  // null → hook is disabled (handled in useRoundsList)
   );
 
@@ -1142,11 +1141,11 @@ const InterviewSchedule = () => {
       });
     }
 
-    // Sort groups: most recent interview first (descending date)
+    // Sort groups: oldest interview first (ascending date)
     return groupsList.sort((a, b) => {
       const dateA = a.latestInterview?.scheduledStart || a.createdAt;
       const dateB = b.latestInterview?.scheduledStart || b.createdAt;
-      return new Date(dateB).getTime() - new Date(dateA).getTime();
+      return new Date(dateA).getTime() - new Date(dateB).getTime();
     });
   }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
 
