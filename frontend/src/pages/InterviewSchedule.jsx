@@ -95,10 +95,37 @@ const emptyFeedbackForm = {
  * @param {Function} props.onChipClick    - Called when an interview chip is clicked: (candidateId, interviewId)
  */
 function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellInterviews = [], cellJoinings = [], onChipClick }) {
-  const [showPopover, setShowPopover] = React.useState(false);
-  const MAX_CHIPS = 100;
-  const visible = cellInterviews.slice(0, MAX_CHIPS);
-  const overflow = cellInterviews.length - MAX_CHIPS;
+  // Group by candidate and keep only the latest round
+  const uniqueInterviews = React.useMemo(() => {
+    const candidateMap = new Map();
+    for (const iv of cellInterviews) {
+      const cId = iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId || iv.id;
+      const existing = candidateMap.get(cId);
+      if (!existing) {
+        candidateMap.set(cId, iv);
+      } else {
+        const currentRound = iv.roundNo === 99 ? 99 : (iv.roundNo || 1);
+        const existingRound = existing.roundNo === 99 ? 99 : (existing.roundNo || 1);
+        if (currentRound > existingRound) {
+          candidateMap.set(cId, iv);
+        } else if (currentRound === existingRound) {
+          const currentTime = new Date(iv.scheduledStart).getTime();
+          const existingTime = new Date(existing.scheduledStart).getTime();
+          if (currentTime > existingTime) {
+            candidateMap.set(cId, iv);
+          }
+        }
+      }
+    }
+    // Sort them by scheduledStart to keep chronological order
+    return Array.from(candidateMap.values()).sort(
+      (a, b) => new Date(a.scheduledStart).getTime() - new Date(b.scheduledStart).getTime()
+    );
+  }, [cellInterviews]);
+
+  const MAX_CHIPS = 4;
+  const visible = uniqueInterviews.slice(0, MAX_CHIPS);
+  const overflow = uniqueInterviews.length - MAX_CHIPS;
 
   return (
     <div
@@ -156,54 +183,16 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
 
         {/* +N more pill */}
         {overflow > 0 && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setShowPopover((v) => !v); }}
-              className="w-full text-center text-[9px] font-bold text-[#1f52cc] bg-blue-50 hover:bg-blue-100 rounded py-[2px] transition-all"
-            >
-              +{overflow} more
-            </button>
-            {showPopover && (
-              <div
-                className="absolute left-0 top-full mt-1 z-50 bg-white rounded-xl shadow-2xl border border-[#e4ebf1] p-2 w-56 space-y-1"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="text-[9px] uppercase font-bold text-slate-400 px-1 pb-1 border-b border-slate-100">
-                  {date.getDate()} {date.toLocaleString('default', { month: 'short' })} — All Interviews
-                </div>
-                {cellInterviews.map((iv) => {
-                  const name = iv.application?.candidate?.fullName || iv.candidateName || '?';
-                  const { bg, text } = getStatusStyle(iv.result);
-                  const rLabel = iv.roundNo === 99 ? 'Final' : `Round ${iv.roundNo || 1}`;
-                  const tLabel = iv.scheduledStart ? formatTime12h(new Date(iv.scheduledStart)) : '';
-                  return (
-                    <button
-                      key={iv.id}
-                      type="button"
-                      onClick={() => {
-                        setShowPopover(false);
-                        const cId = iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId;
-                        onChipClick(cId, iv.id);
-                      }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left hover:brightness-95 transition-all ${bg}`}
-                    >
-                      <span className={`text-[9px] font-bold ${text} truncate flex-1`}>{name}</span>
-                      <span className={`text-[8px] font-semibold ${text} shrink-0`}>{rLabel}</span>
-                      <span className={`text-[8px] ${text} shrink-0 opacity-70`}>{tLabel}</span>
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => { setShowPopover(false); onSelectDate(date); }}
-                  className="w-full text-[9px] text-slate-400 hover:text-slate-600 pt-1 border-t border-slate-100 text-center"
-                >
-                  View all for this day
-                </button>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectDate(date);
+            }}
+            className="w-full text-center text-[9px] font-bold text-[#1f52cc] bg-blue-50 hover:bg-blue-100 rounded py-[2px] transition-all"
+          >
+            +{overflow} more
+          </button>
         )}
       </div>
     </div>
