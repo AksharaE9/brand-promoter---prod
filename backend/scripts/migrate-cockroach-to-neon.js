@@ -8,7 +8,7 @@ require('dotenv').config();
 const { Client } = require('pg');
 
 async function runMigration() {
-  const oldUrl = "postgresql://jishnu123:xJWW7P_Tdvf4oBLWt4Txmg@hoofed-badger-27775.j77.aws-ap-south-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full";
+  const oldUrl = "postgresql://jiii:b4kKoxMuMb39LdEku9W4ow@warm-chamois-29268.j77.aws-ap-southeast-3.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full";
   const newUrl = process.env.DATABASE_URL;
 
   if (!newUrl) {
