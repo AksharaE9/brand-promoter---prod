@@ -1,7 +1,7 @@
 /**
- * scripts/test-cockroach.js
- * Quick smoke-test script — verify CockroachDB connectivity and table existence.
- * Run with: node scripts/test-cockroach.js
+ * scripts/test-db.js
+ * Quick smoke-test script — verify Neon DB (PostgreSQL) connectivity and table existence.
+ * Run with: node scripts/test-db.js
  */
 
 require('dotenv').config();
@@ -30,7 +30,7 @@ const TABLES = [
 ];
 
 async function main() {
-  console.log('\n🔌 Testing CockroachDB Connection...');
+  console.log('\n🔌 Testing Neon DB Connection...');
   console.log(`   URL: ${process.env.DATABASE_URL?.replace(/:([^:@]+)@/, ':****@')}\n`);
 
   try {
@@ -89,9 +89,9 @@ async function main() {
 
     if (allGood) {
       console.log('\n✅  ALL TABLES: OK');
-      console.log('\n🎉 CockroachDB is connected and ready!\n');
+      console.log('\n🎉 Neon DB is connected and ready!\n');
     } else {
-      console.log('\n⚠️  Some tables may not exist yet. Run: npm run prisma:deploy\n');
+      console.log('\n⚠️  Some tables may not exist yet. Run: npx prisma db push\n');
     }
 
     process.exit(0);
@@ -99,9 +99,9 @@ async function main() {
     console.error('\n❌ Connection FAILED:', err.message);
     console.error('\nTroubleshooting:');
     console.error('  1. Check your DATABASE_URL in .env');
-    console.error('  2. Ensure sslmode=verify-full is set');
-    console.error('  3. Check CockroachDB cluster is running');
-    console.error('  4. Run: npm run prisma:deploy (to create tables)\n');
+    console.error('  2. Ensure sslmode=require is set');
+    console.error('  3. Check Neon DB project is active');
+    console.error('  4. Run: npx prisma db push (to create tables)\n');
     process.exit(1);
   } finally {
     await prisma.$disconnect();

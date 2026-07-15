@@ -2,7 +2,7 @@
 /**
  * src/scripts/addIndexes.js
  * ─────────────────────────────────────────────────────────────────────────
- * CockroachDB index migration for ATS performance optimization.
+ * Neon DB (PostgreSQL) index migration for ATS performance optimization.
  *
  * Run once after deploying this PR:
  *   node src/scripts/addIndexes.js
@@ -32,8 +32,7 @@ const indexes = [
   },
 
   // ── pg_trgm extension + trigram GIN indexes (fast ILIKE search) ───────────
-  // CockroachDB v22.1+ supports pg_trgm GIN indexes.
-  // If your version is older, these will be skipped gracefully.
+  // Neon PostgreSQL fully supports pg_trgm GIN indexes.
   {
     name: 'pg_trgm_extension',
     sql: `CREATE EXTENSION IF NOT EXISTS pg_trgm`,
@@ -55,7 +54,7 @@ const indexes = [
   },
 ];
 
-// Post-index: run ANALYZE so the CockroachDB query planner picks up new stats
+// Post-index: run ANALYZE so the PostgreSQL query planner picks up new stats
 const analyzeStatements = [
   'ANALYZE candidates',
 ];
@@ -65,7 +64,7 @@ function timeout(ms) {
 }
 
 async function run() {
-  console.log('\n[AddIndexes] Starting CockroachDB index migration...\n');
+  console.log('\n[AddIndexes] Starting Neon DB (PostgreSQL) index migration...\n');
 
   let succeeded = 0;
   let skipped   = 0;
@@ -85,7 +84,7 @@ async function run() {
         console.warn(`  ⚠️   ${name} — skipped due to database timeout (taking too long to create/queue).`);
         skipped++;
       } else if (err.message.includes('unknown type') || err.message.includes('does not exist') || err.message.includes('not supported')) {
-        console.warn(`  ⚠️   ${name} — skipped (unsupported on this CockroachDB version): ${err.message.slice(0, 120)}`);
+        console.warn(`  ⚠️   ${name} — skipped (unsupported on this PostgreSQL version): ${err.message.slice(0, 120)}`);
         skipped++;
       } else {
         console.error(`  ❌  ${name} — FAILED: ${err.message.slice(0, 200)}`);

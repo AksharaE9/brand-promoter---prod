@@ -1,7 +1,7 @@
 'use strict';
 /**
  * src/config/db.js
- * Singleton PrismaClient for CockroachDB (PostgreSQL-wire-compatible)
+ * Singleton PrismaClient for Neon DB (PostgreSQL)
  * Import this wherever you need database access: const prisma = require('./config/db');
  */
 

@@ -160,10 +160,10 @@ async function bootstrap() {
     let connected = false;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log(`[Prisma] Connecting to CockroachDB (attempt ${attempt}/${maxRetries})...`);
+        console.log(`[Prisma] Connecting to Neon DB (attempt ${attempt}/${maxRetries})...`);
         const dbWarmStart = Date.now();
         await prisma.$connect();
-        console.log(`[Prisma] CockroachDB connection established successfully in ${Date.now() - dbWarmStart}ms`);
+        console.log(`[Prisma] Neon DB connection established successfully in ${Date.now() - dbWarmStart}ms`);
         connected = true;
         break;
       } catch (err) {
@@ -172,7 +172,7 @@ async function bootstrap() {
           console.log(`[Prisma] Waiting 3 seconds before next retry...`);
           await new Promise(resolve => setTimeout(resolve, 3000));
         } else {
-          console.error('[Prisma] CRITICAL: Failed to connect to CockroachDB after multiple retries.');
+          console.error('[Prisma] CRITICAL: Failed to connect to Neon DB after multiple retries.');
           throw err;
         }
       }

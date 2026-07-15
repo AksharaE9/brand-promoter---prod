@@ -2090,13 +2090,34 @@ const InterviewSchedule = () => {
                                               )}
                                             </div>
 
-                                            {/* Profile button */}
-                                            <button
-                                              className="os-btn-outline !h-8 !px-4 !text-xs shrink-0"
-                                              onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}
-                                            >
-                                              Profile
-                                            </button>
+                                            <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                                              <button
+                                                className="os-btn-primary !h-8 !px-3 !text-[11px] bg-[#1f52cc] shrink-0"
+                                                onClick={() => {
+                                                  setViewMode('list');
+                                                  setSelectedId(iv.application?.candidateId || iv.candidateId);
+                                                  if (iv.id) setActiveInterviewId(iv.id);
+                                                  setShowActivityModal(false);
+                                                }}
+                                              >
+                                                Keep an Interview
+                                              </button>
+                                              <button
+                                                className="os-btn-outline !h-8 !px-3 !text-[11px] border-blue-500 text-blue-600 hover:bg-blue-50 shrink-0"
+                                                onClick={() => {
+                                                  setTransferringInterview(iv);
+                                                  setShowTransferModal(true);
+                                                }}
+                                              >
+                                                Keep a Transfer Panellist
+                                              </button>
+                                              <button
+                                                className="os-btn-outline !h-8 !px-3 !text-[11px] shrink-0"
+                                                onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}
+                                              >
+                                                Profile
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       );
