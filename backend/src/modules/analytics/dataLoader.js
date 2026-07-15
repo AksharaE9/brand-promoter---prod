@@ -17,18 +17,45 @@ async function loadAnalyticsBase(orgId, startDate, endDate) {
   }
 
   const promise = (async () => {
-    // Fire queries in parallel to fetch from CockroachDB
+    // Fire queries in parallel to fetch from CockroachDB with selected lightweight fields
     const [candidates, interviews, applications, users] = await Promise.all([
       prisma.candidate.findMany({
         where: {
           organizationId: orgId,
           isDeleted: false,
           createdAt: { gte: startDate, lte: endDate }
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+          assignedRecruiterId: true,
+          mentorId: true,
+          source: true,
+          organizationId: true,
+          isDeleted: true
         }
       }),
       prisma.interview.findMany({
         where: {
           organizationId: orgId
+        },
+        select: {
+          id: true,
+          candidateId: true,
+          interviewerIds: true,
+          createdById: true,
+          scheduledStart: true,
+          mode: true,
+          status: true,
+          organizationId: true,
+          createdAt: true,
+          result: true
         }
       }),
       prisma.application.findMany({
@@ -36,6 +63,17 @@ async function loadAnalyticsBase(orgId, startDate, endDate) {
           organizationId: orgId,
           isDeleted: false,
           createdAt: { gte: startDate, lte: endDate }
+        },
+        select: {
+          id: true,
+          candidateId: true,
+          jobId: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          currentStageId: true,
+          organizationId: true,
+          isDeleted: true
         }
       }),
       prisma.user.findMany({
@@ -43,6 +81,16 @@ async function loadAnalyticsBase(orgId, startDate, endDate) {
           organizationId: orgId,
           isDeleted: false,
           status: 'ACTIVE'
+        },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          role: true,
+          status: true,
+          organizationId: true,
+          isDeleted: true,
+          userType: true
         }
       }),
     ]);

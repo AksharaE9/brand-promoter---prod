@@ -478,52 +478,62 @@ router.get("/hiring-progress", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHa
 }));
 
 router.get("/pipeline-insights", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
-  const total = await prisma.application.count({ where: { isDeleted: false } });
-  const candsTotal = await prisma.candidate.count({ where: { isDeleted: false } });
-  
-  const selected = await prisma.application.count({
-    where: {
-      status: { in: ["SELECTED", "JOINED"] },
-      isDeleted: false
-    }
-  });
+  const myOrg = req.user.organizationId || "defaultOrg";
+  const cacheKey = `reports:pipeline-insights:${myOrg}:cache`;
+  const { getCached } = require("../../utils/cache");
 
-  const candsSample = await prisma.candidate.findMany({
-    where: { isDeleted: false },
-    orderBy: { createdAt: 'desc' },
-    take: 500
-  });
+  const data = await getCached(cacheKey, async () => {
+    const total = await prisma.application.count({ where: { organizationId: myOrg, isDeleted: false } });
+    const candsTotal = await prisma.candidate.count({ where: { organizationId: myOrg, isDeleted: false } });
+    
+    const selected = await prisma.application.count({
+      where: {
+        organizationId: myOrg,
+        status: { in: ["SELECTED", "JOINED"] },
+        isDeleted: false
+      }
+    });
 
-  const sources = {};
-  candsSample.forEach(c => {
-    const s = c.source || 'Direct';
-    if (!sources[s]) sources[s] = { total: 0 };
-    sources[s].total++;
-  });
+    const candsSample = await prisma.candidate.findMany({
+      where: { organizationId: myOrg, isDeleted: false },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      select: {
+        source: true
+      }
+    });
 
-  const sourceFunnel = Object.keys(sources).map(s => ({
-    source: s,
-    total: sources[s].total,
-    selected: Math.round((sources[s].total / Math.max(1, candsTotal)) * selected),
-    joinedRate: Math.round((selected / Math.max(1, total)) * 100)
-  })).sort((a, b) => b.total - a.total).slice(0, 5);
+    const sources = {};
+    candsSample.forEach(c => {
+      const s = c.source || 'Direct';
+      if (!sources[s]) sources[s] = { total: 0 };
+      sources[s].total++;
+    });
 
-  const insights = {
-    totals: {
-      totalApplications: total,
-      selectionRate: total > 0 ? (selected / total) * 100 : 0
-    },
-    sourceFunnel: sourceFunnel.length > 0 ? sourceFunnel : [
-      { source: 'Direct', total: total, selected: selected, joinedRate: total > 0 ? Math.round((selected/total)*100) : 0 }
-    ],
-    timeInStage: [
-      { stage: 'Screening', avgDays: 2.4, sampleSize: Math.floor(total * 0.7) },
-      { stage: 'Interview', avgDays: 5.8, sampleSize: Math.floor(total * 0.4) },
-      { stage: 'Offer', avgDays: 3.2, sampleSize: selected },
-    ]
-  };
+    const sourceFunnel = Object.keys(sources).map(s => ({
+      source: s,
+      total: sources[s].total,
+      selected: Math.round((sources[s].total / Math.max(1, candsTotal)) * selected),
+      joinedRate: Math.round((selected / Math.max(1, total)) * 100)
+    })).sort((a, b) => b.total - a.total).slice(0, 5);
 
-  res.json({ success: true, data: insights });
+    return {
+      totals: {
+        totalApplications: total,
+        selectionRate: total > 0 ? (selected / total) * 100 : 0
+      },
+      sourceFunnel: sourceFunnel.length > 0 ? sourceFunnel : [
+        { source: 'Direct', total: total, selected: selected, joinedRate: total > 0 ? Math.round((selected/total)*100) : 0 }
+      ],
+      timeInStage: [
+        { stage: 'Screening', avgDays: 2.4, sampleSize: Math.floor(total * 0.7) },
+        { stage: 'Interview', avgDays: 5.8, sampleSize: Math.floor(total * 0.4) },
+        { stage: 'Offer', avgDays: 3.2, sampleSize: selected },
+      ]
+    };
+  }, REPORT_CACHE_TTL * 1000);
+
+  res.json({ success: true, data });
 }));
 
 module.exports = router;

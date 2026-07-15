@@ -542,9 +542,6 @@ router.get(
         ];
       }
 
-      // Count total matching
-      const total = await prisma.candidate.count({ where });
-
       const queryOptions = {
         where,
         take: limit + 1,
@@ -595,7 +592,12 @@ router.get(
         queryOptions.skip = 1;
       }
 
-      const items = await prisma.candidate.findMany(queryOptions);
+      // Fetch count and items in parallel to optimize latency by a full roundtrip
+      const [total, items] = await Promise.all([
+        prisma.candidate.count({ where }),
+        prisma.candidate.findMany(queryOptions)
+      ]);
+
       const hasMore = items.length > limit;
       if (hasMore) {
         items.pop();

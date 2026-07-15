@@ -135,18 +135,23 @@ router.get(
     if (req.query.candidateId) where.candidateId = req.query.candidateId;
     if (req.query.stageId) where.currentStageId = req.query.stageId;
 
-    const applications = await prisma.application.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      include: {
-        candidate: { select: { id: true, fullName: true, email: true, phone: true } },
-        job: { select: { id: true, title: true, department: true } },
-        currentStage: { select: { id: true, name: true, sortOrder: true } },
-      },
-    });
+    const cacheKeyStr = `applications:list:${orgId}:${limit}:${req.query.jobId || ''}:${req.query.candidateId || ''}:${req.query.stageId || ''}`;
+    const { getCached } = require("../../utils/cache");
 
-    res.json({ success: true, data: applications, hasMore: applications.length === limit });
+    const data = await getCached(cacheKeyStr, async () => {
+      return await prisma.application.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+          candidate: { select: { id: true, fullName: true, email: true, phone: true } },
+          job: { select: { id: true, title: true, department: true } },
+          currentStage: { select: { id: true, name: true, sortOrder: true } },
+        },
+      });
+    }, 30000);
+
+    res.json({ success: true, data, hasMore: data.length === limit });
   }),
 );
 
