@@ -150,17 +150,30 @@ const ALL_COLUMNS = [
     pinned: true,
     getValue: (iv) => iv.application?.candidate?.fullName || iv.candidateName || '',
     render: (iv, { onSelectCandidate }) => (
-      <button
-        type="button"
+      <span
+        role="button"
+        tabIndex={0}
         onClick={() => onSelectCandidate(
           iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId,
           iv.id
         )}
-        style={{ color: '#1f52cc', fontWeight: 600, fontSize: 12, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        style={{
+          color: '#1f52cc',
+          fontWeight: 600,
+          fontSize: 12,
+          textAlign: 'left',
+          cursor: 'pointer',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
+          MozUserSelect: 'text',
+          msUserSelect: 'text',
+          display: 'inline-block',
+          width: '100%',
+        }}
         title="Open interview detail"
       >
         {iv.application?.candidate?.fullName || iv.candidateName || '-'}
-      </button>
+      </span>
     ),
   },
   {
