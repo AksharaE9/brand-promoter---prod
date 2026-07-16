@@ -767,33 +767,69 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
         {/* Bulk selection indicator & Select CSV */}
         {selectedRows.size > 0 && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
-            padding: '0 10px', height: 34, boxSizing: 'border-box'
+            marginLeft: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
           }}>
-            <span style={{ fontSize: 12, color: '#1f52cc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>check_box</span>
-              {selectedRows.size} Selected
-            </span>
+            {/* Selected Count Badge */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              borderRadius: 8,
+              padding: '0 12px',
+              height: 34,
+              fontSize: 12,
+              color: '#1f52cc',
+              fontWeight: 600,
+              boxSizing: 'border-box'
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>check_box</span>
+              <span>{selectedRows.size} Selected</span>
+            </div>
 
+            {/* Select CSV Button */}
             <button
               onClick={exportSelectedCSV}
               className="os-btn-outline"
               style={{
-                height: 24, fontSize: 11, padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4,
-                borderColor: '#1f52cc', color: '#1f52cc', background: '#eff6ff', fontWeight: 700
+                height: 34,
+                fontSize: 12,
+                padding: '0 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                borderColor: '#1f52cc',
+                color: '#1f52cc',
+                background: '#eff6ff',
+                fontWeight: 600
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download_for_offline</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>download_for_offline</span>
               Select CSV
             </button>
 
+            {/* Clear Selection Button */}
             <button
               onClick={() => setSelectedRows(new Set())}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1f52cc', display: 'flex', alignItems: 'center', padding: 0 }}
-              title="Deselect all"
+              className="os-btn-outline"
+              style={{
+                height: 34,
+                width: 34,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                borderColor: '#cbd5e1',
+                color: '#64748b',
+                background: '#fff'
+              }}
+              title="Clear selection"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>close</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
             </button>
           </div>
         )}
