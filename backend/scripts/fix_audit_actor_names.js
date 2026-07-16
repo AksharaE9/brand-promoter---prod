@@ -33,6 +33,23 @@ function looksLikeId(str) {
 async function fixAuditActorNames() {
   console.log('Scanning audit logs for rows with raw IDs as actorName...\n');
 
+  // Fetch all users at once to avoid query-in-loop connection closure issues
+  const allUsers = await prisma.user.findMany({
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+    }
+  });
+
+  // Create maps for instant in-memory lookup
+  const userByIdMap = new Map();
+  const userByEmailMap = new Map();
+  for (const user of allUsers) {
+    if (user.id) userByIdMap.set(user.id, user.fullName);
+    if (user.email) userByEmailMap.set(user.email.toLowerCase(), user.fullName);
+  }
+
   const allLogs = await prisma.auditLog.findMany({
     select: {
       id: true,
@@ -58,20 +75,12 @@ async function fixAuditActorNames() {
   for (const log of badLogs) {
     let realName = null;
 
-    if (log.actorUserId) {
-      const user = await prisma.user.findUnique({
-        where: { id: log.actorUserId },
-        select: { fullName: true },
-      });
-      if (user?.fullName) realName = user.fullName;
+    if (log.actorUserId && userByIdMap.has(log.actorUserId)) {
+      realName = userByIdMap.get(log.actorUserId);
     }
 
-    if (!realName && log.actorEmail) {
-      const user = await prisma.user.findFirst({
-        where: { email: log.actorEmail },
-        select: { fullName: true },
-      });
-      if (user?.fullName) realName = user.fullName;
+    if (!realName && log.actorEmail && userByEmailMap.has(log.actorEmail.toLowerCase())) {
+      realName = userByEmailMap.get(log.actorEmail.toLowerCase());
     }
 
     if (realName) {
