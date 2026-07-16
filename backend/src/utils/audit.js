@@ -34,18 +34,32 @@ function logAudit({
     // 1. Always resolve User (Actor) details from the database if actorUserId is present
     if (actorUserId) {
       try {
-        const user = await prisma.user.findUnique({
+        // Primary lookup: by Prisma DB user ID
+        let user = await prisma.user.findUnique({
           where: { id: actorUserId },
           select: { fullName: true, email: true, role: true, organizationId: true }
         });
+
+        // Secondary lookup: if actorUserId is a Firebase UID (not found by ID),
+        // try to find by email if caller passed one — avoids storing raw UIDs as names
+        if (!user && actorEmail) {
+          user = await prisma.user.findFirst({
+            where: { email: actorEmail },
+            select: { fullName: true, email: true, role: true, organizationId: true }
+          });
+        }
+
         if (user) {
           resolvedActorName = user.fullName;
           resolvedActorEmail = user.email;
           resolvedActorRole = user.role;
           resolvedOrgId = resolvedOrgId || user.organizationId;
         }
+        // If DB lookup fails entirely, keep actorName as passed by caller (req.user.fullName).
+        // NEVER fall back to writing the raw userId as the displayed actor name.
       } catch (err) {
         console.error('[AuditResolve] Actor user lookup failed:', err.message);
+        // resolvedActorName stays as the caller-provided actorName (real full name)
       }
     }
 
@@ -138,13 +152,16 @@ function logAudit({
     const log = await prisma.auditLog.create({
       data: {
         actorUserId,
-        actorName:  resolvedActorName  || actorUserId || "System",
+        // IMPORTANT: never store a raw cuid/UUID as the displayed actor name.
+        // If resolvedActorName is still null/empty here, write 'System' instead.
+        actorName:  resolvedActorName  || "System",
         actorEmail: resolvedActorEmail || "",
         actorRole:  resolvedActorRole  || "SYSTEM",
         action,
         entityType,
         entityId,
-        entityName: resolvedEntityName || entityId || null,
+        // Only store entityName if it is a real human-readable name (not an ID)
+        entityName: resolvedEntityName || null,
         oldData,
         newData,
         metadata,
@@ -164,10 +181,11 @@ function logAudit({
         action,
         entityType,
         entityId,
-        actorName: resolvedActorName || actorUserId || "System",
+        entityName:      resolvedEntityName || null,
+        actorName:       resolvedActorName  || "System",
         description,
-        performedBy: actorUserId,
-        performedByName: resolvedActorName || "System",
+        performedBy:     actorUserId,
+        performedByName: resolvedActorName  || "System",
         timestamp: log.createdAt,
       });
     } catch (sseErr) {

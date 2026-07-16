@@ -137,7 +137,11 @@ const AuditLogs = () => {
         action:      data.action,
         entityType:  data.entityType,
         entityId:    data.entityId,
-        entityName:  data.entityId || 'N/A',
+        // Use entityName from SSE payload if provided; fall back to extracting from description
+        // (e.g. "John Smith performed SCHEDULE_INTERVIEW on INTERVIEW (John - Round 1)")
+        entityName:  data.entityName ||
+                     (data.description?.match(/\(([^)]+)\)$/)?.[1]) ||
+                     'Loading...',
         createdAt:   data.timestamp || new Date().toISOString(),
         actor: {
           fullName: data.performedByName || data.actorName || 'System',

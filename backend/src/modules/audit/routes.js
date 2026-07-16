@@ -6,12 +6,14 @@ const { auth, requireRoles } = require('../../middleware/auth');
 const formatLog = (log) => ({
   ...log,
   actor: {
-    fullName: log.actorName  || log.actorUserId || 'System',
+    fullName: log.actorName  || 'System',
     email:    log.actorEmail || '',
     role:     log.actorRole  || 'Admin',
   },
-  entityName: log.entityName || log.entityId || 'N/A',
+  // Only show entityName if it's a real name — never show raw IDs
+  entityName: log.entityName || 'N/A',
 });
+
 
 // GET /api/audit-logs — paginated, filtered
 router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
