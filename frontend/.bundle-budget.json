@@ -1,0 +1,9 @@
+{
+  "maxChunkKb": 370,
+  "budgetNote": "Baseline from build output 2026-07-16. Largest chunk: vendor.js 334KB. Budget = 334 + 10% = ~370KB. Update this file after intentional large dependency additions.",
+  "baselineDate": "2026-07-16",
+  "largestChunkAtBaseline": {
+    "file": "vendor-DadLSKXX.js",
+    "sizeKb": 334
+  }
+}

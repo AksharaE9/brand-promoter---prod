@@ -1,0 +1,189 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# deploy.yml — Akshara ATS Production Deployment
+#
+# Triggered ONLY when ci.yml completes successfully on main.
+# Uses workflow_run trigger to guarantee ci.yml must pass first.
+# Deploy is explicitly controlled here — Render auto-deploy must be DISABLED
+# in the Render dashboard so only this workflow triggers deploys.
+#
+# ┌─────────────────────────────────────────────────────────────────────┐
+# │ REQUIRED SECRETS (Settings → Secrets → Actions):                   │
+# │   VERCEL_TOKEN          — Vercel Dashboard → Settings → Tokens     │
+# │   VERCEL_ORG_ID         — Vercel Dashboard → Settings → Team ID    │
+# │   VERCEL_PROJECT_ID     — Vercel → Project → Settings → General    │
+# │   RENDER_DEPLOY_HOOK_URL — Render → Service → Settings → Hooks     │
+# │   NEON_TEST_DATABASE_URL — Neon Console → ci-test branch URL       │
+# │   VITE_API_URL          — Render backend public URL                │
+# └─────────────────────────────────────────────────────────────────────┘
+# ──────────────────────────────────────────────────────────────────────────────
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  # Guard: Only run if CI passed
+  check-ci:
+    name: Verify CI Passed
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: CI passed — proceeding with deploy
+        run: echo "CI completed successfully. Deploying..."
+
+  # ── Deploy Frontend → Vercel (production) ─────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend → Vercel
+    runs-on: ubuntu-latest
+    needs: check-ci
+    outputs:
+      deploy-url: ${{ steps.vercel-deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore frontend cache
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-deps-${{ hashFiles('frontend/package-lock.json') }}
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend for production
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+
+      - name: Deploy to Vercel (production)
+        id: vercel-deploy
+        working-directory: frontend
+        run: |
+          npm install -g vercel@latest
+          DEPLOY_URL=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} \
+            --scope=${{ secrets.VERCEL_ORG_ID }} \
+            --yes 2>&1 | grep -oP 'https://[^\s]+' | tail -1)
+          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "Deployed to: $DEPLOY_URL"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  # ── Deploy Backend → Render (via deploy hook) ─────────────────────────────
+  deploy-backend:
+    name: Deploy Backend → Render
+    runs-on: ubuntu-latest
+    needs: check-ci
+    steps:
+      - name: Trigger Render deploy hook
+        run: |
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Render deploy hook HTTP status: $RESPONSE"
+          if [ "$RESPONSE" != "200" ] && [ "$RESPONSE" != "201" ] && [ "$RESPONSE" != "204" ]; then
+            echo "❌ Render deploy hook failed with status $RESPONSE"
+            exit 1
+          fi
+          echo "✅ Render deploy triggered successfully"
+
+      - name: Wait for Render to become healthy
+        run: |
+          BACKEND_URL="${{ secrets.VITE_API_URL || 'https://ats-sales-backend.onrender.com' }}"
+          echo "Waiting for backend health check at $BACKEND_URL/api/health ..."
+          MAX_RETRIES=20
+          RETRY=0
+          until curl -sf "$BACKEND_URL/api/health" > /dev/null 2>&1; do
+            RETRY=$((RETRY+1))
+            if [ $RETRY -ge $MAX_RETRIES ]; then
+              echo "❌ Backend health check timed out after ${MAX_RETRIES} retries"
+              exit 1
+            fi
+            echo "Retry $RETRY/$MAX_RETRIES — waiting 15s..."
+            sleep 15
+          done
+          echo "✅ Backend is healthy"
+
+  # ── Post-deploy smoke tests ───────────────────────────────────────────────
+  smoke-tests:
+    name: Post-Deploy Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Smoke test 1 — Frontend root URL returns 200
+        run: |
+          FRONTEND_URL="https://brand-promoter-prod.vercel.app"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL")
+          echo "Frontend root status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Frontend root URL returned $STATUS"
+            exit 1
+          fi
+          echo "✅ Frontend root URL is healthy"
+
+      - name: Smoke test 2 — Backend /api/health returns 200
+        run: |
+          BACKEND_URL="${{ secrets.VITE_API_URL || 'https://ats-sales-backend.onrender.com' }}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health")
+          BODY=$(curl -sf "$BACKEND_URL/api/health" || echo '{}')
+          echo "Backend health status: $STATUS"
+          echo "Backend health body: $BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Backend /api/health returned $STATUS"
+            exit 1
+          fi
+          echo "✅ Backend health check passed"
+
+      - name: Smoke test 3 — Backend /api/interviews returns well-formed response
+        run: |
+          BACKEND_URL="${{ secrets.VITE_API_URL || 'https://ats-sales-backend.onrender.com' }}"
+          # Call with no auth — should get 401 (which proves the endpoint is live and responding)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/interviews")
+          echo "API /interviews status (unauthenticated): $STATUS"
+          if [ "$STATUS" = "500" ] || [ "$STATUS" = "502" ] || [ "$STATUS" = "503" ]; then
+            echo "❌ Backend /api/interviews returned server error: $STATUS"
+            exit 1
+          fi
+          echo "✅ Backend /api/interviews is responding ($STATUS — expected 401 unauthenticated)"
+
+  # ── Alert on smoke failure ────────────────────────────────────────────────
+  alert-on-smoke-failure:
+    name: Alert on Smoke Test Failure
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    if: failure()
+    steps:
+      - name: Create failure comment on associated PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Find the most recent PR merged to main
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'closed',
+              base: 'main',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 1,
+            });
+            if (prs.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prs.data[0].number,
+                body: `## 🚨 Post-Deploy Smoke Tests FAILED\n\nThe deploy completed but smoke tests are failing on the live environment.\n\n**Action required**: Check the live app immediately.\n\n[View smoke test logs →](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              });
+            }
