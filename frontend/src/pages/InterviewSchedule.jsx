@@ -513,29 +513,36 @@ const ScheduleModal = React.memo(function ScheduleModal({
               <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Start Date &amp; Time</label>
               {/* Split into date + time so the browser always shows DD/MM/YYYY (Indian standard) */}
               <div className="flex items-center gap-2">
-                {/* Date picker — rendered as DD/MM/YYYY in Indian locale */}
+                {/* Date picker — guarantees DD/MM/YYYY placeholder and display format */}
                 <div className="relative flex-1">
+                  {/* Visible text input showing formatted value or placeholder */}
+                  <input
+                    type="text"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none bg-white text-slate-800 font-medium"
+                    placeholder="dd/mm/yyyy"
+                    readOnly
+                    value={
+                      scheduleForm.scheduledStart && scheduleForm.scheduledStart.slice(0, 10)
+                        ? (() => {
+                            const [y, m, d] = scheduleForm.scheduledStart.slice(0, 10).split('-');
+                            return `${d}/${m}/${y}`;
+                          })()
+                        : ''
+                    }
+                  />
+                  {/* Calendar icon */}
+                  <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400 pointer-events-none text-base">
+                    calendar_month
+                  </span>
+                  {/* Hidden native input on top that opens native picker on click */}
                   <input
                     type="date"
-                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     required
                     value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(0, 10) : ''}
                     onChange={handleDatePartChange}
                     style={{ colorScheme: 'light' }}
-                    data-date-format="DD/MM/YYYY"
-                    lang="en-IN"
                   />
-                  {/* Overlay showing DD/MM/YYYY when a date is picked — hides native format */}
-                  {scheduleForm.scheduledStart && scheduleForm.scheduledStart.slice(0, 10) && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center px-4">
-                      <span className="text-sm text-[#0f1b3d] font-medium bg-white pr-1">
-                        {(() => {
-                          const [y, m, d] = scheduleForm.scheduledStart.slice(0, 10).split('-');
-                          return `${d}/${m}/${y}`;
-                        })()}
-                      </span>
-                    </div>
-                  )}
                 </div>
                 {/* Time picker */}
                 <input
