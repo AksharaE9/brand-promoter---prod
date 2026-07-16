@@ -29,17 +29,17 @@ function logAudit({
     let resolvedOrgId = orgId || organizationId;
     let resolvedEntityName = entityName;
 
-    // 1. Resolve User (Actor) details if they are not passed
-    if (actorUserId && (!resolvedActorName || !resolvedActorEmail || !resolvedActorRole || !resolvedOrgId)) {
+    // 1. Always resolve User (Actor) details from the database if actorUserId is present
+    if (actorUserId) {
       try {
         const user = await prisma.user.findUnique({
           where: { id: actorUserId },
           select: { fullName: true, email: true, role: true, organizationId: true }
         });
         if (user) {
-          resolvedActorName = resolvedActorName || user.fullName;
-          resolvedActorEmail = resolvedActorEmail || user.email;
-          resolvedActorRole = resolvedActorRole || user.role;
+          resolvedActorName = user.fullName;
+          resolvedActorEmail = user.email;
+          resolvedActorRole = user.role;
           resolvedOrgId = resolvedOrgId || user.organizationId;
         }
       } catch (err) {
@@ -49,55 +49,53 @@ function logAudit({
 
     const targetOrg = resolvedOrgId || "defaultOrg";
 
-    // 2. Resolve Entity Name if missing or if it's just the ID (UUID/CUID/tempId)
-    const isGenericId = !resolvedEntityName || 
-      resolvedEntityName === entityId || 
-      (typeof resolvedEntityName === 'string' && (
-        resolvedEntityName.startsWith('temp_') || 
-        resolvedEntityName.length === 25 || // CUID length
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedEntityName) // UUID
-      ));
-
-    if (entityId && isGenericId && entityType) {
+    // 2. Always resolve Entity Name if entityId and entityType are present
+    if (entityId && entityType) {
       try {
         if (entityType === 'INTERVIEW') {
           const iv = await prisma.interview.findUnique({
             where: { id: entityId },
-            select: { candidateName: true, round: true, roundNo: true }
+            include: {
+              application: {
+                include: {
+                  candidate: { select: { fullName: true } },
+                  job: { select: { title: true } }
+                }
+              }
+            }
           });
           if (iv) {
-            resolvedEntityName = `${iv.candidateName || 'Candidate'} - ${iv.round || ('Round ' + iv.roundNo)}`;
+            const candidateName = iv.application?.candidate?.fullName || iv.candidateName || 'Candidate';
+            const jobTitle = iv.application?.job?.title || iv.jobTitle || 'Job';
+            const roundName = iv.round || `Round ${iv.roundNo}`;
+            resolvedEntityName = `${candidateName} - ${roundName} (${jobTitle})`;
           }
         } else if (entityType === 'INTERVIEW_FEEDBACK') {
           // Check if newData has the roundId
-          const possibleRoundId = newData?.roundId || newData?.interviewId;
-          if (possibleRoundId) {
-            const iv = await prisma.interview.findUnique({
-              where: { id: possibleRoundId },
-              select: { candidateName: true, round: true, roundNo: true }
-            });
-            if (iv) {
-              resolvedEntityName = `Feedback for ${iv.candidateName || 'Candidate'} - ${iv.round || ('Round ' + iv.roundNo)}`;
-            }
-          } else {
-            // Try to find the interview containing this feedback tempId
-            const iv = await prisma.interview.findFirst({
-              where: {
-                feedback: {
-                  path: '$[*].id',
-                  array_contains: entityId
+          const possibleRoundId = newData?.roundId || newData?.interviewId || entityId;
+          const iv = await prisma.interview.findUnique({
+            where: { id: possibleRoundId },
+            include: {
+              application: {
+                include: {
+                  candidate: { select: { fullName: true } },
+                  job: { select: { title: true } }
                 }
-              },
-              select: { candidateName: true, round: true, roundNo: true }
-            });
-            if (iv) {
-              resolvedEntityName = `Feedback for ${iv.candidateName || 'Candidate'} - ${iv.round || ('Round ' + iv.roundNo)}`;
+              }
             }
+          });
+          if (iv) {
+            const candidateName = iv.application?.candidate?.fullName || iv.candidateName || 'Candidate';
+            const roundName = iv.round || `Round ${iv.roundNo}`;
+            resolvedEntityName = `Feedback for ${candidateName} - ${roundName}`;
           }
         } else if (entityType === 'APPLICATION') {
           const app = await prisma.application.findUnique({
             where: { id: entityId },
-            include: { candidate: true, job: true }
+            include: {
+              candidate: { select: { fullName: true } },
+              job: { select: { title: true } }
+            }
           });
           if (app) {
             resolvedEntityName = `${app.candidate?.fullName || 'Candidate'} - ${app.job?.title || 'Job'}`;

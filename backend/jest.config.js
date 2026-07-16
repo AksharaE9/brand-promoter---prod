@@ -7,7 +7,7 @@ module.exports = {
   testTimeout: 30000,
   verbose: true,
   // Run serially to avoid DB state conflicts
-  runInBand: true,
+  maxWorkers: 1,
   // Ensure forceExit for Prisma connection cleanup
   forceExit: true,
 };
