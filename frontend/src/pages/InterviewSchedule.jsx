@@ -2428,7 +2428,7 @@ const InterviewSchedule = () => {
                           {(() => {
                             const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
                             return phoneFollowUp ? (
-                              <div className="flex items-center gap-1.5 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <button
                                   type="button"
                                   onClick={() => downloadBase64File(phoneFollowUp.name, phoneFollowUp.data)}
@@ -2438,28 +2438,39 @@ const InterviewSchedule = () => {
                                   <span className="truncate max-w-[150px]">{phoneFollowUp.name}</span>
                                 </button>
                                 {isAdmin && (
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      const updatedNotes = JSON.stringify({ phoneFollowUp: null, emailFollowUp });
-                                      const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                      await schedulingApi.updateRound(selectedInterview.id, {
-                                        applicationId: selectedInterview.applicationId,
-                                        roundNo: selectedInterview.roundNo,
-                                        round: selectedInterview.round,
-                                        interviewerIds,
-                                        scheduledStart: selectedInterview.scheduledStart,
-                                        mode: selectedInterview.mode,
-                                        meetingLink: selectedInterview.meetingLink,
-                                        zohoLink: selectedInterview.zohoLink,
-                                        notes: updatedNotes
-                                      });
-                                      await loadAll();
-                                    }}
-                                    className="text-red-500 hover:text-red-700 text-xs font-semibold"
-                                  >
-                                    Delete
-                                  </button>
+                                  <>
+                                    <input
+                                      type="file"
+                                      id={`replace-phone-followup-${selectedInterview?.id}`}
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files[0];
+                                        if (!file || !selectedInterview) return;
+                                        const base64 = await fileToBase64(file);
+                                        const updatedNotes = JSON.stringify({ phoneFollowUp: base64, emailFollowUp });
+                                        const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                        await schedulingApi.updateRound(selectedInterview.id, {
+                                          applicationId: selectedInterview.applicationId,
+                                          roundNo: selectedInterview.roundNo,
+                                          round: selectedInterview.round,
+                                          interviewerIds,
+                                          scheduledStart: selectedInterview.scheduledStart,
+                                          mode: selectedInterview.mode,
+                                          meetingLink: selectedInterview.meetingLink,
+                                          zohoLink: selectedInterview.zohoLink,
+                                          notes: updatedNotes
+                                        });
+                                        await loadAll();
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={`replace-phone-followup-${selectedInterview?.id}`}
+                                      className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+                                    >
+                                      Replace File
+                                    </label>
+                                  </>
                                 )}
                               </div>
                             ) : (
@@ -2507,7 +2518,7 @@ const InterviewSchedule = () => {
                           {(() => {
                             const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
                             return emailFollowUp ? (
-                              <div className="flex items-center gap-1.5 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <button
                                   type="button"
                                   onClick={() => downloadBase64File(emailFollowUp.name, emailFollowUp.data)}
@@ -2517,28 +2528,39 @@ const InterviewSchedule = () => {
                                   <span className="truncate max-w-[150px]">{emailFollowUp.name}</span>
                                 </button>
                                 {isAdmin && (
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: null });
-                                      const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                      await schedulingApi.updateRound(selectedInterview.id, {
-                                        applicationId: selectedInterview.applicationId,
-                                        roundNo: selectedInterview.roundNo,
-                                        round: selectedInterview.round,
-                                        interviewerIds,
-                                        scheduledStart: selectedInterview.scheduledStart,
-                                        mode: selectedInterview.mode,
-                                        meetingLink: selectedInterview.meetingLink,
-                                        zohoLink: selectedInterview.zohoLink,
-                                        notes: updatedNotes
-                                      });
-                                      await loadAll();
-                                    }}
-                                    className="text-red-500 hover:text-red-700 text-xs font-semibold"
-                                  >
-                                    Delete
-                                  </button>
+                                  <>
+                                    <input
+                                      type="file"
+                                      id={`replace-email-followup-${selectedInterview?.id}`}
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files[0];
+                                        if (!file || !selectedInterview) return;
+                                        const base64 = await fileToBase64(file);
+                                        const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: base64 });
+                                        const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                        await schedulingApi.updateRound(selectedInterview.id, {
+                                          applicationId: selectedInterview.applicationId,
+                                          roundNo: selectedInterview.roundNo,
+                                          round: selectedInterview.round,
+                                          interviewerIds,
+                                          scheduledStart: selectedInterview.scheduledStart,
+                                          mode: selectedInterview.mode,
+                                          meetingLink: selectedInterview.meetingLink,
+                                          zohoLink: selectedInterview.zohoLink,
+                                          notes: updatedNotes
+                                        });
+                                        await loadAll();
+                                        e.target.value = '';
+                                      }}
+                                    />
+                                    <label
+                                      htmlFor={`replace-email-followup-${selectedInterview?.id}`}
+                                      className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+                                    >
+                                      Replace File
+                                    </label>
+                                  </>
                                 )}
                               </div>
                             ) : (

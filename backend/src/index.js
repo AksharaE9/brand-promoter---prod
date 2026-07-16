@@ -103,7 +103,8 @@ app.use(
   }),
 );
 app.use(setSecurityHeaders);
-app.use(express.json({ limit: "4mb" })); // Increased for large bulk uploads
+app.use(express.json({ limit: "50mb" })); // Increased for large base64 follow-ups and bulk uploads
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
 
 app.get("/api/health", async (req, res) => {
