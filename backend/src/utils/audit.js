@@ -1,4 +1,6 @@
 const prisma = require("../config/db");
+const inv = require("./cacheInvalidation");
+const sse = require("./sse");
 
 /**
  * Write an audit log entry — FIRE AND FORGET (non-blocking).
@@ -155,10 +157,8 @@ function logAudit({
 
     // Invalidate caches and broadcast SSE
     try {
-      const inv = require("./cacheInvalidation");
       await inv.audit(targetOrg);
 
-      const sse = require("./sse");
       sse.broadcastToOrg(targetOrg, 'AUDIT_LOG_CREATED', {
         logId: log.id,
         action,

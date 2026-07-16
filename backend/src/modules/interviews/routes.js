@@ -171,6 +171,7 @@ router.get(
       search:        req.query.search,
       cursor:        req.query.cursor,
       limit:         req.query.limit,
+      date:          req.query.date,
     });
 
     // We fetch limit + 1 to know if there is a next page
@@ -266,9 +267,30 @@ router.post(
       throw new ApiError(409, `Round ${roundNo} is already scheduled or completed for this candidate (Duplicate).`);
     }
 
+    // Resolve candidate and job details from application if not fully provided
+    const appInfo = await prisma.application.findUnique({
+      where: { id: applicationId },
+      include: {
+        candidate: true,
+        job: true
+      }
+    });
+    if (!appInfo) {
+      throw new ApiError(404, "Application not found");
+    }
+
+    const resolvedCandidateId = req.body.candidateId || appInfo.candidateId;
+    const resolvedCandidateName = req.body.candidateName || appInfo.candidate?.fullName || "";
+    const resolvedJobId = req.body.jobId || appInfo.jobId;
+    const resolvedJobTitle = req.body.jobTitle || appInfo.job?.title || "";
+
     const orgId = req.user.organizationId || "defaultOrg";
     const roundData = {
       ...req.body,
+      candidateId: resolvedCandidateId,
+      candidateName: resolvedCandidateName,
+      jobId: resolvedJobId,
+      jobTitle: resolvedJobTitle,
       roundNo,
       round: req.body.round || `Round ${roundNo}`,
       meetingLink: req.body.meetingLink || "",
@@ -660,6 +682,153 @@ router.put(
     }
 
     res.json({ success: true, data: result.data });
+
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "UPDATE_INTERVIEW",
+        entityType: "INTERVIEW",
+        entityId: roundId,
+        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+        oldData: current,
+        newData: updateData,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        orgId: req.user.organizationId || "defaultOrg",
+      });
+    });
+  })
+);
+
+// ── PATCH update round ──
+router.patch(
+  '/:roundId',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { data: current } = await cache.getRound(roundId);
+    if (!current) throw new ApiError(404, "Interview not found");
+
+    // Merge partial body changes with existing round data to support partial PATCH
+    const mergedData = {
+      ...current,
+      ...req.body,
+    };
+
+    // Safe parsing of interviewerIds (DB column is Json, might be double-serialized string in tests)
+    let interviewerIds = mergedData.interviewerIds;
+    if (typeof interviewerIds === 'string') {
+      try {
+        interviewerIds = JSON.parse(interviewerIds);
+      } catch (_) {
+        interviewerIds = [];
+      }
+    }
+    mergedData.interviewerIds = interviewerIds;
+
+    const isSuperAdmin = req.user.role === "SUPER_ADMIN";
+
+    if (!isSuperAdmin) {
+      if (req.body.scheduledStart && new Date(req.body.scheduledStart) < new Date() && req.body.scheduledStart !== current.scheduledStart) {
+        throw new ApiError(400, "Interview date must not be in the past");
+      }
+      if (current.status === "COMPLETED" || current.status === "CANCELLED") {
+        throw new ApiError(400, `Cannot edit interview in ${current.status} status`);
+      }
+    }
+
+    if (('interviewerIds' in req.body) && (!Array.isArray(interviewerIds) || interviewerIds.length === 0)) {
+      throw new ApiError(400, "Panel members array must contain at least one member");
+    }
+
+    if (req.body.mode && !["IN_PERSON", "VIRTUAL", "PHONE", "ONLINE", "DRIVE"].includes(req.body.mode)) {
+      throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, ONLINE, PHONE, DRIVE");
+    }
+
+    // Only validate virtual meeting link if the caller is changing mode or meetingLink
+    const isUpdatingModeOrLink = ('mode' in req.body) || ('meetingLink' in req.body);
+    if (isUpdatingModeOrLink && (mergedData.mode === "VIRTUAL" || mergedData.mode === "ONLINE") && !mergedData.meetingLink) {
+      throw new ApiError(422, "Meeting link is required for virtual/online interviews");
+    }
+
+    if (req.body.durationMinutes) {
+      const durationMinutes = parseInt(req.body.durationMinutes);
+      if (isNaN(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) {
+        throw new ApiError(400, "Duration must be between 15 and 480 minutes");
+      }
+    }
+
+    let status = req.body.status || current.status;
+    let rescheduleHistory = current.rescheduleHistory;
+    if (typeof rescheduleHistory === 'string') {
+      try {
+        rescheduleHistory = JSON.parse(rescheduleHistory);
+      } catch (_) {
+        rescheduleHistory = [];
+      }
+    }
+    if (!Array.isArray(rescheduleHistory)) rescheduleHistory = [];
+
+    if (req.body.scheduledStart && req.body.scheduledStart !== current.scheduledStart && current.status === "SCHEDULED") {
+      status = "RESCHEDULED";
+      rescheduleHistory.push({
+        previousDate: current.scheduledStart,
+        newDate: req.body.scheduledStart,
+        reason: req.body.rescheduleReason || "No reason provided",
+        rescheduledBy: req.user.id,
+        rescheduledAt: new Date().toISOString()
+      });
+    }
+
+    const updateData = {
+      ...mergedData,
+      status,
+      rescheduleHistory,
+      updatedAt: new Date().toISOString()
+    };
+
+    const result = await cache.writeRound(
+      roundId,
+      updateData,
+      req.user.id,
+      req.user.organizationId || "defaultOrg",
+      current
+    );
+
+    if (req.body.scheduledStart !== current.scheduledStart || req.body.mode !== current.mode) {
+      const interviewersToNotify = mergedData.interviewerIds || [];
+      interviewersToNotify.forEach(id => {
+        sendNotification({
+          userId: id,
+          title: "Interview Updated",
+          message: `Interview has been updated. Date/Mode changed. Reason: ${req.body.rescheduleReason || 'N/A'}`
+        });
+      });
+    }
+
+    res.json({ success: true, data: result.data });
+
+    // Side effect: log audit
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "UPDATE_INTERVIEW",
+        entityType: "INTERVIEW",
+        entityId: roundId,
+        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+        oldData: current,
+        newData: updateData,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        orgId: req.user.organizationId || "defaultOrg",
+      });
+    });
   })
 );
 

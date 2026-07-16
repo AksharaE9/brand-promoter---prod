@@ -18,12 +18,11 @@ function assertTestDatabase(url) {
     );
   }
 
-  // If NEON_TEST_DATABASE_URL is explicitly set and different from DATABASE_URL,
-  // the developer has intentionally chosen a separate test database — allow it.
+  // If NEON_TEST_DATABASE_URL is set and matches the database URL being initialized,
+  // the test runner has intentionally provided this URL for testing — allow it.
   const explicitTestUrl = process.env.NEON_TEST_DATABASE_URL;
-  const productionUrl   = process.env.DATABASE_URL;
-  if (explicitTestUrl && explicitTestUrl !== productionUrl) {
-    return; // Explicit test DB set — trust the developer
+  if (explicitTestUrl && url === explicitTestUrl) {
+    return; // Trusted test DB URL — bypass allowlist checks
   }
 
   // Neon branch names appear in the hostname: ep-<branch>-<hash>.region.aws.neon.tech

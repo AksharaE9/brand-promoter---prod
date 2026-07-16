@@ -79,6 +79,11 @@ router.post(
       throw new ApiError(400, "Excel file is required (field: file)");
     }
 
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
+      throw new ApiError(415, "Unsupported file type. Only .xlsx, .xls, and .csv files are allowed.");
+    }
+
     let allRows = [];
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     for (const sheetName of workbook.SheetNames) {
@@ -635,6 +640,17 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const orgId = req.user.organizationId || "defaultOrg";
+
+    const candidateCheck = await prisma.candidate.findUnique({
+      where: { id },
+      select: { organizationId: true }
+    });
+    if (!candidateCheck) throw new ApiError(404, "Candidate not found");
+    if (candidateCheck.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
+    }
+
     const cacheKey = `candidates:history:${id}`;
 
     const data = await getCached(cacheKey, async () => {
@@ -709,6 +725,9 @@ router.patch(
       where: { id }
     });
     if (!candidate) throw new ApiError(404, "Candidate not found");
+    if (candidate.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
+    }
 
     if (data.phone) {
       const currentPhoneClean = (candidate.phone || "").replace(/\D/g, "");
@@ -813,6 +832,7 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const orgId = req.user.organizationId || "defaultOrg";
     const candidate = await prisma.candidate.findUnique({
       where: { id },
       include: {
@@ -822,6 +842,9 @@ router.get(
     });
     
     if (!candidate) throw new ApiError(404, "Candidate not found");
+    if (candidate.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
+    }
     res.json({ success: true, data: candidate });
   }),
 );
@@ -832,6 +855,7 @@ router.get(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const orgId = req.user.organizationId || "defaultOrg";
     const candidate = await prisma.candidate.findUnique({
       where: { id },
       include: {
@@ -841,6 +865,10 @@ router.get(
 
     if (!candidate) {
       throw new ApiError(404, "Candidate not found");
+    }
+
+    if (candidate.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
     }
 
     if (!candidate.resumeFile || !candidate.resumeFile.storageKey) {
@@ -908,6 +936,10 @@ router.post(
       where: { id }
     });
     if (!candidate) throw new ApiError(404, "Candidate not found");
+    const orgId = req.user.organizationId || "defaultOrg";
+    if (candidate.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
+    }
 
     const dest = `resumes/${Date.now()}_${req.file.originalname}`;
     const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
@@ -933,7 +965,6 @@ router.post(
       }
     });
 
-    const orgId = req.user.organizationId || "defaultOrg";
     await inv.candidate(orgId, id);
 
     res.json({ success: true, data: { resumeFileId: fileMeta.id, storageKey } });
@@ -952,6 +983,9 @@ router.delete(
       where: { id }
     });
     if (!candidate) throw new ApiError(404, "Candidate not found");
+    if (candidate.organizationId !== orgId) {
+      throw new ApiError(403, "You do not have access to this candidate's data");
+    }
     
     await prisma.candidate.update({
       where: { id },
