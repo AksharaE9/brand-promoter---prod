@@ -2727,26 +2727,28 @@ const InterviewSchedule = () => {
                             </p>
                           </div>
                           <form className="space-y-4" onSubmit={onFeedbackSubmit}>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="space-y-0.5 text-center">
-                                <label className="text-[9px] uppercase font-bold text-slate-400">Technical</label>
-                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
-                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                </select>
+                            {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="space-y-0.5 text-center">
+                                  <label className="text-[9px] uppercase font-bold text-slate-400">Technical</label>
+                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
+                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                  </select>
+                                </div>
+                                <div className="space-y-0.5 text-center">
+                                  <label className="text-[9px] uppercase font-bold text-slate-400">Comm.</label>
+                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
+                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                  </select>
+                                </div>
+                                <div className="space-y-0.5 text-center">
+                                  <label className="text-[9px] uppercase font-bold text-slate-400">Culture</label>
+                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
+                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                                  </select>
+                                </div>
                               </div>
-                              <div className="space-y-0.5 text-center">
-                                <label className="text-[9px] uppercase font-bold text-slate-400">Comm.</label>
-                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
-                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                </select>
-                              </div>
-                              <div className="space-y-0.5 text-center">
-                                <label className="text-[9px] uppercase font-bold text-slate-400">Culture</label>
-                                <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
-                                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                </select>
-                              </div>
-                            </div>
+                            )}
 
                             <div className="space-y-1">
                               <label className="text-[9px] uppercase font-bold text-slate-400">Recommendation</label>
@@ -2759,20 +2761,22 @@ const InterviewSchedule = () => {
                               </select>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-0.5">
-                                <label className="text-[9px] uppercase font-bold text-slate-400">Strengths</label>
-                                <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Key strengths..." value={feedbackForm.strengths} onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))} required />
+                            {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-0.5">
+                                  <label className="text-[9px] uppercase font-bold text-slate-400">Strengths</label>
+                                  <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Key strengths..." value={feedbackForm.strengths} onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
+                                </div>
+                                <div className="space-y-0.5">
+                                  <label className="text-[9px] uppercase font-bold text-slate-400">Concerns</label>
+                                  <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Any red flags..." value={feedbackForm.weaknesses} onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
+                                </div>
                               </div>
-                              <div className="space-y-0.5">
-                                <label className="text-[9px] uppercase font-bold text-slate-400">Concerns</label>
-                                <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Any red flags..." value={feedbackForm.weaknesses} onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))} required />
-                              </div>
-                            </div>
+                            )}
 
                             <div className="space-y-0.5">
                               <label className="text-[9px] uppercase font-bold text-slate-400">Overall Summary</label>
-                              <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Notes..." value={feedbackForm.overallComments} onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))} required />
+                              <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Notes..." value={feedbackForm.overallComments} onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
                             </div>
 
                             {/* Offer Letter Required Uploads */}
@@ -2953,28 +2957,34 @@ const InterviewSchedule = () => {
                             </button>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Tech</div>
-                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.technical || myFeedback.technicalRating || 0)} / 5</div>
+                          {myFeedback.recommendation !== 'DIDNT_JOIN' && (
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Tech</div>
+                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.technical || myFeedback.technicalRating || 0)} / 5</div>
+                              </div>
+                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Comm</div>
+                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.communication || myFeedback.communicationRating || 0)} / 5</div>
+                              </div>
+                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
+                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Culture</div>
+                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.culture || myFeedback.cultureFitRating || 0)} / 5</div>
+                              </div>
                             </div>
-                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Comm</div>
-                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.communication || myFeedback.communicationRating || 0)} / 5</div>
-                            </div>
-                            <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                              <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Culture</div>
-                              <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.culture || myFeedback.cultureFitRating || 0)} / 5</div>
-                            </div>
-                          </div>
+                          )}
 
                           <div className="space-y-2 text-xs text-[#5e6a85]">
-                            <div>
-                              <span className="font-semibold text-[#142651]">Strengths:</span> {myFeedback.strengths || '-'}
-                            </div>
-                            <div>
-                              <span className="font-semibold text-[#142651]">Concerns:</span> {(myFeedback.concerns || myFeedback.weaknesses || '-')}
-                            </div>
+                            {myFeedback.recommendation !== 'DIDNT_JOIN' && (
+                              <>
+                                <div>
+                                  <span className="font-semibold text-[#142651]">Strengths:</span> {myFeedback.strengths || '-'}
+                                </div>
+                                <div>
+                                  <span className="font-semibold text-[#142651]">Concerns:</span> {(myFeedback.concerns || myFeedback.weaknesses || '-')}
+                                </div>
+                              </>
+                            )}
                             <div>
                               <span className="font-semibold text-[#142651]">Overall Summary:</span>
                               <p className="text-[#5e6a85] mt-1 italic bg-white border border-slate-100 p-2 rounded-lg text-[11px] leading-relaxed">
@@ -3224,26 +3234,28 @@ const InterviewSchedule = () => {
                   setShowFeedbackModal(false);
                 }
               }}>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-1 text-center">
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
-                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
-                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                    </select>
+                {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1 text-center">
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
+                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
+                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1 text-center">
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
+                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
+                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1 text-center">
+                      <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
+                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
+                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
+                      </select>
+                    </div>
                   </div>
-                  <div className="space-y-1 text-center">
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
-                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
-                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1 text-center">
-                    <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
-                    <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
-                      {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                    </select>
-                  </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Recommendation</label>
@@ -3290,28 +3302,30 @@ const InterviewSchedule = () => {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Key Strengths</label>
-                    <textarea 
-                      className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                      placeholder="What did they do well?"
-                      value={feedbackForm.strengths}
-                      onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))}
-                      required
-                    />
+                {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Key Strengths</label>
+                      <textarea 
+                        className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
+                        placeholder="What did they do well?"
+                        value={feedbackForm.strengths}
+                        onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))}
+                        required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Concerns / Weaknesses</label>
+                      <textarea 
+                        className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
+                        placeholder="Any red flags?"
+                        value={feedbackForm.weaknesses}
+                        onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))}
+                        required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Concerns / Weaknesses</label>
-                    <textarea 
-                      className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                      placeholder="Any red flags?"
-                      value={feedbackForm.weaknesses}
-                      onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))}
-                      required
-                    />
-                  </div>
-                </div>
+                )}
 
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Summary</label>
@@ -3320,7 +3334,7 @@ const InterviewSchedule = () => {
                     placeholder="Final verdict and detailed notes..."
                     value={feedbackForm.overallComments}
                     onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))}
-                    required
+                    required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
                   />
                 </div>
 

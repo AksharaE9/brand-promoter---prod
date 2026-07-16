@@ -83,20 +83,22 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
-                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Tech</div>
-                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.technical || f.technicalRating || 0}/5</div>
+                  {f.recommendation !== 'DIDNT_JOIN' && (
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                        <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Tech</div>
+                        <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.technical || f.technicalRating || 0}/5</div>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                        <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Comm</div>
+                        <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.communication || f.communicationRating || 0}/5</div>
+                      </div>
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
+                        <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Culture</div>
+                        <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.culture || f.cultureFitRating || 0}/5</div>
+                      </div>
                     </div>
-                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
-                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Comm</div>
-                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.communication || f.communicationRating || 0}/5</div>
-                    </div>
-                    <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
-                      <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Culture</div>
-                      <div className="text-xs font-bold text-[#10193f] mt-0.5">{f.ratings?.culture || f.cultureFitRating || 0}/5</div>
-                    </div>
-                  </div>
+                  )}
 
                   <div className="space-y-1.5 text-xs">
                     {f.strengths && (
