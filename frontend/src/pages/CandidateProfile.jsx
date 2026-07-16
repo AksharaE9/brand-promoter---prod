@@ -68,7 +68,7 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
                       </div>
                       <div>
                         <div className="text-sm font-bold text-[#10193f]">{f.submittedBy?.fullName || 'Interviewer'}</div>
-                        <div className="text-[9px] text-[#7a88a3]">{f.submittedAt ? new Date(f.submittedAt).toLocaleString() : ''}</div>
+                        <div className="text-[9px] text-[#7a88a3]">{f.submittedAt ? new Date(f.submittedAt).toLocaleString('en-IN') : ''}</div>
                       </div>
                     </div>
                     <div className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase ${

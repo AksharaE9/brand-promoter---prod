@@ -40,6 +40,21 @@ const downloadBase64File = (fileName, base64Data) => {
   document.body.removeChild(link);
 };
 
+const formatDateTimeIN = (dateStr) => {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '-';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12 || 12;
+  return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds} ${ampm}`;
+};
+
 const parseNotesSafely = (notesStr) => {
   if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
   try {
@@ -2432,7 +2447,7 @@ const InterviewSchedule = () => {
                         <div className="flex border-b border-slate-50 pb-2">
                           <span className="w-28 text-[#6d7893] shrink-0 font-medium">Date/Time:</span>
                           <span className="text-[#142651] font-semibold">
-                            {selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString('en-IN') : '-'}
+                            {selectedInterview?.scheduledStart ? formatDateTimeIN(selectedInterview.scheduledStart) : '-'}
                           </span>
                         </div>
                         {/* Slot number row */}
