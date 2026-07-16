@@ -2063,9 +2063,34 @@ const InterviewSchedule = () => {
                           {selectedCalendarDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                         </h2>
                       </div>
-                      <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowActivityModal(false)}>
-                        <span className="material-symbols-outlined">close</span>
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          className="os-btn-primary !h-9 !px-4 !bg-[#1f52cc]"
+                          onClick={() => {
+                            let dateStr = '';
+                            if (selectedCalendarDate) {
+                              const yyyy = selectedCalendarDate.getFullYear();
+                              const mm = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
+                              const dd = String(selectedCalendarDate.getDate()).padStart(2, '0');
+                              dateStr = `${yyyy}-${mm}-${dd}T09:00`;
+                            }
+                            setScheduleForm({
+                              ...emptyScheduleForm,
+                              scheduledStart: dateStr
+                            });
+                            setCandidateSearch('');
+                            setJobSearch('');
+                            setShowActivityModal(false);
+                            setShowScheduleModal(true);
+                          }}
+                        >
+                          <span className="material-symbols-outlined text-sm">event</span>
+                          Schedule Next
+                        </button>
+                        <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowActivityModal(false)}>
+                          <span className="material-symbols-outlined">close</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="space-y-8 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
