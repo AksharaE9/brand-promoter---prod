@@ -2147,13 +2147,46 @@ const InterviewSchedule = () => {
                                               <button
                                                 className="os-btn-primary !h-8 !px-3 !text-[11px] bg-[#1f52cc] shrink-0"
                                                 onClick={() => {
+                                                  const candId = iv.application?.candidateId || iv.candidateId;
+                                                  const candName = iv.application?.candidate?.fullName || iv.candidateName || '';
+                                                  const jobId = iv.application?.jobId || iv.application?.job?.id || iv.jobId || '';
+                                                  const jobTitle = iv.application?.job?.title || iv.jobTitle || '';
+                                                  
+                                                  // Find all interviews for this candidate to calculate the next round number
+                                                  const candInterviews = allInterviews.filter(
+                                                    x => (x.application?.candidateId || x.candidateId) === candId
+                                                  );
+                                                  const nextRound = candInterviews.length + 1;
+
+                                                  // Format the selected calendar date to local ISO (YYYY-MM-DDT09:00)
+                                                  let dateStr = '';
+                                                  if (selectedCalendarDate) {
+                                                    const yyyy = selectedCalendarDate.getFullYear();
+                                                    const mm = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
+                                                    const dd = String(selectedCalendarDate.getDate()).padStart(2, '0');
+                                                    dateStr = `${yyyy}-${mm}-${dd}T09:00`;
+                                                  }
+
+                                                  setScheduleForm({
+                                                    ...emptyScheduleForm,
+                                                    candidateId: candId,
+                                                    jobId: jobId,
+                                                    roundNo: nextRound,
+                                                    round: `Round ${nextRound}`,
+                                                    scheduledStart: dateStr
+                                                  });
+
+                                                  setCandidateSearch(candName);
+                                                  setJobSearch(jobTitle);
+                                                  
+                                                  // Select candidate and view List view
+                                                  setSelectedId(candId);
                                                   setViewMode('list');
-                                                  setSelectedId(iv.application?.candidateId || iv.candidateId);
-                                                  if (iv.id) setActiveInterviewId(iv.id);
                                                   setShowActivityModal(false);
+                                                  setShowScheduleModal(true);
                                                 }}
                                               >
-                                                Keep an Interview
+                                                Schedule Next
                                               </button>
                                               <button
                                                 className="os-btn-outline !h-8 !px-3 !text-[11px] border-blue-500 text-blue-600 hover:bg-blue-50 shrink-0"
@@ -2714,13 +2747,26 @@ const InterviewSchedule = () => {
                                     <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
                                       <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerPhoneFollowUp.name}</span>
                                       {isAdmin && (
-                                        <button
-                                          type="button"
-                                          onClick={() => setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: null }))}
-                                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                                        >
-                                          <span className="material-symbols-outlined text-sm">delete</span>
-                                        </button>
+                                        <>
+                                          <input
+                                            type="file"
+                                            id="replace-feedback-phone"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (file) {
+                                                const base64 = await fileToBase64(file);
+                                                setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: base64 }));
+                                              }
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor="replace-feedback-phone"
+                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold"
+                                          >
+                                            Replace
+                                          </label>
+                                        </>
                                       )}
                                     </div>
                                   ) : (
@@ -2759,13 +2805,26 @@ const InterviewSchedule = () => {
                                     <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
                                       <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerEmailFollowUp.name}</span>
                                       {isAdmin && (
-                                        <button
-                                          type="button"
-                                          onClick={() => setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: null }))}
-                                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                                        >
-                                          <span className="material-symbols-outlined text-sm">delete</span>
-                                        </button>
+                                        <>
+                                          <input
+                                            type="file"
+                                            id="replace-feedback-email"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (file) {
+                                                const base64 = await fileToBase64(file);
+                                                setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: base64 }));
+                                              }
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor="replace-feedback-email"
+                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold"
+                                          >
+                                            Replace
+                                          </label>
+                                        </>
                                       )}
                                     </div>
                                   ) : (
@@ -2900,17 +2959,28 @@ const InterviewSchedule = () => {
                                         <span className="truncate max-w-[120px]">{myFeedback.offerPhoneFollowUp.name}</span>
                                       </button>
                                       {isAdmin && (
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            const updatedFeedback = { ...myFeedback, offerPhoneFollowUp: null };
-                                            await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
-                                            await loadAll();
-                                          }}
-                                          className="text-red-500 hover:text-red-700 text-[10px] font-semibold"
-                                        >
-                                          Delete
-                                        </button>
+                                        <>
+                                          <input
+                                            type="file"
+                                            id={`replace-offer-phone-${selectedInterview?.id}`}
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (!file) return;
+                                              const base64 = await fileToBase64(file);
+                                              const updatedFeedback = { ...myFeedback, offerPhoneFollowUp: base64 };
+                                              await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
+                                              await loadAll();
+                                              e.target.value = '';
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor={`replace-offer-phone-${selectedInterview?.id}`}
+                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-[10px] font-semibold bg-blue-50 px-1.5 py-0.5 rounded hover:bg-blue-100 transition-colors"
+                                          >
+                                            Replace
+                                          </label>
+                                        </>
                                       )}
                                     </div>
                                   ) : (
@@ -2931,17 +3001,28 @@ const InterviewSchedule = () => {
                                         <span className="truncate max-w-[120px]">{myFeedback.offerEmailFollowUp.name}</span>
                                       </button>
                                       {isAdmin && (
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            const updatedFeedback = { ...myFeedback, offerEmailFollowUp: null };
-                                            await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
-                                            await loadAll();
-                                          }}
-                                          className="text-red-500 hover:text-red-700 text-[10px] font-semibold"
-                                        >
-                                          Delete
-                                        </button>
+                                        <>
+                                          <input
+                                            type="file"
+                                            id={`replace-offer-email-${selectedInterview?.id}`}
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                              const file = e.target.files[0];
+                                              if (!file) return;
+                                              const base64 = await fileToBase64(file);
+                                              const updatedFeedback = { ...myFeedback, offerEmailFollowUp: base64 };
+                                              await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
+                                              await loadAll();
+                                              e.target.value = '';
+                                            }}
+                                          />
+                                          <label
+                                            htmlFor={`replace-offer-email-${selectedInterview?.id}`}
+                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-[10px] font-semibold bg-blue-50 px-1.5 py-0.5 rounded hover:bg-blue-100 transition-colors"
+                                          >
+                                            Replace
+                                          </label>
+                                        </>
                                       )}
                                     </div>
                                   ) : (
