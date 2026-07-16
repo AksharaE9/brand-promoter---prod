@@ -2399,7 +2399,7 @@ const InterviewSchedule = () => {
                         <div className="flex border-b border-slate-50 pb-2">
                           <span className="w-28 text-[#6d7893] shrink-0 font-medium">Date/Time:</span>
                           <span className="text-[#142651] font-semibold">
-                            {selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString() : '-'}
+                            {selectedInterview?.scheduledStart ? new Date(selectedInterview.scheduledStart).toLocaleString('en-IN') : '-'}
                           </span>
                         </div>
                         {/* Slot number row */}

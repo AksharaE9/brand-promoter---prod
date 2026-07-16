@@ -23,7 +23,7 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
             <div className="text-xs text-[#1f52cc] font-bold mt-0.5">{iv.application?.job?.title || 'General Hiring'}</div>
             <div className="text-[10px] text-[#7a88a3] mt-1 flex items-center gap-1">
               <span className="material-symbols-outlined text-[12px]">calendar_today</span>
-              {new Date(iv.scheduledStart).toLocaleDateString()} • {iv.mode}
+              {new Date(iv.scheduledStart).toLocaleDateString('en-IN')} • {iv.mode}
             </div>
           </div>
         </div>

@@ -62,8 +62,8 @@ const OfferDecisionBadge = React.forwardRef(({ decision, decidedAt, dateOfJoinin
         <span className="badge-label">{isJoined ? 'Joined' : 'Rejected'}</span>
         <span className="badge-sub">
           {isJoined
-            ? dateOfJoining ? `DOJ: ${new Date(dateOfJoining).toLocaleDateString()}` : new Date(decidedAt).toLocaleDateString()
-            : rejectionReason ? rejectionReason.replace(/_/g, ' ') : new Date(decidedAt).toLocaleDateString()
+            ? dateOfJoining ? `DOJ: ${new Date(dateOfJoining).toLocaleDateString('en-IN')}` : new Date(decidedAt).toLocaleDateString('en-IN')
+            : rejectionReason ? rejectionReason.replace(/_/g, ' ') : new Date(decidedAt).toLocaleDateString('en-IN')
           }
         </span>
       </div>
@@ -205,7 +205,7 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
             {candidate.joiningDate && (
               <div className="mt-2 inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                 <span className="material-symbols-outlined text-[12px]">event_available</span>
-                <span className="text-[9px] font-bold uppercase">Joining: {new Date(candidate.joiningDate).toLocaleDateString()}</span>
+                <span className="text-[9px] font-bold uppercase">Joining: {new Date(candidate.joiningDate).toLocaleDateString('en-IN')}</span>
               </div>
             )}
           </div>

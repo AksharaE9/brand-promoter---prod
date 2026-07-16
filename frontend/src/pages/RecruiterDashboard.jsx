@@ -137,7 +137,7 @@ const RecruiterDashboard = () => {
                       {candidate.doj && (
                         <div className="flex items-center gap-2 mt-2 px-1">
                           <span className="material-symbols-outlined text-sm text-emerald-500">event_available</span>
-                          <span className="text-xs text-slate-600">Joining Date: <b>{new Date(candidate.doj).toLocaleDateString()}</b></span>
+                          <span className="text-xs text-slate-600">Joining Date: <b>{new Date(candidate.doj).toLocaleDateString('en-IN')}</b></span>
                         </div>
                       )}
                     </div>
