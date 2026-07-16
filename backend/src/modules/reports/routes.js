@@ -309,6 +309,32 @@ router.get("/team", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async
   res.json({ success: true, data: items });
 }));
 
+const formatToDDMMYYYY = (dateInput) => {
+  if (!dateInput) return "N/A";
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return "N/A";
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatToDDMMYYYY_HHMM = (dateInput) => {
+  if (!dateInput) return "N/A";
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return "N/A";
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const hoursStr = String(hours).padStart(2, '0');
+  return `${day}/${month}/${year} ${hoursStr}:${minutes} ${ampm}`;
+};
+
 // GET /api/reports/export
 router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const { reportType, format, ...filters } = req.query;
@@ -338,7 +364,7 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
         Email: c.email || "N/A",
         Phone: c.phone || "N/A",
         Source: c.source || "Direct",
-        "Created At": new Date(c.createdAt).toLocaleDateString(),
+        "Created At": formatToDDMMYYYY(c.createdAt),
         Status: c.status || "ACTIVE",
         "Recruiter Name": recruiter ? recruiter.fullName : "System",
         "Recruiter Role": recruiter ? recruiter.userType : "N/A",
@@ -398,7 +424,7 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
         "Interviewer Name": interviewer ? interviewer.fullName : "Unknown Interviewer",
         "Interviewer Role": interviewer ? interviewer.userType : "N/A",
         "Interviewer ID": primaryId || null,
-        "Scheduled Date": new Date(d.scheduledStart).toLocaleString(),
+        "Scheduled Date": formatToDDMMYYYY_HHMM(d.scheduledStart),
         Mode: d.mode || "ONLINE",
         Outcome: d.status || "SCHEDULED",
         organizationId: d.organizationId || "defaultOrg",
@@ -428,7 +454,7 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
       Role: u.role,
       "User Type": u.userType || "N/A",
       Status: u.status || "ACTIVE",
-      "Joined Date": new Date(u.createdAt).toLocaleDateString(),
+      "Joined Date": formatToDDMMYYYY(u.createdAt),
       organizationId: u.organizationId || "defaultOrg",
       createdAt: u.createdAt
     }));
