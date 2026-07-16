@@ -3,16 +3,25 @@ const router = express.Router();
 const prisma = require('../../config/db');
 const { auth, requireRoles } = require('../../middleware/auth');
 
-const formatLog = (log) => ({
-  ...log,
-  actor: {
-    fullName: log.actorName  || 'System',
-    email:    log.actorEmail || '',
-    role:     log.actorRole  || 'Admin',
-  },
-  // Only show entityName if it's a real name — never show raw IDs
-  entityName: log.entityName || 'N/A',
-});
+const formatLog = (log) => {
+  const actorName = log.actorName || 'System';
+  const actionPretty = log.action ? log.action.replace(/_/g, ' ') : '';
+  const entityNameStr = log.entityName && log.entityName !== 'N/A' && log.entityName !== 'null' ? ` (${log.entityName})` : '';
+  const description = `${actorName} performed ${actionPretty} on ${log.entityType}${entityNameStr}`;
+
+  return {
+    ...log,
+    actor: {
+      fullName: actorName,
+      email:    log.actorEmail || '',
+      role:     log.actorRole  || 'Admin',
+    },
+    // Only show entityName if it's a real name — never show raw IDs
+    entityName: log.entityName || 'N/A',
+    description,
+  };
+};
+
 
 
 // GET /api/audit-logs — paginated, filtered
