@@ -790,7 +790,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: '#eff6ff',
+              background: '#e8f0fe',
               border: '1px solid #bfdbfe',
               borderRadius: 8,
               padding: '0 12px',
@@ -817,7 +817,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
                 gap: 6,
                 borderColor: '#1f52cc',
                 color: '#1f52cc',
-                background: '#eff6ff',
+                background: '#e8f0fe',
                 fontWeight: 600
               }}
             >
@@ -945,7 +945,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
                 <tr
                   key={iv.id}
                   style={{
-                    background: isSelected ? '#eff6ff' : rowIdx % 2 === 0 ? '#fff' : '#f8fafc',
+                    background: isSelected ? '#e8f0fe' : rowIdx % 2 === 0 ? '#fff' : '#f8fafc',
                     transition: 'background .12s',
                   }}
                   onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f1f5f9'; }}
