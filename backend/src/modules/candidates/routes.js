@@ -26,7 +26,7 @@ router.use(auth);
 // GET Custom field definitions
 router.get(
   "/custom-fields/definitions",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const definitions = await prisma.customFieldDefinition.findMany();
     res.json({ success: true, data: definitions });
@@ -68,7 +68,7 @@ function getFieldVal(raw, possibleNames) {
 // POST Bulk candidate upload (from XLSX)
 router.post(
   "/bulk-upload",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-bulk";
     next();
@@ -188,7 +188,7 @@ const importJobs = new Map();
 // POST Bulk Import Wizard (candidates + applications creation)
 router.post(
   "/bulk-import",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { rows, jobId } = req.body;
     if (!rows || !Array.isArray(rows) || !jobId) {
@@ -305,7 +305,7 @@ router.post(
 
 router.get(
   "/import-jobs/:importJobId/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const job = importJobs.get(req.params.importJobId);
     if (!job) throw new ApiError(404, "Import job not found");
@@ -316,7 +316,7 @@ router.get(
 // POST Create single candidate
 router.post(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const data = req.body;
     if (!data.fullName) throw new ApiError(400, "fullName is required");
@@ -397,7 +397,7 @@ router.post(
 // POST Create single candidate with resume upload
 router.post(
   "/with-resume-upload",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   (req, res, next) => {
     req.uploadFolder = "candidate-resumes";
     next();
@@ -510,7 +510,7 @@ router.post(
 // GET List candidates (with filter, search, cursor pagination)
 router.get(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
     const cursor = req.query.cursor?.trim(); 
@@ -632,7 +632,7 @@ router.get(
 // GET Candidate timeline history
 router.get(
   "/:id/history",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const cacheKey = `candidates:history:${id}`;
@@ -699,7 +699,7 @@ router.get(
 // PATCH Update candidate
 router.patch(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const data = req.body;
@@ -787,7 +787,7 @@ router.patch(
 // GET All candidate distinct categories
 router.get(
   "/categories",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const orgId = req.user.organizationId || "defaultOrg";
     const categories = await prisma.candidate.findMany({
@@ -810,7 +810,7 @@ router.get(
 // GET Candidate by ID
 router.get(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const candidate = await prisma.candidate.findUnique({
@@ -829,7 +829,7 @@ router.get(
 // GET Download candidate resume
 router.get(
   "/:id/resume/download",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const candidate = await prisma.candidate.findUnique({
@@ -898,7 +898,7 @@ router.get(
 // POST Upload candidate resume after creation
 router.post(
   "/:id/resume",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   upload.single("resume"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -943,7 +943,7 @@ router.post(
 // DELETE Soft delete candidate
 router.delete(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const orgId = req.user.organizationId || "defaultOrg";
@@ -1020,7 +1020,7 @@ router.delete(
 // GET Export joining candidates as CSV
 router.get(
   "/reports/joining",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { from, to } = req.query;
     
@@ -1053,7 +1053,7 @@ router.get(
 // POST Transfer candidate to another job (creates application)
 router.post(
   "/:id/transfer",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { toJobId } = req.body;

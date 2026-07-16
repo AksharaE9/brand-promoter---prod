@@ -319,7 +319,7 @@ const Candidates = () => {
   const currentSearchRef = useRef('');
 
   const currentUser = useMemo(() => getStoredUser(), []);
-  const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role), [currentUser]);
+  const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
   const isSuperAdmin = useMemo(() => currentUser?.role === 'SUPER_ADMIN', [currentUser]);
 
   // Delete all candidates (SUPER_ADMIN only)

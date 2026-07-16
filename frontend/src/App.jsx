@@ -36,7 +36,7 @@ const SalesSettings = lazy(() => import('./pages/Sales/SalesSettings'));
 const SalesCandidates = lazy(() => import('./pages/Sales/SalesCandidates'));
 const SalesTeam = lazy(() => import('./pages/Sales/SalesTeam'));
 
-const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'];
+const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'];
 const ADMIN_RECRUITER = ['SUPER_ADMIN', 'RECRUITER'];
 
 import PageSkeleton from './components/PageSkeleton';

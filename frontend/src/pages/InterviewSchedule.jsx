@@ -249,6 +249,23 @@ const ScheduleModal = React.memo(function ScheduleModal({
     setScheduleForm(prev => ({ ...prev, scheduledStart: e.target.value }));
   }, [setScheduleForm]);
 
+  // Split date (yyyy-MM-dd) + time (HH:mm) → combine to ISO datetime-local string
+  const handleDatePartChange = React.useCallback((e) => {
+    const datePart = e.target.value; // yyyy-MM-dd
+    setScheduleForm(prev => {
+      const timePart = prev.scheduledStart ? prev.scheduledStart.slice(11, 16) : '09:00';
+      return { ...prev, scheduledStart: datePart ? `${datePart}T${timePart}` : '' };
+    });
+  }, [setScheduleForm]);
+
+  const handleTimePartChange = React.useCallback((e) => {
+    const timePart = e.target.value; // HH:mm
+    setScheduleForm(prev => {
+      const datePart = prev.scheduledStart ? prev.scheduledStart.slice(0, 10) : '';
+      return { ...prev, scheduledStart: datePart ? `${datePart}T${timePart}` : '' };
+    });
+  }, [setScheduleForm]);
+
   const handleMeetingLinkChange = React.useCallback((e) => {
     setScheduleForm(prev => ({ ...prev, meetingLink: e.target.value }));
   }, [setScheduleForm]);
@@ -494,13 +511,42 @@ const ScheduleModal = React.memo(function ScheduleModal({
             {/* Date/Time + Slot */}
             <div className="space-y-1">
               <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Start Date &amp; Time</label>
-              <input
-                type="datetime-local"
-                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none"
-                required
-                value={scheduleForm.scheduledStart}
-                onChange={handleStartChange}
-              />
+              {/* Split into date + time so the browser always shows DD/MM/YYYY (Indian standard) */}
+              <div className="flex items-center gap-2">
+                {/* Date picker — rendered as DD/MM/YYYY in Indian locale */}
+                <div className="relative flex-1">
+                  <input
+                    type="date"
+                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none"
+                    required
+                    value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(0, 10) : ''}
+                    onChange={handleDatePartChange}
+                    style={{ colorScheme: 'light' }}
+                    data-date-format="DD/MM/YYYY"
+                    lang="en-IN"
+                  />
+                  {/* Overlay showing DD/MM/YYYY when a date is picked — hides native format */}
+                  {scheduleForm.scheduledStart && scheduleForm.scheduledStart.slice(0, 10) && (
+                    <div className="pointer-events-none absolute inset-0 flex items-center px-4">
+                      <span className="text-sm text-[#0f1b3d] font-medium bg-white pr-1">
+                        {(() => {
+                          const [y, m, d] = scheduleForm.scheduledStart.slice(0, 10).split('-');
+                          return `${d}/${m}/${y}`;
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {/* Time picker */}
+                <input
+                  type="time"
+                  className="h-11 w-32 rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
+                  required
+                  value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(11, 16) : ''}
+                  onChange={handleTimePartChange}
+                  style={{ colorScheme: 'light' }}
+                />
+              </div>
 
               {/* Auto-computed slot indicator */}
               {scheduleForm.scheduledStart && (
@@ -2410,7 +2456,41 @@ const InterviewSchedule = () => {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-rose-500 font-bold text-xs">Didn't upload</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="file"
+                                  id={`detail-phone-followup-${selectedInterview?.id}`}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files[0];
+                                    if (!file || !selectedInterview) return;
+                                    const base64 = await fileToBase64(file);
+                                    const updatedNotes = JSON.stringify({ phoneFollowUp: base64, emailFollowUp });
+                                    const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                    await schedulingApi.updateRound(selectedInterview.id, {
+                                      applicationId: selectedInterview.applicationId,
+                                      roundNo: selectedInterview.roundNo,
+                                      round: selectedInterview.round,
+                                      interviewerIds,
+                                      scheduledStart: selectedInterview.scheduledStart,
+                                      mode: selectedInterview.mode,
+                                      meetingLink: selectedInterview.meetingLink,
+                                      zohoLink: selectedInterview.zohoLink,
+                                      notes: updatedNotes
+                                    });
+                                    await loadAll();
+                                    e.target.value = '';
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`detail-phone-followup-${selectedInterview?.id}`}
+                                  className="cursor-pointer flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-xs">upload</span>
+                                  Upload
+                                </label>
+                                <span className="text-rose-400 text-xs">No file yet</span>
+                              </div>
                             );
                           })()}
                         </div>
@@ -2455,7 +2535,41 @@ const InterviewSchedule = () => {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-rose-500 font-bold text-xs">Didn't upload</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="file"
+                                  id={`detail-email-followup-${selectedInterview?.id}`}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const file = e.target.files[0];
+                                    if (!file || !selectedInterview) return;
+                                    const base64 = await fileToBase64(file);
+                                    const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: base64 });
+                                    const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                                    await schedulingApi.updateRound(selectedInterview.id, {
+                                      applicationId: selectedInterview.applicationId,
+                                      roundNo: selectedInterview.roundNo,
+                                      round: selectedInterview.round,
+                                      interviewerIds,
+                                      scheduledStart: selectedInterview.scheduledStart,
+                                      mode: selectedInterview.mode,
+                                      meetingLink: selectedInterview.meetingLink,
+                                      zohoLink: selectedInterview.zohoLink,
+                                      notes: updatedNotes
+                                    });
+                                    await loadAll();
+                                    e.target.value = '';
+                                  }}
+                                />
+                                <label
+                                  htmlFor={`detail-email-followup-${selectedInterview?.id}`}
+                                  className="cursor-pointer flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-xs">upload</span>
+                                  Upload
+                                </label>
+                                <span className="text-rose-400 text-xs">No file yet</span>
+                              </div>
                             );
                           })()}
                         </div>

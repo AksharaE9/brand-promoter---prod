@@ -12,8 +12,8 @@ router.use(auth);
 
 // ── Offer Decision Routes ──────────────────────────────────────────────────────
 const { markAsJoined, markAsRejected } = require("./offerDecisionService");
-router.post("/:applicationId/join",  requireRoles("SUPER_ADMIN", "RECRUITER"), markAsJoined);
-router.post("/:applicationId/reject", requireRoles("SUPER_ADMIN", "RECRUITER"), markAsRejected);
+router.post("/:applicationId/join",  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"), markAsJoined);
+router.post("/:applicationId/reject", requireRoles("SUPER_ADMIN", "RECRUITER", "USER"), markAsRejected);
 
 async function resolveDefaultStage(jobId) {
   let stage = await prisma.pipelineStage.findFirst({
@@ -31,7 +31,7 @@ async function resolveDefaultStage(jobId) {
 
 router.post(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { candidateId, jobId, currentStageId, shortlisted = false } = req.body;
     if (!candidateId || !jobId) throw new ApiError(400, "candidateId and jobId are required");
@@ -125,7 +125,7 @@ router.post(
 
 router.get(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
     const orgId = req.user.organizationId || "defaultOrg";
@@ -157,7 +157,7 @@ router.get(
 
 router.get(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const application = await prisma.application.findUnique({
       where: { id: req.params.id },
@@ -174,7 +174,7 @@ router.get(
 
 router.patch(
   "/:id/shortlist",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { shortlisted } = req.body || {};
@@ -217,7 +217,7 @@ router.patch(
 
 router.patch(
   "/:id/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { status, joiningDate } = req.body;

@@ -25,7 +25,7 @@ router.use(auth);
 // ── GET export day (PDF Export with SQL Backend) ──
 router.get(
   "/export-day",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { date } = req.query;
     if (!date) throw new ApiError(400, "Date is required (YYYY-MM-DD)");
@@ -72,7 +72,7 @@ router.get(
 // ── GET sync status (for debug/monitoring) ──
 router.get(
   '/sync/status',
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const orgId = req.user.organizationId || "defaultOrg";
     const lastSync = l1.get(KEYS.lastSync(orgId)) || new Date().toISOString();
@@ -91,7 +91,7 @@ router.get(
 // ── GET sync health ──
 router.get(
   '/sync/health',
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     res.json({
       success: true,
@@ -144,7 +144,7 @@ async function prewarmRounds(rounds) {
 // ── GET all rounds (list) ──
 router.get(
   '/',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const requestStart = Date.now();
     const orgId = req.user.organizationId || "defaultOrg";
@@ -234,7 +234,7 @@ router.get(
 // ── GET single round ──
 router.get(
   '/:roundId',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { data } = await cache.getRound(req.params.roundId);
     if (!data) return res.status(404).json({ success: false, error: 'Round not found' });
@@ -245,7 +245,7 @@ router.get(
 // ── CREATE round ──
 router.post(
   '/',
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { applicationId, interviewerIds, scheduledStart, mode } = req.body;
     if (!applicationId || !interviewerIds || !scheduledStart || !mode) {
@@ -301,7 +301,7 @@ router.post(
 // ── POST submit feedback ──
 router.post(
   '/:roundId/feedback',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   offerLetterUpload.single("offerFile"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
@@ -421,7 +421,7 @@ router.post(
 // ── POST upload recording ──
 router.post(
   '/:id/recording',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -476,7 +476,7 @@ router.post(
 // ── DELETE round ──
 router.delete(
   '/:roundId',
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { data: current } = await cache.getRound(roundId, true);
@@ -510,7 +510,7 @@ router.delete(
 // ── PATCH panel members ──
 router.patch(
   '/:id/panelists',
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { interviewerIds } = req.body;
@@ -554,7 +554,7 @@ router.patch(
 // ── PUT update round ──
 router.put(
   '/:roundId',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const data = req.body;
@@ -641,7 +641,7 @@ router.put(
 // ── PATCH status ──
 router.patch(
   '/:roundId/status',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { status, notes } = req.body;
     if (!status) return res.status(400).json({ success: false, error: 'status is required' });
@@ -659,7 +659,7 @@ router.patch(
 // ── PATCH reschedule ──
 router.patch(
   '/:roundId/reschedule',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { scheduledStart, mode, rescheduleReason } = req.body;
@@ -704,7 +704,7 @@ router.patch(
 // ── PATCH meet-link ──
 router.patch(
   '/:roundId/meet-link',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { meetLink } = req.body;
@@ -722,7 +722,7 @@ router.patch(
 // ── PATCH panel ──
 router.patch(
   '/:roundId/panel',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { interviewerIds } = req.body;
@@ -744,7 +744,7 @@ router.patch(
 // ── PATCH transfer ──
 router.patch(
   '/:roundId/transfer',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const { toJobId, toJobTitle, reason } = req.body;
@@ -786,7 +786,7 @@ router.patch(
 // ── PATCH cancel ──
 router.patch(
   '/:roundId/cancel',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const result = await cache.writeRound(
@@ -802,7 +802,7 @@ router.patch(
 // ── PATCH complete ──
 router.patch(
   '/:roundId/complete',
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
     const result = await cache.writeRound(

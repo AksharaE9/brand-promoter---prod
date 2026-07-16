@@ -1,6 +1,6 @@
 import { clearAuth } from '../lib/api';
 
-const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'];
+const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'];
 const ADMIN_RECRUITER = ['SUPER_ADMIN', 'RECRUITER'];
 
 export const enterpriseNavItems = [

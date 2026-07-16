@@ -189,7 +189,7 @@ const CandidateProfile = () => {
   const [loading, setLoading] = useState(true);
 
   const currentUser = useMemo(() => getStoredUser(), []);
-  const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER'].includes(currentUser?.role), [currentUser]);
+  const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
 
   const loadAll = useCallback(async (showLoader = false) => {
     try {
@@ -372,7 +372,7 @@ const CandidateProfile = () => {
             <div className="xl:col-span-2 space-y-6">
               <Reveal>
                 <div className="os-card p-6 flex flex-wrap items-start gap-6 relative overflow-hidden bg-gradient-to-br from-white to-[#f8fafc]">
-                  <div className="absolute top-0 right-0 p-4 opacity-40">
+                  <div className="absolute top-0 right-0 p-4 opacity-40 pointer-events-none">
                     <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">REF: {candidate.id.slice(-8)}</div>
                   </div>
                   <div className="relative group">
@@ -442,7 +442,11 @@ const CandidateProfile = () => {
                       </div>
                       
                       {!isEditing && canManageCandidate && (
-                        <button onClick={() => setIsEditing(true)} className="ml-4 p-2 text-slate-400 hover:text-[#1f52cc] hover:bg-blue-50 rounded-lg transition-colors flex items-center justify-center">
+                        <button 
+                          onClick={() => setIsEditing(true)} 
+                          className="ml-4 p-2 text-[#1f52cc] border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl transition-all flex items-center justify-center relative z-10 cursor-pointer"
+                          aria-label="Edit Profile"
+                        >
                           <span className="material-symbols-outlined text-xl">edit_square</span>
                         </button>
                       )}

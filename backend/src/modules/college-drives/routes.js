@@ -10,7 +10,7 @@ const { broadcast } = require("../../utils/sse");
 const router = express.Router();
 router.use(auth);
 
-const CAN_ACCESS = ["SUPER_ADMIN", "RECRUITER", "INTERVIEWER"];
+const CAN_ACCESS = ["SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"];
 
 function normalizeText(value) {
   return String(value || "").trim();

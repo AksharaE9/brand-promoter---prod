@@ -126,7 +126,7 @@ async function fetchDashboardData(orgId) {
  */
 router.get(
   "/init",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const skipCache = req.query._t ? true : false;
     const orgId = req.user.organizationId || "default";
@@ -145,7 +145,7 @@ router.get(
  */
 router.get(
   "/recruiter-summary",
-  requireRoles("RECRUITER", "SUPER_ADMIN"),
+  requireRoles("RECRUITER", "SUPER_ADMIN", "USER"),
   asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const cacheKey = `recruiter_summary_${userId}`;

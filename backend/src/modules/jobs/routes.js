@@ -22,7 +22,7 @@ router.use(auth);
 
 router.get(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
     const cursor = req.query.cursor?.trim();
@@ -86,7 +86,7 @@ router.get(
 
 router.post(
   "/",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const {
       title,
@@ -149,7 +149,7 @@ router.post(
 
 router.get(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const job = await prisma.job.findUnique({ where: { id: req.params.id } });
     if (!job) throw new ApiError(404, "Job not found");
@@ -159,7 +159,7 @@ router.get(
 
 router.patch(
   "/:id",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { id: _id, ...updateData } = req.body;
@@ -192,7 +192,7 @@ router.patch(
 
 router.patch(
   "/:id/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { isActive } = req.body;
@@ -245,7 +245,7 @@ router.patch(
 
 router.get(
   "/:id/documents",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const documents = await prisma.jobDocument.findMany({
       where: { jobId: req.params.id },
@@ -257,7 +257,7 @@ router.get(
 
 router.post(
   "/:id/documents",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { type, googleDriveLink } = req.body;
@@ -279,7 +279,7 @@ router.post(
 
 router.put(
   "/:id/documents/:docId",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { docId } = req.params;
     const { googleDriveLink } = req.body;
@@ -293,7 +293,7 @@ router.put(
 
 router.delete(
   "/:id/documents/:docId",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     await prisma.jobDocument.delete({ where: { id: req.params.docId } });
     res.json({ success: true });
@@ -304,7 +304,7 @@ router.delete(
 
 router.get(
   "/:id/questions",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const questions = await prisma.jobQuestion.findMany({
       where: { jobId: req.params.id },
@@ -316,7 +316,7 @@ router.get(
 
 router.post(
   "/:id/questions",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { question, competency, difficulty } = req.body;
@@ -337,7 +337,7 @@ router.post(
 
 router.put(
   "/:id/questions/:questionId",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { questionId } = req.params;
     const { question, competency, difficulty } = req.body;
@@ -351,7 +351,7 @@ router.put(
 
 router.delete(
   "/:id/questions/:questionId",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     await prisma.jobQuestion.delete({ where: { id: req.params.questionId } });
     res.json({ success: true });

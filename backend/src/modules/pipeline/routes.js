@@ -21,7 +21,7 @@ function deriveApplicationStatus(stageName) {
 
 router.get(
   "/stages",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { jobId } = req.query;
     const cacheKey = `pipeline:stages:${jobId || "global"}`;
@@ -44,7 +44,7 @@ router.get(
 
 router.post(
   "/stages",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
   asyncHandler(async (req, res) => {
     const { jobId = null, name, sortOrder, isTerminal = false } = req.body;
     if (!name || sortOrder === undefined) {
@@ -80,7 +80,7 @@ router.post(
 
 router.patch(
   "/applications/:applicationId/move",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { applicationId } = req.params;
     const { toStageId, remark = null } = req.body;
@@ -161,7 +161,7 @@ router.patch(
 
 router.get(
   "/applications/:applicationId/history",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER"),
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { applicationId } = req.params;
 
