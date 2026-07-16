@@ -32,12 +32,48 @@ const fileToBase64 = (file) => {
 };
 
 const downloadBase64File = (fileName, base64Data) => {
-  const link = document.createElement('a');
-  link.href = base64Data;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    let blob;
+    if (base64Data.startsWith('data:')) {
+      const parts = base64Data.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: mime });
+    } else {
+      const bstr = atob(base64Data);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: 'application/octet-stream' });
+    }
+    
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Failed to download file:', error);
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 };
 
 const formatDateTimeIN = (dateStr) => {
@@ -1835,7 +1871,7 @@ const InterviewSchedule = () => {
           }
         />
       }
-      contentClassName="!p-0"
+      contentClassName="!p-0 !overflow-hidden flex flex-col h-full"
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between px-5 py-3 md:py-0 md:h-14 bg-white border-b border-[#e4ebf1] gap-3 flex-wrap">
         <div className="flex gap-2 flex-wrap items-center">
@@ -1895,7 +1931,7 @@ const InterviewSchedule = () => {
         </div>
       </div>
 
-      <PageEnter className={`schedule-page h-[calc(100vh-126px)] overflow-hidden`}>
+      <PageEnter className="schedule-page flex-1 min-h-0 overflow-hidden">
         {viewMode === 'list' && (
           <Reveal ref={listPanelRef} className="candidate-list-panel bg-white p-4 h-full">
             <div className="pb-4 space-y-4">

@@ -49,6 +49,51 @@ function formatTime(dateStr) {
   return `${h12}${mStr} ${suffix}`;
 }
 
+function downloadBase64File(fileName, base64Data) {
+  try {
+    let blob;
+    if (base64Data.startsWith('data:')) {
+      const parts = base64Data.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: mime });
+    } else {
+      const bstr = atob(base64Data);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: 'application/octet-stream' });
+    }
+    
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    }, 100);
+  } catch (error) {
+    console.error('Failed to download file:', error);
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
 /**
  * StatusPill — coloured badge matching the List View status pill style.
  * Uses `iv.result` (the outcome field), NOT `iv.status` (workflow state).
@@ -264,9 +309,73 @@ const ALL_COLUMNS = [
     },
     render: (iv) => {
       const { phoneFollowUp } = parseNotesSafely(iv?.notes);
-      return phoneFollowUp
-        ? <span style={{ color: '#2ca764', fontWeight: 600, fontSize: 11 }}>✓ Uploaded</span>
-        : <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>;
+      return phoneFollowUp ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            downloadBase64File(phoneFollowUp.name, phoneFollowUp.data);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: '#2ca764',
+            fontWeight: 600,
+            fontSize: 11,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+          title={`Click to download: ${phoneFollowUp.name}`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+          Uploaded
+        </button>
+      ) : (
+        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+      );
+    },
+  },
+  {
+    key: 'emailFollowUp',
+    label: 'Email Follow-up',
+    width: 135,
+    filterType: 'set',
+    getValue: (iv) => {
+      const { emailFollowUp } = parseNotesSafely(iv?.notes);
+      return emailFollowUp ? 'Uploaded' : "Didn't upload";
+    },
+    render: (iv) => {
+      const { emailFollowUp } = parseNotesSafely(iv?.notes);
+      return emailFollowUp ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            downloadBase64File(emailFollowUp.name, emailFollowUp.data);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: '#2ca764',
+            fontWeight: 600,
+            fontSize: 11,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+          title={`Click to download: ${emailFollowUp.name}`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+          Uploaded
+        </button>
+      ) : (
+        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+      );
     },
   },
   {
@@ -538,6 +647,32 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
     URL.revokeObjectURL(url);
   }, [filteredRows, visibleColumns, viewDate]);
 
+  const exportSelectedCSV = useCallback(() => {
+    const selectedList = filteredRows.filter((iv) => selectedRows.has(iv.id));
+    if (selectedList.length === 0) return;
+
+    const headers = visibleColumns.map((c) => c.label);
+    const rows = selectedList.map((iv) =>
+      visibleColumns.map((c) => {
+        const str = String(c.getValue(iv) ?? '').replace(/"/g, '""');
+        return str.includes(',') || str.includes('"') || str.includes('\n') ? `"${str}"` : str;
+      })
+    );
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const month = viewDate
+      ? `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`
+      : 'export';
+    a.download = `interviews-selected-${month}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [filteredRows, selectedRows, visibleColumns, viewDate]);
+
   // ── Close col-toggle on outside click ──
   const colToggleRef = useRef(null);
   useEffect(() => {
@@ -629,28 +764,43 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
           Export CSV
         </button>
 
-        {/* Bulk selection indicator (TODO: wire bulk actions when bulk API exists) */}
+        {/* Bulk selection indicator & Select CSV */}
         {selectedRows.size > 0 && (
           <div style={{
-            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8,
+            display: 'flex', alignItems: 'center', gap: 10,
             background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
-            padding: '4px 12px', fontSize: 12, color: '#1f52cc', fontWeight: 600,
+            padding: '0 10px', height: 34, boxSizing: 'border-box'
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>check_box</span>
-            {selectedRows.size} selected
-            {/* TODO: Bulk Reject, Export Selected — add when bulk-action API is available */}
+            <span style={{ fontSize: 12, color: '#1f52cc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>check_box</span>
+              {selectedRows.size} Selected
+            </span>
+
+            <button
+              onClick={exportSelectedCSV}
+              className="os-btn-outline"
+              style={{
+                height: 24, fontSize: 11, padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4,
+                borderColor: '#1f52cc', color: '#1f52cc', background: '#eff6ff', fontWeight: 700
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>download_for_offline</span>
+              Select CSV
+            </button>
+
             <button
               onClick={() => setSelectedRows(new Set())}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1f52cc', marginLeft: 4 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1f52cc', display: 'flex', alignItems: 'center', padding: 0 }}
+              title="Deselect all"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>close</span>
+              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>close</span>
             </button>
           </div>
         )}
       </div>
 
       {/* ── Table ── */}
-      <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+      <div className="excel-grid-container" style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
         <table style={{
           width: totalWidth, minWidth: '100%', borderCollapse: 'collapse',
           tableLayout: 'fixed', fontSize: 12,

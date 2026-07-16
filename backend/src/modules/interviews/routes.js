@@ -287,12 +287,17 @@ router.post(
     setImmediate(() => {
       logAudit({
         actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
         action: "SCHEDULE_INTERVIEW",
         entityType: "INTERVIEW",
         entityId: result.tempId || result.data?.id,
+        entityName: `${roundData.candidateName || result.data?.candidateName || 'Candidate'} - ${roundData.round || ('Round ' + (roundData.roundNo || 1))}`,
         newData: roundData,
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
+        orgId,
       });
     });
   })
@@ -404,12 +409,17 @@ router.post(
     setImmediate(() => {
       logAudit({
         actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
         action: "SUBMIT_INTERVIEW_FEEDBACK",
         entityType: "INTERVIEW_FEEDBACK",
         entityId: feedbackEntry.id,
+        entityName: `Feedback for ${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
         newData: feedbackEntry,
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
+        orgId: req.user.organizationId || "defaultOrg",
       });
 
       const { broadcastNamedEvent } = require('../../utils/sse');
@@ -461,12 +471,17 @@ router.post(
 
     await logAudit({
       actorUserId: req.user.id,
+      actorName: req.user.fullName,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
       action: "UPLOAD_INTERVIEW_RECORDING",
       entityType: "INTERVIEW",
       entityId: id,
+      entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
       newData: { fileId: fileMeta.id, url: fileUrl },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
+      orgId: req.user.organizationId || "defaultOrg",
     });
 
     res.json({ success: true, data: { fileId: fileMeta.id, url: fileUrl } });
@@ -496,12 +511,17 @@ router.delete(
     setImmediate(() => {
       logAudit({
         actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
         action: "DELETE_INTERVIEW",
         entityType: "INTERVIEW",
         entityId: roundId,
+        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
         oldData: current,
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
+        orgId: req.user.organizationId || "defaultOrg",
       });
     });
   })
@@ -535,13 +555,18 @@ router.patch(
 
     logAudit({
       actorUserId: req.user.id,
+      actorName: req.user.fullName,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
       action: "TRANSFER_INTERVIEW_PANELISTS",
       entityType: "INTERVIEW",
       entityId: id,
+      entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
       oldData: { interviewerIds: current.interviewerIds },
       newData: { interviewerIds },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
+      orgId: req.user.organizationId || "defaultOrg",
     });
 
     const { broadcastNamedEvent } = require('../../utils/sse');

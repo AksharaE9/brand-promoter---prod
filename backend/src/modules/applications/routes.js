@@ -103,12 +103,17 @@ router.post(
 
         logAudit({
           actorUserId: req.user.id,
+          actorName: req.user.fullName,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
           action: "CREATE_APPLICATION",
           entityType: "APPLICATION",
           entityId: application.id,
+          entityName: `${candidate.fullName} - ${job.title}`,
           newData: application,
           ipAddress: req.ip,
           userAgent: req.headers["user-agent"],
+          orgId,
         });
 
         await notifyAdmins({
