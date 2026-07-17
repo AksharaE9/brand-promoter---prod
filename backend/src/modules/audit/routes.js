@@ -31,6 +31,7 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       limit = 50, page = 1,
       entityType, action, userId,
       startDate, endDate, search,
+      interviewerName,
     } = req.query;
 
     const parsedLimit = Math.min(parseInt(limit) || 50, 200);
@@ -52,6 +53,48 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate)   where.createdAt.lte = new Date(endDate + 'T23:59:59.999Z');
     }
+
+    // ── Interviewer filter ──────────────────────────────────────────────────
+    // When an interviewerName is provided, find all interview records whose
+    // interviewerNames field contains the search text, then restrict audit
+    // logs to those interview entity IDs (entityType = 'INTERVIEW').
+    if (interviewerName && interviewerName.trim()) {
+      const nameSearch = interviewerName.trim().toLowerCase();
+
+      // Find matching interview IDs using a case-insensitive substring match
+      // on the interviewerNames string column.
+      const matchingInterviews = await prisma.interview.findMany({
+        where: {
+          organizationId: orgId,
+          interviewerNames: {
+            contains: nameSearch,
+            mode: 'insensitive',
+          },
+        },
+        select: { id: true },
+      });
+
+      const matchingIds = matchingInterviews.map((iv) => iv.id);
+
+      // Also search by name stored in audit log metadata / description
+      // We will merge the two constraints: entityType must be INTERVIEW
+      // and entityId must be in matchingIds (if any found), OR we do an
+      // in-memory search below if we go through the search path.
+      if (matchingIds.length === 0) {
+        // No interviews matched — return empty result set
+        return res.json({
+          success: true,
+          data: [],
+          hasMore: false,
+          pagination: { total: 0, page: pageNum, limit: parsedLimit, totalPages: 1 },
+        });
+      }
+
+      // Force entityType to INTERVIEW and restrict by entity IDs
+      where.entityType = 'INTERVIEW';
+      where.entityId   = { in: matchingIds };
+    }
+    // ───────────────────────────────────────────────────────────────────────
 
     let logs;
     let totalCount;

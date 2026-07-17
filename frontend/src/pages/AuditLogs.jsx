@@ -49,6 +49,9 @@ const AuditLogs = () => {
   const [entityType, setEntityType] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [interviewerSearch, setInterviewerSearch] = useState('');
+  const [debouncedInterviewerSearch, setDebouncedInterviewerSearch] = useState('');
+  const [showInterviewerDropdown, setShowInterviewerDropdown] = useState(false);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -70,6 +73,15 @@ const AuditLogs = () => {
     }, 300);
     return () => clearTimeout(handler);
   }, [search]);
+
+  // Debounce interviewer search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedInterviewerSearch(interviewerSearch);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [interviewerSearch]);
 
   // Load Team Members for User filter dropdown
   useEffect(() => {
@@ -100,6 +112,7 @@ const AuditLogs = () => {
       if (startDate)       params.set('startDate', new Date(startDate).toISOString());
       if (endDate)         params.set('endDate', endDate); // backend appends T23:59:59
       if (debouncedSearch) params.set('search', debouncedSearch);
+      if (debouncedInterviewerSearch) params.set('interviewerName', debouncedInterviewerSearch);
       if (selectedActions.length === 1) params.set('action', selectedActions[0]);
 
       const res = await apiGet(`/audit-logs?${params.toString()}`);
@@ -125,7 +138,7 @@ const AuditLogs = () => {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, selectedActions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, debouncedInterviewerSearch, selectedActions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time SSE: prepend new log entry at top of table without full reload
   useEffect(() => {
@@ -207,7 +220,7 @@ const AuditLogs = () => {
     setPage(1);
   };
 
-  const hasActiveFilters = startDate || endDate || selectedActions.length > 0 || selectedUserId || entityType || search;
+  const hasActiveFilters = startDate || endDate || selectedActions.length > 0 || selectedUserId || entityType || search || interviewerSearch;
 
   const clearAllFilters = () => {
     setStartDate('');
@@ -218,6 +231,8 @@ const AuditLogs = () => {
     setSearch('');
     setDebouncedSearch('');
     setUserSearchText('');
+    setInterviewerSearch('');
+    setDebouncedInterviewerSearch('');
     setPage(1);
   };
 
@@ -244,6 +259,14 @@ const AuditLogs = () => {
     const txt = userSearchText.toLowerCase();
     return teamMembers.filter(u => u.fullName?.toLowerCase().includes(txt));
   }, [teamMembers, userSearchText]);
+
+  // Search interviewer dropdown list (prefer INTERVIEWER role, show all if no match)
+  const filteredInterviewers = useMemo(() => {
+    const interviewers = teamMembers.filter(u => u.role === 'INTERVIEWER' || u.role === 'SUPER_ADMIN' || u.role === 'RECRUITER');
+    if (!interviewerSearch.trim()) return interviewers;
+    const txt = interviewerSearch.toLowerCase();
+    return interviewers.filter(u => u.fullName?.toLowerCase().includes(txt));
+  }, [teamMembers, interviewerSearch]);
 
   // Relative Time Tooltip calculation
   const getRelativeTime = (dateStr) => {
@@ -314,7 +337,7 @@ const AuditLogs = () => {
 
         {/* Filter Panel */}
         <div className="os-card mt-6 p-5 bg-white border border-[#e3eaf0] space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
             
             {/* Date Inputs */}
             <div className="flex flex-col gap-1 col-span-2">
@@ -452,6 +475,51 @@ const AuditLogs = () => {
                 <option value="APPLICATION">Application</option>
                 <option value="ORGANIZATION">Organization</option>
               </select>
+            </div>
+
+            {/* Interviewer Filter */}
+            <div className="flex flex-col gap-1 relative">
+              <label className="text-[10px] uppercase font-bold text-slate-500">Interviewer</label>
+              <input
+                type="text"
+                placeholder="Search interviewer..."
+                className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs outline-none focus:border-[#1f52cc]"
+                value={interviewerSearch}
+                onChange={e => { setInterviewerSearch(e.target.value); setShowInterviewerDropdown(true); }}
+                onFocus={() => setShowInterviewerDropdown(true)}
+                onBlur={() => setTimeout(() => setShowInterviewerDropdown(false), 150)}
+              />
+              {interviewerSearch && (
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-[30px] text-slate-400 hover:text-slate-600 text-xs"
+                  onClick={() => { setInterviewerSearch(''); setDebouncedInterviewerSearch(''); setPage(1); }}
+                >
+                  ✕
+                </button>
+              )}
+
+              {showInterviewerDropdown && filteredInterviewers.length > 0 && (
+                <div className="absolute top-[48px] left-0 z-40 w-64 bg-white border border-slate-200 rounded-xl shadow-xl p-1 max-h-56 overflow-y-auto">
+                  {filteredInterviewers.map(member => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 rounded-lg"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => {
+                        setInterviewerSearch(member.fullName);
+                        setDebouncedInterviewerSearch(member.fullName);
+                        setShowInterviewerDropdown(false);
+                        setPage(1);
+                      }}
+                    >
+                      <span className="block font-semibold text-slate-800">{member.fullName}</span>
+                      <span className="text-[10px] text-slate-400">{member.role}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
