@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -13,12 +14,14 @@ import { subscribeSSE } from '../lib/sse';
 const DASHBOARD_SSE_TYPES = [
   'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
   'INTERVIEW_SCHEDULED', 'INTERVIEW_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'PIPELINE_MOVED',
-  'JOB_CREATED', 'JOB_UPDATED', 'JOB_STATUS_UPDATED',
+  'JOB_CREATED', 'JOB_UPDATED', 'JOB_STATUS_CHANGED',
   'TEAM_UPDATE', 'OFFER_DECISION'
 ];
 
-// Minimum 1s between SSE-triggered refreshes
-const SSE_DEBOUNCE_MS = 1000;
+// Minimum 10s between SSE-triggered refreshes (was 1s — too aggressive)
+const SSE_DEBOUNCE_MS = 10_000;
+
+const fetchDashboardData = () => apiGet('/dashboard/init');
 
 const MetricCard = React.memo(({ label, value, tag, tagColor = '#29a86f', onClick, delay }) => (
   <Reveal delay={delay}>
@@ -71,64 +74,50 @@ FeedItem.displayName = 'FeedItem';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const currentUser = useMemo(() => getStoredUser(), []);
 
-  // Dashboard data state
-  const [stats, setStats] = useState({ candidates: 0, activeJobs: 0, activeUsers: 0 });
-  const [recentApplications, setRecentApplications] = useState([]);
-  const [upcomingInterviews, setUpcomingInterviews] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
   const lastRefreshRef = useRef(0);
-  const mountedRef = useRef(true);
 
   const greetingName = useMemo(() => {
     const name = currentUser?.fullName || currentUser?.email || 'there';
     return name.split(' ')[0];
   }, [currentUser]);
 
-  const applyData = useCallback((data) => {
-    if (!data) return;
-    if (data.stats) setStats(data.stats);
-    if (Array.isArray(data.recentApplications)) setRecentApplications(data.recentApplications);
-    if (Array.isArray(data.upcomingInterviews)) setUpcomingInterviews(data.upcomingInterviews);
-  }, []);
+  // ── React Query: staleTime 2min means returning to dashboard within 2min
+  // shows data INSTANTLY from cache without any network request or loading spinner.
+  const {
+    data: dashData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: fetchDashboardData,
+    staleTime: 2 * 60_000,        // 2 minutes — data served from cache on revisit
+    gcTime: 10 * 60_000,          // 10 minutes — keep in memory after unmount
+    refetchOnMount: 'always',     // always revalidate in background on mount
+    refetchOnWindowFocus: false,
+    select: (res) => res?.data ?? res,
+  });
 
-  const fetchDashboard = useCallback(async (bypassCache = false) => {
-    try {
-      const res = await apiGet('/dashboard/init', !bypassCache);
-      if (!mountedRef.current) return;
-      if (res?.success && res?.data) {
-        applyData(res.data);
-      }
-    } catch (err) {
-      if (!mountedRef.current) return;
-      if (!bypassCache) setError(err.message || 'Failed to load dashboard');
-    }
-  }, [applyData]);
+  const stats = dashData?.stats ?? { candidates: 0, activeJobs: 0, activeUsers: 0 };
+  const recentApplications = dashData?.recentApplications ?? [];
+  const upcomingInterviews = dashData?.upcomingInterviews ?? [];
 
-  // Initial load
-  useEffect(() => {
-    mountedRef.current = true;
-    setLoading(true);
-    fetchDashboard(false).finally(() => {
-      if (mountedRef.current) setLoading(false);
-    });
-    return () => { mountedRef.current = false; };
-  }, [fetchDashboard]);
-
-  // SSE subscription — refresh on relevant events with debounce
+  // SSE subscription — invalidate React Query cache on relevant events with debounce
   useEffect(() => {
     const unsub = subscribeSSE((event) => {
       if (!DASHBOARD_SSE_TYPES.includes(event.type)) return;
       const now = Date.now();
       if (now - lastRefreshRef.current < SSE_DEBOUNCE_MS) return;
       lastRefreshRef.current = now;
-      fetchDashboard(true); // bypass cache for real-time feel
+      // Invalidate and refetch in background — UI stays visible (no spinner)
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'active' });
     });
     return unsub;
-  }, [fetchDashboard]);
+  }, [queryClient]);
 
   // Metrics computed from state
   const interviewsToday = useMemo(() => {
@@ -149,7 +138,8 @@ const Dashboard = () => {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  if (loading) {
+  // Show skeleton ONLY on first ever load (no cached data at all)
+  if (isLoading && !dashData) {
     return (
       <EnterpriseLayout
         sidebar={<EnterpriseSidebar active="dashboard" items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
@@ -186,14 +176,14 @@ const Dashboard = () => {
         <div className="mb-6">
           <div className="os-eyebrow">Performance Overview</div>
           <h1 className="os-h1">{greeting}, {greetingName}.</h1>
-          {error && (
+          {isError && (
             <div className="mt-2 text-sm text-red-500 flex items-center gap-2">
               <span className="material-symbols-outlined text-base">warning</span>
-              {error}
+              {error?.message || 'Failed to load dashboard'}
               <button
                 type="button"
                 className="underline ml-1"
-                onClick={() => { setError(''); fetchDashboard(true); }}
+                onClick={() => refetch()}
               >
                 Retry
               </button>

@@ -48,11 +48,11 @@ export default defineConfig({
         runtimeCaching: [
           {
             // API static data — serve stale while revalidating
-            urlPattern: /\/api\/(jobs|team|org-settings|panel-members)/,
+            urlPattern: /\/api\/(jobs|team|org-settings|panel-members|dashboard|interviews|candidates)/,
             handler:    'StaleWhileRevalidate',
             options: {
               cacheName:  'api-static',
-              expiration: { maxAgeSeconds: 300, maxEntries: 50 },
+              expiration: { maxAgeSeconds: 300, maxEntries: 100 },
             },
           },
           {

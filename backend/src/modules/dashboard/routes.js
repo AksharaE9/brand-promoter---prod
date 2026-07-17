@@ -134,7 +134,7 @@ router.get(
 
     if (skipCache) await tieredDelete(cacheKey);
 
-    const result = await swrGet(cacheKey, () => fetchDashboardData(orgId), 45, 15000);
+    const result = await swrGet(cacheKey, () => fetchDashboardData(orgId), 180, 90_000);
 
     res.json({ success: true, data: result.data });
   })

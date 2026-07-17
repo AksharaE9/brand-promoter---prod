@@ -17,9 +17,9 @@ export function useRoundsList(filters = {}) {
     queryKey: QUERY_KEYS.rounds(safeFilters),
     queryFn: () => schedulingApi.getRounds(safeFilters),
     enabled,
-    // Search results must always be fresh — no caching. Normal list: 60s stale time.
-    staleTime: isSearch ? 0 : 60_000,
-    gcTime: isSearch ? 0 : 5 * 60_000,
+    // Search results must always be fresh — no caching. Normal list: 2min stale time.
+    staleTime: isSearch ? 0 : 2 * 60_000,
+    gcTime: isSearch ? 0 : 15 * 60_000,
     refetchOnWindowFocus: false,
     select: (data) => {
       // Backend now returns { data: [...], hasMore, nextCursor, pagination }

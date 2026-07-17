@@ -15,13 +15,16 @@ startKeepAlive();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000,            // 30 seconds stale time
-      gcTime: 10 * 60 * 1000,          // 10 minutes cache/gc time
+      // 2 minutes: navigating away and back within 2min shows data instantly
+      staleTime: 2 * 60 * 1000,
+      // 15 minutes: keep data in memory after component unmounts
+      gcTime: 15 * 60 * 1000,
       retry: 1,                        // retry once on failure
       retryDelay: 1000,
       refetchOnWindowFocus: false,      // do not refetch on window focus
       refetchOnReconnect: 'always',
-      refetchOnMount: false,            // use cached data within stale time
+      // 'always' but staleTime=2min means: show cached + revalidate in background
+      refetchOnMount: 'always',
       networkMode: 'online',
     },
     mutations: {
@@ -34,10 +37,10 @@ const queryClient = new QueryClient({
 const sessionPersister = {
   persistClient: async (client) => {
     try {
-      // Filter cache to only persist jobs, team, org-settings, drives, panel-members
+      // Persist dashboard + jobs + team + org-settings + drives + panel-members
       const filteredQueries = client.clientState.queries.filter(q => {
         const key = q.queryKey[0];
-        return typeof key === 'string' && ['jobs', 'team', 'org-settings', 'drives', 'panel-members'].includes(key) && q.state.status === 'success';
+        return typeof key === 'string' && ['dashboard', 'jobs', 'team', 'org-settings', 'drives', 'panel-members'].includes(key) && q.state.status === 'success';
       });
       const cacheData = {
         clientState: {

@@ -9,7 +9,18 @@ export const API_ROOT_URL = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0
 // Performance: Request Deduplication & Caching
 const inflightRequests = new Map();
 const apiCache = new Map();
-const CACHE_TTL = 60000; // 60 seconds
+const CACHE_TTL = 90_000; // 90 seconds default
+
+// Routes that benefit from a longer client-side cache (heavy pages)
+const LONG_CACHE_ROUTES = [
+  '/dashboard/init',
+  '/interviews',
+  '/candidates',
+  '/jobs',
+  '/users/interviewers',
+  '/users',
+];
+const LONG_CACHE_TTL = 5 * 60_000; // 5 minutes
 
 // ── Keep-Alive: ping Render every 10 minutes to prevent cold starts ──────────
 const HEALTH_URL = API_ROOT_URL + '/api/health';
@@ -52,7 +63,8 @@ async function request(path, options = {}, retries = 1) {
   // Cache lookup
   if (isGet && !options.bypassCache && apiCache.has(requestKey)) {
     const cached = apiCache.get(requestKey);
-    if (Date.now() - cached.timestamp < CACHE_TTL) {
+    const ttl = LONG_CACHE_ROUTES.some(r => path.startsWith(r)) ? LONG_CACHE_TTL : CACHE_TTL;
+    if (Date.now() - cached.timestamp < ttl) {
       return cached.data;
     }
     apiCache.delete(requestKey);

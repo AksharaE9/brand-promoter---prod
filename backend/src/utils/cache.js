@@ -96,7 +96,7 @@ function getCacheMetrics() {
 const TTL = {
   CANDIDATES:       30,
   APPLICATIONS:     30,
-  SCHEDULING_LIST:  30,
+  SCHEDULING_LIST:  60,
   NOTIFICATIONS:    15,
   DASHBOARD:        45,
   AUDIT:            20,
