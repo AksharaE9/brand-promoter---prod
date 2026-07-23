@@ -22,8 +22,8 @@ function errorHandler(err, req, res, next) {
   console.error(err);
   return res.status(500).json({
     success: false,
-    message: err.message,
-    stack: err.stack,
+    message: process.env.NODE_ENV === "production" ? "Internal server error" : err.message,
+    stack: process.env.NODE_ENV === "production" ? undefined : err.stack,
   });
 }
 

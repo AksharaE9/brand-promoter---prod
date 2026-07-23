@@ -84,8 +84,10 @@ router.post(
       user = await prisma.user.findFirst({ where: { email: email.trim() } });
     }
 
-    if (!user) {
-      throw new ApiError(401, "Email not found. Please register or contact your administrator.");
+    // Guard: user not found OR user exists but has no password hash.
+    // Both cases return the same 401 to avoid leaking which email exists.
+    if (!user || !user.passwordHash) {
+      throw new ApiError(401, "Incorrect email or password.");
     }
 
     if (user.isDeleted === true) {
@@ -101,13 +103,9 @@ router.post(
       throw new ApiError(403, "Your account is not active. Please contact your administrator.");
     }
 
-    const hashToCompare = user.passwordHash;
-    if (!hashToCompare) {
-      throw new ApiError(500, "User account is misconfigured (missing password hash)");
-    }
-    const isValidPassword = await bcrypt.compare(password, hashToCompare);
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
     if (!isValidPassword) {
-      throw new ApiError(401, "Incorrect password. Please try again.");
+      throw new ApiError(401, "Incorrect email or password.");
     }
 
     const session = await prisma.session.create({
