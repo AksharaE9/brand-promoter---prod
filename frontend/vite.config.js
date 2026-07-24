@@ -156,6 +156,12 @@ export default defineConfig(({ command }) => {
             if (id.includes('@tanstack/react-virtual')) {
               return 'vendor-virtual';
             }
+            if (id.includes('html2canvas')) {
+              return 'vendor-html2canvas';
+            }
+            if (id.includes('socket.io-client') || id.includes('engine.io-client')) {
+              return 'vendor-socketio';
+            }
             return 'vendor';
           }
         },

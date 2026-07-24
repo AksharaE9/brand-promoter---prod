@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../lib/api';
 
-export function usePanelists() {
+export function usePanelists(options = {}) {
   return useQuery({
     queryKey: ['panelists'],
     queryFn: async () => {
@@ -10,5 +10,6 @@ export function usePanelists() {
     },
     staleTime: 60_000,
     gcTime: 5 * 60_000,
+    ...options,
   });
 }

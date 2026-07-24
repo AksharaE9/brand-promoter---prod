@@ -73,23 +73,26 @@ const App = () => {
 
   React.useEffect(() => {
     const prefetchSecondaryRoutes = () => {
-      // Quietly download secondary route JS chunks in background
-      import('./pages/Dashboard');
-      import('./pages/Candidates');
-      import('./pages/InterviewSchedule');
-      import('./pages/Scheduling/SchedulingPage');
-      import('./pages/JobsManager');
-      import('./pages/JobDetailModule');
-      import('./pages/CandidateProfile');
-      import('./pages/Analytics');
-      import('./pages/Reports');
-      import('./pages/AuditLogs');
-      import('./pages/Team');
-      import('./pages/Drives');
-      import('./pages/Settings');
-      import('./pages/LandingPage');
-      import('./pages/LoginPage');
-      import('./pages/SignupPage');
+      const user = getStoredUser();
+      if (user) {
+        // Quietly download secondary route JS chunks in background
+        import('./pages/Dashboard');
+        import('./pages/Candidates');
+        import('./pages/InterviewSchedule');
+        import('./pages/Scheduling/SchedulingPage');
+        import('./pages/JobsManager');
+        import('./pages/JobDetailModule');
+        import('./pages/CandidateProfile');
+        import('./pages/Analytics');
+        import('./pages/Reports');
+        import('./pages/AuditLogs');
+        import('./pages/Team');
+        import('./pages/Drives');
+        import('./pages/Settings');
+      } else {
+        import('./pages/LoginPage');
+        import('./pages/SignupPage');
+      }
     };
 
     if ('requestIdleCallback' in window) {

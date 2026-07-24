@@ -396,6 +396,10 @@ const ScheduleModal = React.lazy(() => import('../components/Interview/ScheduleM
 
 
 const InterviewSchedule = () => {
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
+  const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -410,7 +414,12 @@ const InterviewSchedule = () => {
   const [serverHasMore, setServerHasMore] = useState(false);
   const [serverNextCursor, setServerNextCursor] = useState(null);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList({ limit: 50 });
+  const roundsFilters = useMemo(() => ({
+    limit: 20,
+    ...(filterMine && currentUser?.id ? { interviewerId: currentUser.id } : {})
+  }), [filterMine, currentUser?.id]);
+
+  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList(roundsFilters);
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -463,8 +472,6 @@ const InterviewSchedule = () => {
   const [applications, setApplications] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const { data: panelistsList, isLoading: isPanelistsLoading, error: panelistsError, refetch: refetchPanelists } = usePanelists();
-  const interviewers = panelistsList || [];
   // Suggestions are now managed by TanStack Query useQuery hooks below
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState('');
@@ -474,9 +481,6 @@ const InterviewSchedule = () => {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [offerLetterFile, setOfferLetterFile] = useState(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
-  const [candidateHistory, setCandidateHistory] = useState([]);
-  const [candidateFeedbacks, setCandidateFeedbacks] = useState([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [uploadingRecording, setUploadingRecording] = useState(false);
   const [recordingFile, setRecordingFile] = useState(null);
   const [scheduleRecordingFile, setScheduleRecordingFile] = useState(null);
@@ -513,9 +517,6 @@ const InterviewSchedule = () => {
   const listEndRef = useRef(null);        // sentinel for IntersectionObserver
   const listPanelRef = useRef(null);     // scrollable container ref for IntersectionObserver root
   const lastCandidateJobKeyRef = useRef('');
-  const currentUser = getStoredUser();
-  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
-  const [filterMine, setFilterMine] = useState(currentUser?.role === 'INTERVIEWER');
   const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -524,6 +525,11 @@ const InterviewSchedule = () => {
   // FORCE TRUE FOR VERIFICATION
   const canScheduleInterview = true;
   const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+
+  const { data: panelistsList, isLoading: isPanelistsLoading, error: panelistsError, refetch: refetchPanelists } = usePanelists({
+    enabled: showScheduleModal || showTransferModal
+  });
+  const interviewers = panelistsList || [];
 
 
   // Load-more: fetch next page using cursor
@@ -1053,48 +1059,19 @@ const InterviewSchedule = () => {
     return selectedFeedbacks[0] || null;
   }, [selectedFeedbacks, currentUser?.id]);
 
-  const loadCandidateHistory = async (candidateId) => {
-    if (!candidateId) return;
-    try {
-      setLoadingHistory(true);
-      const res = await apiGet(`/candidates/${candidateId}/history`);
-      setCandidateHistory(res.data?.timeline || []);
-    } catch (err) {
-      console.error('Failed to load history:', err);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  const loadCandidateFeedbacks = useCallback(async (candidateId) => {
-    if (!candidateId) return;
-    try {
-      const res = await apiGet(`/interviews/${candidateId}/feedback`);
-      setCandidateFeedbacks(res.data || []);
-    } catch (err) {
-      console.error('Failed to load candidate feedbacks:', err);
-    }
-  }, []);
-
   useEffect(() => {
     setIsEditingFeedback(false);
     if (selectedCandidate?.id) {
-      loadCandidateHistory(selectedCandidate.id);
       loadCandidateInterviews(selectedCandidate.id);
-      loadCandidateFeedbacks(selectedCandidate.id);
-    } else {
-      setCandidateHistory([]);
-      setCandidateFeedbacks([]);
     }
-  }, [selectedCandidate?.id, loadCandidateInterviews, loadCandidateFeedbacks]);
+  }, [selectedCandidate?.id, loadCandidateInterviews]);
 
-  // Load interviews and feedbacks when a candidate is selected inside the Schedule Modal
+  // Load interviews when a candidate is selected inside the Schedule Modal
   useEffect(() => {
     if (scheduleForm.candidateId) {
       loadCandidateInterviews(scheduleForm.candidateId);
-      loadCandidateFeedbacks(scheduleForm.candidateId);
     }
-  }, [scheduleForm.candidateId, loadCandidateInterviews, loadCandidateFeedbacks]);
+  }, [scheduleForm.candidateId, loadCandidateInterviews]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch) return candidates;
@@ -2462,7 +2439,6 @@ const InterviewSchedule = () => {
             searchingJobs={searchingJobs}
             savingSchedule={savingSchedule}
             allInterviews={allInterviews}
-            candidateFeedbacks={candidateFeedbacks}
             setBanner={setBanner}
             setError={setError}
             onClose={() => setShowScheduleModal(false)}

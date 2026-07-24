@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { getStoredUser } from '../../lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { getStoredUser, apiGet } from '../../lib/api';
 import { 
   getNextSchedulableRound, 
   ROUND_DISPLAY_LABEL, 
@@ -43,7 +44,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   savingSchedule,
   onClose,
   allInterviews,
-  candidateFeedbacks,
+  candidateFeedbacks: propCandidateFeedbacks,
   setBanner,
   setError,
   onSubmit,
@@ -52,6 +53,18 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
   const [contactAttemptType, setContactAttemptType] = useState(null);
   const [loggingAttempt, setLoggingAttempt] = useState(false);
+
+  const { data: fetchedFeedbacks = [] } = useQuery({
+    queryKey: ['candidate-feedbacks', scheduleForm.candidateId],
+    queryFn: async () => {
+      if (!scheduleForm.candidateId) return [];
+      const res = await apiGet(`/interviews/${scheduleForm.candidateId}/feedback`);
+      return res.data || [];
+    },
+    enabled: !!scheduleForm.candidateId,
+    staleTime: 30_000,
+  });
+  const candidateFeedbacks = propCandidateFeedbacks || fetchedFeedbacks;
 
   const localToday = React.useMemo(() => {
     const d = new Date();
