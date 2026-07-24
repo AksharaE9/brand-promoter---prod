@@ -217,7 +217,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   React.useEffect(() => {
     if (!scheduleForm.scheduledStart) return;
     setScheduleForm(prev => ({ ...prev, slotNo: slotInfo.slotNo }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotInfo.slotNo, scheduleForm.scheduledStart]);
 
   return (

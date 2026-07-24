@@ -172,7 +172,7 @@ const AuditLogs = () => {
 
   useEffect(() => {
     fetchLogs();
-  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, debouncedInterviewerSearch, selectedActions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, debouncedInterviewerSearch, selectedActions]); // eslint-disable-line
 
   // Real-time SSE: prepend new log entry at top of table without full reload
   useEffect(() => {

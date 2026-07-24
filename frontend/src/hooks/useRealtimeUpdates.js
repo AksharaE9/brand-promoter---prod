@@ -3,7 +3,7 @@ import { useQueryClient }  from '@tanstack/react-query';
 import { useAuthStore }    from '../stores/authStore';
 import { useToastStore }   from '../stores/toastStore';
 import { useNotificationStore } from '../stores/notificationStore';
-import { subscribeSSE }    from '../lib/sse';
+import { subscribeSSE, initSSE }    from '../lib/sse';
 
 const getApiBaseUrl = () => {
   const devUrl = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
@@ -105,7 +105,7 @@ export function useRealtimeUpdates() {
     // Try SSE again every 60s while polling
     sseRetryTimer.current = setInterval(() => {
       console.log('[SSE] Retrying SSE connection from polling mode...');
-      connect();
+      initSSE();
     }, 60000);
   }, [qc]);
 

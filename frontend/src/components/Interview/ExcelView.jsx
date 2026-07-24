@@ -700,7 +700,7 @@ export default function ExcelView({
   const toggleColVisibility = useCallback((key) => {
     setHiddenCols((prev) => {
       const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
-      try { localStorage.setItem('interview_excel_hidden_cols', JSON.stringify(next)); } catch {}
+      try { localStorage.setItem('interview_excel_hidden_cols', JSON.stringify(next)); } catch (e) { /* ignore */ }
       return next;
     });
   }, []);

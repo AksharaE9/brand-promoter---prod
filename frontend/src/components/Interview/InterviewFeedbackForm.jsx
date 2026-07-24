@@ -5,6 +5,8 @@ import {
   ROUND_DISPLAY_LABEL,
   InterviewRound,
   formatFeedbackForClipboard,
+  FEEDBACK_TEMPLATE_VERSIONS,
+  CURRENT_FEEDBACK_TEMPLATE_VERSION,
 } from '../../lib/interviewTemplates';
 import CopyFeedbackButton from './CopyFeedbackButton';
 import { apiPost, apiGet } from '../../lib/api';

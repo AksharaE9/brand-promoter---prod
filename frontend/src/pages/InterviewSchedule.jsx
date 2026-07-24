@@ -231,7 +231,7 @@ const parseNotesSafely = (notesStr) => {
         morningFollowUp: parsed.morningFollowUp || null
       };
     }
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
 };
 
@@ -678,7 +678,6 @@ const InterviewSchedule = () => {
         ]);
         setApplications(applicationsRes.data || []);
         setJobs(jobsRes.data || []);
-        setJobSuggestions(jobsRes.data || []);
         setSupportingDataLoaded(true);
       } catch (err) {
         console.error('Failed to load scheduler supporting data:', err);
@@ -1137,7 +1136,6 @@ const InterviewSchedule = () => {
         setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scheduleForm.candidateId, scheduleForm.jobId, showScheduleModal, applications]);
 
   const filteredInterviewersList = useMemo(() => {

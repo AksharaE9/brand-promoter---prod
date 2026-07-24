@@ -4,6 +4,8 @@ class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null };
+    this.handleReload = this.handleReload.bind(this);
+    this.handleCopyError = this.handleCopyError.bind(this);
   }
 
   static getDerivedStateFromError(error) {
@@ -15,11 +17,11 @@ class ErrorBoundary extends React.Component {
     console.error('Unhandled UI Error caught by ErrorBoundary:', error, errorInfo);
   }
 
-  handleReload = () => {
+  handleReload() {
     window.location.reload();
-  };
+  }
 
-  handleCopyError = () => {
+  handleCopyError() {
     const errorDetails = `
 Error: ${this.state.error?.toString()}
 Stack: ${this.state.error?.stack || 'N/A'}
@@ -35,7 +37,7 @@ Time: ${new Date().toISOString()}
       .catch((err) => {
         console.error('Could not copy text: ', err);
       });
-  };
+  }
 
   render() {
     if (this.state.hasError) {

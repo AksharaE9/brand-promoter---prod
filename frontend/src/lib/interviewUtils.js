@@ -29,7 +29,7 @@ export function parseNotesSafely(notesStr) {
         morningFollowUp: parsed.morningFollowUp || null,
       };
     }
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
   return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
 }
 

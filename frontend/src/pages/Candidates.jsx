@@ -479,7 +479,7 @@ const Candidates = () => {
   // Initial load + reload when search/filter changes
   useEffect(() => {
     fetchCandidates({ reset: true, stat: statusFilter, query: debouncedSearch });
-  }, [debouncedSearch, statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, statusFilter]);
 
   // ── Live refs for observer — never stale ──
   const hasMoreRef     = useRef(hasMore);

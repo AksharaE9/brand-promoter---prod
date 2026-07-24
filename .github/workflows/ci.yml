@@ -97,7 +97,7 @@ jobs:
         working-directory: backend
         run: |
           if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
-            npx eslint src/ --ext .js --max-warnings 0 || echo "ESLint warnings found (non-blocking on first run)"
+            npx eslint src/ --ext .js --max-warnings 0
           else
             echo "No ESLint config found, skipping"
           fi
@@ -105,8 +105,8 @@ jobs:
       - name: Frontend — ESLint
         working-directory: frontend
         run: |
-          if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
-            npx eslint src/ --ext .jsx,.tsx,.js,.ts --max-warnings 0 || echo "ESLint warnings found (non-blocking on first run)"
+          if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.cjs" ] || [ -f ".eslintrc.json" ]; then
+            npx eslint src/ --ext .jsx,.tsx,.js,.ts --max-warnings 0
           else
             echo "No ESLint config found, skipping"
           fi

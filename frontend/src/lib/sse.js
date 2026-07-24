@@ -35,9 +35,9 @@ function connect() {
         const data = JSON.parse(event.data);
         if (data.type === 'ping') return;
         subscribers.forEach((cb) => {
-          try { cb(data); } catch (_) {}
+          try { cb(data); } catch (_) { /* ignore */ }
         });
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     };
 
     eventSource.onerror = () => {
@@ -49,7 +49,7 @@ function connect() {
         connect();
       }, reconnectDelay);
     };
-  } catch (_) {}
+  } catch (_) { /* ignore */ }
 }
 
 function disconnect() {
@@ -104,7 +104,7 @@ if (typeof document !== 'undefined') {
     if (document.visibilityState === 'visible') {
       connect();
       subscribers.forEach((cb) => {
-        try { cb({ type: 'VISIBILITY_RECONCILE' }); } catch (_) {}
+        try { cb({ type: 'VISIBILITY_RECONCILE' }); } catch (_) { /* ignore */ }
       });
     }
   });
