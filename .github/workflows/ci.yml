@@ -116,10 +116,24 @@ jobs:
     name: Run Test Suite (30 tests)
     runs-on: ubuntu-latest
     needs: lint
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: local_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       NODE_ENV: test
-      NEON_TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
-      DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+      NEON_TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/local_test_db' }}
+      DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/local_test_db' }}
       JWT_SECRET: ci-test-jwt-secret-${{ github.run_id }}
       PORT: 4001
       CORS_ORIGIN: http://localhost:4001
@@ -150,14 +164,14 @@ jobs:
         working-directory: backend
         run: npx prisma db push --skip-generate --accept-data-loss
         env:
-          DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/local_test_db' }}
 
       - name: Run backend test suite (Tests 1-28)
         working-directory: backend
         run: npm run test:ci
         env:
-          NEON_TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
-          DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+          NEON_TEST_DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/local_test_db' }}
+          DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/local_test_db' }}
           JWT_SECRET: ci-test-jwt-secret-${{ github.run_id }}
 
       - name: Restore frontend cache

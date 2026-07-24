@@ -8,6 +8,7 @@ describe('Sequential Round Gating Unit Tests', () => {
     mockPrisma = {
       interviewFeedback: {
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
   });
@@ -20,7 +21,7 @@ describe('Sequential Round Gating Unit Tests', () => {
   });
 
   test('throws 400 ApiError when attempting to schedule Round 2 before Round 1 feedback exists', async () => {
-    mockPrisma.interviewFeedback.findUnique.mockResolvedValue(null);
+    mockPrisma.interviewFeedback.findMany.mockResolvedValue([]);
 
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_2)
@@ -32,28 +33,25 @@ describe('Sequential Round Gating Unit Tests', () => {
   });
 
   test('allows scheduling Round 2 when Round 1 feedback exists', async () => {
-    mockPrisma.interviewFeedback.findUnique.mockResolvedValue({
-      id: 'fb-1',
-      candidateId: 'cand-123',
-      round: 'ROUND_1',
-    });
+    mockPrisma.interviewFeedback.findMany.mockResolvedValue([
+      {
+        id: 'fb-1',
+        candidateId: 'cand-123',
+        round: 'ROUND_1',
+      }
+    ]);
 
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_2)
     ).resolves.not.toThrow();
 
-    expect(mockPrisma.interviewFeedback.findUnique).toHaveBeenCalledWith({
-      where: {
-        candidateId_round: {
-          candidateId: 'cand-123',
-          round: 'ROUND_1',
-        },
-      },
+    expect(mockPrisma.interviewFeedback.findMany).toHaveBeenCalledWith({
+      where: { candidateId: 'cand-123' },
     });
   });
 
   test('throws 400 ApiError when attempting to schedule Final Round before Round 2 feedback exists', async () => {
-    mockPrisma.interviewFeedback.findUnique.mockResolvedValue(null);
+    mockPrisma.interviewFeedback.findMany.mockResolvedValue([]);
 
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.FINAL_ROUND)

@@ -83,7 +83,7 @@ function resolveHeader(rawHeader) {
     .replace(/\s*\*+$/, '')
     .trim();
   const key = cleaned.toLowerCase();
-  return HEADER_ALIASES[key] ?? cleaned;
+  return HEADER_ALIASES[key] ?? null;
 }
 
 module.exports = {
