@@ -8,23 +8,22 @@ const { ApiError } = require('../utils/errors');
 const { logAudit } = require('../utils/audit');
 const sse = require('../utils/sse');
 
-// Enforce authentication and SUPER_ADMIN role check globally on this router
+// Enforce authentication globally on this router
 router.use(auth);
-router.use(requireRoles('SUPER_ADMIN'));
 
 // GET /api/candidates/:candidateId/internal-reports
-router.get('/:candidateId/internal-reports', async (req, res, next) => {
+router.get('/:candidateId/internal-reports', requireRoles('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { candidateId } = req.params;
-
+ 
     const candidate = await prisma.candidate.findUnique({
       where: { id: candidateId }
     });
-
+ 
     if (!candidate) {
       return next(new ApiError(404, 'Candidate not found'));
     }
-
+ 
     const reports = await prisma.candidateInternalReport.findMany({
       where: { candidateId },
       include: {
@@ -40,7 +39,7 @@ router.get('/:candidateId/internal-reports', async (req, res, next) => {
         submittedAt: 'desc'
       }
     });
-
+ 
     res.json({ success: true, data: reports });
   } catch (err) {
     next(err);
@@ -48,7 +47,7 @@ router.get('/:candidateId/internal-reports', async (req, res, next) => {
 });
 
 // POST /api/candidates/:candidateId/internal-reports
-router.post('/:candidateId/internal-reports', async (req, res, next) => {
+router.post('/:candidateId/internal-reports', requireRoles('SUPER_ADMIN'), async (req, res, next) => {
   try {
     const { candidateId } = req.params;
     const { content } = req.body;
