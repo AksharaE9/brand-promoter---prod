@@ -805,7 +805,7 @@ const InterviewSchedule = () => {
   // ── Search: re-fetch from server ONLY when there is an active query ──
   // Using `enabled: false` equivalent — only pass filters when debouncedSearch exists.
   // This prevents a second /interviews request on every render when idle.
-  const { data: searchResponse, isFetching: isSearching } = useRoundsList(
+  const { data: searchResponse, isFetching: isSearching, error: searchError, refetch: refetchSearch } = useRoundsList(
     debouncedSearch
       ? { search: debouncedSearch, limit: 10000, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
       : null  // null → hook is disabled (handled in useRoundsList)
@@ -813,13 +813,19 @@ const InterviewSchedule = () => {
 
   // Unified useEffect to handle page 1 results for both normal and search lists
   useEffect(() => {
+    if (debouncedSearch && searchError) {
+      setAllInterviews([]);
+      setServerHasMore(false);
+      setServerNextCursor(null);
+      return;
+    }
     const activeResponse = debouncedSearch ? searchResponse : roundsResponse;
     if (!activeResponse) return;
     const firstPage = activeResponse.data || [];
     setAllInterviews(firstPage);
     setServerHasMore(activeResponse.hasMore || false);
     setServerNextCursor(activeResponse.nextCursor || null);
-  }, [roundsResponse, searchResponse, debouncedSearch]);
+  }, [roundsResponse, searchResponse, debouncedSearch, searchError]);
 
   const displayInterviews = interviews;
 
@@ -1668,11 +1674,20 @@ const InterviewSchedule = () => {
                 {loadingMore && <InterviewMemberSkeleton count={3} />}
               </div>
             )}
-            {interviews.length === 0 && !isQueryLoading && (
-              <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No interviews found.</div>
-            )}
-            {debouncedSearch && groupedApplications.length === 0 && !isSearching && (
-              <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No results for "{debouncedSearch}"</div>
+            {searchError ? (
+              <div className="text-sm px-2 py-6 text-center text-red-600 bg-red-50/50 rounded-xl m-2 border border-red-100 animate-in fade-in">
+                <div className="font-semibold mb-2">Search failed. Please try again.</div>
+                <button className="os-btn-primary !h-8 px-3 text-xs" onClick={() => refetchSearch()}>Retry Search</button>
+              </div>
+            ) : (
+              <>
+                {interviews.length === 0 && !isQueryLoading && (
+                  <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No interviews found.</div>
+                )}
+                {debouncedSearch && groupedApplications.length === 0 && !isSearching && (
+                  <div className="text-sm os-muted px-2 py-4 text-center text-slate-400">No results for "{debouncedSearch}"</div>
+                )}
+              </>
             )}
           </Reveal>
         )}

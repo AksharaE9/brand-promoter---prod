@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node ../scripts/check-doubled-api.js && tsc && vite build",
     "preview": "vite preview --port 4173",
     "test": "vitest run",
     "test:ci": "vitest run --reporter=verbose",

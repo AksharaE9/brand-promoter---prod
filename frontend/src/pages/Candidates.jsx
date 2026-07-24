@@ -321,6 +321,7 @@ const Candidates = () => {
   const [creating, setCreating] = useState(false);
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
+  const [searchError, setSearchError] = useState(null);
   const loadMoreRef = useRef(null);       // sentinel DOM node
   const scrollContainerRef = useRef(null); // scrollable os-content element
   const currentStatusRef = useRef(statusParam || 'All');
@@ -362,6 +363,7 @@ const Candidates = () => {
 
     if (reset) {
       setLoading(true);
+      setSearchError(null);
     } else {
       setLoadingMore(true);
     }
@@ -410,6 +412,13 @@ const Candidates = () => {
         return;
       }
       console.error('[Candidates] fetch error:', err);
+      if (searchQuery.trim()) {
+        setItems([]);
+        setTotalCount(0);
+        setSearchError('Search failed. Please try again.');
+      } else {
+        setError(err.message || 'Failed to load candidates.');
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -860,6 +869,11 @@ const Candidates = () => {
         {loading && items.length === 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <CardSkeleton key={i} />)}
+          </div>
+        ) : searchError ? (
+          <div className="py-20 text-center os-card border-red-100 bg-red-50/20">
+            <div className="text-red-600 mb-3 font-semibold">{searchError}</div>
+            <button className="os-btn-primary" onClick={() => fetchCandidates({ reset: true })}>Retry Search</button>
           </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center os-card">

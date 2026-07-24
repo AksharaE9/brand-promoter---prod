@@ -47,9 +47,7 @@ const LONG_CACHE_ROUTES = [
 const LONG_CACHE_TTL = 5 * 60_000; // 5 minutes
 
 // ── Keep-Alive: ping Render every 10 minutes to prevent cold starts ──────────
-const HEALTH_URL = API_BASE_URL.endsWith('/api')
-  ? `${API_BASE_URL}/health`
-  : `${API_BASE_URL}/api/health`;
+const HEALTH_URL = buildApiUrl('/health');
 let _keepAlivePing = null;
 export function startKeepAlive() {
   if (_keepAlivePing) return; // already running

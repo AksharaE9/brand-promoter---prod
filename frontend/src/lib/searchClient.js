@@ -25,7 +25,7 @@ export async function search(endpoint, body, signal) {
   const FORCE_METHOD = import.meta.env.VITE_SEARCH_METHOD;
   const methodsToTry = FORCE_METHOD
     ? [FORCE_METHOD]
-    : (cachedWorkingMethod ? [cachedWorkingMethod] : ['QUERY', 'POST']);
+    : (cachedWorkingMethod ? [cachedWorkingMethod] : ['POST', 'QUERY']);
 
   let lastError = null;
 
