@@ -56,7 +56,7 @@ export default function SchedulingPage() {
 
   const { data: searchResults, isFetching: isSearching } = useQuery({
     queryKey: ['scheduling', 'search', debouncedSearch, selectedDate],
-    queryFn: ({ signal }) => search('/api/scheduling/search', {
+    queryFn: ({ signal }) => search('/scheduling/search', {
       q: debouncedSearch,
       filters: { date: selectedDate }
     }, signal),

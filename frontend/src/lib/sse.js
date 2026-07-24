@@ -3,7 +3,7 @@
  * ONE EventSource connection shared across the entire app.
  * Pages subscribe/unsubscribe without touching the connection.
  */
-import { API_BASE_URL } from './api';
+import { buildApiUrl } from './api';
 
 let eventSource = null;
 let reconnectTimer = null;
@@ -20,11 +20,12 @@ function connect() {
   clearTimeout(reconnectTimer);
 
   try {
-    // EventSource requires an absolute URL. Since API_BASE_URL may be relative ('/api'),
+    // EventSource requires an absolute URL. Since buildApiUrl may return a relative path ('/api/...'),
     // we prefix it with window.location.origin so the request goes through the Vite proxy in dev
     // and works same-origin in production. This prevents CORS failures on direct-to-4000 calls.
-    const sseOrigin = API_BASE_URL.startsWith('http') ? '' : window.location.origin;
-    eventSource = new EventSource(`${sseOrigin}${API_BASE_URL}/sse/stream?token=${token}`);
+    const url = buildApiUrl('/sse/stream');
+    const sseOrigin = url.startsWith('http') ? '' : window.location.origin;
+    eventSource = new EventSource(`${sseOrigin}${url}?token=${token}`);
 
     eventSource.onopen = () => {
       reconnectDelay = 2000; // reset backoff on success

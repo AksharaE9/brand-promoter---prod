@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { apiPost, getStoredUser, API_BASE_URL, downloadAuthenticatedFile } from '../../lib/api';
+import { apiPost, getStoredUser, buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
 
 export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) {
@@ -79,7 +79,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
       const user = getStoredUser();
       const token = user?.token;
 
-      const response = await fetch(`${API_BASE_URL}/interview-feedback/bulk-upload`, {
+      const response = await fetch(buildApiUrl('/interview-feedback/bulk-upload'), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -104,7 +104,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
   const pollJobStatus = (jobId, token) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/interview-feedback/bulk-upload/${jobId}`, {
+        const res = await fetch(buildApiUrl(`/interview-feedback/bulk-upload/${jobId}`), {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -132,7 +132,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
     if (!jobStatus?.jobId) return;
     const user = getStoredUser();
     const token = user?.token;
-    window.open(`${API_BASE_URL}/interview-feedback/bulk-upload/${jobStatus.jobId}/report?token=${encodeURIComponent(token || '')}`, '_blank');
+    window.open(buildApiUrl(`/interview-feedback/bulk-upload/${jobStatus.jobId}/report?token=${encodeURIComponent(token || '')}`), '_blank');
   };
 
   return (

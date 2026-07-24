@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL, hasToken } from '../lib/api';
+import { buildApiUrl, hasToken } from '../lib/api';
 
 const earthImage =
   "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1800&q=80";
@@ -24,7 +24,7 @@ const LoginPage = () => {
 
     try {
       setIsLoading(true);
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(buildApiUrl('/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

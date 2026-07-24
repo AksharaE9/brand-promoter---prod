@@ -1,5 +1,5 @@
 import { apiGet, apiDelete } from '../lib/api';
-import { getStoredToken, API_BASE_URL } from '../lib/api';
+import { getStoredToken, buildApiUrl } from '../lib/api';
 
 async function customRequest(path, options = {}) {
   const token = getStoredToken();
@@ -19,7 +19,7 @@ async function customRequest(path, options = {}) {
     options.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     headers,
   });

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { API_BASE_URL } from '../lib/api';
+import { buildApiUrl } from '../lib/api';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 
 const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, templateHeaders }) => {
@@ -34,7 +34,7 @@ const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, t
         const token = localStorage.getItem('ats_token');
 
         try {
-            const response = await fetch(`${API_BASE_URL}/sales${endpoint}`, {
+            const response = await fetch(buildApiUrl(`/sales${endpoint}`), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`

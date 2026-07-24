@@ -4,7 +4,7 @@ import { search } from '../lib/searchClient';
 export const schedulingApi = {
   getRounds: async (filters = {}, signal) => {
     if (filters.search && filters.search.trim()) {
-      return await search('/api/interviews/search', {
+      return await search('/interviews/search', {
         q: filters.search.trim(),
         filters: {
           status: filters.status,

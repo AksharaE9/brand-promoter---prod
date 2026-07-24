@@ -28,7 +28,7 @@
  * ──────────────────────────────────────────────────────────────────────────
  */
 import { useRef, useCallback, useState } from 'react';
-import { API_BASE_URL, getStoredToken } from '../lib/api';
+import { buildApiUrl, getStoredToken } from '../lib/api';
 
 // ── Shared fetch helper ────────────────────────────────────────────────────
 async function authFetch(path, options = {}) {
@@ -42,7 +42,7 @@ async function authFetch(path, options = {}) {
     options = { ...options, body: JSON.stringify(options.body) };
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(buildApiUrl(path), { ...options, headers });
   let data = null;
   try { data = await res.json(); } catch (_) { /* no body */ }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
+import { buildApiUrl, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import Reveal from './PageMotion';
 import { subscribeSSE } from '../lib/sse';
@@ -213,7 +213,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       setSaving(true);
       const formData = new FormData();
       formData.append('file', bulkFile);
-      const res = await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/bulk-upload`, {
+      const res = await fetch(buildApiUrl(`/college-drives/drives/${selectedDriveId}/bulk-upload`), {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('ats_token')}` },
         body: formData,
@@ -232,7 +232,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
 
   const updateCandidateStatus = async (candId, status) => {
     try {
-      await fetch(`${API_BASE_URL}/college-drives/drives/${selectedDriveId}/candidates/${candId}/status`, {
+      await fetch(buildApiUrl(`/college-drives/drives/${selectedDriveId}/candidates/${candId}/status`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

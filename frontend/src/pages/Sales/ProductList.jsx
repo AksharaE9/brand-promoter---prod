@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageEnter, Reveal } from '../../components/PageMotion';
-import { API_BASE_URL, apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
 import BulkImportModal from '../../components/BulkImportModal';
 
 const ProductList = () => {
@@ -159,7 +159,7 @@ const ProductList = () => {
 
     const handleExport = (format = 'csv') => {
         const token = localStorage.getItem('ats_token');
-        window.open(`${API_BASE_URL}/sales/export/products?token=${token}&format=${format}`, '_blank');
+        window.open(buildApiUrl(`/sales/export/products?token=${token}&format=${format}`), '_blank');
         setIsExportDropdownOpen(false);
     };
 

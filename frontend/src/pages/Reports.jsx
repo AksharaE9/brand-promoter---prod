@@ -3,11 +3,11 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, getStoredUser } from '../lib/api';
+import { apiGet, getStoredUser, buildApiUrl } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// Using centralized buildApiUrl helper from lib/api
 
 const FILE_TYPE_ICONS = {
   'application/pdf': { icon: 'picture_as_pdf', color: 'text-red-500', bg: 'bg-red-50', label: 'PDF' },
@@ -84,7 +84,7 @@ function AddedReportsTab({ currentUser, searchQuery }) {
       form.append('title', uploadTitle.trim());
       form.append('description', uploadDesc.trim());
       form.append('file', uploadFile);
-      const res = await fetch(`${API_BASE_URL}/reports/added-reports`, {
+      const res = await fetch(buildApiUrl('/reports/added-reports'), {
         method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
       });
       const data = await res.json();
@@ -102,7 +102,7 @@ function AddedReportsTab({ currentUser, searchQuery }) {
     setDeletingId(report.id);
     try {
       const token = localStorage.getItem('ats_token');
-      const res = await fetch(`${API_BASE_URL}/reports/added-reports/${report.id}`, {
+      const res = await fetch(buildApiUrl(`/reports/added-reports/${report.id}`), {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -512,24 +512,24 @@ const Reports = () => {
     setBanner('');
     try {
       const token = localStorage.getItem('ats_token');
-      let url = `${API_BASE_URL}/reports/export?reportType=candidates&format=${format}`;
+      let path = `/reports/export?reportType=candidates&format=${format}`;
       
-      if (selectedRole) url += `&role=${selectedRole}`;
-      if (selectedRecruiterId) url += `&recruiterId=${selectedRecruiterId}`;
-      if (createdFrom) url += `&createdFrom=${createdFrom}`;
-      if (createdTo) url += `&createdTo=${createdTo}`;
+      if (selectedRole) path += `&role=${selectedRole}`;
+      if (selectedRecruiterId) path += `&recruiterId=${selectedRecruiterId}`;
+      if (createdFrom) path += `&createdFrom=${createdFrom}`;
+      if (createdTo) path += `&createdTo=${createdTo}`;
       if (activeTab === 'JOINED') {
-        url += `&stage=Joined`;
+        path += `&stage=Joined`;
       } else if (activeTab === 'OFFER_LETTERS') {
-        url += `&stage=Offer%20Sent`;
+        path += `&stage=Offer%20Sent`;
       } else {
-        selectedStages.forEach(s => { url += `&stage=${encodeURIComponent(s)}`; });
+        selectedStages.forEach(s => { path += `&stage=${encodeURIComponent(s)}`; });
       }
-      selectedSources.forEach(s => { url += `&source=${encodeURIComponent(s)}`; });
+      selectedSources.forEach(s => { path += `&source=${encodeURIComponent(s)}`; });
 
       setBanner('Preparing download, please wait...');
       
-      const res = await fetch(url, {
+      const res = await fetch(buildApiUrl(path), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 

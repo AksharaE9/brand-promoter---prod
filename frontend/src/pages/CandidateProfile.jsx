@@ -5,7 +5,7 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
-import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser, getStoredToken } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, getStoredUser, getStoredToken } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CompanyDropdownInput from '../components/CompanyDropdownInput';
 import { formatDateTime24h } from '../lib/datetime';
@@ -388,7 +388,7 @@ const CandidateProfile = () => {
       const formData = new FormData();
       formData.append('resume', file);
 
-      const response = await fetch(`${API_BASE_URL}/candidates/${id}/resume`, {
+      const response = await fetch(buildApiUrl(`/candidates/${id}/resume`), {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -447,7 +447,7 @@ const CandidateProfile = () => {
       const formData = new FormData();
       formData.append('recording', file);
 
-      const response = await fetch(`${API_BASE_URL}/interviews/${interviewId}/recording`, {
+      const response = await fetch(buildApiUrl(`/interviews/${interviewId}/recording`), {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -667,7 +667,7 @@ const CandidateProfile = () => {
                    {candidate.resumeLinkDownload || candidate.resumeLinkOriginal || candidate.resumeFile?.storageKey ? (
                      <div className="space-y-2">
                        <a 
-                         href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? `${API_BASE_URL}/candidates/${candidate.id}/resume-download` : `${API_BASE_URL}/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`} 
+                         href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? buildApiUrl(`/candidates/${candidate.id}/resume-download`) : buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`)} 
                          download={candidate.resumeFile?.originalName || `${candidate.fullName}-resume`}
                          target="_blank"
                          rel="noreferrer"

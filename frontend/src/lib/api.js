@@ -16,6 +16,19 @@ export const API_ROOT_URL = _isAbsolute
   ? (API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL)
   : (typeof window !== 'undefined' ? window.location.origin : '');
 
+export function buildApiUrl(path) {
+  if (typeof path !== 'string') return path;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (cleanPath.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
+    throw new Error(`Doubled /api in request: ${API_BASE_URL}${cleanPath}`);
+  }
+  return `${API_BASE_URL}${cleanPath}`;
+}
+
+
 // Performance: Request Deduplication & Caching
 const inflightRequests = new Map();
 const apiCache = new Map();
@@ -56,9 +69,7 @@ export function getStoredToken() {
 }
 
 async function request(path, options = {}, retries = 1) {
-  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
-    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
-  }
+  const url = buildApiUrl(path);
   const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -103,7 +114,7 @@ async function request(path, options = {}, retries = 1) {
       const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${API_BASE_URL}${path}`, {
+        const response = await fetch(url, {
           ...options,
           headers,
           signal: controller.signal,
@@ -179,16 +190,14 @@ export function apiGet(path, useCache = true, options = {}) {
 }
 
 export async function apiGetBlob(path) {
-  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
-    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
-  }
+  const url = buildApiUrl(path);
   const token = localStorage.getItem('ats_token');
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(url, {
     method: 'GET',
     headers,
   });
@@ -295,9 +304,7 @@ export function hasToken() {
 }
 
 export async function downloadAuthenticatedFile(path, suggestedFilename) {
-  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
-    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
-  }
+  const url = buildApiUrl(path);
 
   const token = getStoredToken();
   const headers = {};
@@ -305,7 +312,7 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(url, {
     method: 'GET',
     headers,
   });
@@ -348,12 +355,12 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
   const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
   const filename = filenameFromServer ?? suggestedFilename;
 
-  const url = window.URL.createObjectURL(blob);
+  const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
+  a.href = downloadUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
+  window.URL.revokeObjectURL(downloadUrl);
 }

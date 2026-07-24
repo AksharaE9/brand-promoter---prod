@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredToken } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, getStoredToken } from '../lib/api';
 
 /**
  * Service API for Telecalling Scheduling Module
@@ -29,7 +29,7 @@ export const schedulingLeadApi = {
     formData.append('listDate', listDate);
 
     const token = getStoredToken();
-    const response = await fetch(`${API_BASE_URL}/scheduling/members/${memberId}/lead-list`, {
+    const response = await fetch(buildApiUrl(`/scheduling/members/${memberId}/lead-list`), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -47,7 +47,7 @@ export const schedulingLeadApi = {
   /** Admin: Export lead list as CSV download */
   exportLeadListUrl: (memberId, date) => {
     const token = getStoredToken();
-    return `${API_BASE_URL}/scheduling/members/${memberId}/lead-list/export?date=${date}&token=${token}`;
+    return buildApiUrl(`/scheduling/members/${memberId}/lead-list/export?date=${date}&token=${token}`);
   },
 
   /** Member/Admin: Fetch today's read-only lead list */
@@ -85,7 +85,7 @@ export const schedulingLeadApi = {
     if (note) formData.append('note', note);
 
     const token = getStoredToken();
-    const response = await fetch(`${API_BASE_URL}/scheduling/members/${memberId}/files`, {
+    const response = await fetch(buildApiUrl(`/scheduling/members/${memberId}/files`), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -6,7 +6,7 @@
  * than one network request per 5-minute window — identical TTL to server.
  * ──────────────────────────────────────────────────────────────────────────
  */
-import { getStoredToken, API_BASE_URL } from '../lib/api';
+import { getStoredToken, buildApiUrl } from '../lib/api';
 
 // ── Module-level request cache (prevents duplicate in-flight fetches) ──────
 let _cachedCompanies = null;
@@ -26,7 +26,7 @@ async function authFetch(path, options = {}) {
     options = { ...options, body: JSON.stringify(options.body) };
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(buildApiUrl(path), { ...options, headers });
   let data = null;
   try { data = await res.json(); } catch (_) { /* no body */ }
 

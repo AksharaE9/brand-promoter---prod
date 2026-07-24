@@ -5,7 +5,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, apiPatch, apiPost, apiDelete, API_BASE_URL } from '../lib/api';
+import { apiGet, apiPatch, apiPost, apiDelete } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import EditRecruiterModal from '../components/Team/EditRecruiterModal';
 import EditInterviewerModal from '../components/Team/EditInterviewerModal';

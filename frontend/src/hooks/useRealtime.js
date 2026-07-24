@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { API_BASE_URL } from '../lib/api';
+import { buildApiUrl } from '../lib/api';
 
 /**
  * A global hook for handling real-time updates via SSE.
@@ -36,9 +36,10 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
       eventSourceRef.current = null;
     }
 
-    const sseOrigin = API_BASE_URL.startsWith('http') ? '' : window.location.origin;
+    const url = buildApiUrl('/notifications/stream');
+    const sseOrigin = url.startsWith('http') ? '' : window.location.origin;
     const eventSource = new EventSource(
-      `${sseOrigin}${API_BASE_URL}/notifications/stream?token=${token}`
+      `${sseOrigin}${url}?token=${token}`
     );
     eventSourceRef.current = eventSource;
 

@@ -88,7 +88,7 @@ app.use(
       callback(null, false);
     },
     credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS', 'QUERY'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 600,
     optionsSuccessStatus: 204,

@@ -3,7 +3,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, apiGet, apiPut, apiPost, apiDelete, apiPatch, startKeepAlive } from '../lib/api';
+import { buildApiUrl, apiGet, apiPut, apiPost, apiDelete, apiPatch, startKeepAlive } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const ProfileTab = React.lazy(() => import('../components/Settings/ProfileTab'));
@@ -303,7 +303,7 @@ const Settings = () => {
     const token = localStorage.getItem('ats_token');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/files/profile-photo`, {
+      const res = await fetch(buildApiUrl('/files/profile-photo'), {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData
@@ -340,7 +340,7 @@ const Settings = () => {
     const token = localStorage.getItem('ats_token');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/files/profile-photo`, {
+      const res = await fetch(buildApiUrl('/files/profile-photo'), {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData

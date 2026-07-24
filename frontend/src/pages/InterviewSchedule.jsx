@@ -6,7 +6,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
+import { buildApiUrl, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
 import { search } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
@@ -698,7 +698,7 @@ const InterviewSchedule = () => {
 
   const { data: candidateSearchData, isFetching: isSearchingCandidates } = useQuery({
     queryKey: ['candidates', 'suggest', debouncedCandidateSearch],
-    queryFn: ({ signal }) => search('/api/candidates/search', { q: debouncedCandidateSearch, limit: 20 }, signal),
+    queryFn: ({ signal }) => search('/candidates/search', { q: debouncedCandidateSearch, limit: 20 }, signal),
     enabled: showScheduleModal && debouncedCandidateSearch.trim().length >= 2,
     staleTime: 30_000,
     placeholderData: (previous) => previous,
@@ -706,7 +706,7 @@ const InterviewSchedule = () => {
 
   const { data: jobSearchData, isFetching: isSearchingJobs } = useQuery({
     queryKey: ['jobs', 'suggest', debouncedJobSearch],
-    queryFn: ({ signal }) => search('/api/jobs/search', { q: debouncedJobSearch, filters: { isActive: true }, limit: 20 }, signal),
+    queryFn: ({ signal }) => search('/jobs/search', { q: debouncedJobSearch, filters: { isActive: true }, limit: 20 }, signal),
     enabled: showScheduleModal && debouncedJobSearch.trim().length >= 2,
     staleTime: 30_000,
     placeholderData: (previous) => previous,
@@ -1210,7 +1210,7 @@ const InterviewSchedule = () => {
         const token = localStorage.getItem('ats_token');
         const formData = new FormData();
         formData.append('file', savedRecordingFile);
-        await fetch(`${API_BASE_URL}/interviews/${newRoundId}/recording`, {
+        await fetch(buildApiUrl(`/interviews/${newRoundId}/recording`), {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           body: formData,
@@ -1254,7 +1254,7 @@ const InterviewSchedule = () => {
       if (savedOfferFile) {
         const formData = new FormData();
         formData.append('offerFile', savedOfferFile);
-        const res = await fetch(`${API_BASE_URL}/interviews/${savedInterviewId}/feedback`, {
+        const res = await fetch(buildApiUrl(`/interviews/${savedInterviewId}/feedback`), {
           method: 'POST',
           headers: { Authorization: `Bearer ${localStorage.getItem('ats_token')}` },
           body: formData,
@@ -1302,7 +1302,7 @@ const InterviewSchedule = () => {
   const onUpdateStatus = async (applicationId, status) => {
     // Optimistic update via hook — no loading spinner, no refetch
     try {
-      const res = await fetch(`${API_BASE_URL}/applications/${applicationId}/status`, {
+      const res = await fetch(buildApiUrl(`/applications/${applicationId}/status`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1335,7 +1335,7 @@ const InterviewSchedule = () => {
       const formData = new FormData();
       formData.append('file', uploadTarget);
 
-      const res = await fetch(`${API_BASE_URL}/interviews/${selectedInterview.id}/voice-recording`, {
+      const res = await fetch(buildApiUrl(`/interviews/${selectedInterview.id}/voice-recording`), {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,

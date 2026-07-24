@@ -9,7 +9,7 @@ import Loader from '../components/Loader';
 const JoinModal = React.lazy(() => import('../components/JoinModal'));
 const RejectModal = React.lazy(() => import('../components/RejectModal'));
 const BulkUploadModal = React.lazy(() => import('../components/BulkUpload/BulkUploadModal'));
-import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
+import { buildApiUrl, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { search as apiSearch } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
@@ -376,7 +376,7 @@ const Candidates = () => {
     try {
       let res;
       if (searchQuery.trim()) {
-        res = await apiSearch('/api/candidates/search', {
+        res = await apiSearch('/candidates/search', {
           q: searchQuery.trim(),
           filters: {
             status: statFilter,
@@ -540,7 +540,7 @@ const Candidates = () => {
     try {
       let res;
       if (action === 'join') {
-        res = await fetch(`${API_BASE_URL}/applications/${applicationId}/join`, {
+        res = await fetch(buildApiUrl(`/applications/${applicationId}/join`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -550,7 +550,7 @@ const Candidates = () => {
         });
       } else if (action === 'reject') {
         // Use the new /reject endpoint
-        res = await fetch(`${API_BASE_URL}/applications/${applicationId}/reject`, {
+        res = await fetch(buildApiUrl(`/applications/${applicationId}/reject`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -560,7 +560,7 @@ const Candidates = () => {
         });
       } else {
         // Legacy PATCH for other status changes
-        res = await fetch(`${API_BASE_URL}/applications/${applicationId}/status`, {
+        res = await fetch(buildApiUrl(`/applications/${applicationId}/status`), {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',

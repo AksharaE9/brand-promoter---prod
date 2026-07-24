@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
-import { apiGet, apiQuery, API_BASE_URL } from '../lib/api';
+import { apiGet, apiQuery } from '../lib/api';
 import { subscribeSSE } from '../lib/sse';
 
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
