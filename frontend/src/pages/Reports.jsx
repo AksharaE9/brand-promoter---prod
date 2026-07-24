@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -6,6 +6,223 @@ import NotificationBell from '../components/NotificationBell';
 import { apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+
+const FILE_TYPE_ICONS = {
+  'application/pdf': { icon: 'picture_as_pdf', color: 'text-red-500', bg: 'bg-red-50', label: 'PDF' },
+  'application/msword': { icon: 'description', color: 'text-blue-600', bg: 'bg-blue-50', label: 'DOC' },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { icon: 'description', color: 'text-blue-600', bg: 'bg-blue-50', label: 'DOCX' },
+  'application/vnd.ms-excel': { icon: 'table_chart', color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'XLS' },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { icon: 'table_chart', color: 'text-emerald-600', bg: 'bg-emerald-50', label: 'XLSX' },
+  'text/csv': { icon: 'grid_on', color: 'text-orange-500', bg: 'bg-orange-50', label: 'CSV' },
+  'application/csv': { icon: 'grid_on', color: 'text-orange-500', bg: 'bg-orange-50', label: 'CSV' },
+};
+
+function getFileIcon(mimeType) {
+  return FILE_TYPE_ICONS[mimeType] || { icon: 'insert_drive_file', color: 'text-slate-500', bg: 'bg-slate-50', label: 'FILE' };
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ─── Added Reports Tab ────────────────────────────────────────────
+function AddedReportsTab({ currentUser }) {
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
+  const canUpload = isSuperAdmin && currentUser?.canAddRecruitmentReports === true;
+
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDesc, setUploadDesc] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const fetchReports = async () => {
+    setLoading(true); setError('');
+    try {
+      const res = await apiGet('/reports/added-reports', false);
+      if (res.success) setReports(res.data || []);
+      else setError(res.message || 'Failed to load reports.');
+    } catch (err) {
+      setError(err.message || 'Failed to load reports.');
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchReports(); }, []);
+
+  const handleUpload = async (e) => {
+    e.preventDefault(); setUploadError('');
+    if (!uploadTitle.trim()) { setUploadError('Title is required.'); return; }
+    if (!uploadFile) { setUploadError('Please select a file.'); return; }
+    const ALLOWED_EXTS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv'];
+    const ext = uploadFile.name.substring(uploadFile.name.lastIndexOf('.')).toLowerCase();
+    if (!ALLOWED_EXTS.includes(ext)) { setUploadError('Invalid file type. Only PDF, DOCX, DOC, XLSX, XLS, CSV allowed.'); return; }
+    if (uploadFile.size > 10 * 1024 * 1024) { setUploadError('File too large. Max 10 MB.'); return; }
+    setUploading(true);
+    try {
+      const token = localStorage.getItem('ats_token');
+      const form = new FormData();
+      form.append('title', uploadTitle.trim());
+      form.append('description', uploadDesc.trim());
+      form.append('file', uploadFile);
+      const res = await fetch(`${API_BASE_URL}/reports/added-reports`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Upload failed.');
+      setReports(prev => [data.data, ...prev]);
+      setShowForm(false); setUploadTitle(''); setUploadDesc(''); setUploadFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setBanner('Report uploaded successfully.'); setTimeout(() => setBanner(''), 4000);
+    } catch (err) { setUploadError(err.message || 'Upload failed.'); }
+    finally { setUploading(false); }
+  };
+
+  const handleDelete = async (report) => {
+    if (!window.confirm(`Delete "${report.title}"? This cannot be undone.`)) return;
+    setDeletingId(report.id);
+    try {
+      const token = localStorage.getItem('ats_token');
+      const res = await fetch(`${API_BASE_URL}/reports/added-reports/${report.id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Delete failed.');
+      setReports(prev => prev.filter(r => r.id !== report.id));
+      setBanner('Report deleted.'); setTimeout(() => setBanner(''), 3000);
+    } catch (err) { setError(err.message || 'Delete failed.'); }
+    finally { setDeletingId(null); }
+  };
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+        <span className="material-symbols-outlined text-5xl mb-3 text-slate-300">lock</span>
+        <p className="text-sm font-semibold">This section is available to Super Admins only.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 min-w-0">
+      {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 text-sm font-semibold">{error}</div>}
+      {banner && <div className="os-card p-3 mb-4 text-blue-700 bg-blue-50 text-sm font-semibold">{banner}</div>}
+      <div className="flex justify-between items-center mb-5">
+        <p className="text-xs text-slate-500 font-semibold">{reports.length} {reports.length === 1 ? 'report' : 'reports'} available</p>
+        {canUpload && (
+          <button className="os-btn-primary !h-8 text-xs font-bold flex items-center gap-1.5" onClick={() => setShowForm(v => !v)}>
+            <span className="material-symbols-outlined text-sm">upload_file</span>
+            {showForm ? 'Cancel' : 'Add Report'}
+          </button>
+        )}
+      </div>
+
+      {showForm && canUpload && (
+        <div className="os-card p-5 mb-6 border border-[#1f52cc]/20 bg-[#f5f8ff] animate-in slide-in-from-top duration-200">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-[#1f52cc]">upload_file</span>
+            Upload New Report
+          </h3>
+          <form onSubmit={handleUpload} className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Report Title *</label>
+              <input type="text" className="h-9 rounded border border-slate-200 px-3 text-sm outline-none focus:border-[#1f52cc] bg-white" placeholder="e.g. Q2 2025 Hiring Summary" value={uploadTitle} onChange={e => setUploadTitle(e.target.value)} required />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Description</label>
+              <textarea className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-[#1f52cc] bg-white resize-none" rows={2} placeholder="Brief description..." value={uploadDesc} onChange={e => setUploadDesc(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">File * (PDF, DOCX, DOC, XLSX, XLS, CSV — max 10 MB)</label>
+              <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv"
+                className="text-sm text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-bold file:bg-[#1f52cc]/10 file:text-[#1f52cc] hover:file:bg-[#1f52cc]/20 cursor-pointer"
+                onChange={e => setUploadFile(e.target.files?.[0] || null)} required />
+              {uploadFile && <span className="text-[10px] text-slate-500 font-semibold mt-0.5">{uploadFile.name} — {formatBytes(uploadFile.size)}</span>}
+            </div>
+            {uploadError && <p className="text-xs text-red-600 font-semibold">{uploadError}</p>}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={uploading} className="os-btn-primary !h-8 text-xs font-bold flex items-center gap-1.5">
+                {uploading ? <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Uploading…</> : <><span className="material-symbols-outlined text-sm">cloud_upload</span> Upload</>}
+              </button>
+              <button type="button" className="os-btn-outline !h-8 text-xs font-bold" onClick={() => { setShowForm(false); setUploadError(''); }}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="os-card p-4 animate-pulse">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-slate-100 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-2"><div className="h-4 w-3/4 bg-slate-100 rounded" /><div className="h-3 w-1/2 bg-slate-100 rounded" /></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <span className="material-symbols-outlined text-5xl mb-3 text-slate-300">folder_open</span>
+          <p className="text-sm font-semibold mb-1">No reports have been added yet.</p>
+          {canUpload && <p className="text-xs text-slate-400">Click “Add Report” to upload the first report.</p>}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {reports.map(report => {
+            const fi = getFileIcon(report.mimeType);
+            return (
+              <div key={report.id} className="os-card p-4 hover:shadow-md transition-shadow duration-200">
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${fi.bg}`}>
+                    <span className={`material-symbols-outlined text-xl ${fi.color}`}>{fi.icon}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate" title={report.title}>{report.title}</p>
+                    {report.description && <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">{report.description}</p>}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${fi.bg} ${fi.color}`}>{fi.label}</span>
+                      <span className="text-[10px] text-slate-400 font-semibold">{formatBytes(report.fileSize)}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5">
+                      Uploaded by <span className="font-semibold text-slate-600">{report.uploadedBy?.fullName || '—'}</span>
+                      {' · '}{new Date(report.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                  <a href={report.fileUrl} target="_blank" rel="noopener noreferrer" download={report.fileName}
+                    className="flex-1 os-btn-primary !h-7 text-xs font-bold flex items-center justify-center gap-1">
+                    <span className="material-symbols-outlined text-sm">download</span> Download
+                  </a>
+                  {canUpload && (
+                    <button className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-colors"
+                      title="Delete report" onClick={() => handleDelete(report)} disabled={deletingId === report.id}>
+                      {deletingId === report.id
+                        ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                        : <span className="material-symbols-outlined text-sm">delete</span>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const recruiterRoles = [
   { value: 'RECRUITER', label: 'Recruiter' }
@@ -22,9 +239,10 @@ const candidateSources = [
 const Reports = () => {
   const currentUser = getStoredUser();
   const canExportReports = ['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role);
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   // States
-  const [activeTab, setActiveTab] = useState('JOBS'); // JOBS, JOINED, OFFER_LETTERS
+  const [activeTab, setActiveTab] = useState('JOBS'); // JOBS, JOINED, OFFER_LETTERS, ADDED_REPORTS
   const [candidates, setCandidates] = useState([]);
   const [jobsData, setJobsData] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(false);
@@ -382,7 +600,7 @@ const Reports = () => {
             <div className="os-eyebrow">Enterprise Metrics</div>
             <h1 className="os-h1">Recruitment Reports</h1>
           </div>
-          {activeTab !== 'JOBS' && (
+          {activeTab !== 'JOBS' && activeTab !== 'ADDED_REPORTS' && (
             <button 
               className="os-btn-outline flex items-center gap-1.5"
               onClick={() => setShowSidebar(!showSidebar)}
@@ -414,12 +632,25 @@ const Reports = () => {
           >
             Offer Letters
           </button>
+          {/* Added Reports tab — Super Admin only */}
+          {isSuperAdmin && (
+            <button 
+              className={`pb-2 text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 ${activeTab === 'ADDED_REPORTS' ? 'border-[#1f52cc] text-[#1f52cc]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+              onClick={() => setActiveTab('ADDED_REPORTS')}
+            >
+              <span className="material-symbols-outlined text-sm">folder_special</span>
+              Added Reports
+            </button>
+          )}
         </div>
 
-        {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 text-sm font-semibold">{error}</div>}
-        {banner && <div className="os-card p-3 mb-4 text-blue-600 bg-blue-50 text-sm font-semibold">{banner}</div>}
+        {error && activeTab !== 'ADDED_REPORTS' && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 text-sm font-semibold">{error}</div>}
+        {banner && activeTab !== 'ADDED_REPORTS' && <div className="os-card p-3 mb-4 text-blue-600 bg-blue-50 text-sm font-semibold">{banner}</div>}
 
-        <div className="flex gap-6 items-start relative">
+        {activeTab === 'ADDED_REPORTS' ? (
+          <AddedReportsTab currentUser={currentUser} />
+        ) : (
+          <div className="flex gap-6 items-start relative">
           {/* 1. COLLAPSIBLE FILTER SIDEBAR (280px) */}
           {showSidebar && activeTab !== 'JOBS' && (
             <div className="w-[280px] shrink-0 os-card p-4 bg-white border border-[#e3eaf0] space-y-4 animate-in slide-in-from-left duration-300">
@@ -751,7 +982,8 @@ const Reports = () => {
             </div>
 
           </div>
-        </div>
+          </div>
+        )}
 
       </PageEnter>
     </EnterpriseLayout>

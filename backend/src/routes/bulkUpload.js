@@ -1,231 +1,230 @@
-const express = require("express");
-const multer = require("multer");
-const XLSX = require("xlsx");
-const { v4: uuidv4 } = require("uuid");
-const { auth, requireRoles } = require("../middleware/auth");
-const { asyncHandler, ApiError } = require("../utils/errors");
-const { bulkImportQueue } = require("../jobs/bulkImportWorker");
+'use strict';
+
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
+const { auth, requireRoles } = require('../middleware/auth');
+const { asyncHandler, ApiError } = require('../utils/errors');
+const { enqueueJob, getJobStatus } = require('../jobs/bulkCandidateUpload.processor');
+const { getErrorReportPath } = require('../lib/bulkUploadErrorReport');
+const { pipelineJobStatusMap } = require('../lib/streamingBulkUploadPipeline');
 
 const router = express.Router();
 router.use(auth);
 
-// In-memory stores
-const uploadSessions = new Map();
-const jobsData = new Map();
+// Ensure temporary upload directory exists
+const TEMP_DIR = path.join(__dirname, '..', '..', 'uploads', 'temp');
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
 
-// Set up Multer (Memory Storage)
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = [
-      "text/csv",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ];
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only CSV and Excel files are allowed."));
-    }
-  }
+const { MAX_UPLOAD_BYTES } = require('../config/uploadLimits');
+
+// Multer Disk Storage for handling files
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, TEMP_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `bulk_upload_${uuidv4()}${ext}`);
+  },
 });
 
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (['.csv', '.xlsx', '.xls'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new ApiError(415, 'Unsupported file type. Only CSV (.csv) and Excel (.xlsx, .xls) files are allowed.'));
+    }
+  },
+});
 
+const { CANDIDATE_IMPORT_SCHEMA } = require('../lib/candidateImportSchema');
 
-// GET /template/download
+// ── GET /api/candidates/bulk-upload/template/download ──────────────────────
 router.get(
-  "/template/download",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  '/template/download',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
-    const headers = [
-      "Full Name", "Email", "Phone", "Location", "Role"
-    ];
-    // Add a sample row to guide users
+    const headers = CANDIDATE_IMPORT_SCHEMA.map(f => f.required ? `${f.label} *` : f.label);
     const sampleRow = [
-      "John Doe", "john@example.com", "9876543210", "Bangalore", "Software Engineer"
+      'Jane Smith',
+      'Senior Developer',
+      'jane.smith@example.com',
+      '+14155552671',
+      'https://drive.google.com/file/d/123456789/view',
+      'Stanford University',
+      'San Francisco',
+      'Computer Science',
+      'LinkedIn',
+      'Acme Corp',
     ];
-    const csvContent = headers.join(',') + '\n' + sampleRow.join(',') + '\n';
-    
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", 'attachment; filename="candidate_bulk_upload_template.csv"');
+    const csvContent = headers.join(',') + '\n' + sampleRow.map(v => `"${v}"`).join(',') + '\n';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="candidate_bulk_upload_template.csv"');
     res.send(csvContent);
   })
 );
 
-// POST /upload
+// ── POST /api/candidates/bulk-upload (Main Multipart Upload Endpoint) ──────
+// Returns 202 Accepted with jobId in < 1 second. Processing happens in background worker.
 router.post(
-  "/upload",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
-  upload.single("file"),
+  '/',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
+  upload.single('file'),
   asyncHandler(async (req, res) => {
-    if (!req.file) throw new ApiError(400, "File is required");
-
-    let allRows = [];
-    try {
-      const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true });
-      if (workbook.SheetNames.length > 0) {
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const sheetRows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
-        sheetRows.forEach((row, idx) => {
-          allRows.push({ ...row, _sheetName: sheetName, _rowIndex: idx + 2 });
-        });
+    const userId = req.user?.id;
+    if (userId) {
+      for (const status of pipelineJobStatusMap.values()) {
+        if (status.uploadedBy === userId && status.state === 'active') {
+          return res.status(409).json({
+            success: false,
+            message: 'You already have a bulk upload in progress. Please wait for it to complete.'
+          });
+        }
       }
-    } catch (err) {
-      throw new ApiError(400, "Failed to parse file. Ensure it is a valid CSV or XLSX.");
     }
 
-    if (allRows.length === 0) {
-      throw new ApiError(400, "The uploaded file is empty.");
+    if (!req.file) {
+      throw new ApiError(400, 'File is required (field: file)');
     }
 
-    // Extract raw column headers
-    const detectedColumns = Object.keys(allRows[0]).filter(k => !k.startsWith('_'));
-    const previewRows = allRows.slice(0, 5).map(row => {
-      const preview = {};
-      detectedColumns.forEach(col => preview[col] = row[col]);
-      return preview;
+    const fileExt = path.extname(req.file.originalname).toLowerCase();
+    const jobId = uuidv4();
+
+    // Enqueue job for background processing
+    await enqueueJob({
+      jobId,
+      filePath: req.file.path,
+      fileType: fileExt,
+      uploadedBy: req.user?.id || null,
+      organizationId: req.user?.organizationId || 'defaultOrg',
+      sourceFilename: req.file.originalname,
     });
 
-    const sessionId = uuidv4();
-    
-    // Store parsed data in memory for 30 minutes
-    const sessionData = {
-      rows: allRows,
-      userId: req.user.id,
-      organizationId: req.user.organizationId || "defaultOrg"
-    };
-    uploadSessions.set(sessionId, sessionData);
-    
-    // Auto-cleanup after 30 minutes
-    setTimeout(() => {
-      uploadSessions.delete(sessionId);
-    }, 30 * 60 * 1000);
-
-    res.json({
+    // Immediate 202 Accepted response
+    res.status(202).json({
       success: true,
+      jobId,
       data: {
-        sessionId,
-        detectedColumns,
-        previewRows,
-        totalRows: allRows.length
-      }
+        jobId,
+        status: 'active',
+        message: 'File upload accepted. Job queued for background processing.',
+      },
     });
   })
 );
 
-// POST /process
+// ── Backward-compatible legacy upload route (POST /upload) ────────────────
 router.post(
-  "/process",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  '/upload',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
+  upload.single('file'),
   asyncHandler(async (req, res) => {
-    const { sessionId, columnMapping } = req.body;
-    
-    if (!sessionId || !columnMapping) {
-      throw new ApiError(400, "sessionId and columnMapping are required");
-    }
-
-    // Only fullName is strictly required; email, location, role are optional
-    const mappedValues = Object.values(columnMapping);
-    if (!mappedValues.includes("fullName")) {
-      throw new ApiError(400, "fullName is a required field to map.");
-    }
-
-    // Verify session exists
-    const sessionData = uploadSessions.get(sessionId);
-    if (!sessionData) {
-      throw new ApiError(404, "Session expired or not found. Please upload the file again.");
-    }
-
-    // Add to BullMQ Queue
+    if (!req.file) throw new ApiError(400, 'File is required');
+    const fileExt = path.extname(req.file.originalname).toLowerCase();
     const jobId = uuidv4();
-    await bulkImportQueue.add(
-      "import",
-      {
-        sessionData,
-        columnMapping,
-        userId: req.user.id,
-        organizationId: req.user.organizationId || "defaultOrg",
-      },
-      { jobId }
-    );
 
-    res.json({
+    await enqueueJob({
+      jobId,
+      filePath: req.file.path,
+      fileType: fileExt,
+      uploadedBy: req.user?.id || null,
+      organizationId: req.user?.organizationId || 'defaultOrg',
+    });
+
+    res.status(202).json({
       success: true,
       data: {
         jobId,
-        message: "Import started. Track progress with the jobId."
-      }
+        sessionId: jobId,
+        status: 'active',
+        message: 'Upload accepted and queued',
+      },
     });
   })
 );
 
-// GET /jobs/:jobId/status
+// ── GET /api/candidates/bulk-upload/:jobId (Status Check) ─────────────────
 router.get(
-  "/jobs/:jobId/status",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  '/:jobId',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
-    const job = await bulkImportQueue.getJob(req.params.jobId);
-    if (!job) throw new ApiError(404, "Job not found");
+    const { jobId } = req.params;
+    const status = getJobStatus(jobId);
 
-    const state = await job.getState();
-    const progress = job.progress || 0;
-    const result = job.returnvalue || null;
-
-    res.json({
-      success: true,
-      data: {
-        jobId: job.id,
-        state,
-        progress,
-        result
-      }
-    });
-  })
-);
-
-// GET /jobs/:jobId/errors
-router.get(
-  "/jobs/:jobId/errors",
-  requireRoles("SUPER_ADMIN", "RECRUITER"),
-  asyncHandler(async (req, res) => {
-    const { format, page = 1, limit = 50 } = req.query;
-    
-    const job = await bulkImportQueue.getJob(req.params.jobId);
-    if (!job || !job.returnvalue) throw new ApiError(404, "Job results not found");
-    
-    const errors = job.returnvalue.errors || [];
-
-    if (format === "csv") {
-      const headers = ["Row Number", "Name", "Email", "Error Reasons"];
-      let csvContent = headers.join(',') + '\n';
-      
-      errors.forEach(err => {
-        const row = err.rawData || {};
-        const name = row.Name || row.fullName || "";
-        const email = row.Email || row.email || "";
-        const reason = (err.errors || []).join(" | ");
-        csvContent += `"${err.rowNumber}","${name}","${email}","${reason}"\n`;
-      });
-      
-      res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="import_errors_${req.params.jobId}.csv"`);
-      return res.send(csvContent);
+    if (!status) {
+      throw new ApiError(404, `Job with ID "${jobId}" not found`);
     }
 
-    const start = (page - 1) * limit;
-    const paginatedErrors = errors.slice(start, start + limit);
+    res.json({
+      success: true,
+      data: status,
+    });
+  })
+);
+
+// Legacy route alias: GET /api/candidates/bulk-upload/jobs/:jobId/status
+router.get(
+  '/jobs/:jobId/status',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
+  asyncHandler(async (req, res) => {
+    const { jobId } = req.params;
+    const status = getJobStatus(jobId);
+
+    if (!status) throw new ApiError(404, 'Job not found');
 
     res.json({
       success: true,
       data: {
-        errors: paginatedErrors,
-        total: errors.length,
-        page: Number(page),
-        limit: Number(limit)
-      }
+        jobId: status.jobId,
+        state: status.state,
+        progress: status.progress,
+        result: status,
+      },
     });
+  })
+);
+
+// ── GET /api/candidates/bulk-upload/:jobId/report (Download CSV Error Report)
+router.get(
+  '/:jobId/report',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
+  asyncHandler(async (req, res) => {
+    const { jobId } = req.params;
+    const reportPath = getErrorReportPath(jobId);
+
+    if (!reportPath || !fs.existsSync(reportPath)) {
+      throw new ApiError(404, 'Error report not found for this job');
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="bulk_upload_report_${jobId}.csv"`);
+    fs.createReadStream(reportPath).pipe(res);
+  })
+);
+
+// Legacy route alias: GET /api/candidates/bulk-upload/jobs/:jobId/errors
+router.get(
+  '/jobs/:jobId/errors',
+  requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
+  asyncHandler(async (req, res) => {
+    const { jobId } = req.params;
+    const reportPath = getErrorReportPath(jobId);
+
+    if (!reportPath || !fs.existsSync(reportPath)) {
+      throw new ApiError(404, 'Report not found');
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="import_errors_${jobId}.csv"`);
+    fs.createReadStream(reportPath).pipe(res);
   })
 );
 

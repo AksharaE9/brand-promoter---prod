@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE_URL } from '../lib/api';
+import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 
 const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, templateHeaders }) => {
     const [file, setFile] = useState(null);
@@ -10,6 +11,12 @@ const BulkImportModal = ({ isOpen, onClose, onImportComplete, title, endpoint, t
     const handleFileChange = (e) => {
         const selected = e.target.files[0];
         if (selected) {
+            if (selected.size > MAX_UPLOAD_BYTES) {
+                setError('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                setFile(null);
+                e.target.value = '';
+                return;
+            }
             setFile(selected);
             setError('');
         }

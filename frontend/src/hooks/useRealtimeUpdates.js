@@ -3,6 +3,7 @@ import { useQueryClient }  from '@tanstack/react-query';
 import { useAuthStore }    from '../stores/authStore';
 import { useToastStore }   from '../stores/toastStore';
 import { useNotificationStore } from '../stores/notificationStore';
+import { subscribeSSE }    from '../lib/sse';
 
 const getApiBaseUrl = () => {
   const devUrl = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
@@ -33,6 +34,8 @@ const ALL_EVENTS = [
   // Scheduling
   'SCHEDULING_UPDATE','SCHEDULING_SYNC_COMPLETE',
   'ROUND_CREATED','ROUND_DELETED',
+  'SCHEDULING_LEAD_LIST_UPDATED','SCHEDULING_REPORT_SUBMITTED','SCHEDULING_MEMBER_FILE_ADDED',
+  'scheduling:lead-list:updated','scheduling:report:updated','scheduling:member-file:added',
   // Jobs
   'JOB_CREATED','JOB_UPDATED','JOB_DELETED','JOB_STATUS_CHANGED',
   // Team
@@ -53,6 +56,8 @@ const ALL_EVENTS = [
   'BULK_IMPORT_PROGRESS','BULK_IMPORT_COMPLETE',
   // Notifications
   'NOTIFICATION',
+  'VISIBILITY_RECONCILE',
+  'interview-feedback:updated',
 ];
 
 // ── Polling fallback query keys ──
@@ -123,6 +128,12 @@ export function useRealtimeUpdates() {
     }
 
     switch (eventName) {
+
+      case 'VISIBILITY_RECONCILE':
+        CRITICAL_QUERY_KEYS.forEach(key => {
+          qc.invalidateQueries({ queryKey: key });
+        });
+        break;
 
       /* ─── CANDIDATES ─── */
       case 'CANDIDATE_CREATED': {
@@ -236,10 +247,13 @@ export function useRealtimeUpdates() {
 
       /* ─── SCHEDULING ─── */
       case 'SCHEDULING_UPDATE': {
-        const { type: t, roundId, round } = data;
-        if (t === 'ROUND_UPDATED') {
+        const { type: t, subType, roundId, round } = data;
+        const sub = subType || t;
+        if (sub === 'ROUND_UPDATED') {
           qc.setQueryData(['scheduling','round',roundId], o => ({ ...o, data:{ ...(o?.data??{}), ...round, _optimistic:false }}));
           qc.setQueriesData({ queryKey:['scheduling','rounds'] }, o => updateInList(o, roundId, { ...round, _optimistic:false }));
+          qc.invalidateQueries({ queryKey: ['candidates'] });
+          qc.invalidateQueries({ queryKey: ['dashboard'] });
         }
         break;
       }
@@ -284,13 +298,60 @@ export function useRealtimeUpdates() {
           // Fallback: mark stale without immediate refetch
           qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'], refetchType: 'none' });
         }
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
         addToast({ type: 'success', message: 'Interview scheduled' });
         break;
       }
 
       case 'ROUND_DELETED':
         qc.setQueriesData({ queryKey:['scheduling','rounds'] }, o => removeFromList(o, data.roundId));
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
         addToast({ type:'info', message:'Interview round removed' });
+        break;
+
+      case 'interview-feedback:updated':
+        qc.invalidateQueries({ queryKey: ['scheduling'] });
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
+        break;
+
+      case 'INTERVIEW_FEEDBACK_SUBMITTED':
+        qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'] });
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] });
+        if (data.candidateId) {
+          qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
+        }
+        break;
+
+      case 'INTERVIEW_PANELISTS_UPDATED':
+        qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'] });
+        if (data.interviewId) {
+          qc.invalidateQueries({ queryKey: ['scheduling', 'round', data.interviewId] });
+        }
+        break;
+
+      case 'SCHEDULING_LEAD_LIST_UPDATED':
+      case 'scheduling:lead-list:updated':
+        if (data.memberId) {
+          qc.invalidateQueries({ queryKey: ['scheduling', 'member-lead-lists', data.memberId] });
+        }
+        break;
+
+      case 'SCHEDULING_REPORT_SUBMITTED':
+      case 'scheduling:report:updated':
+        if (data.memberId) {
+          qc.invalidateQueries({ queryKey: ['scheduling', 'member-reports', data.memberId] });
+        }
+        break;
+
+      case 'SCHEDULING_MEMBER_FILE_ADDED':
+      case 'scheduling:member-file:added':
+        if (data.memberId) {
+          qc.invalidateQueries({ queryKey: ['scheduling', 'member-files', data.memberId] });
+        }
         break;
 
       /* ─── JOBS ─── */
@@ -454,84 +515,19 @@ export function useRealtimeUpdates() {
     }
   }, [qc, addToast, addNotification, incrementUnread]);
 
-  const connect = useCallback(() => {
+  useEffect(() => {
     if (!isAuthenticated) return;
-    if (esRef.current?.readyState === EventSource.OPEN) return;
 
-    // Build URL with token and optionally lastEventId
-    let url = accessToken ? `${SSE_URL}?token=${accessToken}` : SSE_URL;
-    if (lastEventIdRef.current) {
-      url += `&lastEventId=${lastEventIdRef.current}`;
-    }
-
-    const es = new EventSource(url, { withCredentials: true });
-    esRef.current = es;
-
-    ALL_EVENTS.forEach(name => {
-      es.addEventListener(name, (e) => {
-        try {
-          handle(name, JSON.parse(e.data));
-          reconnectDelay.current = 1000;
-          consecutiveFailures.current = 0;
-
-          // If we were in polling mode, SSE is back — stop polling
-          if (pollingTimer.current) {
-            stopPolling();
-          }
-        } catch (err) {
-          console.error(`[SSE] Failed to parse ${name}:`, err);
-        }
-      });
+    const unsub = subscribeSSE((data) => {
+      if (data?.type) {
+        handle(data.type, data);
+      }
     });
 
-    es.onopen = () => {
-      consecutiveFailures.current = 0;
-      reconnectDelay.current = 1000;
-    };
-
-    es.onerror = () => {
-      es.close();
-      esRef.current = null;
-      consecutiveFailures.current += 1;
-
-      // After 3 consecutive failures, switch to polling fallback
-      if (consecutiveFailures.current >= 3) {
-        startPolling();
-        return;
-      }
-
-      const delay = Math.min(reconnectDelay.current * 2, 30000);
-      reconnectDelay.current = delay;
-      reconnectTimer.current = setTimeout(connect, delay);
-    };
-  }, [isAuthenticated, accessToken, handle, startPolling, stopPolling]);
-
-  // ── Visibility API: pause SSE when tab is hidden ──
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) {
-        // Tab hidden — close SSE to free resources
-        esRef.current?.close();
-        esRef.current = null;
-        clearTimeout(reconnectTimer.current);
-      } else {
-        // Tab visible — reconnect
-        connect();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [connect]);
-
-  useEffect(() => {
-    connect();
     return () => {
-      esRef.current?.close();
-      clearTimeout(reconnectTimer.current);
-      stopPolling();
+      unsub();
     };
-  }, [connect, stopPolling]);
+  }, [isAuthenticated, handle]);
 
-  return { isPollingMode };
+  return { isPollingMode: false };
 }

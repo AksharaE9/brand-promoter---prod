@@ -14,7 +14,7 @@ const ENTITY_PREFIX = 'entity:';
  *   3. Database query for misses only, run in parallel
  *   4. Merge results in memory
  */
-async function populateInterviewRelations(rounds) {
+async function populateInterviewRelations(rounds, currentUser = null) {
   if (!rounds || rounds.length === 0) return rounds;
 
   // Collect all unique IDs needed across all rounds (resolve from application relation if needed)
@@ -37,7 +37,8 @@ async function populateInterviewRelations(rounds) {
     return Array.isArray(list) ? list.map(f => f.submittedBy || f.submittedById).filter(Boolean) : [];
   });
 
-  const panelIds = [...new Set([...interviewerIdsList, ...feedbackUserIds].filter(Boolean))];
+  const creatorIds = rounds.map(r => r.createdById).filter(Boolean);
+  const panelIds = [...new Set([...interviewerIdsList, ...feedbackUserIds, ...creatorIds].filter(Boolean))];
 
   let candidateMap = {};
   let jobMap       = {};
@@ -144,12 +145,64 @@ async function populateInterviewRelations(rounds) {
     if (userMap[id]) l1.set(`${ENTITY_PREFIX}users:${id}`, userMap[id], ENTITY_TTL);
   });
 
+  // Batch fetch feedbacks for the candidates in this list
+  let feedbacksList = [];
+  if (candidateIds.length > 0) {
+    feedbacksList = await prisma.interviewFeedback.findMany({
+      where: { candidateId: { in: candidateIds } },
+      include: {
+        submittedBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            role: true,
+          }
+        }
+      }
+    });
+  }
+
+  // Fetch candidate internal reports for super admin
+  let internalReportsMap = {};
+  if (currentUser?.role === 'SUPER_ADMIN' && candidateIds.length > 0) {
+    try {
+      const reportsList = await prisma.candidateInternalReport.findMany({
+        where: { candidateId: { in: candidateIds } },
+        include: {
+          submittedBy: {
+            select: { fullName: true }
+          }
+        },
+        orderBy: { submittedAt: 'desc' }
+      });
+      // Group by candidateId
+      reportsList.forEach(r => {
+        if (!internalReportsMap[r.candidateId]) {
+          internalReportsMap[r.candidateId] = [];
+        }
+        internalReportsMap[r.candidateId].push({
+          id: r.id,
+          content: r.content,
+          submittedAt: r.submittedAt,
+          submittedBy: r.submittedBy?.fullName || 'Unknown User'
+        });
+      });
+    } catch (err) {
+      console.error('[relationPopulator] Failed to fetch internal reports:', err.message);
+    }
+  }
+
   // Merge relations into rounds to keep backwards compatibility with frontend expectation
   return rounds.map(round => {
     const candidateId = round.candidateId || round.application?.candidateId;
     const jobId = round.jobId || round.application?.jobId;
 
-    const candidate = candidateId ? candidateMap[candidateId] : null;
+    const candidateObj = candidateId ? candidateMap[candidateId] : null;
+    const candidate = candidateObj ? {
+      ...candidateObj,
+      internalReports: internalReportsMap[candidateId] || []
+    } : null;
     const job = jobId ? jobMap[jobId] : null;
     
     let interviewerIds = [];
@@ -166,13 +219,35 @@ async function populateInterviewRelations(rounds) {
     } catch (_) {}
     if (!Array.isArray(feedback)) feedback = [];
 
+    const mappedRoundName = round.round === 'Round 1' ? 'ROUND_1'
+                          : round.round === 'Round 2' ? 'ROUND_2'
+                          : 'FINAL_ROUND';
+
+    const fbRecord = feedbacksList.find(
+      f => f.candidateId === candidateId && f.round === mappedRoundName
+    );
+
+    if (feedback.length === 0 && fbRecord) {
+      feedback = [{
+        id: fbRecord.id,
+        submittedById: fbRecord.submittedById,
+        submittedBy: fbRecord.submittedBy || { id: fbRecord.submittedById, fullName: 'Unknown Interviewer' },
+        feedbackData: fbRecord.feedbackData,
+        templateVersion: fbRecord.templateVersion,
+        selectionStatus: fbRecord.selectionStatus,
+        overallRating: fbRecord.overallRating,
+        createdAt: fbRecord.createdAt,
+        updatedAt: fbRecord.updatedAt,
+      }];
+    }
+
     const populatedFeedback = feedback.map(f => {
       const userId = f.submittedBy || f.submittedById;
-      const user = userId ? userMap[userId] : null;
+      const user = (userId && typeof userId === 'string') ? userMap[userId] : (f.submittedBy && typeof f.submittedBy === 'object' ? f.submittedBy : null);
       return {
         ...f,
-        submittedById: userId,
-        submittedBy: user || { id: userId, fullName: 'Unknown Interviewer' }
+        submittedById: userId || user?.id,
+        submittedBy: user || f.submittedBy || { id: userId, fullName: 'Unknown Interviewer' }
       };
     });
 
@@ -186,6 +261,39 @@ async function populateInterviewRelations(rounds) {
       job
     } : null;
 
+
+    let offer_letter_sent = '—';
+    if (round.result === 'OFFER_LETTER') {
+      const docPopulated = fbRecord?.offerLetterDocumentUrl && fbRecord.offerLetterDocumentUrl.trim() !== '';
+      const attPopulated = fbRecord?.offerLetterEmailAttachmentUrl && fbRecord.offerLetterEmailAttachmentUrl.trim() !== '';
+      if (docPopulated && attPopulated) {
+        offer_letter_sent = 'Yes';
+      } else {
+        offer_letter_sent = 'No';
+      }
+    }
+
+    let offer_letter_document = null;
+    if (fbRecord?.offerLetterDocumentUrl) {
+      try {
+        offer_letter_document = JSON.parse(fbRecord.offerLetterDocumentUrl);
+      } catch (_) {
+        offer_letter_document = fbRecord.offerLetterDocumentUrl;
+      }
+    }
+
+    let offer_letter_email_attachment = null;
+    if (fbRecord?.offerLetterEmailAttachmentUrl) {
+      try {
+        offer_letter_email_attachment = JSON.parse(fbRecord.offerLetterEmailAttachmentUrl);
+      } catch (_) {
+        offer_letter_email_attachment = fbRecord.offerLetterEmailAttachmentUrl;
+      }
+    }
+
+    const creatorUser = round.createdById ? userMap[round.createdById] : null;
+    const createdByName = creatorUser ? creatorUser.fullName : 'Super Admin';
+
     return {
       ...round,
       candidateId,
@@ -195,9 +303,15 @@ async function populateInterviewRelations(rounds) {
       interviewers,
       feedback: populatedFeedback,
       application,
+      offer_letter_sent,
+      offer_letter_document,
+      offer_letter_email_attachment,
+      offer_letter_document_url: fbRecord?.offerLetterDocumentUrl || null,
+      offer_letter_email_attachment_url: fbRecord?.offerLetterEmailAttachmentUrl || null,
       _candidateName: candidate?.fullName || round.candidateName || null,
       _jobTitle: job?.title || round.jobTitle || null,
       _panelNames: interviewers.map(u => u.fullName),
+      createdByName,
     };
   });
 }

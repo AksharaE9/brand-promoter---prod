@@ -15,7 +15,7 @@ export function useRoundsList(filters = {}) {
   const isSearch = !!(safeFilters.search && safeFilters.search.trim());
   return useQuery({
     queryKey: QUERY_KEYS.rounds(safeFilters),
-    queryFn: () => schedulingApi.getRounds(safeFilters),
+    queryFn: ({ signal }) => schedulingApi.getRounds(safeFilters, signal),
     enabled,
     // Search results must always be fresh — no caching. Normal list: 2min stale time.
     staleTime: isSearch ? 0 : 2 * 60_000,
@@ -37,6 +37,17 @@ export function useRound(roundId) {
     queryKey: QUERY_KEYS.round(roundId),
     queryFn: () => schedulingApi.getRound(roundId),
     staleTime: 30_000,
+    enabled: !!roundId,
+    select: (data) => data?.data ?? data,
+  });
+}
+
+// ── Fetch consolidated round details ──
+export function useRoundDetails(roundId) {
+  return useQuery({
+    queryKey: ['scheduling', 'round-details', roundId],
+    queryFn: () => schedulingApi.getRoundDetails(roundId),
+    staleTime: 10_000,
     enabled: !!roundId,
     select: (data) => data?.data ?? data,
   });
@@ -107,6 +118,9 @@ export function useUpdateRoundStatus() {
           data: { ...currentData, ...realData, _optimistic: false },
         };
       });
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -164,6 +178,8 @@ export function useRescheduleRound() {
     },
 
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
       toast.success('Interview rescheduled');
     },
   });
@@ -209,6 +225,9 @@ export function useSaveMeetLink() {
     onError: (err, variables, context) => {
       if (context?.previousRound) queryClient.setQueryData(QUERY_KEYS.round(variables.roundId), context.previousRound);
       context?.previousLists?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
     },
   });
 }
@@ -257,7 +276,10 @@ export function useUpdatePanel() {
       toast.error('Failed to update panel');
     },
 
-    onSuccess: () => toast.success('Panel updated'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      toast.success('Panel updated');
+    },
   });
 }
 
@@ -305,7 +327,11 @@ export function useTransferCandidate() {
       toast.error('Transfer failed');
     },
 
-    onSuccess: () => toast.success('Candidate transferred'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success('Candidate transferred');
+    },
   });
 }
 
@@ -350,6 +376,7 @@ export function useSubmitFeedback() {
 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
       toast.success('Feedback submitted');
     },
   });
@@ -416,14 +443,9 @@ export function useCreateRound() {
         });
       }
 
-      // 2-3 second background sync: fetch authoritative data from server silently
-      const delay = 2000 + Math.random() * 1000; // 2–3s
-      setTimeout(() => {
-        queryClient.invalidateQueries({
-          queryKey: ['scheduling', 'rounds'],
-          refetchType: 'active',
-        });
-      }, delay);
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
 
       toast.success('Interview scheduled ✓');
     },
@@ -474,12 +496,9 @@ export function useDeleteRound() {
       // Also evict the single-round cache so a direct fetch won't return stale data
       queryClient.removeQueries({ queryKey: QUERY_KEYS.round(roundId) });
 
-      // Mark the list as stale WITHOUT triggering an immediate refetch
-      // The next user action or focus event will fetch fresh data
-      queryClient.invalidateQueries({
-        queryKey: ['scheduling', 'rounds'],
-        refetchType: 'none', // ← KEY: marks stale but does NOT re-fetch now
-      });
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
 
       toast.success('Interview deleted');
     },
@@ -543,6 +562,8 @@ export function useUpdateRound() {
           return old?.data ? { ...old, data: updated } : updated;
         });
       }
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
       toast.success('Interview updated');
     },
   });

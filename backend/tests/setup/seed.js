@@ -43,7 +43,7 @@ const FIXTURE = {
   SLOT_E_UTC: istToUtc('2024-03-15T14:00:00'),  // 2:00 PM IST (round 2)
 };
 
-async function seed() {
+async function runSeed() {
   // ── Wipe test org data in correct FK order ──────────────────────────────
   await prisma.interview.deleteMany({ where: { organizationId: FIXTURE.ORG_ID } });
   await prisma.application.deleteMany({ where: { organizationId: FIXTURE.ORG_ID } });
@@ -59,6 +59,7 @@ async function seed() {
   // ── Create users ────────────────────────────────────────────────────────
   const hrHash = await bcrypt.hash(FIXTURE.HR_PASSWORD, 10);
   const ivHash = await bcrypt.hash(FIXTURE.IV_PASSWORD, 10);
+
 
   const hrUser = await prisma.user.create({
     data: {
@@ -76,7 +77,7 @@ async function seed() {
       fullName:       'CI Interviewer',
       email:          FIXTURE.IV_EMAIL,
       passwordHash:   ivHash,
-      role:           'INTERVIEWER',
+      role:           'RECRUITER',
       status:         'ACTIVE',
       organizationId: FIXTURE.ORG_ID,
     },
@@ -201,4 +202,16 @@ async function seed() {
   return { hrUser, ivUser, candidate, application, job, iv1, iv2, ORG_ID: FIXTURE.ORG_ID, FIXTURE };
 }
 
+async function seed() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await runSeed();
+    } catch (err) {
+      if (attempt === 2) throw err;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+}
+
 module.exports = { seed, FIXTURE, istToUtc };
+

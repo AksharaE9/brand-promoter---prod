@@ -25,12 +25,14 @@ try {
   // Graceful fallback if git is not available
 }
 
-export default defineConfig({
-  define: {
-    'process.env.NODE_ENV': JSON.stringify('production'),
-    __DEV__: false,
-    'import.meta.env.VITE_BUILD_HASH': JSON.stringify(gitHash),
-  },
+export default defineConfig(({ command }) => {
+  const isDev = command === 'serve';
+  return {
+    define: {
+      'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+      __DEV__: isDev,
+      'import.meta.env.VITE_BUILD_HASH': JSON.stringify(gitHash),
+    },
   plugins: [
     react(),
     stripAttributesPlugin(),
@@ -102,6 +104,14 @@ export default defineConfig({
     })
   ],
   server: {
+    warmup: {
+      clientFiles: [
+        './src/main.jsx',
+        './src/App.jsx',
+        './src/pages/Dashboard.jsx',
+        './src/pages/InterviewSchedule.jsx',
+      ],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:4000',
@@ -118,14 +128,18 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react-router-dom') || id.includes('react-router') || id.includes('@remix-run')) {
-              return 'react-router';
-            }
-            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
-              return 'react-core';
+            if (
+              id.includes('react-router-dom') || 
+              id.includes('react-router') || 
+              id.includes('@remix-run') ||
+              id.includes('react') || 
+              id.includes('react-dom') || 
+              id.includes('scheduler')
+            ) {
+              return 'react-vendor';
             }
             if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query')) {
-              return 'react-query';
+              return 'query-vendor';
             }
             if (id.includes('recharts')) {
               return 'vendor-charts';
@@ -150,7 +164,7 @@ export default defineConfig({
         assetFileNames: 'assets/[name]-[hash].[ext]',
       },
     },
-    chunkSizeWarningLimit: 500,
+    chunkSizeWarningLimit: 250,
   },
   optimizeDeps: {
     include: [
@@ -161,4 +175,5 @@ export default defineConfig({
       'lucide-react',
     ],
   },
+};
 });

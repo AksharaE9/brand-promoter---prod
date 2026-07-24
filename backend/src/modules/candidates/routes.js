@@ -13,6 +13,7 @@ const sse = require("../../utils/sse");
 const { getCached } = require("../../utils/cache");
 const inv = require("../../utils/cacheInvalidation");
 const { upsertCompanyForOrg } = require("../companies/routes");
+const { normalizePhoneNumber } = require("../../lib/phoneNormalization");
 
 // Default company — used when none is supplied for backward-compat clients
 const DEFAULT_COMPANY = 'Akshara Enterprises';
@@ -22,6 +23,149 @@ const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' &
 const router = express.Router();
 
 router.use(auth);
+
+// Helper middleware to parse body for HTTP QUERY requests if the standard body-parser skipped it
+const parseQueryBody = (req, res, next) => {
+  if (req.method === 'QUERY' && (!req.body || Object.keys(req.body).length === 0)) {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        if (data) {
+          req.body = JSON.parse(data);
+        } else {
+          req.body = {};
+        }
+        next();
+      } catch (err) {
+        res.status(400).json({ success: false, error: 'Invalid JSON body for QUERY request' });
+      }
+    });
+  } else {
+    next();
+  }
+};
+
+const candidateSearchHandler = async (req, res) => {
+  const q = (req.body.q || '').trim();
+  const filters = req.body.filters || {};
+  const limit = Math.min(50, Math.max(1, Number.parseInt(req.body.limit, 10) || 24));
+  const cursor = req.body.cursor?.trim();
+  const orgId = req.user.organizationId || "defaultOrg";
+
+  const andConditions = [
+    { organizationId: orgId },
+    { isDeleted: false }
+  ];
+
+  if (filters.status && filters.status !== 'All') {
+    andConditions.push({ status: filters.status });
+  }
+  if (filters.category && filters.category !== 'All') {
+    andConditions.push({ category: filters.category });
+  }
+  if (filters.company && filters.company !== 'All') {
+    andConditions.push({ company: filters.company });
+  }
+
+  if (q) {
+    andConditions.push({
+      OR: [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q } }
+      ]
+    });
+  }
+
+  if (cursor) {
+    const parts = cursor.split('_');
+    if (parts.length === 2) {
+      const [timeStr, cursorId] = parts;
+      const cursorTime = new Date(parseInt(timeStr, 10));
+      andConditions.push({
+        OR: [
+          { updatedAt: { lt: cursorTime } },
+          { updatedAt: cursorTime, id: { lt: cursorId } }
+        ]
+      });
+    }
+  }
+
+  const where = { AND: andConditions };
+
+  const queryOptions = {
+    where,
+    take: limit + 1,
+    orderBy: [
+      { updatedAt: 'desc' },
+      { id: 'desc' }
+    ],
+    select: {
+      id: true,
+      fullName: true,
+      preferredRole: true,
+      location: true,
+      area: true,
+      source: true,
+      email: true,
+      phone: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      offerDecision: true,
+      doj: true,
+      company: true,
+      resumeFile: { select: { storageKey: true } },
+      profilePhotoFile: { select: { storageKey: true } },
+      applications: {
+        where: { isDeleted: false },
+        select: {
+          id: true,
+          status: true,
+          joiningDate: true,
+          job: { select: { id: true, title: true } }
+        }
+      }
+    }
+  };
+
+  const [total, items] = await Promise.all([
+    prisma.candidate.count({ where }),
+    prisma.candidate.findMany(queryOptions)
+  ]);
+
+  const hasMore = items.length > limit;
+  if (hasMore) {
+    items.pop();
+  }
+
+  const nextCursor = hasMore 
+    ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
+    : null;
+
+  res.json({
+    success: true,
+    data: items,
+    nextCursor,
+    hasMore,
+    pagination: {
+      total,
+      limit,
+      hasMore
+    }
+  });
+};
+
+// Candidate search route with QUERY and POST support
+router.all('/search', parseQueryBody, requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), asyncHandler(async (req, res) => {
+  if (req.method === 'QUERY' || req.method === 'POST') {
+    return await candidateSearchHandler(req, res);
+  }
+  res.status(405).set('Allow', 'QUERY, POST').end();
+}));
 
 // GET Custom field definitions
 router.get(
@@ -338,10 +482,13 @@ router.post(
     // Resolve company — default to org primary if not provided
     const resolvedCompany = (data.company || '').trim() || DEFAULT_COMPANY;
 
+    const phoneNormalized = data.phone ? normalizePhoneNumber(data.phone) : null;
+
     const candidateData = {
       fullName: data.fullName,
       email: data.email || "N/A",
       phone: data.phone,
+      phoneNormalized,
       currentCompany: data.currentCompany || null,
       totalExperienceYears: data.totalExperienceYears ? parseFloat(data.totalExperienceYears) : null,
       location: data.location || null,
@@ -529,28 +676,49 @@ router.get(
     const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}`;
 
     const data = await getCached(cacheKeyStr, async () => {
-      const where = {
-        organizationId: orgId,
-        isDeleted: false
-      };
+      const andConditions = [
+        { organizationId: orgId },
+        { isDeleted: false }
+      ];
 
-      if (status) where.status = status;
-      if (category) where.category = category;
-      if (company) where.company = company;   // ── NEW: filter by hiring org ──
-      if (assignedToMe) where.mentorId = req.user.id;
+      if (status) andConditions.push({ status });
+      if (category) andConditions.push({ category });
+      if (company) andConditions.push({ company });
+      if (assignedToMe) andConditions.push({ mentorId: req.user.id });
 
       if (search) {
-        where.OR = [
-          { fullName: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-          { phone: { contains: search } }
-        ];
+        andConditions.push({
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search } }
+          ]
+        });
       }
+
+      if (cursor) {
+        const parts = cursor.split('_');
+        if (parts.length === 2) {
+          const [timeStr, cursorId] = parts;
+          const cursorTime = new Date(parseInt(timeStr, 10));
+          andConditions.push({
+            OR: [
+              { updatedAt: { lt: cursorTime } },
+              { updatedAt: cursorTime, id: { lt: cursorId } }
+            ]
+          });
+        }
+      }
+
+      const where = { AND: andConditions };
 
       const queryOptions = {
         where,
         take: limit + 1,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [
+          { updatedAt: 'desc' },
+          { id: 'desc' }
+        ],
         select: {
           id: true,
           fullName: true,
@@ -562,6 +730,7 @@ router.get(
           phone: true,
           status: true,
           createdAt: true,
+          updatedAt: true,
           offerDecision: true,
           doj: true,
           company: true,   // ── NEW field ──
@@ -592,11 +761,6 @@ router.get(
         }
       };
 
-      if (cursor) {
-        queryOptions.cursor = { id: cursor };
-        queryOptions.skip = 1;
-      }
-
       // Fetch count and items in parallel to optimize latency by a full roundtrip
       const [total, items] = await Promise.all([
         prisma.candidate.count({ where }),
@@ -608,10 +772,13 @@ router.get(
         items.pop();
       }
 
-      const nextCursor = hasMore ? items[items.length - 1].id : null;
+      const nextCursor = hasMore 
+        ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
+        : null;
 
       return { items, nextCursor, hasMore, total };
     }, 20000); // 20s cache
+
 
     const pagination = {
       total: data.total || 0,
@@ -1131,4 +1298,295 @@ router.post(
   })
 );
 
+// GET /api/candidates/:id/resume-download (Proxy resume file direct download)
+router.get(
+  '/:id/resume-download',
+  asyncHandler(async (req, res) => {
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!candidate) throw new ApiError(404, 'Candidate not found');
+
+    const downloadUrl = candidate.resumeLinkDownload || candidate.resumeLinkOriginal;
+    if (!downloadUrl) {
+      throw new ApiError(404, 'No resume link on file for candidate');
+    }
+
+    let upstream;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      upstream = await fetch(downloadUrl, {
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      throw new ApiError(502, `Could not retrieve resume from source link: ${err.message}`);
+    }
+
+    if (!upstream.ok) {
+      throw new ApiError(502, `Could not retrieve resume from source link (HTTP ${upstream.status})`);
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const rawFilename = candidate.fullName ? candidate.fullName.trim() : 'candidate';
+    const filename = `${rawFilename.replace(/[^\w-]/g, '_')}_resume`;
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const { Readable } = require('stream');
+    if (upstream.body) {
+      if (typeof upstream.body.pipe === 'function') {
+        upstream.body.pipe(res);
+      } else {
+        Readable.fromWeb(upstream.body).pipe(res);
+      }
+    } else {
+      res.end();
+    }
+  })
+);
+
+// ── Contact Attempt Logging Endpoints ──
+router.post(
+  "/:candidateId/contact-attempts",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+    const { attemptType, photoUrl, note } = req.body;
+
+    if (!attemptType || !['DIDNT_PICK_UP', 'MORNING_FOLLOW_UP'].includes(attemptType)) {
+      throw new ApiError(400, "attemptType must be either 'DIDNT_PICK_UP' or 'MORNING_FOLLOW_UP'");
+    }
+
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+      select: { id: true },
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+
+    const attempt = await prisma.candidateContactAttempt.create({
+      data: {
+        candidateId,
+        attemptType,
+        photoUrl: photoUrl || null,
+        note: note || null,
+        loggedById: req.user.id,
+        attemptedAt: new Date(),
+      },
+      include: {
+        loggedBy: {
+          select: { id: true, fullName: true, email: true },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: attempt,
+      message: `Contact attempt '${attemptType}' logged successfully.`,
+    });
+  })
+);
+
+router.get(
+  "/:candidateId/contact-attempts",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+
+    const attempts = await prisma.candidateContactAttempt.findMany({
+      where: { candidateId },
+      orderBy: { attemptedAt: "desc" },
+      include: {
+        loggedBy: {
+          select: { id: true, fullName: true, email: true },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: attempts,
+    });
+  })
+);
+
+// ── Transfer Panelist Endpoint (Idempotent) ──
+router.post(
+  "/:candidateId/transfer-panelist",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+    const { panelistId } = req.body;
+
+    if (!panelistId) {
+      throw new ApiError(400, "panelistId is required");
+    }
+
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+
+    const newPanelist = await prisma.user.findUnique({
+      where: { id: panelistId },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (!newPanelist) throw new ApiError(404, "Panelist user not found");
+
+    // Idempotency check: if candidate is already assigned to this panelist
+    if (candidate.assignedRecruiterId === panelistId) {
+      console.log("[TRANSFER PANELIST]", {
+        candidateId,
+        oldPanelistId: candidate.assignedRecruiterId,
+        newPanelistId: panelistId,
+        timestamp: new Date().toISOString(),
+        outcome: "IDEMPOTENT_NOOP",
+      });
+      return res.json({
+        success: true,
+        message: "Panelist already assigned to candidate",
+        data: candidate,
+      });
+    }
+
+    const oldPanelistId = candidate.assignedRecruiterId;
+
+    // Update candidate's assigned panelist/recruiter
+    const updatedCandidate = await prisma.candidate.update({
+      where: { id: candidateId },
+      data: {
+        assignedRecruiterId: panelistId,
+        assignedRecruiterName: newPanelist.fullName,
+      },
+    });
+
+    // Update active interviews for candidate
+    const activeInterviews = await prisma.interview.findMany({
+      where: { candidateId, status: { not: "CANCELLED" } },
+    });
+
+    for (const interview of activeInterviews) {
+      const existingHistory = Array.isArray(interview.transferHistory)
+        ? interview.transferHistory
+        : [];
+      const updatedHistory = [
+        ...existingHistory,
+        {
+          transferredAt: new Date().toISOString(),
+          transferredBy: req.user.id,
+          fromPanelistId: oldPanelistId,
+          toPanelistId: panelistId,
+          toPanelistName: newPanelist.fullName,
+        },
+      ];
+
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: {
+          interviewerIds: [panelistId],
+          interviewerNames: newPanelist.fullName,
+          transferHistory: updatedHistory,
+        },
+      });
+    }
+
+    // Structured Audit & Server Console Log
+    console.log("[TRANSFER PANELIST]", {
+      candidateId,
+      oldPanelistId,
+      newPanelistId: panelistId,
+      timestamp: new Date().toISOString(),
+      outcome: "SUCCESS",
+    });
+
+    logAudit({
+      actorUserId: req.user.id,
+      action: "TRANSFER_PANELIST",
+      entityType: "Candidate",
+      entityId: candidateId,
+      newData: {
+        oldPanelistId,
+        newPanelistId: panelistId,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      orgId: req.user.organizationId || "defaultOrg",
+    });
+
+    // Broadcast SSE updates for instant tab sync
+    sse.broadcast("CANDIDATE_UPDATED", { candidateId, panelistId, panelistName: newPanelist.fullName });
+    sse.broadcast("INTERVIEW_PANELISTS_UPDATED", { candidateId, panelistId, panelistName: newPanelist.fullName });
+
+    res.json({
+      success: true,
+      message: "Panelist transferred successfully",
+      data: updatedCandidate,
+    });
+  })
+);
+
+/**
+ * Resolves candidate record by phone number (normalized lookup).
+ * @param {string} rawNumber 
+ * @param {string|null} organizationId 
+ * @returns {Promise<object|null>}
+ */
+async function resolveCandidateByNumber(rawNumber, organizationId = null) {
+  if (!rawNumber) return null;
+  const normalized = normalizePhoneNumber(rawNumber);
+  if (!normalized) return null;
+
+  const where = {
+    isDeleted: false,
+    OR: [
+      { phoneNormalized: normalized },
+      { phone: String(rawNumber).trim() },
+    ],
+  };
+
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
+  return await prisma.candidate.findFirst({
+    where,
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      preferredRole: true,
+      currentCompany: true,
+      organizationId: true,
+    },
+  });
+}
+
+// GET /api/candidates/resolve-by-number?number=...
+router.get(
+  '/resolve-by-number',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { number } = req.query;
+    if (!number) {
+      return res.json({ success: true, data: null });
+    }
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    const candidate = await resolveCandidateByNumber(number, orgId);
+
+    res.json({
+      success: true,
+      data: candidate || null,
+    });
+  })
+);
+
 module.exports = router;
+module.exports.resolveCandidateByNumber = resolveCandidateByNumber;
+
+

@@ -312,6 +312,10 @@ const Settings = () => {
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Logo size must be under 2MB');
+      return;
+    }
 
     const formData = new FormData();
     formData.append('file', file);

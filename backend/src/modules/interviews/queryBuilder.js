@@ -20,7 +20,6 @@ const LIST_SELECT_FIELDS = {
   result: true,
   outcome: true,
   outcomeSetAt: true,
-  notes: true,
   organizationId: true,
   createdById: true,
   interviewerIds: true,
@@ -31,6 +30,7 @@ const LIST_SELECT_FIELDS = {
   offerLetterUrl: true,
   voiceRecordingFileId: true,
   voiceRecordingUrl: true,
+  notes: true,
   createdAt: true,
   updatedAt: true,
   // Select application to resolve candidateId and jobId

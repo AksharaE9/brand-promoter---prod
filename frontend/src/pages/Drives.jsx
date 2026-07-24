@@ -3,7 +3,8 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
+// Lazy load drive campaign workspace to optimize Campaigns page bundle size
+const CollegeDriveWorkspace = React.lazy(() => import('../components/CollegeDriveWorkspace'));
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const Drives = () => {
@@ -33,7 +34,9 @@ const Drives = () => {
 
         <Reveal>
           <div className="bg-white rounded-3xl border border-[#e4ebf1] p-2 min-h-[70vh]">
-            <CollegeDriveWorkspace onBanner={setBanner} onError={setError} />
+            <React.Suspense fallback={<div className="p-8 text-center text-slate-400">Loading campaign workspace...</div>}>
+              <CollegeDriveWorkspace onBanner={setBanner} onError={setError} />
+            </React.Suspense>
           </div>
         </Reveal>
       </PageEnter>

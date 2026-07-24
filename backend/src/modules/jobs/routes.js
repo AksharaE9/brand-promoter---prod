@@ -20,6 +20,98 @@ router.get(
 
 router.use(auth);
 
+// Helper middleware to parse body for HTTP QUERY requests if the standard body-parser skipped it
+const parseQueryBody = (req, res, next) => {
+  if (req.method === 'QUERY' && (!req.body || Object.keys(req.body).length === 0)) {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        if (data) {
+          req.body = JSON.parse(data);
+        } else {
+          req.body = {};
+        }
+        next();
+      } catch (err) {
+        res.status(400).json({ success: false, error: 'Invalid JSON body for QUERY request' });
+      }
+    });
+  } else {
+    next();
+  }
+};
+
+const jobSearchHandler = async (req, res) => {
+  const q = (req.body.q || '').trim();
+  const filters = req.body.filters || {};
+  const limit = Math.min(50, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
+  const cursor = req.body.cursor?.trim();
+  const orgId = req.user.organizationId || "defaultOrg";
+
+  const where = {
+    organizationId: orgId
+  };
+  if (filters.isActive === true || filters.isActive === 'true') where.isActive = true;
+  if (filters.isActive === false || filters.isActive === 'false') where.isActive = false;
+
+  if (q) {
+    where.OR = [
+      { title: { contains: q, mode: 'insensitive' } },
+      { department: { contains: q, mode: 'insensitive' } },
+      { location: { contains: q, mode: 'insensitive' } }
+    ];
+  }
+
+  const queryOptions = {
+    where,
+    take: limit + 1,
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      department: true,
+      location: true,
+      employmentType: true,
+      experienceMin: true,
+      experienceMax: true,
+      openingsCount: true,
+      isActive: true,
+      createdAt: true
+    }
+  };
+
+  if (cursor) {
+    queryOptions.cursor = { id: cursor };
+    queryOptions.skip = 1;
+  }
+
+  const items = await prisma.job.findMany(queryOptions);
+  const hasMore = items.length > limit;
+  if (hasMore) {
+    items.pop();
+  }
+
+  const nextCursor = hasMore ? items[items.length - 1]?.id : null;
+
+  res.json({
+    success: true,
+    data: items,
+    nextCursor,
+    hasMore
+  });
+};
+
+// Jobs search route with QUERY and POST support
+router.all('/search', parseQueryBody, requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), asyncHandler(async (req, res) => {
+  if (req.method === 'QUERY' || req.method === 'POST') {
+    return await jobSearchHandler(req, res);
+  }
+  res.status(405).set('Allow', 'QUERY, POST').end();
+}));
+
 router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),

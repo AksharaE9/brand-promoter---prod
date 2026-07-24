@@ -17,8 +17,8 @@ datasource db {
 
 enum UserRole {
   SUPER_ADMIN
+  ADMIN
   RECRUITER
-  INTERVIEWER
 }
 
 enum UserStatus {
@@ -53,6 +53,8 @@ enum InterviewMode {
   IN_PERSON
   VIRTUAL
   PHONE
+  DRIVE
+  WALK_IN_DRIVE
 }
 
 enum InterviewStatus {
@@ -97,6 +99,9 @@ model User {
   reportingTo      String?
   maxActiveCandidates Int?
   profilePhotoUrl  String?
+  mustChangePassword Boolean @default(false) @map("must_change_password")
+  canAddRecruitmentReports Boolean @default(false) @map("can_add_recruitment_reports")
+  is_test_data     Boolean    @default(false)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -108,8 +113,17 @@ model User {
   candidatesMentored Candidate[] @relation("CandidateMentor")
   jobsCreated      Job[]
   auditLogs        AuditLog[]
+  interviewFeedbacks InterviewFeedback[]
+  loggedContactAttempts CandidateContactAttempt[]
+  schedulingMember    SchedulingMember?
+  importedLeadLists   SchedulingLeadList[]
+  schedulingMemberFiles SchedulingMemberFile[]
+  submittedReports    CandidateInternalReport[]
+  recruitmentReports  RecruitmentReport[]
+
 
   @@index([email])
+
   @@index([organizationId])
   @@index([role])
   @@index([status])
@@ -146,6 +160,7 @@ model Candidate {
   area                String?
   course              String?
   graduationYear      String?
+  college             String?
   preferredRole       String?
   source              String?
   jobTitle            String?
@@ -155,12 +170,18 @@ model Candidate {
   organizationId      String          @default("defaultOrg")
   isDeleted           Boolean         @default(false)
   deletedAt           DateTime?
+  is_test_data        Boolean         @default(false)
 
   // Resume / photo
   resumeFileId        String?
   profilePhotoFileId  String?
   resumeFile          FileMeta?       @relation("CandidateResume", fields: [resumeFileId], references: [id])
   profilePhotoFile    FileMeta?       @relation("CandidatePhoto", fields: [profilePhotoFileId], references: [id])
+
+  // External Resume Links
+  resumeLinkOriginal  String?
+  resumeLinkDownload  String?
+  resumeLinkProvider  String?
 
   // Relations to users
   createdById         String?
@@ -175,6 +196,9 @@ model Candidate {
   offerDecision       String?
   doj                 String?
 
+  // Phone normalized for quick lookup and auto-linking
+  phoneNormalized     String?         @map("phone_normalized")
+
   // Custom fields as JSON (flexible NoSQL-style)
   customFields        Json?
 
@@ -187,11 +211,19 @@ model Candidate {
   updatedAt           DateTime        @updatedAt
 
   applications        Application[]
+  interviewFeedbacks  InterviewFeedback[]
+  contactAttempts     CandidateContactAttempt[]
+  internalReports     CandidateInternalReport[]
+
 
   @@index([organizationId])
   @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
   @@index([organizationId, isDeleted, company, createdAt], map: "idx_candidates_org_company_created")
+  @@index([organizationId, isDeleted, updatedAt(sort: Desc)], map: "idx_candidates_org_deleted_updated")
+  @@index([organizationId, isDeleted, updatedAt(sort: Desc)], map: "idx_candidates_updated_at")
+  @@index([organizationId, currentStage], map: "idx_candidates_stage")
   @@index([phone])
+  @@index([phoneNormalized])
   @@index([email])
   @@index([status])
   @@index([isDeleted])
@@ -203,6 +235,7 @@ model Candidate {
   @@index([mentorId])
   @@map("candidates")
 }
+
 
 // ─────────────────────────────────────────────
 // Jobs
@@ -232,10 +265,13 @@ model Job {
 
   @@index([isActive])
   @@index([organizationId])
+  @@index([organizationId, isActive], map: "idx_jobs_org_active")
+  @@index([organizationId, isActive], map: "idx_jobs_status_open")
   @@index([createdAt])
   @@index([createdById])
   @@map("jobs")
 }
+
 
 // ─────────────────────────────────────────────
 // Applications
@@ -263,6 +299,8 @@ model Application {
 
   @@unique([candidateId, jobId])
   @@index([organizationId])
+  @@index([organizationId, isDeleted, status], map: "idx_applications_org_status")
+  @@index([organizationId, isDeleted, createdAt(sort: Desc)], map: "idx_applications_org_deleted_created")
   @@index([status])
   @@index([jobId])
   @@index([candidateId])
@@ -270,6 +308,7 @@ model Application {
   @@index([currentStageId])
   @@map("applications")
 }
+
 
 // ─────────────────────────────────────────────
 // Pipeline
@@ -371,6 +410,7 @@ model Interview {
   @@index([status])
   @@index([organizationId])
   @@index([organizationId, scheduledStart])
+  @@index([organizationId, scheduledStart], map: "idx_interviews_scheduled_date")
   @@index([organizationId, status, scheduledStart])
   @@index([candidateId])
   @@index([jobId])
@@ -413,6 +453,9 @@ model AuditLog {
   entityType     String
   entityId       String?
   entityName     String?
+  subjectType    String?  @map("subject_type")
+  subjectId      String?  @map("subject_id")
+  subjectName    String?  @map("subject_name")
   oldData        Json?
   newData        Json?
   metadata       Json?
@@ -428,7 +471,24 @@ model AuditLog {
   @@index([organizationId])
   @@index([createdAt])
   @@index([action])
+  @@index([subjectType, subjectId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// Report Errors
+// ─────────────────────────────────────────────
+
+model ReportError {
+  id           String   @id @default(cuid())
+  reportType   String   @map("report_type")
+  requestedBy  String   @map("requested_by")
+  params       String?
+  errorMessage String   @map("error_message")
+  stackTrace   String?  @map("stack_trace")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("report_errors")
 }
 
 // ─────────────────────────────────────────────
@@ -615,4 +675,196 @@ model Organization {
   updatedAt   DateTime @updatedAt
 
   @@map("organizations")
+}
+
+// ─────────────────────────────────────────────
+// Interview Feedbacks (3 Fixed Rounds Templates)
+// ─────────────────────────────────────────────
+
+model InterviewFeedback {
+  id              String   @id @default(cuid())
+  candidateId     String?
+  round           String   // ROUND_1 | ROUND_2 | FINAL_ROUND
+  submittedById   String?
+  templateVersion Int      @default(1) @map("template_version")
+  feedbackData    Json     // full template fields data object
+  selectionStatus String   // SELECTED | REJECTED | HOLD
+  overallRating   Float?
+  pendingLink     Boolean  @default(false) @map("pending_link")
+  offerLetterDocumentUrl        String? @map("offer_letter_document_url")
+  offerLetterEmailAttachmentUrl String? @map("offer_letter_email_attachment_url")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  candidate       Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  submittedBy     User?      @relation(fields: [submittedById], references: [id])
+
+  @@unique([candidateId, round])
+  @@index([candidateId])
+  @@index([selectionStatus])
+  @@map("interview_feedbacks")
+}
+
+// ─────────────────────────────────────────────
+// Candidate Contact Attempts
+// ─────────────────────────────────────────────
+
+enum ContactAttemptType {
+  DIDNT_PICK_UP
+  MORNING_FOLLOW_UP
+}
+
+model CandidateContactAttempt {
+  id          String             @id @default(cuid())
+  candidateId String
+  attemptType ContactAttemptType
+  attemptedAt DateTime           @default(now())
+  photoUrl    String?
+  note        String?
+  loggedById  String
+  createdAt   DateTime           @default(now())
+
+  candidate   Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  loggedBy    User               @relation(fields: [loggedById], references: [id])
+
+  @@index([candidateId])
+  @@index([attemptType])
+  @@index([attemptedAt])
+  @@index([candidateId, attemptedAt], map: "idx_contact_attempts_candidate_time")
+  @@map("candidate_contact_attempts")
+}
+
+// ─────────────────────────────────────────────
+// Scheduling (Members, Lead Lists, Daily Reports)
+// ─────────────────────────────────────────────
+
+model SchedulingMember {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String?  @unique
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  is_test_data Boolean  @default(false)
+
+  leadLists    SchedulingLeadList[]
+  dailyReports SchedulingDailyReport[]
+  files        SchedulingMemberFile[]
+
+  @@map("scheduling_members")
+}
+
+model SchedulingLeadList {
+  id             String   @id @default(cuid())
+  memberId       String
+  member         SchedulingMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  listDate       DateTime @db.Date
+  importedById   String
+  importedBy     User     @relation(fields: [importedById], references: [id], onDelete: Cascade)
+
+  importedAt     DateTime @default(now())
+  totalLeads     Int
+  sourceFilename String?
+  is_test_data   Boolean  @default(false)
+
+  leads          SchedulingLead[]
+
+  @@unique([memberId, listDate])
+  @@index([memberId])
+  @@index([listDate])
+  @@index([memberId, listDate(sort: Desc)])
+  @@map("scheduling_lead_lists")
+}
+
+model SchedulingLead {
+  id              String             @id @default(cuid())
+  listId          String
+  list            SchedulingLeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  leadData        Json
+  phoneNormalized String?            @map("phone_normalized")
+
+  @@index([listId])
+  @@index([phoneNormalized])
+  @@map("scheduling_leads")
+}
+
+model SchedulingDailyReport {
+  id               String   @id @default(cuid())
+  memberId         String
+  member           SchedulingMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  reportDate       DateTime @db.Date
+  callsDone        Int      @default(0)
+  callsDidntPick   Int      @default(0)
+  callsPicked      Int      @default(0)
+  scheduledEntries Int      @default(0)
+  updatedInAts     Int      @default(0)
+  updatedInMail    Int      @default(0)
+  submittedAt      DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  is_test_data     Boolean  @default(false)
+
+  @@unique([memberId, reportDate])
+  @@index([memberId])
+  @@index([reportDate])
+  @@index([memberId, reportDate(sort: Desc)])
+  @@map("scheduling_daily_reports")
+}
+
+model SchedulingMemberFile {
+  id           String           @id @default(cuid())
+  memberId     String           @map("member_id")
+  member       SchedulingMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  forDate      DateTime         @map("for_date") @db.Date
+  fileUrl      String           @map("file_url")
+  note         String?
+  uploadedById String           @map("uploaded_by")
+  uploadedBy   User             @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([memberId])
+  @@index([forDate])
+  @@index([memberId, forDate(sort: Desc), createdAt(sort: Desc)])
+  @@map("scheduling_member_files")
+}
+
+model CandidateInternalReport {
+  id            String    @id @default(cuid())
+  candidateId   String    @map("candidate_id")
+  content       String    @db.Text
+  submittedById String    @map("submitted_by")
+  submittedAt   DateTime  @default(now()) @map("submitted_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  candidate     Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  submittedBy   User      @relation(fields: [submittedById], references: [id])
+
+  @@index([candidateId])
+  @@index([submittedById])
+  @@map("candidate_internal_reports")
+}
+
+
+// ─────────────────────────────────────────────
+// Recruitment Reports (Added Reports)
+// ─────────────────────────────────────────────
+
+model RecruitmentReport {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  fileUrl      String    @map("file_url")
+  fileName     String    @map("file_name")
+  fileSize     Int?      @map("file_size")
+  mimeType     String?   @map("mime_type")
+  uploadedById String    @map("uploaded_by")
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  isDeleted    Boolean   @default(false) @map("is_deleted")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([uploadedById])
+  @@index([isDeleted])
+  @@index([createdAt(sort: Desc)])
+  @@map("recruitment_reports")
 }

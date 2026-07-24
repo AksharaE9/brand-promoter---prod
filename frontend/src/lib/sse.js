@@ -20,7 +20,11 @@ function connect() {
   clearTimeout(reconnectTimer);
 
   try {
-    eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
+    // EventSource requires an absolute URL. Since API_BASE_URL may be relative ('/api'),
+    // we prefix it with window.location.origin so the request goes through the Vite proxy in dev
+    // and works same-origin in production. This prevents CORS failures on direct-to-4000 calls.
+    const sseOrigin = API_BASE_URL.startsWith('http') ? '' : window.location.origin;
+    eventSource = new EventSource(`${sseOrigin}${API_BASE_URL}/sse/stream?token=${token}`);
 
     eventSource.onopen = () => {
       reconnectDelay = 2000; // reset backoff on success
@@ -93,4 +97,15 @@ export function initSSE() {
 export function destroySSE() {
   subscribers.clear();
   disconnect();
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      connect();
+      subscribers.forEach((cb) => {
+        try { cb({ type: 'VISIBILITY_RECONCILE' }); } catch (_) {}
+      });
+    }
+  });
 }

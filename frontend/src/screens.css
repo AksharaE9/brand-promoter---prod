@@ -921,4 +921,52 @@
 .float-widget-3 {
   animation: floatWidget3 4.6s ease-in-out infinite;
 }
+
+/* ─── Candidate Name Truncation & Header Layout ─────────────────── */
+.candidate-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.candidate-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.candidate-name-block {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.candidate-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .candidate-card-header {
+    flex-wrap: wrap;
+  }
+  .candidate-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+.truncated-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+}
 

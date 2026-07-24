@@ -28,10 +28,13 @@
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { parseNotesSafely, getFirstFeedback } from '../../lib/interviewUtils';
+import { getStoredUser, apiGet, apiPost } from '../../lib/api';
 
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
+
+import { formatTime24h } from '../../lib/datetime';
 
 function formatDateDDMMYYYY(dateStr) {
   if (!dateStr) return '-';
@@ -41,13 +44,9 @@ function formatDateDDMMYYYY(dateStr) {
 
 function formatTime(dateStr) {
   if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  const h = d.getHours(), m = d.getMinutes();
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  const mStr = m > 0 ? `:${String(m).padStart(2, '0')}` : '';
-  return `${h12}${mStr} ${suffix}`;
+  return formatTime24h(dateStr) || '-';
 }
+
 
 function downloadBase64File(fileName, base64Data) {
   try {
@@ -219,6 +218,14 @@ const ALL_COLUMNS = [
     },
   },
   {
+    key: 'createdByName',
+    label: 'Created',
+    width: 140,
+    filterType: 'set',
+    getValue: (iv) => iv.createdByName || 'Super Admin',
+    render: (iv) => <span title={iv.createdByName || 'Super Admin'}>{iv.createdByName || 'Super Admin'}</span>,
+  },
+  {
     key: 'mode',
     label: 'Mode',
     width: 110,
@@ -261,6 +268,35 @@ const ALL_COLUMNS = [
     // Uses `result` (outcome) NOT `status` (workflow), matching List View pill display
     getValue: (iv) => iv.result || 'PENDING',
     render: (iv) => <StatusPill result={iv.result} />,
+  },
+  {
+    key: 'offerLetterSent',
+    label: 'Offer Letter Sent',
+    width: 140,
+    filterType: 'set',
+    getValue: (iv) => iv.offer_letter_sent || '—',
+    render: (iv) => {
+      const val = iv.offer_letter_sent || '—';
+      if (val === 'Yes') {
+        return (
+          <span style={{ color: '#2ca764', fontWeight: 700, fontSize: 11 }}>
+            Yes
+          </span>
+        );
+      } else if (val === 'No') {
+        return (
+          <span style={{ color: '#d97706', fontWeight: 700, fontSize: 11 }}>
+            No
+          </span>
+        );
+      } else {
+        return (
+          <span style={{ color: '#94a3b8', fontWeight: 500, fontSize: 11 }}>
+            —
+          </span>
+        );
+      }
+    },
   },
   {
     key: 'techScore',
@@ -392,6 +428,46 @@ const ALL_COLUMNS = [
     },
   },
   {
+    key: 'morningFollowUp',
+    label: 'Morning Follow-up',
+    width: 135,
+    filterType: 'set',
+    getValue: (iv) => {
+      const { morningFollowUp } = parseNotesSafely(iv?.notes);
+      return morningFollowUp ? 'Uploaded' : "Didn't upload";
+    },
+    render: (iv) => {
+      const { morningFollowUp } = parseNotesSafely(iv?.notes);
+      return morningFollowUp ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            downloadBase64File(morningFollowUp.name, morningFollowUp.data);
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: '#2ca764',
+            fontWeight: 600,
+            fontSize: 11,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+          title={`Click to download: ${morningFollowUp.name}`}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+          Uploaded
+        </button>
+      ) : (
+        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+      );
+    },
+  },
+  {
     key: 'nextSchedule',
     label: 'Next Schedule',
     width: 180,
@@ -468,6 +544,52 @@ const ALL_COLUMNS = [
       );
     },
   },
+  {
+    key: 'internalReport',
+    label: 'Internal Report',
+    width: 150,
+    filterType: 'text',
+    getValue: (iv) => {
+      const reports = iv.application?.candidate?.internalReports || iv.candidate?.internalReports || [];
+      return reports.length > 0 ? `${reports.length} report${reports.length > 1 ? 's' : ''}` : '—';
+    },
+    render: (iv, { onOpenInternalReports }) => {
+      const reports = iv.application?.candidate?.internalReports || iv.candidate?.internalReports || [];
+      const count = reports.length;
+      if (count === 0) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between', width: '100%' }}>
+            <span style={{ color: '#94a3b8' }}>—</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpenInternalReports(iv); }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '10px', color: '#1f52cc', padding: '2px 6px' }}
+            >
+              + Add
+            </button>
+          </div>
+        );
+      }
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between', width: '100%' }}>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenInternalReports(iv); }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontSize: '11px', color: '#1f52cc', fontWeight: 600 }}
+          >
+            [View] {count} report{count > 1 ? 's' : ''}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onOpenInternalReports(iv); }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '10px', color: '#1f52cc', padding: '2px 6px' }}
+          >
+            + Add
+          </button>
+        </div>
+      );
+    }
+  },
 ];
 
 // ─────────────────────────────────────────────
@@ -517,7 +639,50 @@ function ResizableHeader({ col, width, onResize, sortState, onSort }) {
 // Main ExcelView component
 // ─────────────────────────────────────────────
 
-export default function ExcelView({ interviews = [], viewDate, onSelectCandidate }) {
+export default function ExcelView({
+  interviews = [],
+  viewDate,
+  onSelectCandidate,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
+}) {
+  const containerRef = useRef(null);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMore) {
+          onLoadMore();
+        }
+      },
+      {
+        root: containerRef.current,
+        threshold: 0,
+        rootMargin: '150px',
+      }
+    );
+
+    const currentSentinel = sentinelRef.current;
+    if (currentSentinel) {
+      observer.observe(currentSentinel);
+    }
+
+    return () => {
+      if (currentSentinel) {
+        observer.unobserve(currentSentinel);
+      }
+    };
+  }, [onLoadMore, hasMore, loadingMore]);
+
+  const isSuperAdmin = useMemo(() => {
+    const user = getStoredUser();
+    return user?.role === 'SUPER_ADMIN';
+  }, []);
+
   // ── Column widths (resizable) ──
   const [colWidths, setColWidths] = useState(() =>
     Object.fromEntries(ALL_COLUMNS.map((c) => [c.key, c.width]))
@@ -541,9 +706,64 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
   }, []);
 
   const visibleColumns = useMemo(
-    () => ALL_COLUMNS.filter((c) => !hiddenCols.includes(c.key)),
-    [hiddenCols]
+    () => ALL_COLUMNS.filter((c) => {
+      if (c.key === 'internalReport') return isSuperAdmin;
+      return true;
+    }).filter((c) => !hiddenCols.includes(c.key)),
+    [hiddenCols, isSuperAdmin]
   );
+
+  const columnsForToggle = useMemo(() => {
+    return ALL_COLUMNS.filter((c) => {
+      if (c.key === 'internalReport') return isSuperAdmin;
+      return true;
+    });
+  }, [isSuperAdmin]);
+
+  // ── Internal Reports Modal State ──
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [newReport, setNewReport] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reportError, setReportError] = useState('');
+
+  const handleOpenInternalReports = useCallback(async (iv) => {
+    const candidate = iv.application?.candidate || iv.candidate;
+    if (!candidate) return;
+    setSelectedCandidate(candidate);
+    setReports(candidate.internalReports || []);
+    setNewReport('');
+    setReportError('');
+
+    try {
+      const res = await apiGet(`/candidates/${candidate.id}/internal-reports`);
+      if (res.success) {
+        setReports(res.data || []);
+        candidate.internalReports = res.data || [];
+      }
+    } catch (err) {
+      console.error('Failed to load internal reports:', err.message);
+    }
+  }, []);
+
+  const handleSubmitReport = useCallback(async (e) => {
+    e.preventDefault();
+    if (!newReport.trim() || !selectedCandidate) return;
+    setIsSubmitting(true);
+    setReportError('');
+    try {
+      const res = await apiPost(`/candidates/${selectedCandidate.id}/internal-reports`, { content: newReport });
+      if (res.success) {
+        setReports(prev => [res.data, ...prev]);
+        setNewReport('');
+        selectedCandidate.internalReports = [res.data, ...(selectedCandidate.internalReports || [])];
+      }
+    } catch (err) {
+      setReportError(err.message || 'Failed to submit report');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [newReport, selectedCandidate]);
 
   // ── Sort state ──
   const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
@@ -620,6 +840,18 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
             const timeA = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0;
             const timeB = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0;
             return sort.dir === 'asc' ? timeA - timeB : timeB - timeA;
+          }
+          if (col.key === 'offerLetterSent') {
+            const valA = col.getValue(a);
+            const valB = col.getValue(b);
+            const getPriority = (val) => {
+              if (val === 'No') return 1;
+              if (val === 'Yes') return 2;
+              return 3;
+            };
+            const pA = getPriority(valA);
+            const pB = getPriority(valB);
+            return sort.dir === 'asc' ? pA - pB : pB - pA;
           }
           const cmp = String(col.getValue(a)).localeCompare(String(col.getValue(b)), undefined, { numeric: true });
           return sort.dir === 'asc' ? cmp : -cmp;
@@ -749,7 +981,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
               background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12,
               padding: '8px 0', minWidth: 200, boxShadow: '0 8px 24px rgba(0,0,0,.12)',
             }}>
-              {ALL_COLUMNS.map((col) => (
+              {columnsForToggle.map((col) => (
                 <label key={col.key} style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px',
                   cursor: 'pointer', fontSize: 12, color: '#334155', userSelect: 'none',
@@ -849,7 +1081,7 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
       </div>
 
       {/* ── Table ── */}
-      <div className="excel-grid-container" style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+      <div ref={containerRef} className="excel-grid-container" style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
         <table style={{
           width: totalWidth, minWidth: '100%', borderCollapse: 'collapse',
           tableLayout: 'fixed', fontSize: 12,
@@ -969,12 +1201,19 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
                         color: '#334155',
                       }}
                     >
-                      {col.render(iv, { onSelectCandidate })}
+                      {col.render(iv, { onSelectCandidate, onOpenInternalReports: handleOpenInternalReports })}
                     </td>
                   ))}
                 </tr>
               );
             })}
+            {hasMore && (
+              <tr ref={sentinelRef}>
+                <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', padding: '16px 0', color: '#94a3b8', fontSize: 12, borderBottom: '1px solid #f1f5f9' }}>
+                  {loadingMore ? 'Loading more records...' : 'Scroll to load more'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1010,6 +1249,132 @@ export default function ExcelView({ interviews = [], viewDate, onSelectCandidate
           </button>
         )}
       </div>
+      {/* ── Candidate Internal Reports Modal ── */}
+      {selectedCandidate && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(8px)',
+          display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000,
+        }} onClick={() => setSelectedCandidate(null)}>
+          <div className="os-card" style={{
+            width: '550px', maxHeight: '80vh', display: 'flex', flexDirection: 'column',
+            overflow: 'hidden', background: '#fff', border: '1px solid #e2e8f0',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            borderRadius: '16px', padding: 0
+          }} onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 24px', borderBottom: '1px solid #f1f5f9',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              background: '#f8fafc'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                  Internal Reports
+                </h3>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                  Candidate: {selectedCandidate.fullName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCandidate(null)}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: '#94a3b8', fontSize: '20px', padding: 0, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', height: '24px', width: '24px'
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>close</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{
+              padding: '24px', overflowY: 'auto', flex: 1, display: 'flex',
+              flexDirection: 'column', gap: '16px'
+            }}>
+              {/* Add Report Form */}
+              <form onSubmit={handleSubmitReport} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <textarea
+                  placeholder="Type your internal report or notes here..."
+                  value={newReport}
+                  onChange={(e) => setNewReport(e.target.value)}
+                  style={{
+                    width: '100%', minHeight: '80px', padding: '12px', borderRadius: '8px',
+                    border: '1px solid #cbd5e1', outline: 'none', fontSize: '12px',
+                    resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box'
+                  }}
+                  required
+                />
+                {reportError && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 500 }}>
+                    {reportError}
+                  </span>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !newReport.trim()}
+                    className="os-btn-primary"
+                    style={{
+                      height: '32px', fontSize: '12px', padding: '0 16px',
+                      display: 'flex', alignItems: 'center', gap: '4px',
+                      background: isSubmitting || !newReport.trim() ? '#94a3b8' : '#1f52cc',
+                      color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600
+                    }}
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </form>
+
+              <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: 0 }} />
+
+              {/* Reports List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h4 style={{ margin: 0, fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                  History ({reports.length})
+                </h4>
+                
+                {reports.length === 0 ? (
+                  <div style={{
+                    textAlign: 'center', padding: '24px', color: '#94a3b8',
+                    fontSize: '12px', border: '1px dashed #e2e8f0', borderRadius: '8px'
+                  }}>
+                    No internal reports submitted yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+                    {reports.map((r) => (
+                      <div key={r.id} style={{
+                        background: '#f8fafc', border: '1px solid #f1f5f9',
+                        borderRadius: '10px', padding: '12px 16px', display: 'flex',
+                        flexDirection: 'column', gap: '6px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#1e293b' }}>
+                            {r.submittedBy}
+                          </span>
+                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>
+                            {new Date(r.submittedAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p style={{
+                          margin: 0, fontSize: '12px', color: '#334155',
+                          whiteSpace: 'pre-wrap', lineHeight: 1.5, textAlign: 'left'
+                        }}>
+                          {r.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

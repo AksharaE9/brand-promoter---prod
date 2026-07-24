@@ -95,7 +95,11 @@ function broadcastToOrg(orgId, eventName, data) {
   pushToReplayBuffer(orgId, eventId, eventName, payload);
 
   // 2. Legacy 'message' event for standard onmessage listeners
-  const legacyPayload = buildPayload('message', { ...data, type: eventName }, eventId);
+  const legacyPayload = buildPayload('message', {
+    ...data,
+    subType: data.type || eventName,
+    type: eventName
+  }, eventId);
   pushToReplayBuffer(orgId, eventId, 'message', legacyPayload);
 
   if (orgMap && orgMap.size > 0) {

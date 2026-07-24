@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
-import { apiGet, API_BASE_URL } from '../lib/api';
+import { apiGet, apiQuery, API_BASE_URL } from '../lib/api';
 import { subscribeSSE } from '../lib/sse';
 
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
@@ -20,7 +20,7 @@ const actionGroups = [
   },
   {
     category: "Candidate Actions",
-    actions: ["CREATE_CANDIDATE", "UPDATE_CANDIDATE", "DELETE_CANDIDATE", "BULK_UPLOAD_CANDIDATES", "CREATE_CANDIDATE_WITH_RESUME"]
+    actions: ["CREATE_CANDIDATE", "UPDATE_CANDIDATE", "DELETE_CANDIDATE", "BULK_UPLOAD_CANDIDATES", "CREATE_CANDIDATE_WITH_RESUME", "bulk_upload_completed", "candidate_created"]
   },
   {
     category: "Interview Actions",
@@ -65,11 +65,20 @@ const AuditLogs = () => {
   // Selected Log for Diff slide-over
   const [selectedLog, setSelectedLog] = useState(null);
 
+  const [cursors, setCursors] = useState({ 1: null });
+  const [showSkeleton, setShowSkeleton] = useState(false);
+  const abortControllerRef = useRef(null);
+
+  const resetPage = () => {
+    setPage(1);
+    setCursors({ 1: null });
+  };
+
   // Debounce search
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(search);
-      setPage(1);
+      resetPage();
     }, 300);
     return () => clearTimeout(handler);
   }, [search]);
@@ -78,7 +87,7 @@ const AuditLogs = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedInterviewerSearch(interviewerSearch);
-      setPage(1);
+      resetPage();
     }, 300);
     return () => clearTimeout(handler);
   }, [interviewerSearch]);
@@ -100,22 +109,38 @@ const AuditLogs = () => {
 
   // Fetch Audit Logs from backend
   const fetchLogs = async (silent = false) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let timer = null;
     try {
-      if (!silent) setLoading(true);
+      if (!silent) {
+        setLoading(true);
+        timer = setTimeout(() => {
+          setShowSkeleton(true);
+        }, 150);
+      }
       setError('');
 
-      const params = new URLSearchParams();
-      params.set('limit', String(limit));
-      params.set('page', String(page));
-      if (entityType)      params.set('entityType', entityType);
-      if (selectedUserId)  params.set('userId', selectedUserId);
-      if (startDate)       params.set('startDate', new Date(startDate).toISOString());
-      if (endDate)         params.set('endDate', endDate); // backend appends T23:59:59
-      if (debouncedSearch) params.set('search', debouncedSearch);
-      if (debouncedInterviewerSearch) params.set('interviewerName', debouncedInterviewerSearch);
-      if (selectedActions.length === 1) params.set('action', selectedActions[0]);
+      const body = {
+        limit,
+        cursor: cursors[page] || null,
+        entityType: entityType || undefined,
+        userId: selectedUserId || undefined,
+        startDate: startDate ? new Date(startDate).toISOString() : undefined,
+        endDate: endDate || undefined,
+        search: debouncedSearch || undefined,
+        interviewerName: debouncedInterviewerSearch || undefined,
+      };
 
-      const res = await apiGet(`/audit-logs?${params.toString()}`);
+      if (selectedActions.length === 1) {
+        body.action = selectedActions[0];
+      }
+
+      const res = await apiQuery('/audit-logs', body, { signal: controller.signal });
       if (res.success) {
         let resultLogs = res.data || [];
         // Client-side filter for multi-action selection
@@ -125,13 +150,22 @@ const AuditLogs = () => {
         setLogs(resultLogs);
         setTotalCount(res.pagination?.total || resultLogs.length);
         setTotalPages(res.pagination?.totalPages || 1);
+
+        if (res.next_cursor) {
+          setCursors(prev => ({ ...prev, [page + 1]: res.next_cursor }));
+        }
         setLiveCount(0); // reset live indicator on manual fetch
       } else {
         setError(res.message || 'Failed to fetch logs');
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // Ignored, newer request took over
+      }
       setError(err.message || 'Failed to retrieve audit events');
     } finally {
+      if (timer) clearTimeout(timer);
+      setShowSkeleton(false);
       setLoading(false);
     }
   };
@@ -217,7 +251,7 @@ const AuditLogs = () => {
       setStartDate(start.toISOString().split('T')[0]);
       setEndDate(today.toISOString().split('T')[0]);
     }
-    setPage(1);
+    resetPage();
   };
 
   const hasActiveFilters = startDate || endDate || selectedActions.length > 0 || selectedUserId || entityType || search || interviewerSearch;
@@ -233,7 +267,7 @@ const AuditLogs = () => {
     setUserSearchText('');
     setInterviewerSearch('');
     setDebouncedInterviewerSearch('');
-    setPage(1);
+    resetPage();
   };
 
   // Dropdown Multi-Select Category Handlers
@@ -241,7 +275,7 @@ const AuditLogs = () => {
     setSelectedActions(prev => 
       prev.includes(action) ? prev.filter(a => a !== action) : [...prev, action]
     );
-    setPage(1);
+    resetPage();
   };
 
   const handleSelectAllGroup = (groupActions, selectAll) => {
@@ -250,7 +284,7 @@ const AuditLogs = () => {
     } else {
       setSelectedActions(prev => prev.filter(a => !groupActions.includes(a)));
     }
-    setPage(1);
+    resetPage();
   };
 
   // Search user dropdown list
@@ -347,13 +381,13 @@ const AuditLogs = () => {
                   type="date"
                   className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs outline-none"
                   value={startDate}
-                  onChange={e => { setStartDate(e.target.value); setPage(1); }}
+                  onChange={e => { setStartDate(e.target.value); resetPage(); }}
                 />
                 <input 
                   type="date"
                   className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs outline-none"
                   value={endDate}
-                  onChange={e => { setEndDate(e.target.value); setPage(1); }}
+                  onChange={e => { setEndDate(e.target.value); resetPage(); }}
                 />
               </div>
             </div>
@@ -436,7 +470,7 @@ const AuditLogs = () => {
                   <button 
                     type="button" 
                     className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 rounded-lg"
-                    onClick={() => { setSelectedUserId(''); setUserSearchText(''); setShowUserDropdown(false); setPage(1); }}
+                    onClick={() => { setSelectedUserId(''); setUserSearchText(''); setShowUserDropdown(false); resetPage(); }}
                   >
                     All Members
                   </button>
@@ -449,7 +483,7 @@ const AuditLogs = () => {
                         setSelectedUserId(member.id);
                         setUserSearchText(member.fullName);
                         setShowUserDropdown(false);
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       {member.fullName} ({member.role})
@@ -465,7 +499,7 @@ const AuditLogs = () => {
               <select 
                 className="h-9 w-full rounded-lg border border-slate-200 px-3 text-xs bg-white font-semibold text-slate-700 outline-none"
                 value={entityType}
-                onChange={e => { setEntityType(e.target.value); setPage(1); }}
+                onChange={e => { setEntityType(e.target.value); resetPage(); }}
               >
                 <option value="">All Entities</option>
                 <option value="CANDIDATE">Candidate</option>
@@ -493,7 +527,7 @@ const AuditLogs = () => {
                 <button
                   type="button"
                   className="absolute right-2.5 top-[30px] text-slate-400 hover:text-slate-600 text-xs"
-                  onClick={() => { setInterviewerSearch(''); setDebouncedInterviewerSearch(''); setPage(1); }}
+                  onClick={() => { setInterviewerSearch(''); setDebouncedInterviewerSearch(''); resetPage(); }}
                 >
                   ✕
                 </button>
@@ -511,7 +545,7 @@ const AuditLogs = () => {
                         setInterviewerSearch(member.fullName);
                         setDebouncedInterviewerSearch(member.fullName);
                         setShowInterviewerDropdown(false);
-                        setPage(1);
+                        resetPage();
                       }}
                     >
                       <span className="block font-semibold text-slate-800">{member.fullName}</span>
@@ -577,7 +611,7 @@ const AuditLogs = () => {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {showSkeleton && loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i} className="animate-pulse border-b border-slate-100">
                     <td className="p-4"><div className="h-4 w-28 bg-slate-100 rounded" /></td>

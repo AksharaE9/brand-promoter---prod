@@ -16,11 +16,88 @@ const { getCache, setCache, TTL } = require("../../utils/cache");
 const { buildInterviewListQuery } = require("./queryBuilder");
 const { populateInterviewRelations } = require("./relationPopulator");
 const { mergeDirtyQueue } = require("./dirtyQueueMerger");
+const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, assertCanScheduleRound } = require("../../lib/interviewTemplates");
+
 const crypto = require("crypto");
 
 const router = express.Router();
 
 router.use(auth);
+
+// Helper middleware to parse body for HTTP QUERY requests if the standard body-parser skipped it
+const parseQueryBody = (req, res, next) => {
+  if (req.method === 'QUERY' && (!req.body || Object.keys(req.body).length === 0)) {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      try {
+        if (data) {
+          req.body = JSON.parse(data);
+        } else {
+          req.body = {};
+        }
+        next();
+      } catch (err) {
+        res.status(400).json({ success: false, error: 'Invalid JSON body for QUERY request' });
+      }
+    });
+  } else {
+    next();
+  }
+};
+
+const interviewSearchHandler = async (req, res) => {
+  const q = (req.body.q || '').trim();
+  const filters = req.body.filters || {};
+  const limit = Math.min(50, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
+  const cursor = req.body.cursor?.trim();
+  const orgId = req.user.organizationId || "defaultOrg";
+
+  const { queryParams } = await buildInterviewListQuery({
+    orgId,
+    status: filters.status,
+    jobId: filters.jobId,
+    candidateId: filters.candidateId,
+    applicationId: filters.applicationId,
+    interviewerId: filters.interviewerId,
+    search: q,
+    cursor,
+    limit,
+    date: filters.date,
+  });
+
+  const docs = await prisma.interview.findMany({
+    ...queryParams,
+    take: limit + 1
+  });
+
+  const hasMore = docs.length > limit;
+  const pageRounds = docs.slice(0, limit);
+  const lastDoc = pageRounds[pageRounds.length - 1];
+  const nextCursor = hasMore && lastDoc ? lastDoc.id : null;
+
+  const withDirty = await mergeDirtyQueue(pageRounds, orgId);
+  const populated = await populateInterviewRelations(withDirty, req.user);
+
+  res.json({
+    success: true,
+    data: populated,
+    nextCursor,
+    hasMore,
+    pagination: { total: populated.length, hasMore }
+  });
+};
+
+// Interviews search route with QUERY and POST support
+router.all('/search', parseQueryBody, requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), asyncHandler(async (req, res) => {
+  if (req.method === 'QUERY' || req.method === 'POST') {
+    return await interviewSearchHandler(req, res);
+  }
+  res.status(405).set('Allow', 'QUERY, POST').end();
+}));
+
 
 // ── GET export day (PDF Export with SQL Backend) ──
 router.get(
@@ -150,6 +227,67 @@ router.get(
     const orgId = req.user.organizationId || "defaultOrg";
     const interviewerId = req.query.interviewerId || (req.user.role === 'INTERVIEWER' ? req.user.id : undefined);
 
+    if (req.query.view === 'calendar') {
+      const { startDate, endDate } = req.query;
+      if (!startDate || !endDate) {
+        throw new ApiError(400, "startDate and endDate are required for calendar view");
+      }
+
+      const { queryParams } = await buildInterviewListQuery({
+        orgId,
+        status:        req.query.status,
+        jobId:         req.query.jobId,
+        candidateId:   req.query.candidateId,
+        applicationId: req.query.applicationId,
+        interviewerId,
+        search:        req.query.search,
+      });
+
+      queryParams.where.scheduledStart = {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      };
+
+      const dbQueryParams = {
+        where: queryParams.where,
+        select: {
+          id: true,
+          candidateId: true,
+          candidateName: true,
+          applicationId: true,
+          roundNo: true,
+          round: true,
+          scheduledStart: true,
+          status: true,
+          result: true,
+          jobTitle: true,
+          mode: true,
+          interviewerNames: true,
+          interviewerIds: true,
+        },
+        orderBy: {
+          scheduledStart: 'asc',
+        }
+      };
+
+      const docs = await prisma.interview.findMany(dbQueryParams);
+
+      const formatted = docs.map(iv => {
+        let panel = [];
+        if (iv.interviewerNames) {
+          panel = iv.interviewerNames.split(',').map(n => ({ fullName: n.trim() }));
+        }
+        return {
+          ...iv,
+          interviewers: panel,
+        };
+      });
+
+      res.setHeader('X-Cache', 'MISS');
+      res.setHeader('X-Response-Time', `${Date.now() - requestStart}ms`);
+      return res.json({ success: true, data: formatted });
+    }
+
     // ── 1. Cache check (target: < 10ms on hit) ──
     const cacheKey = buildCacheKey(orgId, { ...req.query, interviewerId });
     const cached   = await getCache(cacheKey);
@@ -196,7 +334,7 @@ router.get(
     const withDirty = await mergeDirtyQueue(pageRounds, orgId);
 
     // ── 4. Relation population (target: < 500ms with full Redis hit) ──
-    const populated = await populateInterviewRelations(withDirty);
+    const populated = await populateInterviewRelations(withDirty, req.user);
 
     // ── 5. Build response ──
     const responseData = {
@@ -229,6 +367,101 @@ router.get(
         `query:${req.query.cursor ? 'page-N' : 'page-1'}`
       );
     }
+  })
+);
+
+// ── GET interviews summary ──
+router.get(
+  '/summary',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const orgId = req.user.organizationId || "defaultOrg";
+    const cacheKey = `interviews:summary:${orgId}`;
+    
+    // Check cache (in-process L1 cache, no Redis)
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json({ success: true, data: cached });
+    }
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const startOfDay = new Date(`${todayStr}T00:00:00.000Z`);
+    const endOfDay = new Date(`${todayStr}T23:59:59.999Z`);
+
+    const [interviewsToday, pendingFeedback, completedRounds, activePanelistsCount] = await Promise.all([
+      // 1. Interviews Today
+      prisma.interview.count({
+        where: {
+          organizationId: orgId,
+          scheduledStart: {
+            gte: startOfDay,
+            lte: endOfDay
+          },
+          status: { not: 'CANCELLED' }
+        }
+      }),
+      // 2. Pending Feedback
+      prisma.interview.count({
+        where: {
+          organizationId: orgId,
+          scheduledStart: {
+            lt: now
+          },
+          status: { not: 'CANCELLED' },
+          feedback: {
+            equals: []
+          }
+        }
+      }),
+      // 3. Completed Rounds
+      prisma.interview.count({
+        where: {
+          organizationId: orgId,
+          status: 'COMPLETED'
+        }
+      }),
+      // 4. Active Panelists Count
+      prisma.user.count({
+        where: {
+          organizationId: orgId,
+          role: 'INTERVIEWER',
+          isActive: true,
+          isDeleted: false
+        }
+      })
+    ]);
+
+    const summaryData = {
+      interviewsToday,
+      pendingFeedback,
+      completedRounds,
+      activePanelistsCount
+    };
+
+    // Cache the result for 30 seconds
+    await setCache(cacheKey, summaryData, 30);
+
+    res.setHeader('X-Cache', 'MISS');
+    res.json({ success: true, data: summaryData });
+  })
+);
+
+// ── GET single round details (Consolidated) ──
+router.get(
+  '/:roundId/details',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { data: round } = await cache.getRound(roundId);
+    if (!round) {
+      return res.status(404).json({ success: false, error: 'Round not found' });
+    }
+    
+    // Populate relations for this round (candidate, job, interviewers)
+    const populated = await populateInterviewRelations([round], req.user);
+    res.json({ success: true, data: populated[0] });
   })
 );
 
@@ -324,6 +557,259 @@ router.post(
     });
   })
 );
+
+// ── 4 FIXED ROUNDS: Derived Scheduling Endpoint (POST /api/interviews/:candidateId/schedule) ──
+router.post(
+  '/:candidateId/schedule',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+    const { scheduledStart, mode, interviewerIds, durationMinutes, meetingLink } = req.body;
+
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+
+    // Fetch existing completed feedback rounds and scheduled interviews for candidate to derive next round
+    const completedFeedbacks = await prisma.interviewFeedback.findMany({
+      where: { candidateId },
+      select: { round: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const existingInterviews = await prisma.interview.findMany({
+      where: { candidateId, status: { not: 'CANCELLED' } },
+      select: { roundNo: true, round: true },
+    });
+
+    const feedbackRounds = completedFeedbacks.map((f) => f.round);
+    const scheduledRounds = existingInterviews.map((i) => {
+      if (i.roundNo === 1) return 'ROUND_1';
+      if (i.roundNo === 2) return 'ROUND_2';
+      return 'FINAL_ROUND';
+    });
+
+    const completedRounds = Array.from(new Set([...feedbackRounds, ...scheduledRounds]));
+    const nextRound = getNextSchedulableRound(completedRounds);
+
+    if (!nextRound) {
+      throw new ApiError(409, "All 3 interview rounds are already completed for this candidate.");
+    }
+
+    // Sequential Round Gating: Ensure prior round's feedback exists
+    await assertCanScheduleRound(prisma, candidateId, nextRound);
+
+
+
+    const roundNo = completedRounds.length + 1;
+    const roundLabel = ROUND_DISPLAY_LABEL[nextRound];
+    const orgId = req.user.organizationId || "defaultOrg";
+
+    const roundData = {
+      candidateId,
+      candidateName: candidate.fullName,
+      roundNo,
+      round: roundLabel,
+      scheduledStart: scheduledStart ? new Date(scheduledStart) : new Date(),
+      durationMinutes: parseInt(durationMinutes) || 60,
+      mode: mode || "VIRTUAL",
+      meetingLink: meetingLink || "",
+      interviewerIds: Array.isArray(interviewerIds) ? interviewerIds : [],
+      organizationId: orgId,
+      createdById: req.user.id,
+      status: "SCHEDULED",
+    };
+
+    const newInterview = await prisma.interview.create({
+      data: roundData,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        ...newInterview,
+        derivedRound: nextRound,
+        roundLabel,
+      },
+    });
+  })
+);
+
+// ── 4 FIXED ROUNDS: Schema-Driven Feedback Submission Endpoint (POST /api/interviews/:candidateId/feedback) ──
+router.post(
+  '/:candidateId/feedback',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+    const { round, data } = req.body;
+
+    if (!round || !data) {
+      throw new ApiError(400, "round and data fields are required");
+    }
+
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+
+    // Resolve template version (Option A: editing keeps same version)
+    let templateVersion = parseInt(req.body.templateVersion);
+    if (!templateVersion) {
+      const existing = await prisma.interviewFeedback.findUnique({
+        where: {
+          candidateId_round: {
+            candidateId,
+            round,
+          },
+        },
+      });
+      templateVersion = existing ? existing.templateVersion : 2;
+    }
+
+    // Strict schema-driven validation
+    const validation = validateFeedbackData(round, data, { templateVersion });
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: "Feedback validation failed",
+        errors: validation.errors,
+      });
+    }
+
+    const selectionStatus = data.selectionStatus || data.status || "HOLD";
+    const overallRating = data.overallRating !== undefined && data.overallRating !== null ? Number(data.overallRating) : null;
+
+    const offerLetterDocumentUrl = data.offerLetterDocument ? (typeof data.offerLetterDocument === 'string' ? data.offerLetterDocument : JSON.stringify(data.offerLetterDocument)) : null;
+    const offerLetterEmailAttachmentUrl = data.offerLetterEmailAttachment ? (typeof data.offerLetterEmailAttachment === 'string' ? data.offerLetterEmailAttachment : JSON.stringify(data.offerLetterEmailAttachment)) : null;
+
+    // Upsert feedback on (candidateId, round)
+    const feedbackRecord = await prisma.interviewFeedback.upsert({
+      where: {
+        candidateId_round: {
+          candidateId,
+          round,
+        },
+      },
+      create: {
+        candidateId,
+        round,
+        submittedById: req.user.id,
+        templateVersion,
+        feedbackData: data,
+        selectionStatus,
+        overallRating,
+        offerLetterDocumentUrl,
+        offerLetterEmailAttachmentUrl,
+      },
+      update: {
+        submittedById: req.user.id,
+        templateVersion,
+        feedbackData: data,
+        selectionStatus,
+        overallRating,
+        offerLetterDocumentUrl,
+        offerLetterEmailAttachmentUrl,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Update candidate status if REJECTED
+    if (selectionStatus === 'REJECTED') {
+      await prisma.candidate.update({
+        where: { id: candidateId },
+        data: { status: 'REJECTED' },
+      }).catch(() => {});
+    }
+
+    // Automatically complete matching Interview round in scheduling system
+    const roundNo = round === 'ROUND_1' ? 1 : round === 'ROUND_2' ? 2 : 3;
+    const activeInterview = await prisma.interview.findFirst({
+      where: {
+        candidateId,
+        roundNo,
+        status: { in: ['SCHEDULED', 'PENDING'] },
+      },
+    });
+    if (activeInterview) {
+      const srv = require('../../services/schedulingCacheService');
+      await srv.writeRound(
+        activeInterview.id,
+        {
+          status: "COMPLETED",
+          result: selectionStatus,
+          outcome: selectionStatus,
+          outcomeSetAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        req.user.id,
+        req.user.organizationId || "defaultOrg",
+        activeInterview
+      );
+    }
+
+    // Emit interview-feedback:updated SSE event
+    const sse = require('../../utils/sse');
+    sse.broadcastToOrg(req.user.organizationId || 'defaultOrg', 'interview-feedback:updated', {
+      candidateId,
+      feedbackId: feedbackRecord.id,
+      round,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: feedbackRecord,
+    });
+  })
+);
+
+// ── GET stored feedback for specific candidate and round ──
+router.get(
+  '/:candidateId/feedback/:round',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId, round } = req.params;
+
+    const feedbackRecord = await prisma.interviewFeedback.findUnique({
+      where: {
+        candidateId_round: {
+          candidateId,
+          round,
+        },
+      },
+    });
+
+    if (!feedbackRecord) {
+      throw new ApiError(404, `No feedback submitted for candidate in ${round}`);
+    }
+
+    res.json({
+      success: true,
+      data: feedbackRecord.feedbackData,
+      record: feedbackRecord,
+    });
+  })
+);
+
+// ── GET all stored feedbacks for candidate ──
+router.get(
+  '/:candidateId/feedback',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { candidateId } = req.params;
+
+    const feedbacks = await prisma.interviewFeedback.findMany({
+      where: { candidateId },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.json({
+      success: true,
+      data: feedbacks,
+    });
+  })
+);
+
 
 // ── POST submit feedback ──
 router.post(

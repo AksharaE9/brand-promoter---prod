@@ -12,6 +12,13 @@ function errorHandler(err, req, res, next) {
     return next(err);
   }
 
+  if (err.name === 'MulterError' && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      success: false,
+      message: 'File exceeds the 10 MB limit. Split it into smaller files if needed.',
+    });
+  }
+
   if (err instanceof ApiError) {
     return res.status(err.statusCode).json({
       success: false,

@@ -43,6 +43,10 @@ const PublicCareers = lazyWithRetry(() => import('./pages/PublicCareers'));
 const Team = lazyWithRetry(() => import('./pages/Team'));
 const Drives = lazyWithRetry(() => import('./pages/Drives'));
 const WorkspaceSelector = lazyWithRetry(() => import('./pages/WorkspaceSelector'));
+const SchedulingPage = lazyWithRetry(() => import('./pages/Scheduling/SchedulingPage'));
+const MemberProfilePage = lazyWithRetry(() => import('./pages/Scheduling/MemberProfilePage'));
+const NotFound = lazyWithRetry(() => import('./pages/NotFound'));
+
 
 // Sales Module
 const SalesLayout = lazyWithRetry(() => import('./pages/Sales/SalesLayout'));
@@ -66,6 +70,35 @@ import ToastContainer from './components/ToastContainer';
 
 const App = () => {
   const currentUser = getStoredUser();
+
+  React.useEffect(() => {
+    const prefetchSecondaryRoutes = () => {
+      // Quietly download secondary route JS chunks in background
+      import('./pages/Dashboard');
+      import('./pages/Candidates');
+      import('./pages/InterviewSchedule');
+      import('./pages/Scheduling/SchedulingPage');
+      import('./pages/JobsManager');
+      import('./pages/JobDetailModule');
+      import('./pages/CandidateProfile');
+      import('./pages/Analytics');
+      import('./pages/Reports');
+      import('./pages/AuditLogs');
+      import('./pages/Team');
+      import('./pages/Drives');
+      import('./pages/Settings');
+      import('./pages/LandingPage');
+      import('./pages/LoginPage');
+      import('./pages/SignupPage');
+    };
+
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(prefetchSecondaryRoutes, { timeout: 10_000 });
+    } else {
+      setTimeout(prefetchSecondaryRoutes, 2000);
+    }
+  }, []);
+
   return (
     <>
       <ToastContainer />
@@ -81,10 +114,14 @@ const App = () => {
               <Route path="/dashboard" element={protectedElement(<Dashboard />)} />
               <Route path="/candidates" element={protectedElement(<Candidates />)} />
               <Route path="/candidate/:id" element={protectedElement(<CandidateProfile />)} />
+              <Route path="/candidates/:id" element={protectedElement(<CandidateProfile />)} />
               <Route path="/jobs" element={protectedElement(<JobsManager />)} />
               <Route path="/jobs/:id" element={protectedElement(<JobDetailModule />)} />
               <Route path="/schedule" element={protectedElement(<InterviewSchedule />)} />
+              <Route path="/scheduling" element={protectedElement(<SchedulingPage />)} />
+              <Route path="/scheduling/members/:memberId" element={protectedElement(<MemberProfilePage />)} />
               <Route path="/drives" element={protectedElement(<Drives />)} />
+
               <Route path="/analytics" element={protectedElement(<Analytics />, ['SUPER_ADMIN'])} />
               <Route path="/reports" element={protectedElement(<Reports />, ['SUPER_ADMIN'])} />
               <Route path="/audit" element={protectedElement(<AuditLogs />, ['SUPER_ADMIN'])} />
@@ -100,6 +137,7 @@ const App = () => {
                 <Route path="team" element={<SalesTeam />} />
                 <Route path="settings" element={<SalesSettings />} />
               </Route>
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </Router>

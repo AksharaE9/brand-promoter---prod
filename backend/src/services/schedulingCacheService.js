@@ -324,10 +324,11 @@ function interviewSelectFields() {
     jobId: true, jobTitle: true, roundNo: true, round: true,
     scheduledStart: true, durationMinutes: true, mode: true,
     meetingLink: true, zohoLink: true, status: true, result: true,
-    outcome: true, outcomeSetAt: true, notes: true, organizationId: true,
+    outcome: true, outcomeSetAt: true, organizationId: true,
     createdById: true, interviewerIds: true, interviewerNames: true,
     feedback: true, rescheduleHistory: true, transferHistory: true,
     offerLetterUrl: true, voiceRecordingFileId: true, voiceRecordingUrl: true,
+    notes: true,
     createdAt: true, updatedAt: true,
     application: {
       select: {

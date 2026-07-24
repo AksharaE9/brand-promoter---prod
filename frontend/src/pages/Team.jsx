@@ -10,6 +10,8 @@ import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseN
 import EditRecruiterModal from '../components/Team/EditRecruiterModal';
 import EditInterviewerModal from '../components/Team/EditInterviewerModal';
 import { useToast } from '../hooks/useToast';
+import { validatePasswordStrength } from '../lib/passwordValidation';
+import { subscribeSSE } from '../lib/sse';
 
 const userTypes = [
   { value: 'RECRUITER', label: 'Recruiter', color: 'bg-blue-100 text-blue-800' }
@@ -26,6 +28,7 @@ const Team = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserRole, setEditingUserRole] = useState(null);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   // Filters
   const [roleFilter, setRoleFilter] = useState('ALL'); // ALL, SUPER_ADMIN, RECRUITER
@@ -50,8 +53,8 @@ const Team = () => {
   const loadAll = async () => {
     try {
       const [usersRes, meRes] = await Promise.all([
-        apiGet('/users'),
-        apiGet('/auth/me')
+        apiGet('/users', false),
+        apiGet('/auth/me', false)
       ]);
       setMe(meRes.data || null);
       if (Array.isArray(usersRes.data)) {
@@ -77,42 +80,29 @@ const Team = () => {
     };
     load();
 
-    const token = localStorage.getItem('ats_token');
-    let eventSource;
-    
     const handleTeamUpdate = () => {
       if (mounted) loadAll();
     };
 
-    if (token) {
-      eventSource = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'USER_CREATED' || data.type === 'USER_UPDATED' || data.type === 'USER_STATUS_UPDATED' || data.type === 'TEAM_UPDATE') {
-            handleTeamUpdate();
-          }
-        } catch (err) {}
-      };
-
-      // Listen for named team sync events
-      eventSource.addEventListener('TEAM_MEMBER_UPDATED', handleTeamUpdate);
-      eventSource.addEventListener('TEAM_MEMBER_DELETED', handleTeamUpdate);
-      eventSource.addEventListener('TEAM_MEMBER_RESTORED', handleTeamUpdate);
-      eventSource.addEventListener('TEAM_ROLE_CHANGED', handleTeamUpdate);
-      eventSource.addEventListener('TEAM_MEMBER_INVITED', handleTeamUpdate);
-    }
+    const unsub = subscribeSSE((data) => {
+      if (
+        data.type === 'USER_CREATED' ||
+        data.type === 'USER_UPDATED' ||
+        data.type === 'USER_STATUS_UPDATED' ||
+        data.type === 'TEAM_UPDATE' ||
+        data.type === 'TEAM_MEMBER_UPDATED' ||
+        data.type === 'TEAM_MEMBER_DELETED' ||
+        data.type === 'TEAM_MEMBER_RESTORED' ||
+        data.type === 'TEAM_ROLE_CHANGED' ||
+        data.type === 'TEAM_MEMBER_INVITED'
+      ) {
+        handleTeamUpdate();
+      }
+    });
 
     return () => {
       mounted = false;
-      if (eventSource) {
-        eventSource.removeEventListener('TEAM_MEMBER_UPDATED', handleTeamUpdate);
-        eventSource.removeEventListener('TEAM_MEMBER_DELETED', handleTeamUpdate);
-        eventSource.removeEventListener('TEAM_MEMBER_RESTORED', handleTeamUpdate);
-        eventSource.removeEventListener('TEAM_ROLE_CHANGED', handleTeamUpdate);
-        eventSource.removeEventListener('TEAM_MEMBER_INVITED', handleTeamUpdate);
-        eventSource.close();
-      }
+      unsub();
     };
   }, []);
 
@@ -611,6 +601,16 @@ const Team = () => {
                             <span className="material-symbols-outlined text-sm">edit</span>
                           </button>
                         )}
+                        {me?.id === member.id && (
+                          <button 
+                            className="os-btn-primary !h-8 !px-3 flex items-center gap-1.5 text-xs font-bold shadow-sm" 
+                            onClick={() => setShowChangePasswordModal(true)} 
+                            title="Change Password"
+                          >
+                            <span className="material-symbols-outlined text-sm">key</span>
+                            Password
+                          </button>
+                        )}
                         {/* Active / Deactivate toggle — SUPER_ADMIN only, not for self */}
                         {me?.role === 'SUPER_ADMIN' && member.id !== me.id && (member.status === 'ACTIVE' || member.status === 'INACTIVE') && (
                           <button
@@ -795,9 +795,179 @@ const Team = () => {
           onClose={() => { setEditingUserId(null); setEditingUserRole(null); }}
           onUpdate={loadAll}
         />
+        <ChangePasswordModal
+          isOpen={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+        />
       </PageEnter>
     </EnterpriseLayout>
   );
 };
+
+function ChangePasswordModal({ isOpen, onClose }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  // Real-time strength checks
+  const { ok: isPolicyMet, issues } = useMemo(() => {
+    return validatePasswordStrength(newPassword);
+  }, [newPassword]);
+
+  const confirmMatches = newPassword === confirmPassword;
+  const canSubmit = currentPassword && isPolicyMet && confirmMatches;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+
+    setSubmitting(true);
+    setError('');
+    setFieldErrors({});
+    setSuccess('');
+
+    try {
+      await apiPost('/users/me/change-password', {
+        currentPassword,
+        newPassword
+      });
+      setSuccess('Password updated successfully.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        onClose();
+        setSuccess('');
+      }, 1500);
+    } catch (err) {
+      const payload = err.payload || {};
+      if (payload.code === 'INVALID_CURRENT_PASSWORD') {
+        setFieldErrors({ current: 'Current password is incorrect.' });
+      } else if (payload.code === 'WEAK_PASSWORD') {
+        setError('New password does not meet strength requirements.');
+      } else if (payload.code === 'PASSWORD_UNCHANGED') {
+        setFieldErrors({ new: 'New password cannot be the same as your current password.' });
+      } else {
+        setError(err.message || 'Failed to change password.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 font-sans">Change Password</h2>
+            <p className="text-xs text-slate-500 font-sans">Secure your account by updating your password</p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center transition-colors">
+            <span className="material-symbols-outlined text-lg">close</span>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {error && <div className="p-3 text-red-600 bg-red-50 border border-red-100 rounded-xl text-xs font-semibold">{error}</div>}
+          {success && <div className="p-3 text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-xl text-xs font-semibold">{success}</div>}
+
+          {/* Current Password */}
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400">Current Password</label>
+            <input
+              type="password"
+              className={`w-full h-10 px-3 rounded-xl border focus:outline-none text-xs ${
+                fieldErrors.current ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#1f52cc]'
+              }`}
+              value={currentPassword}
+              onChange={e => {
+                setCurrentPassword(e.target.value);
+                setFieldErrors(prev => ({ ...prev, current: null }));
+              }}
+              required
+            />
+            {fieldErrors.current && <p className="text-[10px] text-red-500 font-semibold">{fieldErrors.current}</p>}
+          </div>
+
+          {/* New Password */}
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400">New Password</label>
+            <input
+              type="password"
+              className={`w-full h-10 px-3 rounded-xl border focus:outline-none text-xs ${
+                fieldErrors.new ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#1f52cc]'
+              }`}
+              value={newPassword}
+              onChange={e => {
+                setNewPassword(e.target.value);
+                setFieldErrors(prev => ({ ...prev, new: null }));
+              }}
+              required
+            />
+            {fieldErrors.new && <p className="text-[10px] text-red-500 font-semibold">{fieldErrors.new}</p>}
+
+            {/* Real-time strength checks */}
+            {newPassword && (
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-1 mt-1.5">
+                <p className="text-[9px] uppercase font-black text-slate-400">Password Strength Requirements</p>
+                <ul className="text-[10px] space-y-0.5 font-medium">
+                  {[
+                    { label: 'At least 12 characters', met: newPassword.length >= 12 },
+                    { label: 'One uppercase letter (A-Z)', met: /[A-Z]/.test(newPassword) },
+                    { label: 'One lowercase letter (a-z)', met: /[a-z]/.test(newPassword) },
+                    { label: 'One number (0-9)', met: /\d/.test(newPassword) },
+                    { label: 'One symbol/special character', met: /[^A-Za-z0-9]/.test(newPassword) },
+                    { label: 'No 3+ repeated characters in a row', met: !/(.)\1{2,}/.test(newPassword) },
+                  ].map((req, idx) => (
+                    <li key={idx} className={`flex items-center gap-1.5 ${req.met ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      <span className="material-symbols-outlined !text-xs leading-none">
+                        {req.met ? 'check_circle' : 'circle'}
+                      </span>
+                      {req.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* Confirm New Password */}
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase font-bold text-slate-400">Confirm New Password</label>
+            <input
+              type="password"
+              className={`w-full h-10 px-3 rounded-xl border focus:outline-none text-xs ${
+                confirmPassword && !confirmMatches ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#1f52cc]'
+              }`}
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              required
+            />
+            {confirmPassword && !confirmMatches && (
+              <p className="text-[10px] text-red-500 font-semibold">Passwords do not match.</p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting || !canSubmit}
+            className="w-full h-11 bg-[#1f52cc] hover:bg-[#163fa3] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-100 transition-all flex items-center justify-center gap-1.5 mt-2"
+          >
+            {submitting ? 'Updating...' : 'Update Password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default Team;

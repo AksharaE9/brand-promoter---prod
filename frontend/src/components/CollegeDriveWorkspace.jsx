@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import Reveal from './PageMotion';
+import { subscribeSSE } from '../lib/sse';
+import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
@@ -126,22 +128,16 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
 
   // Real-time sync listener
   useEffect(() => {
-    const token = localStorage.getItem('ats_token');
-    const es = new EventSource(`${API_BASE_URL}/notifications/stream?token=${token}`, { withCredentials: true });
-    
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        // Refresh drive candidates if any relevant candidate or drive event occurs
-        if (['CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED', 'APPLICATION_STATUS_UPDATED'].includes(d.type)) {
-          if (selectedDriveId) {
-            loadDriveDetails(selectedDriveId);
-          }
+    const unsub = subscribeSSE((d) => {
+      // Refresh drive candidates if any relevant candidate or drive event occurs
+      if (['CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED', 'APPLICATION_STATUS_UPDATED'].includes(d.type)) {
+        if (selectedDriveId) {
+          loadDriveDetails(selectedDriveId);
         }
-      } catch (_) {}
-    };
+      }
+    });
 
-    return () => es.close();
+    return () => unsub();
   }, [selectedDriveId]);
 
   const handleAddCollege = async (e) => {
@@ -556,7 +552,15 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                       accept=".xlsx, .csv" 
                       className="hidden" 
                       id="bulk-file-input" 
-                      onChange={e => setBulkFile(e.target.files?.[0])}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file && file.size > MAX_UPLOAD_BYTES) {
+                          alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                          e.target.value = '';
+                          return;
+                        }
+                        setBulkFile(file);
+                      }}
                     />
                     <label htmlFor="bulk-file-input" className="h-11 px-6 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-all flex items-center gap-2">
                       {bulkFile ? bulkFile.name : 'Choose File'}

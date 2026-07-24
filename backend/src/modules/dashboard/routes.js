@@ -3,45 +3,37 @@ const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler } = require("../../utils/errors");
 const { getCached, invalidate } = require("../../utils/cache");
-const { swrGet } = require("../../utils/swrCache");
-const { tieredDelete } = require("../../utils/tieredCache");
 
 const router = express.Router();
 router.use(auth);
 
+
 /**
- * GET /dashboard/init
- * Shared org-level cache. Invalidated on mutations via invalidateDashboard().
+ * Optimally fetches all dashboard counts, status funnels, recent applications, and interviews in parallel.
  */
 async function fetchDashboardData(orgId) {
   // Fetch pipeline stages
   const stages = await prisma.pipelineStage.findMany();
 
-  // Run all counts in parallel
+  // Run all counts/lookups in parallel
   const [
     candidateCount,
     jobCount,
     userCount,
     totalApps,
-    joinedCount,
-    rejectedCount,
-    offerSentCount,
-    pendingStatusCount,
     recentApplications,
     upcomingInterviews,
+    statusGroups,
+    stageCountsRaw
   ] = await Promise.all([
     prisma.candidate.count({ where: { organizationId: orgId, isDeleted: false } }),
     prisma.job.count({ where: { organizationId: orgId, isActive: true } }),
     prisma.user.count({ where: { organizationId: orgId, isDeleted: false, status: "ACTIVE" } }),
     prisma.application.count({ where: { organizationId: orgId, isDeleted: false } }),
-    prisma.application.count({ where: { organizationId: orgId, isDeleted: false, status: "JOINED" } }),
-    prisma.application.count({ where: { organizationId: orgId, isDeleted: false, status: "REJECTED" } }),
-    prisma.application.count({ where: { organizationId: orgId, isDeleted: false, status: "OFFER_SENT" } }),
-    prisma.application.count({ where: { organizationId: orgId, isDeleted: false, status: "PENDING" } }),
     prisma.application.findMany({
       where: { organizationId: orgId, isDeleted: false },
       orderBy: { createdAt: "desc" },
-      take: 10,
+      take: 6, // Bounded for Live Feed rendering
       include: {
         candidate: { select: { id: true, fullName: true, email: true } },
         job: { select: { id: true, title: true } },
@@ -52,20 +44,27 @@ async function fetchDashboardData(orgId) {
       orderBy: { scheduledStart: "asc" },
       take: 10,
     }),
+    prisma.application.groupBy({
+      by: ["status"],
+      where: { organizationId: orgId, isDeleted: false },
+      _count: { _all: true },
+    }),
+    prisma.application.groupBy({
+      by: ["currentStageId"],
+      where: { organizationId: orgId, isDeleted: false, status: "IN_PIPELINE" },
+      _count: { _all: true },
+    }),
   ]);
 
-  // Stage counts (Optimized: group by currentStageId in a single query to prevent N+1 queries)
-  const stageCountsRaw = await prisma.application.groupBy({
-    by: ["currentStageId"],
-    where: {
-      organizationId: orgId,
-      isDeleted: false,
-      status: "IN_PIPELINE",
-    },
-    _count: {
-      _all: true,
-    },
+  const statusCounts = {};
+  statusGroups.forEach(g => {
+    statusCounts[g.status] = g._count._all;
   });
+
+  const joinedCount = statusCounts["JOINED"] || 0;
+  const rejectedCount = statusCounts["REJECTED"] || 0;
+  const offerSentCount = statusCounts["OFFER_SENT"] || 0;
+  const pendingStatusCount = statusCounts["PENDING"] || 0;
 
   const stageCountsMap = {};
   stageCountsRaw.forEach((item) => {
@@ -79,7 +78,7 @@ async function fetchDashboardData(orgId) {
     return { id: s.id, name: (s.name || "").toLowerCase(), count };
   });
 
-  // Build funnel
+  // Categorize application stages into funnel categories
   let pendingCount = pendingStatusCount;
   let screeningCount = 0;
   let interviewCount = 0;
@@ -121,24 +120,32 @@ async function fetchDashboardData(orgId) {
 }
 
 /**
- * GET /dashboard/init
- * Shared org-level cache. Invalidated on mutations via invalidateDashboard().
+ * Common dashboard route handler returning consolidated payload from bounded LRU cache.
  */
-router.get(
-  "/init",
-  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
-  asyncHandler(async (req, res) => {
-    const skipCache = req.query._t ? true : false;
-    const orgId = req.user.organizationId || "default";
-    const cacheKey = `dashboard_init_org:${orgId}`;
+const getDashboardSummary = asyncHandler(async (req, res) => {
+  const skipCache = req.query._t || req.query.fresh ? true : false;
+  const orgId = req.user.organizationId || "defaultOrg";
+  const cacheKey = `dashboard:summary:${orgId}`;
 
-    if (skipCache) await tieredDelete(cacheKey);
+  if (skipCache) {
+    await invalidate(cacheKey);
+  }
 
-    const result = await swrGet(cacheKey, () => fetchDashboardData(orgId), 180, 90_000);
+  const data = await getCached(cacheKey, () => fetchDashboardData(orgId), 300000); // 5 min TTL
+  res.json({ success: true, data });
+});
 
-    res.json({ success: true, data: result.data });
-  })
-);
+/**
+ * GET /dashboard/summary
+ * Consolidated single dashboard summary API.
+ */
+router.get("/summary", requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), getDashboardSummary);
+
+/**
+ * GET /dashboard/init
+ * For backward-compatibility with existing frontend references.
+ */
+router.get("/init", requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), getDashboardSummary);
 
 /**
  * GET /dashboard/recruiter-summary
@@ -148,9 +155,14 @@ router.get(
   requireRoles("RECRUITER", "SUPER_ADMIN", "USER"),
   asyncHandler(async (req, res) => {
     const userId = req.user.id;
-    const cacheKey = `recruiter_summary_${userId}`;
+    const cacheKey = `dashboard:recruiter-summary:${userId}`;
+    const skipCache = req.query._t || req.query.fresh ? true : false;
 
-    const result = await swrGet(cacheKey, async () => {
+    if (skipCache) {
+      await invalidate(cacheKey);
+    }
+
+    const data = await getCached(cacheKey, async () => {
       const candidates = await prisma.candidate.findMany({
         where: { mentorId: userId, isDeleted: false },
         select: { id: true, status: true },
@@ -164,9 +176,9 @@ router.get(
       });
 
       return { stats, candidateCount: candidates.length };
-    }, 30, 10000);
+    }, 15000); // 15s TTL
 
-    res.json({ success: true, data: result.data });
+    res.json({ success: true, data });
   })
 );
 

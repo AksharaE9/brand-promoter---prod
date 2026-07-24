@@ -18,7 +18,7 @@
  * @returns {{ phoneFollowUp: object|null, emailFollowUp: object|null }}
  */
 export function parseNotesSafely(notesStr) {
-  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
+  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
   try {
     const parsed = JSON.parse(notesStr);
     if (parsed && typeof parsed === 'object') {
@@ -26,10 +26,11 @@ export function parseNotesSafely(notesStr) {
         phoneFollowUp:  parsed.phoneFollowUp  || null,
         emailFollowUp:  parsed.emailFollowUp  || null,
         nextSchedule:   parsed.nextSchedule   || null,
+        morningFollowUp: parsed.morningFollowUp || null,
       };
     }
   } catch (_) {}
-  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
+  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
 }
 
 /**

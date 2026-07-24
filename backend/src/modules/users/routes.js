@@ -6,6 +6,7 @@ const { upload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { getCached } = require("../../utils/cache");
+const { validatePasswordStrength } = require("../../lib/passwordValidation");
 
 const router = express.Router();
 router.use(auth);
@@ -274,6 +275,161 @@ router.post(
 
     res.status(201).json({ success: true, data: { fileId: fileMeta.id, url: cloudinaryUrl } });
   }),
+);
+
+// POST /api/users/me/change-password — self-service change password
+router.post(
+  "/me/change-password",
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      throw new ApiError(400, "Current password and new password are required");
+    }
+
+    const userId = req.user.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, fullName: true, passwordHash: true }
+    });
+
+    if (!user || !user.passwordHash) {
+      throw new ApiError(401, "User not found or has no password configured");
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({ code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' });
+    }
+
+    const strength = validatePasswordStrength(newPassword);
+    if (!strength.ok) {
+      return res.status(422).json({ code: 'WEAK_PASSWORD', details: strength.issues, message: 'New password is too weak' });
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(422).json({ code: 'PASSWORD_UNCHANGED', message: 'New password cannot be the same as your current password' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+      }
+    });
+
+    const currentSessionId = req.user.sessionId;
+    if (currentSessionId) {
+      await prisma.session.deleteMany({
+        where: {
+          userId,
+          id: { not: currentSessionId }
+        }
+      });
+    } else {
+      await prisma.session.deleteMany({
+        where: { userId }
+      });
+    }
+
+    logAudit({
+      actorUserId: userId,
+      action: "password_changed",
+      entityType: "USER",
+      entityId: userId,
+      entityName: user.fullName,
+      subjectType: "user",
+      subjectId: userId,
+      subjectName: user.fullName,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, userId);
+    await invalidateUserCache(userId);
+
+    res.status(204).end();
+  })
+);
+
+// POST /api/users/:id/elevate-to-super-admin — elevate user to SUPER_ADMIN
+router.post(
+  "/:id/elevate-to-super-admin",
+  requireRoles("SUPER_ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, fullName: true, email: true, role: true, organizationId: true }
+    });
+
+    if (!targetUser) {
+      throw new ApiError(404, "User not found");
+    }
+
+    if (targetUser.role === "SUPER_ADMIN") {
+      return res.status(200).json({ success: true, message: "User is already a Super Admin", data: targetUser });
+    }
+
+    // Write audit event before applying the change
+    logAudit({
+      actorUserId: req.user.id,
+      action: "user_role_elevated_to_super_admin",
+      entityType: "USER",
+      entityId: id,
+      entityName: targetUser.fullName,
+      subjectType: "user",
+      subjectId: id,
+      subjectName: targetUser.fullName,
+      newData: { role: "SUPER_ADMIN" },
+      oldData: { role: targetUser.role },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      organizationId: req.user.organizationId || "defaultOrg",
+    });
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { role: "SUPER_ADMIN" },
+      select: { id: true, fullName: true, email: true, role: true, organizationId: true }
+    });
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.user(orgId, id);
+    await invalidateUserCache(id);
+
+    // Send email notification (async)
+    const { sendEmail } = require("../../services/notificationService");
+    setImmediate(async () => {
+      try {
+        await sendEmail({
+          to: targetUser.email,
+          subject: "Your Account Role Has Been Elevated to Super Admin",
+          html: `<p>Hello ${targetUser.fullName},</p>
+                 <p>Your account role in the ATS portal has been elevated to <strong>SUPER_ADMIN</strong> by ${req.user.fullName || req.user.email}.</p>
+                 <p>Please log in to your account to access your new privileges.</p>`
+        });
+      } catch (err) {
+        console.error("[ElevateUser] Email notification failed:", err.message);
+      }
+    });
+
+    const sse = require("../../utils/sse");
+    sse.broadcastToOrg(orgId, "ROLE_CHANGED", {
+      userId: id,
+      role: "SUPER_ADMIN",
+      changedBy: req.user.id,
+      changedByName: req.user.fullName,
+    });
+
+    res.json({ success: true, data: updatedUser });
+  })
 );
 
 module.exports = router;

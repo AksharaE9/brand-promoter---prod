@@ -6,9 +6,13 @@ const { logAudit } = require("../../utils/audit");
 const xlsx = require("xlsx");
 const PDFDocument = require("pdfkit");
 const multer = require("multer");
+const { MAX_UPLOAD_BYTES } = require("../../config/uploadLimits");
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+});
 
 router.use(auth);
 

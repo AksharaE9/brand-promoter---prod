@@ -1,0 +1,357 @@
+import * as React from 'react';
+import { useState, useEffect } from 'react';
+import {
+  FEEDBACK_TEMPLATE_BY_ROUND,
+  ROUND_DISPLAY_LABEL,
+  InterviewRound,
+  formatFeedbackForClipboard,
+} from '../../lib/interviewTemplates';
+import CopyFeedbackButton from './CopyFeedbackButton';
+import { apiPost, apiGet } from '../../lib/api';
+import { FollowUpUploadField } from '../../pages/InterviewSchedule';
+
+function FeedbackFieldInput({ def, value, onChange, readOnly }) {
+  const isReadOnly = readOnly || def.key === 'roundNumber';
+  const val = value ?? '';
+
+  switch (def.type) {
+    case 'textarea':
+      return (
+        <textarea
+          rows={3}
+          value={val}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={`Enter ${def.label.toLowerCase()}...`}
+          readOnly={isReadOnly}
+          className="w-full rounded-lg border border-slate-200 p-2.5 text-xs text-slate-800 focus:border-[#1f52cc] focus:ring-1 focus:ring-[#1f52cc] outline-none transition-all disabled:bg-slate-50"
+        />
+      );
+
+    case 'number':
+      return (
+        <div className="relative flex items-center">
+          <input
+            type="number"
+            min={0}
+            max={10}
+            step={0.5}
+            value={val}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="0 - 10"
+            readOnly={isReadOnly}
+            className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-[#1f52cc] focus:ring-1 focus:ring-[#1f52cc] outline-none transition-all pr-10"
+          />
+          {def.suffix && (
+            <span className="absolute right-3 text-xs font-semibold text-slate-400 pointer-events-none">
+              {def.suffix}
+            </span>
+          )}
+        </div>
+      );
+
+    case 'date':
+      return (
+        <input
+          type="date"
+          value={val}
+          onChange={(e) => onChange(e.target.value)}
+          readOnly={isReadOnly}
+          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-[#1f52cc] focus:ring-1 focus:ring-[#1f52cc] outline-none transition-all"
+        />
+      );
+
+    case 'select':
+      return (
+        <select
+          value={val}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={isReadOnly}
+          className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 focus:border-[#1f52cc] focus:ring-1 focus:ring-[#1f52cc] outline-none transition-all bg-white"
+        >
+          <option value="" disabled>
+            Select status...
+          </option>
+          {def.options?.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      );
+
+    case 'file':
+      return (
+        <FollowUpUploadField
+          label={def.label}
+          id={`${def.key}-${value?.name || 'new'}`}
+          value={value}
+          isAdmin={true}
+          allowedExtensions={
+            def.key === 'offerLetterDocument'
+              ? ['.pdf', '.png', '.jpg', '.jpeg', '.docx']
+              : ['.png', '.jpg', '.jpeg', '.pdf']
+          }
+          onUpload={(base64) => onChange(base64)}
+        />
+      );
+
+    case 'text':
+    default:
+      return (
+        <input
+          type="text"
+          value={val}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={`Enter ${def.label.toLowerCase()}...`}
+          readOnly={isReadOnly}
+          className={`w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800 focus:border-[#1f52cc] focus:ring-1 focus:ring-[#1f52cc] outline-none transition-all ${
+            isReadOnly ? 'bg-slate-50 text-slate-500 font-medium cursor-not-allowed' : ''
+          }`}
+        />
+      );
+  }
+}
+
+export default function InterviewFeedbackForm({
+  round = InterviewRound.ROUND_1,
+  candidateId: initialCandidateId,
+  candidateName = '',
+  initialValues = {},
+  onSuccess,
+  onCancel,
+}) {
+  const templateVersion = React.useMemo(() => {
+    if (initialValues?.templateVersion || initialValues?.template_version) {
+      return initialValues.templateVersion || initialValues.template_version;
+    }
+    const keys = Object.keys(initialValues || {});
+    if (keys.includes('technical') || keys.includes('overallRecommendation') || keys.includes('keyStrengths')) {
+      return 1;
+    }
+    return CURRENT_FEEDBACK_TEMPLATE_VERSION;
+  }, [initialValues]);
+
+  const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === templateVersion) || FEEDBACK_TEMPLATE_VERSIONS[1];
+  const template = versionDef.getFields(round);
+  const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
+
+  const [values, setValues] = useState(() => ({
+    name: candidateName,
+    roundNumber: roundLabel,
+    ...initialValues,
+  }));
+
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState([]);
+  const [linkedCandidate, setLinkedCandidate] = useState(null);
+  const [lookingUpNumber, setLookingUpNumber] = useState(false);
+
+  useEffect(() => {
+    setValues((prev) => ({
+      ...prev,
+      name: candidateName || prev.name || '',
+      roundNumber: roundLabel,
+    }));
+  }, [candidateName, roundLabel]);
+
+  // Live lookup candidate by phone number
+  useEffect(() => {
+    const rawNumber = values.number;
+    if (!rawNumber || String(rawNumber).replace(/[^\d+]/g, '').length < 7) {
+      setLinkedCandidate(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLookingUpNumber(true);
+      try {
+        const res = await apiGet(`/candidates/resolve-by-number?number=${encodeURIComponent(rawNumber)}`);
+        if (res?.success && res?.data) {
+          const cand = res.data;
+          setLinkedCandidate(cand);
+          setValues((prev) => ({
+            ...prev,
+            name: prev.name || cand.fullName || '',
+            role: prev.role || cand.preferredRole || '',
+          }));
+        } else {
+          setLinkedCandidate(null);
+        }
+      } catch (_) {
+        setLinkedCandidate(null);
+      } finally {
+        setLookingUpNumber(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [values.number]);
+
+  const setField = (key, val) => {
+    setValues((prev) => ({ ...prev, [key]: val }));
+    setErrorMsg(null);
+    setFieldErrors([]);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setErrorMsg(null);
+    setFieldErrors([]);
+
+    // Client-side quick check
+    const errors = [];
+    template.forEach((field) => {
+      if (typeof field.showWhen === 'function') {
+        if (!field.showWhen(values)) {
+          return;
+        }
+      }
+
+      const v = values[field.key];
+      const isEmpty = v === undefined || v === null || String(v).trim() === '';
+      if (field.required && isEmpty) {
+        if (field.key === 'offerLetterDocument') {
+          errors.push("Offer letter document is required when status is OFFER_LETTER");
+        } else if (field.key === 'offerLetterEmailAttachment') {
+          errors.push("Offer letter email attachment is required when status is OFFER_LETTER");
+        } else {
+          errors.push(`"${field.label}" is required.`);
+        }
+      }
+      if (!isEmpty && field.type === 'number') {
+        const num = Number(v);
+        if (isNaN(num) || num < 0 || num > 10) {
+          errors.push(`"${field.label}" must be between 0 and 10.`);
+        }
+      }
+    });
+
+    if (errors.length > 0) {
+      setSubmitting(false);
+      setFieldErrors(errors);
+      return;
+    }
+
+    const targetCandidateId = initialCandidateId || linkedCandidate?.id || 'unlinked';
+
+    try {
+      const res = await apiPost(`/interviews/${targetCandidateId}/feedback`, {
+        round,
+        templateVersion,
+        data: values,
+      });
+
+      if (res?.success) {
+        if (onSuccess) onSuccess(res.data);
+      } else {
+        setErrorMsg(res?.error || 'Failed to submit feedback');
+        if (Array.isArray(res?.errors)) setFieldErrors(res.errors);
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'An error occurred while saving feedback');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-3.5">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">
+            Interview Assessment Form — {roundLabel}
+          </h3>
+          <p className="text-xs text-slate-500">
+            Complete candidate feedback metrics for {candidateName || values.name || 'Candidate'}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <CopyFeedbackButton round={round} values={values} templateVersion={templateVersion} />
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+
+      {errorMsg && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+          {errorMsg}
+        </div>
+      )}
+
+      {fieldErrors.length > 0 && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+          <p className="font-semibold mb-1">Please correct the following fields:</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {fieldErrors.map((err, idx) => (
+              <li key={idx}>{err}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {template
+            .filter((field) => {
+              if (typeof field.showWhen === 'function') {
+                return field.showWhen(values);
+              }
+              return true;
+            })
+            .map((field) => (
+              <div
+                key={field.key}
+                className={field.type === 'textarea' || field.type === 'file' ? 'md:col-span-2 space-y-1' : 'space-y-1'}
+              >
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-slate-700">
+                    {field.label}
+                    {field.required && <span className="text-red-500 ml-0.5">*</span>}
+                  </label>
+                  {field.key === 'number' && lookingUpNumber && (
+                    <span className="text-[11px] text-blue-600 animate-pulse font-medium">
+                      Searching candidate...
+                    </span>
+                  )}
+                </div>
+
+                <FeedbackFieldInput
+                  def={field}
+                  value={values[field.key]}
+                  onChange={(val) => setField(field.key, val)}
+                  readOnly={field.key === 'roundNumber'}
+                />
+
+                {field.key === 'number' && linkedCandidate && (
+                  <p className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
+                    <span>→</span> linked to {linkedCandidate.fullName}, candidate #{linkedCandidate.id.slice(-4)}
+                  </p>
+                )}
+              </div>
+            ))}
+        </div>
+
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+           <CopyFeedbackButton round={round} values={values} templateVersion={templateVersion} />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-5 py-2 text-xs font-semibold text-white bg-[#1f52cc] rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-xs"
+          >
+            {submitting ? 'Saving Assessment...' : 'Submit Feedback'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

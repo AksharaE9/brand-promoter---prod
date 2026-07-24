@@ -8,6 +8,10 @@ import Loader from '../components/Loader';
 import { API_BASE_URL, apiGet, apiPost, apiPatch, getStoredUser, getStoredToken } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CompanyDropdownInput from '../components/CompanyDropdownInput';
+import { formatDateTime24h } from '../lib/datetime';
+import { ScheduleModal } from '../components/Interview/ScheduleModal';
+import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
+
 
 const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, navigate, currentUser }) => {
   return (
@@ -23,10 +27,11 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
             <div className="text-xs text-[#1f52cc] font-bold mt-0.5">{iv.application?.job?.title || 'General Hiring'}</div>
             <div className="text-[10px] text-[#7a88a3] mt-1 flex items-center gap-1">
               <span className="material-symbols-outlined text-[12px]">calendar_today</span>
-              {new Date(iv.scheduledStart).toLocaleDateString('en-IN')} • {iv.mode}
+              {iv.scheduledStart ? formatDateTime24h(iv.scheduledStart) : 'Unscheduled'} • {iv.mode}
             </div>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
           {iv.result === 'PASS' || iv.result === 'SELECTED' ? (
             <div className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center gap-1">
@@ -190,8 +195,143 @@ const CandidateProfile = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Scheduling states
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({
+    candidateId: '',
+    jobId: '',
+    roundNo: 1,
+    round: 'Round 1',
+    interviewerIds: [],
+    scheduledStart: '',
+    scheduledEnd: '',
+    mode: 'ONLINE',
+    meetingLink: '',
+    zohoLink: '',
+    slotNo: 1,
+    nextSchedule: '',
+    phoneFollowUp: null,
+    emailFollowUp: null,
+    morningFollowUp: null,
+  });
+
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [jobSearch, setJobSearch] = useState('');
+  const [interviewerSearch, setInterviewerSearch] = useState('');
+  const [showCandidateList, setShowCandidateList] = useState(false);
+  const [showJobList, setShowJobList] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidate = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
+
+  // Synchronize candidate details to schedule form
+  useEffect(() => {
+    if (candidate) {
+      setCandidateSearch(candidate.fullName || '');
+      setScheduleForm(prev => ({
+        ...prev,
+        candidateId: candidate.id,
+        jobId: candidate.applications?.[0]?.jobId || jobs[0]?.id || '',
+      }));
+      if (candidate.applications?.[0]?.job?.title) {
+        setJobSearch(candidate.applications[0].job.title);
+      } else if (jobs[0]?.title) {
+        setJobSearch(jobs[0].title);
+      }
+    }
+  }, [candidate, jobs]);
+
+  // Compute prior rejections
+  const isRejected = useMemo(() => {
+    if (candidate?.status === 'REJECTED') return true;
+    const hasRejectedFeedback = (candidate?.interviewFeedbacks || []).some(f => f.selectionStatus === 'REJECTED');
+    const hasRejectedInterview = interviews.some(i => i.result === 'REJECTED' || i.result === 'FAIL');
+    return hasRejectedFeedback || hasRejectedInterview;
+  }, [candidate, interviews]);
+
+  const rejectedRoundLabel = useMemo(() => {
+    if (!isRejected) return '';
+    const feedback = (candidate?.interviewFeedbacks || []).find(f => f.selectionStatus === 'REJECTED');
+    if (feedback) {
+      const clean = String(feedback.round).trim().toUpperCase();
+      if (clean === 'ROUND_1' || clean === 'ROUND1' || clean === 'ROUND 1') return 'Round 1';
+      if (clean === 'ROUND_2' || clean === 'ROUND2' || clean === 'ROUND 2') return 'Round 2';
+      if (clean === 'FINAL_ROUND' || clean === 'FINAL' || clean === 'FINAL ROUND') return 'Final Round';
+      return feedback.round;
+    }
+    const iv = interviews.find(i => i.result === 'REJECTED' || i.result === 'FAIL');
+    if (iv) return iv.round || `Round ${iv.roundNo}`;
+    return 'prior round';
+  }, [isRejected, candidate, interviews]);
+
+  const handleScheduleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBanner('');
+
+    let targetApplicationId = '';
+    const existingApp = candidate?.applications?.find(
+      a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId
+    );
+
+    if (!existingApp) {
+      try {
+        setSavingSchedule(true);
+        const newAppRes = await apiPost('/applications', {
+          candidateId: scheduleForm.candidateId,
+          jobId: scheduleForm.jobId
+        });
+        targetApplicationId = newAppRes.data.id;
+      } catch (err) {
+        setError(err.message || 'Failed to create application');
+        setSavingSchedule(false);
+        return false;
+      }
+    } else {
+      targetApplicationId = existingApp.id;
+    }
+
+    setSavingSchedule(true);
+    let roundNo = typeof scheduleForm.roundNo === 'number' ? scheduleForm.roundNo : (parseInt(scheduleForm.roundNo) || 1);
+    if (scheduleForm.round === 'Final Round' || scheduleForm.round === 'Final') roundNo = 99;
+
+    const isWalkIn = scheduleForm.mode === 'WALK_IN_DRIVE';
+    const notesPayload = isWalkIn
+      ? JSON.stringify({ phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null })
+      : JSON.stringify({
+          phoneFollowUp: scheduleForm.phoneFollowUp || null,
+          emailFollowUp: scheduleForm.emailFollowUp || null,
+          nextSchedule: scheduleForm.nextSchedule || null,
+          morningFollowUp: scheduleForm.morningFollowUp || null,
+        });
+
+    try {
+      await apiPost('/interviews', {
+        applicationId: targetApplicationId,
+        roundNo,
+        round: scheduleForm.round,
+        interviewerIds: isWalkIn ? [] : scheduleForm.interviewerIds,
+        scheduledStart: new Date(scheduleForm.scheduledStart).toISOString(),
+        scheduledEnd: scheduleForm.scheduledEnd ? new Date(scheduleForm.scheduledEnd).toISOString() : null,
+        mode: scheduleForm.mode,
+        meetingLink: isWalkIn ? null : (scheduleForm.meetingLink ? scheduleForm.meetingLink.trim() : null),
+        zohoLink: isWalkIn ? null : (scheduleForm.zohoLink ? scheduleForm.zohoLink.trim() : null),
+        slotNo: scheduleForm.slotNo || 1,
+        notes: notesPayload,
+      });
+
+      setBanner('Interview scheduled successfully.');
+      setShowScheduleModal(false);
+      await loadAll(false);
+      return true;
+    } catch (err) {
+      setError(err.message || 'Failed to schedule interview');
+      return false;
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
 
   const loadAll = useCallback(async (showLoader = false) => {
     try {
@@ -238,6 +378,10 @@ const CandidateProfile = () => {
 
   const handleUploadResume = useCallback(async (file) => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+      return;
+    }
     try {
       setUploadingResume(true);
       const token = localStorage.getItem('ats_token');
@@ -293,6 +437,10 @@ const CandidateProfile = () => {
 
   const handleUploadRecording = useCallback(async (interviewId, file) => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+      return;
+    }
     try {
       setUploadingRecording(true);
       const token = localStorage.getItem('ats_token');
@@ -492,9 +640,20 @@ const CandidateProfile = () => {
                  <div className="os-card p-5 bg-[#1f52cc] text-white">
                    <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 opacity-80">Quick Actions</h3>
                    <div className="grid grid-cols-1 gap-2">
-                     <button className="flex items-center gap-3 w-full p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-sm font-semibold" onClick={() => navigate('/schedule')}>
-                       <span className="material-symbols-outlined">event</span> Schedule Round
-                     </button>
+                      <button
+                        className={`flex items-center gap-3 w-full p-3 rounded-xl transition-colors text-sm font-semibold ${
+                          isRejected
+                            ? 'bg-white/5 text-white/40 cursor-not-allowed'
+                            : 'bg-white/10 hover:bg-white/20 text-white'
+                        }`}
+                        onClick={() => {
+                          if (!isRejected) setShowScheduleModal(true);
+                        }}
+                        disabled={isRejected}
+                        title={isRejected ? `Candidate was rejected at ${rejectedRoundLabel}` : ''}
+                      >
+                        <span className="material-symbols-outlined">event</span> Schedule Round
+                      </button>
                      {/* <button className="flex items-center gap-3 w-full p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-sm font-semibold" onClick={() => navigate(`/pipeline?candidateId=${id}`)}>
                        <span className="material-symbols-outlined">send</span> Send Offer
                      </button> */}
@@ -505,11 +664,11 @@ const CandidateProfile = () => {
                <Reveal delay={0.15}>
                  <div className="os-card p-5">
                    <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 text-[#76839f]">Documentation</h3>
-                   {candidate.resumeFile?.storageKey ? (
+                   {candidate.resumeLinkDownload || candidate.resumeLinkOriginal || candidate.resumeFile?.storageKey ? (
                      <div className="space-y-2">
                        <a 
-                         href={`${API_BASE_URL}/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`} 
-                         download={candidate.resumeFile.originalName || `${candidate.fullName}-resume`}
+                         href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? `${API_BASE_URL}/candidates/${candidate.id}/resume-download` : `${API_BASE_URL}/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`} 
+                         download={candidate.resumeFile?.originalName || `${candidate.fullName}-resume`}
                          target="_blank"
                          rel="noreferrer"
                          className="os-btn-primary w-full !h-12 flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
@@ -517,7 +676,9 @@ const CandidateProfile = () => {
                          <span className="material-symbols-outlined">download</span>
                          Download Resume
                        </a>
-                       <div className="text-[10px] text-slate-400 text-center truncate px-2">{candidate.resumeFile.originalName || 'Resume document'}</div>
+                       <div className="text-[10px] text-slate-400 text-center truncate px-2">
+                         {candidate.resumeLinkProvider ? `Cloud Link (${candidate.resumeLinkProvider})` : (candidate.resumeFile?.originalName || 'Resume document')}
+                       </div>
                        {canManageCandidate && (
                          <label className="flex items-center justify-center gap-2 w-full h-9 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400 cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
                            <span className="material-symbols-outlined text-sm">upload</span>
@@ -542,6 +703,36 @@ const CandidateProfile = () => {
           </div>
         )}
       </PageEnter>
+      {showScheduleModal && (
+        <React.Suspense fallback={<div className="fixed inset-0 z-50 bg-black/20 flex items-center justify-center text-white font-semibold">Loading scheduler...</div>}>
+          <ScheduleModal
+            scheduleForm={scheduleForm}
+            setScheduleForm={setScheduleForm}
+            candidateSearch={candidateSearch}
+            setCandidateSearch={setCandidateSearch}
+            jobSearch={jobSearch}
+            setJobSearch={setJobSearch}
+            interviewerSearch={interviewerSearch}
+            setInterviewerSearch={setInterviewerSearch}
+            showCandidateList={showCandidateList}
+            setShowCandidateList={setShowCandidateList}
+            showJobList={showJobList}
+            setShowJobList={setShowJobList}
+            candidateSuggestions={[candidate]}
+            jobSuggestions={jobs}
+            interviewers={team}
+            searchingCandidates={false}
+            searchingJobs={false}
+            savingSchedule={savingSchedule}
+            allInterviews={interviews}
+            candidateFeedbacks={candidate?.interviewFeedbacks || []}
+            setBanner={setBanner}
+            setError={setError}
+            onClose={() => setShowScheduleModal(false)}
+            onSubmit={handleScheduleSubmit}
+          />
+        </React.Suspense>
+      )}
     </EnterpriseLayout>
   );
 };

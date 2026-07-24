@@ -43,12 +43,18 @@ async function auth(req, res, next) {
         return next(new ApiError(401, "Inactive or deleted user account"));
       }
       req.user = user;
-      // Update session last active asynchronously
+      // Update session last active in background and throttle to once every 2 minutes
       if (payload.sessionId) {
-        prisma.session.update({
-          where: { id: payload.sessionId },
-          data: { lastActive: new Date() },
-        }).catch(() => {});
+        const lastActiveKey = `session:lastActive:${payload.sessionId}`;
+        const lastActiveTime = l1.get(lastActiveKey);
+        const now = Date.now();
+        if (!lastActiveTime || now - lastActiveTime > 120_000) {
+          l1.set(lastActiveKey, now, 120_000);
+          prisma.session.update({
+            where: { id: payload.sessionId },
+            data: { lastActive: new Date() },
+          }).catch(() => {});
+        }
       }
       return next();
     }
@@ -61,12 +67,16 @@ async function auth(req, res, next) {
       if (!session) {
         return next(new ApiError(401, "Session has been revoked or expired"));
       }
-      // Update last active
+      // Update last active in background and throttle to once every 2 minutes
+      const lastActiveKey = `session:lastActive:${payload.sessionId}`;
+      const now = Date.now();
+      l1.set(lastActiveKey, now, 120_000);
       prisma.session.update({
         where: { id: payload.sessionId },
         data: { lastActive: new Date() },
       }).catch(() => {});
     }
+
 
     const userRecord = await prisma.user.findUnique({
       where: { id: resolvedUserId },

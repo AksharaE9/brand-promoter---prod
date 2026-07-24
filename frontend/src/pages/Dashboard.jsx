@@ -8,6 +8,7 @@ import NotificationBell from '../components/NotificationBell';
 import { apiGet, getStoredUser } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import Skeleton, { DashboardSkeleton } from '../components/Skeleton';
+import LazySection from '../components/LazySection';
 import { subscribeSSE } from '../lib/sse';
 
 // SSE types that should trigger a dashboard refresh
@@ -15,13 +16,14 @@ const DASHBOARD_SSE_TYPES = [
   'CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'APPLICATION_STATUS_UPDATED',
   'INTERVIEW_SCHEDULED', 'INTERVIEW_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED', 'PIPELINE_MOVED',
   'JOB_CREATED', 'JOB_UPDATED', 'JOB_STATUS_CHANGED',
-  'TEAM_UPDATE', 'OFFER_DECISION'
+  'TEAM_UPDATE', 'OFFER_DECISION', 'SCHEDULING_UPDATE', 'ROUND_CREATED', 'ROUND_DELETED',
+  'INTERVIEW_PANELISTS_UPDATED'
 ];
 
-// Minimum 10s between SSE-triggered refreshes (was 1s — too aggressive)
-const SSE_DEBOUNCE_MS = 10_000;
+// Minimum 1.5s between SSE-triggered refreshes
+const SSE_DEBOUNCE_MS = 1500;
 
-const fetchDashboardData = () => apiGet('/dashboard/init');
+const fetchDashboardData = () => apiGet('/dashboard/summary');
 
 const MetricCard = React.memo(({ label, value, tag, tagColor = '#29a86f', onClick, delay }) => (
   <Reveal delay={delay}>
@@ -177,16 +179,29 @@ const Dashboard = () => {
           <div className="os-eyebrow">Performance Overview</div>
           <h1 className="os-h1">{greeting}, {greetingName}.</h1>
           {isError && (
-            <div className="mt-2 text-sm text-red-500 flex items-center gap-2">
-              <span className="material-symbols-outlined text-base">warning</span>
-              {error?.message || 'Failed to load dashboard'}
-              <button
-                type="button"
-                className="underline ml-1"
-                onClick={() => refetch()}
-              >
-                Retry
-              </button>
+            <div className={`mt-3 p-4 rounded-xl flex items-start gap-3 border ${
+              error?.status === 503 
+                ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <span className="material-symbols-outlined text-xl mt-0.5 shrink-0">
+                {error?.status === 503 ? 'hourglass_empty' : 'error'}
+              </span>
+              <div className="flex-1 text-sm font-medium">
+                <div>{error?.message || 'Failed to load dashboard'}</div>
+                {error?.status === 503 && (
+                  <div className="text-xs text-amber-600 mt-1">
+                    Auto-retry will initiate in a moment. You can also manually retry.
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="mt-2 text-xs font-semibold underline block"
+                  onClick={() => refetch()}
+                >
+                  Retry Now
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -225,55 +240,57 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Lower section */}
-        <div className="grid lg:grid-cols-3 gap-4 mt-4">
-          {/* Pipeline Summary */}
-          <Reveal className="lg:col-span-2">
-            <div className="os-card p-6 h-full">
-              <div className="text-xl font-bold mb-4">Pipeline Summary</div>
-              {stats.funnel ? (
-                <div className="grid grid-cols-3 gap-3">
-                  {Object.entries(stats.funnel).map(([status, count]) => (
-                    <div key={status} className="bg-slate-50 rounded-xl p-3 text-center">
-                      <div className="text-2xl font-bold text-[#10193f]">{count}</div>
-                      <div className="text-xs text-slate-500 mt-1">{status.replace(/_/g, ' ')}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-slate-400 text-sm italic">No pipeline data yet.</div>
-              )}
-            </div>
-          </Reveal>
-
-          {/* Live Feed */}
-          <Reveal delay={0.1}>
-            <div className="os-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-xl font-bold">Live Feed</div>
-                {recentApplications.length > 0 && (
-                  <span className="text-xs text-[#29a86f] font-semibold bg-[#f0fdf4] px-2 py-0.5 rounded-full">
-                    Live
-                  </span>
-                )}
-              </div>
-              <div className="space-y-1">
-                {feedItems.length === 0 ? (
-                  <div className="text-slate-400 text-sm italic">No recent activity.</div>
+        {/* Lower section - lazy loaded below the fold */}
+        <LazySection height="320px">
+          <div className="grid lg:grid-cols-3 gap-4 mt-4">
+            {/* Pipeline Summary */}
+            <Reveal className="lg:col-span-2">
+              <div className="os-card p-6 h-full">
+                <div className="text-xl font-bold mb-4">Pipeline Summary</div>
+                {stats.funnel ? (
+                  <div className="grid grid-cols-3 gap-3">
+                    {Object.entries(stats.funnel).map(([status, count]) => (
+                      <div key={status} className="bg-slate-50 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-bold text-[#10193f]">{count}</div>
+                        <div className="text-xs text-slate-500 mt-1">{status.replace(/_/g, ' ')}</div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  feedItems.map((app, idx) => (
-                    <FeedItem
-                      key={app.id}
-                      app={app}
-                      onClick={() => navigate(`/candidate/${app.candidateId || app.candidate?.id}`)}
-                      delay={idx * 0.04}
-                    />
-                  ))
+                  <div className="text-slate-400 text-sm italic">No pipeline data yet.</div>
                 )}
               </div>
-            </div>
-          </Reveal>
-        </div>
+            </Reveal>
+
+            {/* Live Feed */}
+            <Reveal delay={0.1}>
+              <div className="os-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-xl font-bold">Live Feed</div>
+                  {recentApplications.length > 0 && (
+                    <span className="text-xs text-[#29a86f] font-semibold bg-[#f0fdf4] px-2 py-0.5 rounded-full">
+                      Live
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  {feedItems.length === 0 ? (
+                    <div className="text-slate-400 text-sm italic">No recent activity.</div>
+                  ) : (
+                    feedItems.map((app, idx) => (
+                      <FeedItem
+                        key={app.id}
+                        app={app}
+                        onClick={() => navigate(`/candidate/${app.candidateId || app.candidate?.id}`)}
+                        delay={idx * 0.04}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </LazySection>
       </PageEnter>
     </EnterpriseLayout>
   );

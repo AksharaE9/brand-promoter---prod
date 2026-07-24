@@ -562,4 +562,146 @@ router.get("/pipeline-insights", requireRoles("SUPER_ADMIN", "RECRUITER"), async
   res.json({ success: true, data });
 }));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADDED REPORTS — Capability-flag-gated custom report uploads
+// Access model:
+//   • Upload (POST/DELETE): SUPER_ADMIN with can_add_recruitment_reports === true
+//   • View/Download (GET):  SUPER_ADMIN (any)
+//   • ADMIN / RECRUITER:    no access to this section
+// ─────────────────────────────────────────────────────────────────────────────
+
+const multer = require('multer');
+const { uploadFileToCloudinary } = require('../../config/cloudinary');
+const { logAudit } = require('../../utils/audit');
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'application/csv',
+]);
+const MAX_REPORT_SIZE = 10 * 1024 * 1024; // 10 MB
+
+const addedReportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_REPORT_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOCX, DOC, XLSX, XLS, CSV are allowed.'));
+    }
+  },
+});
+
+/** GET /api/reports/added-reports — list all non-deleted reports (SUPER_ADMIN only) */
+router.get('/added-reports', requireRoles('SUPER_ADMIN'), asyncHandler(async (req, res) => {
+  const reports = await prisma.recruitmentReport.findMany({
+    where: { isDeleted: false },
+    include: {
+      uploadedBy: { select: { id: true, fullName: true, email: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json({ success: true, data: reports });
+}));
+
+/** POST /api/reports/added-reports — upload a new report (SUPER_ADMIN + can_add_recruitment_reports) */
+router.post(
+  '/added-reports',
+  requireRoles('SUPER_ADMIN'),
+  addedReportUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    // Capability flag check
+    if (!req.user.canAddRecruitmentReports) {
+      throw new ApiError(403, 'You do not have permission to upload reports.');
+    }
+
+    if (!req.file) {
+      throw new ApiError(400, 'A file is required.');
+    }
+
+    const { title, description } = req.body;
+    if (!title || !title.trim()) {
+      throw new ApiError(400, 'Report title is required.');
+    }
+
+    // Upload to Cloudinary under ats-recruitment-reports folder
+    const dest = `recruitment-reports/${Date.now()}_${req.file.originalname}`;
+    const fileUrl = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
+    if (!fileUrl) {
+      throw new ApiError(500, 'File upload to storage failed. Please try again.');
+    }
+
+    const report = await prisma.recruitmentReport.create({
+      data: {
+        title: title.trim(),
+        description: description?.trim() || null,
+        fileUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        uploadedById: req.user.id,
+      },
+      include: {
+        uploadedBy: { select: { id: true, fullName: true, email: true } },
+      },
+    });
+
+    logAudit({
+      actorUserId: req.user.id,
+      actorName: req.user.fullName,
+      actorRole: req.user.role,
+      action: 'RECRUITMENT_REPORT_UPLOADED',
+      entityType: 'RECRUITMENT_REPORT',
+      entityId: report.id,
+      entityName: report.title,
+      newData: { title: report.title, fileName: report.fileName, fileSize: report.fileSize },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      organizationId: req.user.organizationId || 'defaultOrg',
+    });
+
+    res.status(201).json({ success: true, data: report });
+  })
+);
+
+/** DELETE /api/reports/added-reports/:id — soft-delete (SUPER_ADMIN + can_add_recruitment_reports) */
+router.delete('/added-reports/:id', requireRoles('SUPER_ADMIN'), asyncHandler(async (req, res) => {
+  if (!req.user.canAddRecruitmentReports) {
+    throw new ApiError(403, 'You do not have permission to delete reports.');
+  }
+
+  const report = await prisma.recruitmentReport.findUnique({
+    where: { id: req.params.id },
+  });
+  if (!report || report.isDeleted) {
+    throw new ApiError(404, 'Report not found.');
+  }
+
+  await prisma.recruitmentReport.update({
+    where: { id: req.params.id },
+    data: { isDeleted: true, deletedAt: new Date() },
+  });
+
+  logAudit({
+    actorUserId: req.user.id,
+    actorName: req.user.fullName,
+    actorRole: req.user.role,
+    action: 'RECRUITMENT_REPORT_DELETED',
+    entityType: 'RECRUITMENT_REPORT',
+    entityId: report.id,
+    entityName: report.title,
+    ipAddress: req.ip,
+    userAgent: req.headers['user-agent'],
+    organizationId: req.user.organizationId || 'defaultOrg',
+  });
+
+  res.json({ success: true, message: 'Report deleted.' });
+}));
+
 module.exports = router;

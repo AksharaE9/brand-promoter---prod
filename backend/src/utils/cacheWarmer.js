@@ -51,7 +51,7 @@ async function warmDashboard() {
   await Promise.all(orgIds.slice(0, 10).map(async (orgId) => {
     try {
       const data = await fetchDashboardData(orgId);
-      await setCache(`dashboard_init_org:${orgId}`, data, TTL.DASHBOARD);
+      await setCache(`dashboard:summary:${orgId}`, data, 300); // 5 min TTL
     } catch (err) {
       console.warn(`[CacheWarmer] Dashboard warm failed for org ${orgId}:`, err.message);
     }

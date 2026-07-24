@@ -33,8 +33,9 @@ const NotificationBell = React.memo(() => {
   useEffect(() => {
     if (!user?.id) return;
     const unsub = subscribeSSE((data) => {
-      if (data.type === 'ping') return;
-      setItems(prev => [data, ...prev].slice(0, 20));
+      if (data.type === 'NOTIFICATION') {
+        setItems(prev => [data, ...prev].slice(0, 20));
+      }
     });
     return unsub;
   }, [user?.id]);

@@ -208,3 +208,52 @@ button:active {
   background: #94a3b8 !important;
 }
 
+/* ── Custom Styled Date & Time Inputs ── */
+.date-input-container {
+  display: flex;
+  align-items: center;
+  border: 1px solid #cbd5e1; /* visible border */
+  border-radius: 12px;
+  padding: 0 12px;
+  height: 44px;
+  background: #ffffff;
+  position: relative;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.date-input-container:hover {
+  border-color: #93c5fd;
+}
+
+.date-input-container:focus-within {
+  border-color: #1f52cc;
+  box-shadow: 0 0 0 3px rgba(31, 82, 204, 0.15);
+}
+
+.date-input-container input[type="date"],
+.date-input-container input[type="time"] {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 0;
+  font: inherit;
+  outline: none;
+  min-width: 0;
+  color: #334155;
+  font-weight: 500;
+  cursor: text;
+}
+
+/* Hide native Webkit calendar/clock indicators but keep them clickable and interactive */
+.date-input-container input[type="date"]::-webkit-calendar-picker-indicator,
+.date-input-container input[type="time"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  cursor: pointer;
+  position: absolute;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  z-index: 10;
+}
+
+

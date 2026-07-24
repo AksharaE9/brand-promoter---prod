@@ -5,17 +5,21 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
-import JoinModal from '../components/JoinModal';
-import RejectModal from '../components/RejectModal';
-import BulkUploadModal from '../components/BulkUpload/BulkUploadModal';
+// Lazy load modals to optimize Candidates page bundle size
+const JoinModal = React.lazy(() => import('../components/JoinModal'));
+const RejectModal = React.lazy(() => import('../components/RejectModal'));
+const BulkUploadModal = React.lazy(() => import('../components/BulkUpload/BulkUploadModal'));
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
+import { search } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 import Skeleton, { CardSkeleton } from '../components/Skeleton';
 import { useDeleteCandidate, useAddCandidate } from '../hooks/useCandidateMutations';
 import CompanyDropdownInput from '../components/CompanyDropdownInput';
 import { companyApi } from '../services/companyApi';
+import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import './OfferDecision.css';
+import TruncatedText from '../components/TruncatedText';
 
 const initialForm = {
   fullName: '',
@@ -182,7 +186,7 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-bold font-[Manrope] text-[#0f1b3d] leading-tight truncate pr-6" title={candidate.name}>{candidate.name}</h3>
+            <TruncatedText as="h3" text={candidate.name} className="text-base font-bold font-[Manrope] text-[#0f1b3d] leading-tight pr-6" />
             <p className="text-sm text-[#1f52cc] font-semibold mt-0.5 truncate">{candidate.role}</p>
             {candidate.location && (
               <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6f7d98] font-semibold truncate">
@@ -265,22 +269,26 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
 
       {/* Modals rendered via portal */}
       {showJoinModal && (
-        <JoinModal
-          candidateName={candidate.name}
-          jobTitle={candidate.role}
-          isLoading={isPending}
-          onConfirm={handleJoinConfirm}
-          onCancel={() => setShowJoinModal(false)}
-        />
+        <React.Suspense fallback={null}>
+          <JoinModal
+            candidateName={candidate.name}
+            jobTitle={candidate.role}
+            isLoading={isPending}
+            onConfirm={handleJoinConfirm}
+            onCancel={() => setShowJoinModal(false)}
+          />
+        </React.Suspense>
       )}
       {showRejectModal && (
-        <RejectModal
-          candidateName={candidate.name}
-          jobTitle={candidate.role}
-          isLoading={isPending}
-          onConfirm={handleRejectConfirm}
-          onCancel={() => setShowRejectModal(false)}
-        />
+        <React.Suspense fallback={null}>
+          <RejectModal
+            candidateName={candidate.name}
+            jobTitle={candidate.role}
+            isLoading={isPending}
+            onConfirm={handleRejectConfirm}
+            onCancel={() => setShowRejectModal(false)}
+          />
+        </React.Suspense>
       )}
     </Reveal>
   );
@@ -317,6 +325,7 @@ const Candidates = () => {
   const scrollContainerRef = useRef(null); // scrollable os-content element
   const currentStatusRef = useRef(statusParam || 'All');
   const currentSearchRef = useRef('');
+  const searchAbortControllerRef = useRef(null);
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
@@ -357,14 +366,32 @@ const Candidates = () => {
       setLoadingMore(true);
     }
 
-    try {
-      const params = new URLSearchParams({ limit: '24' });
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      if (statFilter && statFilter !== 'All') params.set('status', statFilter);
-      if (cursorParam) params.set('cursor', cursorParam);
-      if (companyFilter && companyFilter !== 'All') params.set('company', companyFilter); // ── NEW ──
+    // Cancel any previous in-flight requests to avoid race conditions
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+    searchAbortControllerRef.current = new AbortController();
+    const signal = searchAbortControllerRef.current.signal;
 
-      const res = await apiGet(`/candidates?${params.toString()}`);
+    try {
+      let res;
+      if (searchQuery.trim()) {
+        res = await search('/api/candidates/search', {
+          q: searchQuery.trim(),
+          filters: {
+            status: statFilter,
+            company: companyFilter
+          },
+          cursor: cursorParam,
+          limit: 24
+        }, signal);
+      } else {
+        const params = new URLSearchParams({ limit: '24' });
+        if (statFilter && statFilter !== 'All') params.set('status', statFilter);
+        if (cursorParam) params.set('cursor', cursorParam);
+        if (companyFilter && companyFilter !== 'All') params.set('company', companyFilter);
+        res = await apiGet(`/candidates?${params.toString()}`, true, { signal });
+      }
 
       // If the filter or search query has changed since this request was made, discard it to prevent corruption.
       if (expectedStatus !== currentStatusRef.current || expectedSearch !== currentSearchRef.current) {
@@ -378,12 +405,16 @@ const Candidates = () => {
       setHasMore(res.hasMore || false);
       setTotalCount(res.pagination?.total || 0);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        // Request was aborted by a newer keystroke - ignore
+        return;
+      }
       console.error('[Candidates] fetch error:', err);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [statusFilter, debouncedSearch]);
+  }, [statusFilter, debouncedSearch, companyFilter]);
 
   // Reset and reload when search or filter changes
   const loadCandidates = useCallback((query, stat) => {
@@ -933,7 +964,7 @@ const Candidates = () => {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-[#142651] truncate" title={c.name}>{c.name}</p>
+                        <TruncatedText as="p" text={c.name} className="text-sm font-bold text-[#142651]" />
                         <p className="text-xs text-[#1f52cc] font-semibold truncate">{c.role}</p>
                         {c.location && (
                           <div className="mt-0.5 flex items-center gap-1 text-[10px] text-[#6f7d98] font-semibold truncate">
@@ -981,11 +1012,13 @@ const Candidates = () => {
         )}
       </PageEnter>
 
-      <BulkUploadModal 
-        isOpen={showBulkModal} 
-        onClose={() => setShowBulkModal(false)} 
-        onImportComplete={() => loadCandidates(debouncedSearch, statusFilter)} 
-      />
+      <React.Suspense fallback={null}>
+        <BulkUploadModal 
+          isOpen={showBulkModal} 
+          onClose={() => setShowBulkModal(false)} 
+          onImportComplete={() => loadCandidates(debouncedSearch, statusFilter)} 
+        />
+      </React.Suspense>
 
       {/* CREATE CANDIDATE MODAL */}
       {showCreateModal && (
@@ -1129,7 +1162,15 @@ const Candidates = () => {
                       type="file"
                       className="hidden"
                       id="resume-upload"
-                      onChange={e => setCreateForm(prev => ({...prev, resume: e.target.files[0]}))}
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file && file.size > MAX_UPLOAD_BYTES) {
+                          alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                          e.target.value = '';
+                          return;
+                        }
+                        setCreateForm(prev => ({...prev, resume: file || null}));
+                      }}
                     />
                     <label 
                       htmlFor="resume-upload"

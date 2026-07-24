@@ -1,30 +1,17 @@
 'use strict';
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
+/**
+ * index.js — Production Server Bootstrap Entrypoint.
+ * Imports the Express `app` from src/app.js to ensure perfect consistency
+ * across development, production, and automated integration tests.
+ */
 const http = require("http");
 require("dotenv").config();
+const { app, PORT } = require("./app");
 const { initSocket } = require("./config/socket");
 const prisma = require("./config/db");
-
 const sse = require("./utils/sse");
 const { warmCaches } = require("./utils/cacheWarmer");
-const { getCacheMetrics } = require("./utils/cache");
-const { auth, requireRoles } = require("./middleware/auth");
 
-const authRoutes = require("./modules/auth/routes");
-const userRoutes = require("./modules/users/routes");
-const candidateRoutes = require("./modules/candidates/routes");
-const applicationRoutes = require("./modules/applications/routes");
-const pipelineRoutes = require("./modules/pipeline/routes");
-const interviewRoutes = require("./modules/interviews/routes");
-const jobRoutes = require("./modules/jobs/routes");
-const reportRoutes = require("./modules/reports/routes");
-const salesRoutes = require("./modules/sales/routes");
-const dashboardRoutes = require("./modules/dashboard/routes");
-const collegeDriveRoutes = require("./modules/college-drives/routes");
-const auditRoutes = require("./modules/audit/routes");
-const notificationRoutes = require("./modules/notifications/routes");
 const isVercel = !!process.env.VERCEL;
 let syncWorker = null;
 let scheduleSyncJob = null;
@@ -32,127 +19,6 @@ let importWorker = null;
 let notificationScheduler = null;
 
 const shouldLoadWorkers = !isVercel;
-const compression = require("compression");
-const { notFound, errorHandler } = require("./middleware/error-handler");
-const { setSecurityHeaders } = require("./middleware/security");
-const { timingMiddleware } = require("./middleware/timing");
-const dedupMiddleware = require("./middleware/deduplication");
-const cc = require("./middleware/cacheHeaders");
-const { authLimiter, apiLimiter, analyticsLimiter, uploadLimiter } = require("./middleware/rateLimiter");
-
-const app = express();
-const PORT = process.env.PORT || 4000;
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map(o => o.trim())
-  : [];
-
-// ── Performance: Compression (first middleware) ──────────────
-app.use(compression({
-  level: 6,               // level 1-9: 6 is optimal speed/ratio
-  threshold: 512,         // compress responses over 512 bytes
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) return false;
-    if (req.path.includes('/sse/stream')) return false; // never compress SSE
-    return compression.filter(req, res);
-  },
-  chunkSize: 16 * 1024,   // 16KB chunks
-}));
-
-// ── Performance: Timing middleware ───────────────────────────
-app.use(timingMiddleware);
-
-// ── Performance: Request Deduplication ───────────────────────
-app.use(dedupMiddleware);
-
-// ── Performance: HTTP/2 Push Hints ───────────────────────────
-const pushHints = require("./middleware/pushHints");
-app.use(pushHints);
-
-// ── Security: Headers ────────────────────────────────────────
-app.disable('x-powered-by');
-
-// Trust proxy if behind nginx/load balancer/Render
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes("*") || allowedOrigins.length === 0) {
-        return callback(null, true);
-      }
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      if (
-        origin.endsWith(".vercel.app") ||
-        /^https:\/\/brand-promoter-prod-.*\.vercel\.app$/.test(origin) ||
-        /^http:\/\/localhost:\d+$/.test(origin)
-      ) {
-        return callback(null, true);
-      }
-      callback(null, false);
-    },
-    credentials: true,
-    methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    maxAge: 600,
-    optionsSuccessStatus: 204,
-  }),
-);
-app.use(setSecurityHeaders);
-app.use(express.json({ limit: "50mb" })); // Increased for large base64 follow-ups and bulk uploads
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-app.use("/uploads", express.static(path.join(__dirname, "..", "uploads"), { maxAge: '1d' }));
-
-app.get("/api/health", async (req, res) => {
-  res.json({
-    success: true,
-    message: "ATS Backend is running",
-    timestamp: new Date().toISOString(),
-    services: {
-      sse: sse.getStats(),
-    },
-  });
-});
-
-// Cache Metrics Monitoring Endpoint (GET /api/health/cache — admin only)
-app.get("/api/health/cache", auth, requireRoles("SUPER_ADMIN"), (req, res) => {
-  const cacheStats = getCacheMetrics();
-  const sseStats = sse.getStats();
-  res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
-});
-
-// ── Mount Routes with Rate Limiters & Cache Headers ───────────
-app.use("/api/auth", authLimiter, authRoutes);
-
-// Apply API Limiter and appropriate Cache Control headers to specific route categories
-app.use("/api/users", apiLimiter, cc(120), userRoutes);
-app.use("/api/team", apiLimiter, cc(120), require("./modules/team/routes"));
-app.use("/api/settings", apiLimiter, cc(300), require("./modules/settings/routes"));
-app.use("/api/companies", apiLimiter, cc(300), require("./modules/companies/routes")); // Company lookup for candidate combobox
-app.use("/api/jobs", apiLimiter, cc(60), jobRoutes);
-
-// Dynamic endpoints (no browser caching, default rate limiters)
-app.use("/api/candidates/bulk-upload", uploadLimiter, require("./routes/bulkUpload"));
-app.use("/api/candidates", apiLimiter, cc(0), candidateRoutes);
-app.use("/api/applications", apiLimiter, cc(0), applicationRoutes);
-app.use("/api/pipeline", apiLimiter, cc(0), pipelineRoutes);
-app.use("/api/interviews", apiLimiter, cc(0), interviewRoutes);
-app.use("/api/reports", apiLimiter, cc(0), reportRoutes);
-app.use("/api/sales", apiLimiter, cc(0), salesRoutes);
-app.use("/api/dashboard", apiLimiter, cc(0), dashboardRoutes);
-app.use("/api/college-drives", apiLimiter, cc(0), collegeDriveRoutes);
-app.use("/api/audit-logs", apiLimiter, cc(0), auditRoutes);
-app.use("/api/notifications", apiLimiter, cc(0), notificationRoutes);
-app.use("/api/sse", cc(0), require("./routes/sse"));
-app.use("/api/files", apiLimiter, cc(0), require("./modules/files/routes"));
-app.use("/api/analytics", analyticsLimiter, cc(0), require("./modules/analytics/routes"));
-
-app.use(notFound);
-app.use(errorHandler);
 
 async function bootstrap() {
   try {
@@ -256,8 +122,8 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("Uncaught Exception:", err);
-  process.exit(1);
+  console.error("[UncaughtException SafetyNet] Logged uncaught exception:", err);
+  // Log and keep serving — don't let one bad request crash the whole process for everyone else.
 });
 
 bootstrap();

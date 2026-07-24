@@ -23,17 +23,11 @@ export function groupInterviewsByDate(interviews, viewDate) {
   const map = new Map();
   if (!Array.isArray(interviews) || !viewDate) return map;
 
-  const viewYear  = viewDate.getFullYear();
-  const viewMonth = viewDate.getMonth(); // 0-indexed
-
   interviews.forEach((iv) => {
     if (!iv?.scheduledStart) return;
     if (iv._optimistic) return; // skip optimistic inserts that haven't persisted yet
 
     const d = new Date(iv.scheduledStart);
-    // Only bucket dates that belong to the currently displayed month
-    if (d.getFullYear() !== viewYear || d.getMonth() !== viewMonth) return;
-
     const key = toDateKey(d);
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(iv);
@@ -62,21 +56,19 @@ export function toDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
+import { formatTime24h, formatDateTime24h } from './datetime';
+
+export { formatTime24h, formatDateTime24h };
+
 /**
- * formatTime12h — returns a human-readable 12-hour time string from a Date.
- * e.g. "12:30 PM", "9:00 AM"
- *
- * @param {Date} date
- * @returns {string}
+ * formatTime12h — legacy alias pointing to formatTime24h for 24-hour time format consistency.
+ * @param {Date|string} date
+ * @returns {string} e.g. "09:40"
  */
 export function formatTime12h(date) {
-  const h   = date.getHours();
-  const min = date.getMinutes();
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const h12  = h % 12 || 12;
-  const mStr = min > 0 ? `:${String(min).padStart(2, '0')}` : '';
-  return `${h12}${mStr} ${suffix}`;
+  return formatTime24h(date);
 }
+
 
 /**
  * getStatusStyle — returns Tailwind class strings for an interview's result/status.

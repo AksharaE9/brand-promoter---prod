@@ -36,8 +36,9 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
       eventSourceRef.current = null;
     }
 
+    const sseOrigin = API_BASE_URL.startsWith('http') ? '' : window.location.origin;
     const eventSource = new EventSource(
-      `${API_BASE_URL}/notifications/stream?token=${token}`
+      `${sseOrigin}${API_BASE_URL}/notifications/stream?token=${token}`
     );
     eventSourceRef.current = eventSource;
 

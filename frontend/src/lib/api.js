@@ -1,10 +1,20 @@
-const DEFAULT_API_BASE_URL = import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
+// In DEV, use a relative base URL ('/api') so all requests route through the
+// Vite dev-server proxy (vite.config.js proxy: '/api' → localhost:4000).
+// This avoids CORS failures on direct browser→backend calls (EventSource, etc.)
+// that would occur with an absolute http://localhost:4000 origin.
+// In production the frontend and backend share the same origin so /api is also correct.
+const DEFAULT_API_BASE_URL = '/api';
 const RESOLVED_API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   DEFAULT_API_BASE_URL;
 export const API_BASE_URL = RESOLVED_API_BASE_URL.replace(/\/+$/, '');
-export const API_ROOT_URL = API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL;
+// Derive the root URL (without /api suffix). For absolute URLs keep current logic;
+// for relative paths ('/api') use the browser's own origin so fetch() and EventSource work.
+const _isAbsolute = API_BASE_URL.startsWith('http://') || API_BASE_URL.startsWith('https://');
+export const API_ROOT_URL = _isAbsolute
+  ? (API_BASE_URL.endsWith('/api') ? API_BASE_URL.slice(0, -4) : API_BASE_URL)
+  : (typeof window !== 'undefined' ? window.location.origin : '');
 
 // Performance: Request Deduplication & Caching
 const inflightRequests = new Map();
@@ -14,6 +24,7 @@ const CACHE_TTL = 90_000; // 90 seconds default
 // Routes that benefit from a longer client-side cache (heavy pages)
 const LONG_CACHE_ROUTES = [
   '/dashboard/init',
+  '/dashboard/summary',
   '/interviews',
   '/candidates',
   '/jobs',
@@ -23,7 +34,8 @@ const LONG_CACHE_ROUTES = [
 const LONG_CACHE_TTL = 5 * 60_000; // 5 minutes
 
 // ── Keep-Alive: ping Render every 10 minutes to prevent cold starts ──────────
-const HEALTH_URL = API_ROOT_URL + '/api/health';
+// Always use relative /api/health — routes through Vite proxy in dev, same-origin in prod.
+const HEALTH_URL = '/api/health';
 let _keepAlivePing = null;
 export function startKeepAlive() {
   if (_keepAlivePing) return; // already running
@@ -37,11 +49,15 @@ export function stopKeepAlive() {
   if (_keepAlivePing) { clearInterval(_keepAlivePing); _keepAlivePing = null; }
 }
 
+
 export function getStoredToken() {
   return localStorage.getItem('ats_token');
 }
 
 async function request(path, options = {}, retries = 1) {
+  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
+    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
+  }
   const token = getStoredToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -70,14 +86,17 @@ async function request(path, options = {}, retries = 1) {
     apiCache.delete(requestKey);
   }
 
-  // Mutations get 60s, GETs get 20s (Render cold starts can take 30s)
-  const TIMEOUT_MS = isGet ? 20000 : 60000;
+  // Mutations get 60s, GETs get 45s (Render cold starts can take 30s)
+  const TIMEOUT_MS = isGet ? 45000 : 60000;
 
   const fetchPromise = (async () => {
     let lastErr;
     for (let attempt = 0; attempt <= retries; attempt++) {
-      // Backoff: 0ms first, 1000ms on retry
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
+      // Backoff: 0ms first, respect Retry-After or default to 1000ms on retry
+      if (attempt > 0) {
+        const delayMs = lastErr && lastErr.retryAfter ? parseInt(lastErr.retryAfter, 10) * 1000 : 1000;
+        await new Promise(r => setTimeout(r, delayMs));
+      }
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -98,11 +117,13 @@ async function request(path, options = {}, retries = 1) {
           const error = new Error(message);
           error.status = response.status;
           error.payload = data;
+          error.retryAfter = response.headers.get('Retry-After');
           // Don't retry 4xx errors (client errors)
           if (response.status >= 400 && response.status < 500) throw error;
           lastErr = error;
           continue; // retry on 5xx
         }
+
 
         if (isGet) {
           apiCache.set(requestKey, { data, timestamp: Date.now() });
@@ -111,9 +132,24 @@ async function request(path, options = {}, retries = 1) {
       } catch (err) {
         clearTimeout(timeout);
         if (err.name === 'AbortError') {
+          // Genuine timeout — the request was started but didn't respond in time.
+          // This is the cold-start / slow-server scenario in production.
           lastErr = new Error('Request timed out. Server may be waking up — please try again.');
           if (!isGet) continue; // retry mutations on timeout
           continue;
+        }
+        // Connection-level failures (ERR_CONNECTION_REFUSED, ERR_CONNECTION_RESET,
+        // CORS pre-flight blocked, etc.) arrive here as TypeError with no .status.
+        // These are fundamentally different from a timeout: nothing is listening or
+        // the request was outright rejected, not just slow.
+        if (!err.status && (err instanceof TypeError)) {
+          const msg = err.message || '';
+          // ERR_CONNECTION_REFUSED / ERR_CONNECTION_RESET / network failure
+          lastErr = new Error(
+            'Could not reach the server — please check it is running and try again.'
+          );
+          if (attempt < retries) continue;
+          break;
         }
         if (err.status >= 400 && err.status < 500) throw err; // don't retry 4xx
         lastErr = err;
@@ -132,16 +168,19 @@ async function request(path, options = {}, retries = 1) {
   return fetchPromise;
 }
 
-export function apiGet(path, useCache = true) {
+export function apiGet(path, useCache = true, options = {}) {
   // Option to bypass cache if needed
   if (!useCache) {
     const requestKey = `GET:${path}`;
     apiCache.delete(requestKey);
   }
-  return request(path, { method: 'GET', bypassCache: !useCache });
+  return request(path, { method: 'GET', bypassCache: !useCache, ...options });
 }
 
 export async function apiGetBlob(path) {
+  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
+    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
+  }
   const token = localStorage.getItem('ats_token');
   const headers = {};
   if (token) {
@@ -190,6 +229,35 @@ export function apiPost(path, body) {
   return request(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
+export async function apiQuery(path, body, options = {}) {
+  const useQueryMethod = import.meta.env.VITE_DISABLE_HTTP_QUERY !== 'true';
+
+  if (useQueryMethod) {
+    try {
+      return await request(path, {
+        method: 'QUERY',
+        body: JSON.stringify(body),
+        ...options
+      });
+    } catch (err) {
+      console.warn('HTTP QUERY method failed or is unsupported, falling back to POST /search', err);
+      const fallbackPath = `${path.replace(/\/+$/, '')}/search`;
+      return await request(fallbackPath, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        ...options
+      });
+    }
+  } else {
+    const fallbackPath = `${path.replace(/\/+$/, '')}/search`;
+    return await request(fallbackPath, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      ...options
+    });
+  }
+}
+
 export function apiPut(path, body) {
   invalidateRelated(path);
   return request(path, { method: 'PUT', body: JSON.stringify(body) });
@@ -223,4 +291,68 @@ export function getStoredUser() {
 
 export function hasToken() {
   return Boolean(getStoredToken());
+}
+
+export async function downloadAuthenticatedFile(path, suggestedFilename) {
+  if (path.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
+    throw new Error(`Doubled /api in request: ${API_BASE_URL}${path}`);
+  }
+
+  const token = getStoredToken();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    let message = `Download failed (${response.status})`;
+    try {
+      const text = await response.text();
+      const parsed = JSON.parse(text);
+      if (parsed?.error) message = parsed.error;
+      else if (parsed?.message) message = parsed.message;
+    } catch {
+      // not JSON
+    }
+    throw new Error(message);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  const isXlsx = suggestedFilename.endsWith('.xlsx');
+  const expectedType = isXlsx
+    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    : 'text/csv';
+
+  if (!contentType.includes(expectedType)) {
+    throw new Error(`Unexpected Content-Type: ${contentType}`);
+  }
+
+  const blob = await response.blob();
+
+  if (isXlsx) {
+    const firstBytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+    const isValidZip = firstBytes[0] === 0x50 && firstBytes[1] === 0x4B
+                    && firstBytes[2] === 0x03 && firstBytes[3] === 0x04;
+    if (!isValidZip) {
+      throw new Error('Downloaded file is not a valid XLSX (server returned unexpected content).');
+    }
+  }
+
+  const cd = response.headers.get('content-disposition');
+  const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
+  const filename = filenameFromServer ?? suggestedFilename;
+
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 }

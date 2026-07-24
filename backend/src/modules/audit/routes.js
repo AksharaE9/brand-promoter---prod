@@ -7,7 +7,17 @@ const formatLog = (log) => {
   const actorName = log.actorName || 'System';
   const actionPretty = log.action ? log.action.replace(/_/g, ' ') : '';
   const entityNameStr = log.entityName && log.entityName !== 'N/A' && log.entityName !== 'null' ? ` (${log.entityName})` : '';
-  const description = `${actorName} performed ${actionPretty} on ${log.entityType}${entityNameStr}`;
+  
+  let description = `${actorName} performed ${actionPretty} on ${log.entityType}${entityNameStr}`;
+  if (log.action === 'bulk_upload_completed') {
+    const data = typeof log.newData === 'string' ? JSON.parse(log.newData) : (log.newData || {});
+    const dateStr = new Date(log.createdAt).toISOString().split('T')[0];
+    const flowLabel = data.flow_type === 'candidate' ? 'candidates' :
+                      data.flow_type === 'feedback' ? 'feedbacks' :
+                      data.flow_type === 'interview_schedule' ? 'interviews' :
+                      data.flow_type === 'lead_list' ? 'leads' : 'records';
+    description = `${actorName} bulk-uploaded ${data.total_rows || 0} ${flowLabel} on ${dateStr} (${data.created || 0} created, ${data.duplicates || 0} duplicates, ${data.errors || 0} errors)`;
+  }
 
   return {
     ...log,
@@ -24,19 +34,25 @@ const formatLog = (log) => {
 
 
 
-// GET /api/audit-logs — paginated, filtered
-router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
+const handleSearch = async (req, res) => {
   try {
+    const payload = {
+      ...req.query,
+      ...req.body
+    };
     const {
-      limit = 50, page = 1,
-      entityType, action, userId,
-      startDate, endDate, search,
-      interviewerName,
-    } = req.query;
+      limit = 20,
+      cursor, // Opaque next_cursor base64 token
+      entityType,
+      action,
+      userId,
+      startDate,
+      endDate,
+      search,
+      interviewerName
+    } = payload;
 
-    const parsedLimit = Math.min(parseInt(limit) || 50, 200);
-    const pageNum     = Math.max(1, parseInt(page) || 1);
-    const offset      = (pageNum - 1) * parsedLimit;
+    const parsedLimit = Math.min(parseInt(limit) || 20, 200);
     const orgId       = req.user.organizationId || 'defaultOrg';
 
     const where = {
@@ -54,15 +70,37 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
       if (endDate)   where.createdAt.lte = new Date(endDate + 'T23:59:59.999Z');
     }
 
+    // ── Keyset (Cursor) Pagination ──────────────────────────────────────────
+    let cursorFilter = {};
+    if (cursor) {
+      const decoded = Buffer.from(cursor, 'base64').toString('utf8');
+      const [createdAtStr, id] = decoded.split('|');
+      if (createdAtStr && id) {
+        const lastCreatedAt = new Date(createdAtStr);
+        cursorFilter = {
+          OR: [
+            {
+              createdAt: { lt: lastCreatedAt }
+            },
+            {
+              createdAt: { equals: lastCreatedAt },
+              id: { lt: id }
+            }
+          ]
+        };
+      }
+    }
+
+    // Merge cursor filter into main where clause
+    const finalWhere = cursorFilter.OR 
+      ? { AND: [where, { OR: cursorFilter.OR }] }
+      : where;
+
     // ── Interviewer filter ──────────────────────────────────────────────────
-    // When an interviewerName is provided, find all interview records whose
-    // interviewerNames field contains the search text, then restrict audit
-    // logs to those interview entity IDs (entityType = 'INTERVIEW').
     if (interviewerName && interviewerName.trim()) {
       const nameSearch = interviewerName.trim().toLowerCase();
 
-      // Find matching interview IDs using a case-insensitive substring match
-      // on the interviewerNames string column.
+      // Find matching interview IDs using a case-insensitive substring match on the interviewerNames
       const matchingInterviews = await prisma.interview.findMany({
         where: {
           organizationId: orgId,
@@ -76,78 +114,126 @@ router.get('/', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {
 
       const matchingIds = matchingInterviews.map((iv) => iv.id);
 
-      // Also search by name stored in audit log metadata / description
-      // We will merge the two constraints: entityType must be INTERVIEW
-      // and entityId must be in matchingIds (if any found), OR we do an
-      // in-memory search below if we go through the search path.
       if (matchingIds.length === 0) {
-        // No interviews matched — return empty result set
+        res.setHeader('Accept-Query', 'application/json');
         return res.json({
           success: true,
           data: [],
-          hasMore: false,
-          pagination: { total: 0, page: pageNum, limit: parsedLimit, totalPages: 1 },
+          next_cursor: null,
+          total_estimate: 0,
+          pagination: { total: 0, page: 1, limit: parsedLimit, totalPages: 1 }
         });
       }
 
       // Force entityType to INTERVIEW and restrict by entity IDs
-      where.entityType = 'INTERVIEW';
-      where.entityId   = { in: matchingIds };
+      if (finalWhere.AND) {
+        finalWhere.AND.push({ entityType: 'INTERVIEW' });
+        finalWhere.AND.push({ entityId: { in: matchingIds } });
+      } else {
+        finalWhere.entityType = 'INTERVIEW';
+        finalWhere.entityId   = { in: matchingIds };
+      }
     }
-    // ───────────────────────────────────────────────────────────────────────
 
-    let logs;
-    let totalCount;
+    // ── Free-Text Search Filter (Database-Backed via trigram indexes) ────────
+    if (search && search.trim()) {
+      const s = search.trim();
+      const searchConditions = {
+        OR: [
+          { actorName: { contains: s, mode: 'insensitive' } },
+          { entityName: { contains: s, mode: 'insensitive' } },
+          { action: { contains: s, mode: 'insensitive' } },
+          { entityType: { contains: s, mode: 'insensitive' } },
+          { actorEmail: { contains: s, mode: 'insensitive' } },
+        ]
+      };
 
-    if (search) {
-      // Search: fetch more, filter in-memory
-      const allLogs = await prisma.auditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: 5000,
-      });
-      const s = search.toLowerCase();
-      const filtered = allLogs.filter(log =>
-        (log.actorName  || '').toLowerCase().includes(s) ||
-        (log.entityName || '').toLowerCase().includes(s) ||
-        (log.action     || '').toLowerCase().includes(s) ||
-        (log.entityType || '').toLowerCase().includes(s) ||
-        (log.actorEmail || '').toLowerCase().includes(s)
+      if (finalWhere.AND) {
+        finalWhere.AND.push(searchConditions);
+      } else {
+        // Convert to AND query
+        const originalKeys = Object.keys(finalWhere);
+        const originalConditions = {};
+        originalKeys.forEach(k => {
+          originalConditions[k] = finalWhere[k];
+          delete finalWhere[k];
+        });
+        finalWhere.AND = [originalConditions, searchConditions];
+      }
+    }
+
+    // ── Fetch Audit Logs ────────────────────────────────────────────────────
+    const logs = await prisma.auditLog.findMany({
+      where: finalWhere,
+      orderBy: [
+        { createdAt: 'desc' },
+        { id: 'desc' }
+      ],
+      take: parsedLimit + 1,
+    });
+
+    const hasMore = logs.length > parsedLimit;
+    const paginatedLogs = hasMore ? logs.slice(0, parsedLimit) : logs;
+
+    let nextCursor = null;
+    if (hasMore && paginatedLogs.length > 0) {
+      const lastLog = paginatedLogs[paginatedLogs.length - 1];
+      nextCursor = Buffer.from(`${lastLog.createdAt.toISOString()}|${lastLog.id}`).toString('base64');
+    }
+
+    // ── Estimated Total Count ───────────────────────────────────────────────
+    let totalEstimate = 0;
+    const hasFilters = entityType || action || userId || startDate || endDate || search || interviewerName;
+
+    if (!hasFilters) {
+      // Query Postgres catalog for approximate row count of audit_logs table
+      const countResult = await prisma.$queryRawUnsafe(
+        "SELECT reltuples::bigint AS estimate FROM pg_class WHERE relname = 'audit_logs'"
       );
-      totalCount = filtered.length;
-      logs = filtered.slice(offset, offset + parsedLimit);
+      totalEstimate = Number(countResult?.[0]?.estimate || 0);
     } else {
-      [logs, totalCount] = await Promise.all([
-        prisma.auditLog.findMany({
-          where,
-          orderBy: { createdAt: 'desc' },
-          skip: offset,
-          take: parsedLimit,
-        }),
-        prisma.auditLog.count({ where }),
-      ]);
+      // With filters, execute standard COUNT
+      totalEstimate = await prisma.auditLog.count({ where: finalWhere });
     }
 
-    const finalLogs = logs.map(formatLog);
-    const hasMore = offset + finalLogs.length < totalCount;
+    const finalLogs = paginatedLogs.map(formatLog);
+
+    res.setHeader('Accept-Query', 'application/json');
+
+    // For compatibility with frontend pagination structure (totalCount / totalPages):
     const pagination = {
-      total: totalCount,
-      page: pageNum,
+      total: totalEstimate,
+      totalPages: Math.ceil(totalEstimate / parsedLimit) || 1,
       limit: parsedLimit,
-      totalPages: Math.ceil(totalCount / parsedLimit) || 1,
     };
 
     if (finalLogs.length > 30) {
       const { streamPaginatedJson } = require('../../utils/streamResponse');
-      return streamPaginatedJson(res, finalLogs, { hasMore, pagination });
+      return streamPaginatedJson(res, finalLogs, { hasMore, next_cursor: nextCursor, pagination });
     }
 
-    return res.json({ success: true, data: finalLogs, hasMore, pagination });
+    return res.json({
+      success: true,
+      data: finalLogs,
+      hasMore,
+      next_cursor: nextCursor,
+      pagination
+    });
   } catch (error) {
     console.error('[Audit] Query failed:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
+};
+
+// Route handlers supporting standard GET, standard QUERY, and fallback POST /search
+router.all('/', auth, requireRoles('SUPER_ADMIN'), async (req, res, next) => {
+  if (req.method === 'QUERY' || req.method === 'GET') {
+    return handleSearch(req, res);
+  }
+  next();
 });
+
+router.post('/search', auth, requireRoles('SUPER_ADMIN'), handleSearch);
 
 // GET /api/audit-logs/:id — single detail
 router.get('/:id', auth, requireRoles('SUPER_ADMIN'), async (req, res) => {

@@ -12,6 +12,38 @@ import { startKeepAlive } from './lib/api';
 // Prevent Render instance sleeping
 startKeepAlive();
 
+// Intercept clipboard copy to restore full text of visually truncated elements
+if (typeof document !== 'undefined') {
+  document.addEventListener('copy', (e) => {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) return;
+
+    try {
+      const range = selection.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      const containerElement = container.nodeType === Node.ELEMENT_NODE
+        ? container
+        : container.parentElement;
+      if (!containerElement) return;
+
+      const truncated = containerElement.closest('[data-fulltext]') ||
+                        containerElement.querySelector('[data-fulltext]');
+      if (!truncated) return;
+
+      const el = truncated;
+      if (el.scrollWidth <= el.clientWidth) return;
+
+      const fullText = el.getAttribute('data-fulltext');
+      if (!fullText) return;
+
+      e.clipboardData?.setData('text/plain', fullText);
+      e.preventDefault();
+    } catch (_) {
+      // Silent catch to preserve standard copy behavior if API fails
+    }
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

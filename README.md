@@ -272,3 +272,24 @@ CD includes:
 - Demo data may include extra records created during smoke/E2E tests.
 - For a clean dataset, reset DB and run Prisma migrate + seed.
 - Theme consistency is maintained across enterprise pages with shared layout and styles.
+
+---
+
+## 14) Local Development Performance & Production Testing
+
+### Dev Server Expectations (`npm run dev`)
+- **Focus**: Fast reloads (HMR) and instant hot module replacement when editing code.
+- **Under the hood**: Vite serves files individually to enable rapid updates. When loading the app cold in dev mode, the browser may fire many requests.
+- **Initial Load**: First page load in dev mode can take slightly longer due to individual module requests. This does not represent production speed.
+
+### Production Preview (`npm run preview`)
+- **Focus**: Testing exact production-mode behavior locally.
+- **Under the hood**: Vite runs the compiled, minified, tree-shaken, and chunked bundle.
+- **How to run**:
+  1. Build the bundle: `npm run build`
+  2. Run the preview: `npm run preview`
+- **Result**: Navigating locally on `http://localhost:4173` runs the exact production assets. This is the correct environment to measure real user speed before deployment.
+
+### Production Performance
+- Measure page speed and load times using Lighthouse or Chrome DevTools against the built preview server (`http://localhost:4173`) or the actual deployed URL.
+

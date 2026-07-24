@@ -1,10 +1,11 @@
 const multer = require("multer");
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const cloudinary = require("../config/cloudinary");
+const { MAX_UPLOAD_BYTES } = require("../config/uploadLimits");
 
 const multerInstance = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
 const upload = (req, res, next) => {
@@ -19,7 +20,7 @@ upload.any = (...args) => multerInstance.any(...args);
 // 2. Memory Storage (Transient Files: Excel Bulk Uploads)
 const memoryUploadInstance = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
 const memoryUpload = (req, res, next) => {
@@ -41,7 +42,10 @@ const offerLetterStorage = new CloudinaryStorage({
   },
 });
 
-const offerLetterUpload = multer({ storage: offerLetterStorage });
+const offerLetterUpload = multer({
+  storage: offerLetterStorage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+});
 
 module.exports = {
   upload,

@@ -49,7 +49,7 @@ const api = {
       const { apiGetBlob } = await import('../lib/api');
       return { data: await apiGetBlob(path) };
     }
-    const data = await apiGet(path, false);
+    const data = await apiGet(path, false, config);
     return { data };
   },
   post: async (path, body, config) => {

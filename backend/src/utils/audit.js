@@ -22,6 +22,9 @@ function logAudit({
   userAgent = null,
   orgId = null,
   organizationId = null,
+  subjectType = null,
+  subjectId = null,
+  subjectName = null,
 }) {
   // Execute asynchronously inside an immediately invoked function expression to avoid blocking
   (async () => {
@@ -30,6 +33,35 @@ function logAudit({
     let resolvedActorRole = actorRole;
     let resolvedOrgId = orgId || organizationId;
     let resolvedEntityName = entityName;
+    let resolvedSubjectName = subjectName;
+
+    // 0. Resolve subjectName if not provided
+    if (!resolvedSubjectName && subjectId && subjectType) {
+      try {
+        const cleanType = String(subjectType).toUpperCase();
+        if (cleanType === 'CANDIDATE') {
+          const cand = await prisma.candidate.findUnique({
+            where: { id: subjectId },
+            select: { fullName: true }
+          });
+          if (cand) resolvedSubjectName = cand.fullName;
+        } else if (cleanType === 'USER') {
+          const u = await prisma.user.findUnique({
+            where: { id: subjectId },
+            select: { fullName: true }
+          });
+          if (u) resolvedSubjectName = u.fullName;
+        } else if (cleanType === 'MEMBER' || cleanType === 'SCHEDULING_MEMBER' || cleanType === 'SCHEDULINGMEMBER') {
+          const m = await prisma.schedulingMember.findUnique({
+            where: { id: subjectId },
+            select: { name: true }
+          });
+          if (m) resolvedSubjectName = m.name;
+        }
+      } catch (err) {
+        console.warn('[AuditResolve] Subject lookup failed:', err.message);
+      }
+    }
 
     // 1. Always resolve User (Actor) details from the database if actorUserId is present
     if (actorUserId) {
@@ -169,6 +201,9 @@ function logAudit({
         userAgent,
         organizationId: targetOrg,
         isDeleted: false,
+        subjectType,
+        subjectId,
+        subjectName: resolvedSubjectName || null,
       },
     });
 

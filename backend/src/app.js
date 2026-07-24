@@ -28,6 +28,8 @@ const dashboardRoutes    = require('./modules/dashboard/routes');
 const collegeDriveRoutes = require('./modules/college-drives/routes');
 const auditRoutes        = require('./modules/audit/routes');
 const notificationRoutes = require('./modules/notifications/routes');
+const schedulingRoutes   = require('./modules/scheduling/routes');
+
 
 const compression  = require('compression');
 const { notFound, errorHandler } = require('./middleware/error-handler');
@@ -99,12 +101,31 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), { maxAge: '1d' }));
 
 // ── Health endpoints ──────────────────────────────────────────────────────
+const prisma = require('./config/db');
+
+// Start background database keep-alive ping to prevent Neon Postgres autosuspend (runs every 4 minutes)
+setInterval(async () => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err) {
+    console.warn('[DBKeepAlive] Database ping failed:', err.message);
+  }
+}, 4 * 60 * 1000);
+
 app.get('/api/health', async (req, res) => {
+  let dbStatus = 'healthy';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err) {
+    dbStatus = `unhealthy: ${err.message}`;
+  }
+
   res.json({
     success: true,
     message: 'ATS Backend is running',
     timestamp: new Date().toISOString(),
     services: {
+      database: dbStatus,
       sse: sse.getStats(),
     },
   });
@@ -116,14 +137,24 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
   res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
 });
 
+const { concurrencyLimiter } = require('./middleware/concurrencyLimiter');
+
 // ── Routes ────────────────────────────────────────────────────────────────
+app.use('/api', concurrencyLimiter);
 app.use('/api/auth', authLimiter, authRoutes);
+
 app.use('/api/users', apiLimiter, cc(120), userRoutes);
 app.use('/api/team', apiLimiter, cc(120), require('./modules/team/routes'));
 app.use('/api/settings', apiLimiter, cc(300), require('./modules/settings/routes'));
 app.use('/api/companies', apiLimiter, cc(300), require('./modules/companies/routes'));
 app.use('/api/jobs', apiLimiter, cc(60), jobRoutes);
-app.use('/api/candidates/bulk-upload', uploadLimiter, require('./routes/bulkUpload'));
+app.post('/api/candidates/bulk-upload', uploadLimiter);
+app.use('/api/candidates/bulk-upload', require('./routes/bulkUpload'));
+app.post('/api/interview-feedback/bulk-upload', uploadLimiter);
+app.use('/api/interview-feedback/bulk-upload', require('./routes/feedbackUpload'));
+app.post('/api/interviews/bulk-upload', uploadLimiter);
+app.use('/api/interviews/bulk-upload', require('./routes/interviewUpload'));
+app.use('/api/candidates', require('./routes/internalReports'));
 app.use('/api/candidates', apiLimiter, cc(0), candidateRoutes);
 app.use('/api/applications', apiLimiter, cc(0), applicationRoutes);
 app.use('/api/pipeline', apiLimiter, cc(0), pipelineRoutes);
@@ -137,6 +168,8 @@ app.use('/api/notifications', apiLimiter, cc(0), notificationRoutes);
 app.use('/api/sse', cc(0), require('./routes/sse'));
 app.use('/api/files', apiLimiter, cc(0), require('./modules/files/routes'));
 app.use('/api/analytics', analyticsLimiter, cc(0), require('./modules/analytics/routes'));
+app.use('/api/scheduling', apiLimiter, cc(0), schedulingRoutes);
+
 
 app.use(notFound);
 app.use(errorHandler);

@@ -1,25 +1,48 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
+import { search } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
-import EditInterviewModal from '../components/Interview/EditInterviewModal';
 import { subscribeSSE } from '../lib/sse';
-import ExcelView from '../components/Interview/ExcelView';
 import { groupInterviewsByDate, toDateKey, formatTime12h, getStatusStyle, getCandidateInitials } from '../lib/groupInterviewsByDate';
 
-import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound } from '../hooks/useScheduling';
+import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails } from '../hooks/useScheduling';
+import useDebounce from '../hooks/useDebounce';
 import { schedulingApi } from '../services/schedulingApi';
+
 import SyncIndicator from '../components/Interview/SyncIndicator';
 import InterviewMemberSkeleton from '../components/Interview/InterviewMemberSkeleton';
-import { useDebounce } from '../hooks/useDebounce';
+import CopyFeedbackButton from '../components/Interview/CopyFeedbackButton';
+import { CandidateNameLink } from '../components/CandidateNameLink';
+import { usePanelists } from '../hooks/usePanelists';
+import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 
-const SSE_RELOAD_DEBOUNCE = 8000; // 8s minimum between SSE-triggered reloads
+// Lazy load secondary sub-components to reduce initial load weight
+const EditInterviewModal = React.lazy(() => import('../components/Interview/EditInterviewModal'));
+const ExcelView = React.lazy(() => import('../components/Interview/ExcelView'));
+const InterviewFeedbackForm = React.lazy(() => import('../components/Interview/InterviewFeedbackForm'));
+const InterviewFeedbackView = React.lazy(() => import('../components/Interview/InterviewFeedbackView'));
+const BulkInterviewUploadModal = React.lazy(() => import('../components/Interview/BulkInterviewUploadModal'));
+const BulkFeedbackUploadModal = React.lazy(() => import('../components/Interview/BulkFeedbackUploadModal'));
+import { ContactAttemptPopover } from '../components/Interview/ContactAttemptPopover';
+import { formatTime24h, formatDateTime24h } from '../lib/datetime';
+import {
+  InterviewRound,
+  ROUND_SEQUENCE,
+  ROUND_DISPLAY_LABEL,
+  getNextSchedulableRound,
+} from '../lib/interviewTemplates';
+
+const SSE_RELOAD_DEBOUNCE = 1500; // 1.5s minimum between SSE-triggered reloads
+
+
+
 
 // File upload/download helpers for follow-ups (base64 storage for performance and zero DB schema breakage)
 const fileToBase64 = (file) => {
@@ -78,32 +101,138 @@ const downloadBase64File = (fileName, base64Data) => {
 
 const formatDateTimeIN = (dateStr) => {
   if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '-';
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  let hours = d.getHours();
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12 || 12;
-  return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds} ${ampm}`;
+  return formatDateTime24h(dateStr) || '-';
 };
 
+export const FollowUpUploadField = React.memo(({
+  label,
+  id,
+  value,
+  onUpload,
+  isAdmin,
+  allowedExtensions,
+  onError
+}) => {
+  const validateAndProcess = async (file) => {
+    if (!file) return null;
+
+    // Enforce 10MB limit
+    if (file.size > MAX_UPLOAD_BYTES) {
+      const msg = 'File exceeds the 10 MB limit. Split it into smaller files if needed.';
+      if (onError) onError(msg);
+      else alert(msg);
+      return null;
+    }
+
+    // Enforce extension list if provided
+    if (allowedExtensions && allowedExtensions.length > 0) {
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!allowedExtensions.includes(ext)) {
+        const msg = `Invalid file type. Allowed: ${allowedExtensions.join(', ')}`;
+        if (onError) onError(msg);
+        else alert(msg);
+        return null;
+      }
+    }
+
+    return await fileToBase64(file);
+  };
+
+  return (
+    <div className="flex border-b border-slate-50 pb-2 items-center">
+      <span className="w-28 text-[#6d7893] shrink-0 font-medium">{label}:</span>
+      {value ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-xs text-slate-400">attachment</span>
+            <span className="truncate max-w-[120px] text-slate-700 text-xs" title={value.name}>
+              {value.name}
+            </span>
+            <button
+              type="button"
+              onClick={() => downloadBase64File(value.name, value.data)}
+              className="text-blue-600 hover:text-blue-800 p-0.5 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
+              title="Preview / Download"
+            >
+              <span className="material-symbols-outlined text-sm">visibility</span>
+            </button>
+          </div>
+          {isAdmin && (
+            <>
+              <input
+                type="file"
+                id={`replace-${id}`}
+                className="hidden"
+                accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const base64 = await validateAndProcess(file);
+                  if (base64) {
+                    onUpload(base64);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <label
+                htmlFor={`replace-${id}`}
+                className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+              >
+                Replace File
+              </label>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-400 italic text-xs">No file attached</span>
+          {isAdmin && (
+            <>
+              <input
+                type="file"
+                id={`upload-${id}`}
+                className="hidden"
+                accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                onChange={async (e) => {
+                  const file = e.target.files[0];
+                  if (!file) return;
+                  const base64 = await validateAndProcess(file);
+                  if (base64) {
+                    onUpload(base64);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <label
+                htmlFor={`upload-${id}`}
+                className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
+              >
+                Upload File
+              </label>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+FollowUpUploadField.displayName = 'FollowUpUploadField';
+
+
 const parseNotesSafely = (notesStr) => {
-  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
+  if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
   try {
     const parsed = JSON.parse(notesStr);
     if (parsed && typeof parsed === 'object') {
       return {
         phoneFollowUp: parsed.phoneFollowUp || null,
         emailFollowUp: parsed.emailFollowUp || null,
-        nextSchedule: parsed.nextSchedule || null
+        nextSchedule: parsed.nextSchedule || null,
+        morningFollowUp: parsed.morningFollowUp || null
       };
     }
   } catch (e) {}
-  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null };
+  return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
 };
 
 const emptyScheduleForm = {
@@ -119,6 +248,9 @@ const emptyScheduleForm = {
   zohoLink: '',
   slotNo: 1,   // auto-computed slot number for the chosen time
   nextSchedule: '',
+  phoneFollowUp: null,
+  emailFollowUp: null,
+  morningFollowUp: null,
 };
 
 const emptyFeedbackForm = {
@@ -223,9 +355,16 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
               {/* Initials avatar */}
               <span className={`text-[8px] font-bold shrink-0 ${text}`}>{initials}</span>
               {/* Name truncated */}
-              <span className={`text-[9px] font-semibold truncate flex-1 ${text}`}>
-                {name.split(' ')[0]}
-              </span>
+              <CandidateNameLink
+                candidateId={iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId}
+                candidateName={name.split(' ')[0]}
+                variant="activity"
+                className={`text-[9px] font-semibold truncate flex-1 ${text}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChipClick(iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId, iv.id);
+                }}
+              />
               {/* Round badge */}
               <span className={`text-[8px] font-bold shrink-0 ${text} opacity-70`}>{roundLabel}</span>
             </button>
@@ -252,532 +391,9 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
 
 const MemoizedCalendarCell = React.memo(CalendarCell);
 
-/**
- * ScheduleModal — fully extracted & memoized so form-field changes don't
- * re-render the entire InterviewSchedule page. This is the key fix for the
- * "glitching" the user reported.
- */
-const ScheduleModal = React.memo(function ScheduleModal({
-  scheduleForm,
-  setScheduleForm,
-  candidateSearch,
-  setCandidateSearch,
-  jobSearch,
-  setJobSearch,
-  interviewerSearch,
-  setInterviewerSearch,
-  showCandidateList,
-  setShowCandidateList,
-  showJobList,
-  setShowJobList,
-  candidateSuggestions,
-  jobSuggestions,
-  interviewers,
-  searchingCandidates,
-  searchingJobs,
-  savingSchedule,
-  onClose,
-  onSubmit,
-  allInterviews,
-}) {
-  const currentUser = getStoredUser();
-  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
+// ScheduleModal is lazy-loaded to optimize initial bundle size and load performance
+const ScheduleModal = React.lazy(() => import('../components/Interview/ScheduleModal').then(module => ({ default: module.ScheduleModal })));
 
-  const handleRoundChange = React.useCallback((e) => {
-    const val = e.target.value;
-    setScheduleForm(prev => ({
-      ...prev,
-      roundNo: val === 'Final' ? 99 : parseInt(val, 10),
-      round: val === 'Final' ? 'Final Round' : `Round ${val}`,
-    }));
-  }, [setScheduleForm]);
-
-  const handleModeChange = React.useCallback((e) => {
-    setScheduleForm(prev => ({ ...prev, mode: e.target.value }));
-  }, [setScheduleForm]);
-
-  const handleStartChange = React.useCallback((e) => {
-    setScheduleForm(prev => ({ ...prev, scheduledStart: e.target.value }));
-  }, [setScheduleForm]);
-
-  // Split date (yyyy-MM-dd) + time (HH:mm) → combine to ISO datetime-local string
-  const handleDatePartChange = React.useCallback((e) => {
-    const datePart = e.target.value; // yyyy-MM-dd
-    setScheduleForm(prev => {
-      const timePart = prev.scheduledStart ? prev.scheduledStart.slice(11, 16) : '09:00';
-      return { ...prev, scheduledStart: datePart ? `${datePart}T${timePart}` : '' };
-    });
-  }, [setScheduleForm]);
-
-  const handleTimePartChange = React.useCallback((e) => {
-    const timePart = e.target.value; // HH:mm
-    setScheduleForm(prev => {
-      const datePart = prev.scheduledStart ? prev.scheduledStart.slice(0, 10) : '';
-      return { ...prev, scheduledStart: datePart ? `${datePart}T${timePart}` : '' };
-    });
-  }, [setScheduleForm]);
-
-  const handleMeetingLinkChange = React.useCallback((e) => {
-    setScheduleForm(prev => ({ ...prev, meetingLink: e.target.value }));
-  }, [setScheduleForm]);
-
-  const handleZohoLinkChange = React.useCallback((e) => {
-    setScheduleForm(prev => ({ ...prev, zohoLink: e.target.value }));
-  }, [setScheduleForm]);
-
-  const handleCandidateSearchChange = React.useCallback((e) => {
-    setCandidateSearch(e.target.value);
-  }, [setCandidateSearch]);
-
-  const handleJobSearchChange = React.useCallback((e) => {
-    setJobSearch(e.target.value);
-  }, [setJobSearch]);
-
-  const handleInterviewerSearchChange = React.useCallback((e) => {
-    setInterviewerSearch(e.target.value);
-  }, [setInterviewerSearch]);
-
-  const handleInterviewerToggle = React.useCallback((personId, checked) => {
-    setScheduleForm(prev => {
-      const ids = checked
-        ? [...prev.interviewerIds, personId]
-        : prev.interviewerIds.filter(id => id !== personId);
-      return { ...prev, interviewerIds: ids };
-    });
-  }, [setScheduleForm]);
-
-  const handleCandidateSelect = React.useCallback((c) => {
-    const candInterviews = allInterviews.filter(
-      iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id && !iv._optimistic
-    );
-    const nextRound = candInterviews.length + 1;
-    setScheduleForm(prev => ({
-      ...prev,
-      candidateId: c.id,
-      roundNo: nextRound,
-      round: `Round ${nextRound}`,
-    }));
-    setCandidateSearch(c.fullName);
-    setShowCandidateList(false);
-  }, [allInterviews, setScheduleForm, setCandidateSearch, setShowCandidateList]);
-
-  const handleJobSelect = React.useCallback((j) => {
-    setScheduleForm(prev => ({ ...prev, jobId: j.id }));
-    setJobSearch(j.title);
-    setShowJobList(false);
-  }, [setScheduleForm, setJobSearch, setShowJobList]);
-
-  const filteredInterviewerList = React.useMemo(() => {
-    if (!interviewerSearch) return interviewers;
-    const q = interviewerSearch.toLowerCase();
-    return interviewers.filter(p =>
-      p.fullName.toLowerCase().includes(q) || p.role.toLowerCase().includes(q)
-    );
-  }, [interviewers, interviewerSearch]);
-
-  // ── Slot computation: same-hour bookings ──
-  // Returns { slotNo, slotCount, slotExceeded } based on scheduledStart + existing interviews
-  const slotInfo = React.useMemo(() => {
-    if (!scheduleForm.scheduledStart) return { slotNo: 1, slotCount: 0, slotExceeded: false };
-    const chosenDate = new Date(scheduleForm.scheduledStart);
-    const chosenDateKey = chosenDate.toDateString();
-    const chosenHour   = chosenDate.getHours();
-
-    // Count real (non-optimistic) interviews already in the same date+hour bucket
-    const sameSlotInterviews = allInterviews.filter(iv => {
-      if (iv._optimistic) return false;
-      const d = new Date(iv.scheduledStart);
-      return d.toDateString() === chosenDateKey && d.getHours() === chosenHour;
-    });
-    const slotCount = sameSlotInterviews.length;
-    const slotNo    = slotCount + 1;
-    return { slotNo, slotCount, slotExceeded: slotNo > 7 };
-  }, [scheduleForm.scheduledStart, allInterviews]);
-
-  // Keep scheduleForm.slotNo in sync with computed slotInfo (only when scheduledStart is set)
-  React.useEffect(() => {
-    if (!scheduleForm.scheduledStart) return;
-    setScheduleForm(prev => ({ ...prev, slotNo: slotInfo.slotNo }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotInfo.slotNo, scheduleForm.scheduledStart]);
-
-  return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
-      <div className="bg-white w-full max-w-xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
-        <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-[#0f1b3d]">Schedule Interview</h2>
-              <p className="text-xs text-slate-500 mt-1">Book a new session for this candidate</p>
-            </div>
-            <button
-              className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors"
-              onClick={onClose}
-              type="button"
-            >
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
-          <form className="space-y-4" onSubmit={onSubmit}>
-            <div className="grid grid-cols-2 gap-4">
-              {/* Candidate */}
-              <div className="space-y-1 relative">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Candidate</label>
-                <div className="relative">
-                  <input
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
-                    placeholder="Select or search candidate..."
-                    value={candidateSearch}
-                    onChange={handleCandidateSearchChange}
-                    onFocus={() => setShowCandidateList(true)}
-                    onBlur={() => setTimeout(() => setShowCandidateList(false), 200)}
-                    autoComplete="off"
-                  />
-                  <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
-                </div>
-                {showCandidateList && (
-                  <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
-                    {searchingCandidates ? (
-                      <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
-                    ) : (
-                      candidateSuggestions.map(c => (
-                        <div
-                          key={c.id}
-                          className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
-                          onMouseDown={(e) => { e.preventDefault(); handleCandidateSelect(c); }}
-                        >
-                          <div className="font-medium text-slate-700">{c.fullName}</div>
-                          <div className="text-[10px] text-slate-400">{c.email || 'No Email'}</div>
-                        </div>
-                      ))
-                    )}
-                    {!searchingCandidates && candidateSuggestions.length === 0 && (
-                      <div className="p-4 text-center text-xs text-slate-400 italic">No candidates found</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Job Role */}
-              <div className="space-y-1 relative">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Job Role</label>
-                <div className="relative">
-                  <input
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none pr-10"
-                    placeholder="Select or search job..."
-                    value={jobSearch}
-                    onChange={handleJobSearchChange}
-                    onFocus={() => setShowJobList(true)}
-                    onBlur={() => setTimeout(() => setShowJobList(false), 200)}
-                    autoComplete="off"
-                  />
-                  <span className="material-symbols-outlined absolute right-3 top-2.5 text-slate-400 pointer-events-none">expand_more</span>
-                </div>
-                {showJobList && (
-                  <div className="absolute z-[1200] left-0 right-0 top-[64px] bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-48 overflow-y-auto">
-                    {searchingJobs ? (
-                      <div className="p-4 text-center text-xs text-[#a1acbd] animate-pulse">Searching...</div>
-                    ) : (
-                      jobSuggestions.map(j => (
-                        <div
-                          key={j.id}
-                          className="p-3 hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50 last:border-0 transition-colors"
-                          onMouseDown={(e) => { e.preventDefault(); handleJobSelect(j); }}
-                        >
-                          <div className="font-medium text-slate-700">{j.title}</div>
-                          <div className="text-[10px] text-slate-400">{j.location || 'Remote'}</div>
-                        </div>
-                      ))
-                    )}
-                    {!searchingJobs && jobSuggestions.length === 0 && (
-                      <div className="p-4 text-center text-xs text-slate-400 italic">No jobs found</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Round & Mode */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Interview Round</label>
-                <select
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
-                  value={scheduleForm.roundNo === 99 ? 'Final' : scheduleForm.roundNo}
-                  onChange={handleRoundChange}
-                >
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                    <option key={n} value={n}>Round {n}</option>
-                  ))}
-                  <option value="Final">Final Round</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Mode</label>
-                <select
-                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
-                  value={scheduleForm.mode}
-                  onChange={handleModeChange}
-                >
-                  <option value="ONLINE">Online Meeting</option>
-                  <option value="IN_PERSON">In Person</option>
-                  <option value="PHONE">Phone Call</option>
-                  <option value="DRIVE">Drive Meeting</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Interviewers */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between ml-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500">Interviewers (Multiple)</label>
-                <input
-                  className="text-[10px] border-b border-slate-200 focus:border-blue-400 outline-none w-24"
-                  placeholder="Filter..."
-                  value={interviewerSearch}
-                  onChange={handleInterviewerSearchChange}
-                />
-              </div>
-              <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 custom-scrollbar">
-                {filteredInterviewerList.map((person) => (
-                  <label key={person.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded-lg transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={scheduleForm.interviewerIds.includes(person.id)}
-                      onChange={(e) => handleInterviewerToggle(person.id, e.target.checked)}
-                      className="rounded-md h-4 w-4 text-[#1f52cc] border-slate-300 focus:ring-[#1f52cc]"
-                    />
-                    <span className="text-sm font-medium text-slate-700">
-                      {person.fullName} <span className="text-[10px] text-slate-400 font-normal">({person.role})</span>
-                    </span>
-                  </label>
-                ))}
-                {filteredInterviewerList.length === 0 && (
-                  <div className="text-xs text-slate-400 text-center py-2 italic">No interviewers match filter</div>
-                )}
-              </div>
-            </div>
-
-            {/* Date/Time + Slot */}
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Start Date &amp; Time</label>
-              {/* Split into date + time so the browser always shows DD/MM/YYYY (Indian standard) */}
-              <div className="flex items-center gap-2">
-                {/* Date picker — guarantees DD/MM/YYYY placeholder and display format */}
-                <div className="relative flex-1">
-                  {/* Visible text input showing formatted value or placeholder */}
-                  <input
-                    type="text"
-                    className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm focus:border-[#1f52cc] outline-none bg-white text-slate-800 font-medium"
-                    placeholder="dd/mm/yyyy"
-                    readOnly
-                    value={
-                      scheduleForm.scheduledStart && scheduleForm.scheduledStart.slice(0, 10)
-                        ? (() => {
-                            const [y, m, d] = scheduleForm.scheduledStart.slice(0, 10).split('-');
-                            return `${d}/${m}/${y}`;
-                          })()
-                        : ''
-                    }
-                  />
-                  {/* Calendar icon */}
-                  <span className="material-symbols-outlined absolute right-3 top-3.5 text-slate-400 pointer-events-none text-base">
-                    calendar_month
-                  </span>
-                  {/* Hidden native input on top that opens native picker on click */}
-                  <input
-                    type="date"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    required
-                    value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(0, 10) : ''}
-                    onChange={handleDatePartChange}
-                    style={{ colorScheme: 'light' }}
-                  />
-                </div>
-                {/* Time picker */}
-                <input
-                  type="time"
-                  className="h-11 w-32 rounded-xl border border-slate-200 px-3 text-sm focus:border-[#1f52cc] outline-none"
-                  required
-                  value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(11, 16) : ''}
-                  onChange={handleTimePartChange}
-                  style={{ colorScheme: 'light' }}
-                />
-              </div>
-
-              {/* Auto-computed slot indicator */}
-              {scheduleForm.scheduledStart && (
-                <div className={`flex items-center gap-2 mt-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
-                  slotInfo.slotExceeded
-                    ? 'bg-rose-50 border-rose-200 text-rose-700'
-                    : slotInfo.slotNo >= 5
-                      ? 'bg-amber-50 border-amber-200 text-amber-700'
-                      : 'bg-blue-50 border-blue-200 text-blue-700'
-                }`}>
-                  <span className="material-symbols-outlined text-sm">
-                    {slotInfo.slotExceeded ? 'block' : 'confirmation_number'}
-                  </span>
-                  {slotInfo.slotExceeded
-                    ? `Slot limit exceeded — ${slotInfo.slotCount} interviews already booked for this hour (max 7). Please choose a different time.`
-                    : slotInfo.slotNo === 1
-                      ? 'Slot 1 — first booking for this time slot'
-                      : `Slot ${slotInfo.slotNo} — ${slotInfo.slotCount} other interview${slotInfo.slotCount !== 1 ? 's' : ''} already in this hour`
-                  }
-                </div>
-              )}
-            </div>
-
-            {/* Links */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Link</label>
-                <input
-                  type="url"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none"
-                  placeholder="e.g. Google Meet / Zoom"
-                  value={scheduleForm.meetingLink}
-                  onChange={handleMeetingLinkChange}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Zoho Link</label>
-                <input
-                  type="url"
-                  className="h-10 w-full rounded-xl border border-slate-200 px-4 text-xs focus:border-[#1f52cc] outline-none"
-                  placeholder="e.g. Zoho Meeting URL"
-                  value={scheduleForm.zohoLink}
-                  onChange={handleZohoLinkChange}
-                />
-              </div>
-            </div>
-
-            {/* Phone & Email Follow-ups */}
-            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Phone Follow-up</label>
-                {scheduleForm.phoneFollowUp ? (
-                  <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                    <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.phoneFollowUp.name}</span>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => setScheduleForm(prev => ({ ...prev, phoneFollowUp: null }))}
-                        className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                      >
-                        <span className="material-symbols-outlined text-sm">delete</span>
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {isAdmin ? (
-                      <>
-                        <input
-                          type="file"
-                          id="phone-followup-upload"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const base64 = await fileToBase64(file);
-                              setScheduleForm(prev => ({ ...prev, phoneFollowUp: base64 }));
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor="phone-followup-upload"
-                          className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
-                        >
-                          <span className="material-symbols-outlined text-sm">add</span> Add phone follow-up
-                        </label>
-                      </>
-                    ) : null}
-                    <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Email Follow-up</label>
-                {scheduleForm.emailFollowUp ? (
-                  <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                    <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.emailFollowUp.name}</span>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => setScheduleForm(prev => ({ ...prev, emailFollowUp: null }))}
-                        className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                      >
-                        <span className="material-symbols-outlined text-sm">delete</span>
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {isAdmin ? (
-                      <>
-                        <input
-                          type="file"
-                          id="email-followup-upload"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const base64 = await fileToBase64(file);
-                              setScheduleForm(prev => ({ ...prev, emailFollowUp: base64 }));
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor="email-followup-upload"
-                          className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
-                        >
-                          <span className="material-symbols-outlined text-sm">add</span> Add email follow-up
-                        </label>
-                      </>
-                    ) : null}
-                    <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {scheduleForm.roundNo > 1 && (
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Next Schedule</label>
-                <textarea
-                  className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[60px] focus:border-[#1f52cc] outline-none transition-all"
-                  placeholder="Enter details for the next schedule..."
-                  value={scheduleForm.nextSchedule || ''}
-                  onChange={(e) => setScheduleForm(prev => ({ ...prev, nextSchedule: e.target.value }))}
-                />
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-6">
-              <button
-                type="button"
-                className="flex-1 h-11 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all"
-                onClick={onClose}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="flex-1 h-11 rounded-xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50"
-                disabled={savingSchedule || slotInfo.slotExceeded}
-                title={slotInfo.slotExceeded ? 'Slot limit exceeded for this time — choose a different hour' : ''}
-              >
-                {savingSchedule ? 'Scheduling...' : slotInfo.slotExceeded ? 'Slot Full' : 'Confirm Schedule'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-});
 
 const InterviewSchedule = () => {
   const navigate = useNavigate();
@@ -847,11 +463,9 @@ const InterviewSchedule = () => {
   const [applications, setApplications] = useState([]);
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [interviewers, setInterviewers] = useState([]);
-  const [candidateSuggestions, setCandidateSuggestions] = useState([]);
-  const [jobSuggestions, setJobSuggestions] = useState([]);
-  const [searchingCandidates, setSearchingCandidates] = useState(false);
-  const [searchingJobs, setSearchingJobs] = useState(false);
+  const { data: panelistsList, isLoading: isPanelistsLoading, error: panelistsError, refetch: refetchPanelists } = usePanelists();
+  const interviewers = panelistsList || [];
+  // Suggestions are now managed by TanStack Query useQuery hooks below
   const [selectedId, setSelectedId] = useState('');
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
@@ -861,6 +475,7 @@ const InterviewSchedule = () => {
   const [offerLetterFile, setOfferLetterFile] = useState(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [candidateHistory, setCandidateHistory] = useState([]);
+  const [candidateFeedbacks, setCandidateFeedbacks] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [uploadingRecording, setUploadingRecording] = useState(false);
   const [recordingFile, setRecordingFile] = useState(null);
@@ -885,6 +500,8 @@ const InterviewSchedule = () => {
   const [interviewerSearch, setInterviewerSearch] = useState('');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [showBulkFeedbackModal, setShowBulkFeedbackModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferringInterview, setTransferringInterview] = useState(null);
   const [editingInterviewId, setEditingInterviewId] = useState(null);
@@ -954,52 +571,97 @@ const InterviewSchedule = () => {
     }
   }, [serverNextCursor, serverHasMore, debouncedSearch, filterMine, currentUser?.id, queryClient]);
 
-  // ── Calendar/Excel bulk-load: when user switches to a non-list view, immediately
-  // fetch all remaining pages so every interview is visible in the grid.
-  // This prevents the "only 20 interviews shown" problem caused by pagination.
-  const bulkLoadAllRef = useRef(false);
-  useEffect(() => {
-    if (viewMode !== 'calendar' && viewMode !== 'excel') {
-      bulkLoadAllRef.current = false; // reset so next calendar visit re-triggers
-      return;
+  const calendarDays = useMemo(() => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const prevMonthDays = new Date(year, month, 0).getDate();
+
+    const days = [];
+    const offset = firstDay === 0 ? 6 : firstDay - 1; // Mon-Sun
+    for (let i = offset; i > 0; i -= 1) {
+      days.push({ day: prevMonthDays - i + 1, month: 'prev', date: new Date(year, month - 1, prevMonthDays - i + 1) });
     }
-    if (bulkLoadAllRef.current) return;   // already triggered for this session
-    if (!serverHasMore || !serverNextCursor) return; // nothing more to load
+    for (let i = 1; i <= daysInMonth; i += 1) {
+      days.push({ day: i, month: 'current', date: new Date(year, month, i) });
+    }
+    const remaining = 42 - days.length;
+    for (let i = 1; i <= remaining; i += 1) {
+      days.push({ day: i, month: 'next', date: new Date(year, month + 1, i) });
+    }
+    return days;
+  }, [viewDate]);
 
-    bulkLoadAllRef.current = true;
-
-    const fetchAllRemaining = async () => {
-      let cursor = serverNextCursor;
-      let hasMore = serverHasMore;
-      while (hasMore && cursor) {
-        try {
-          // Non-blocking 1s delay to load down pages slowly in the background
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          const res = await schedulingApi.getRounds({ cursor, limit: 200 });
-          const nextPage = res?.data || [];
-          if (nextPage.length > 0) {
-            setAllInterviews(prev => {
-              // Merge without duplicates using a Map keyed by id
-              const map = new Map(prev.map(iv => [iv.id, iv]));
-              nextPage.forEach(iv => map.set(iv.id, iv));
-              return Array.from(map.values());
-            });
-          }
-          hasMore = res?.hasMore || false;
-          cursor  = res?.nextCursor || null;
-          setServerHasMore(hasMore);
-          setServerNextCursor(cursor);
-        } catch (err) {
-          console.error('[InterviewSchedule] calendar bulk-load error:', err);
-          break;
-        }
-      }
+  // ── Calendar view month-scoped query & prefetching ──
+  const isCalendar = viewMode === 'calendar';
+  
+  // Calculate date range of visible calendar days (using first and last visible cells)
+  const calendarRange = useMemo(() => {
+    if (!calendarDays || calendarDays.length === 0) return null;
+    const start = new Date(calendarDays[0].date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(calendarDays[calendarDays.length - 1].date);
+    end.setHours(23, 59, 59, 999);
+    return {
+      start: start.toISOString(),
+      end: end.toISOString()
     };
+  }, [calendarDays]);
 
-    fetchAllRemaining();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, serverHasMore, serverNextCursor]);
+  const { data: calendarResponse } = useQuery({
+    queryKey: ['scheduling', 'calendar', calendarRange?.start, filterMine, roundFilter],
+    queryFn: () => schedulingApi.getRounds({
+      view: 'calendar',
+      startDate: calendarRange.start,
+      endDate: calendarRange.end,
+      ...(filterMine ? { interviewerId: currentUser?.id } : {}),
+      ...(roundFilter !== 'all' ? { roundNo: roundFilter } : {}),
+    }),
+    enabled: isCalendar && !!calendarRange,
+    staleTime: 60 * 1000,
+  });
+
+  const calendarInterviews = calendarResponse?.data || [];
+
+  // Prefetch next and previous months in background
+  useEffect(() => {
+    if (!isCalendar || !calendarRange) return;
+
+    // Prefetch next month
+    const nextMonthDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
+    const nextStart = new Date(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), -7).toISOString();
+    const nextEnd = new Date(nextMonthDate.getFullYear(), nextMonthDate.getMonth() + 1, 14).toISOString();
+
+    queryClient.prefetchQuery({
+      queryKey: ['scheduling', 'calendar', nextStart, filterMine, roundFilter],
+      queryFn: () => schedulingApi.getRounds({
+        view: 'calendar',
+        startDate: nextStart,
+        endDate: nextEnd,
+        ...(filterMine ? { interviewerId: currentUser?.id } : {}),
+        ...(roundFilter !== 'all' ? { roundNo: roundFilter } : {}),
+      }),
+      staleTime: 60 * 1000,
+    });
+
+    // Prefetch previous month
+    const prevMonthDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
+    const prevStart = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), -7).toISOString();
+    const prevEnd = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 14).toISOString();
+
+    queryClient.prefetchQuery({
+      queryKey: ['scheduling', 'calendar', prevStart, filterMine, roundFilter],
+      queryFn: () => schedulingApi.getRounds({
+        view: 'calendar',
+        startDate: prevStart,
+        endDate: prevEnd,
+        ...(filterMine ? { interviewerId: currentUser?.id } : {}),
+        ...(roundFilter !== 'all' ? { roundNo: roundFilter } : {}),
+      }),
+      staleTime: 60 * 1000,
+    });
+  }, [viewDate, isCalendar, calendarRange, filterMine, roundFilter, queryClient]);
 
 
   const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
@@ -1017,23 +679,6 @@ const InterviewSchedule = () => {
         setApplications(applicationsRes.data || []);
         setJobs(jobsRes.data || []);
         setJobSuggestions(jobsRes.data || []);
-
-        let interviewerList = [];
-        try {
-          const interviewerRes = await apiGet('/users/interviewers');
-          interviewerList = interviewerRes.data || [];
-        } catch (_) {
-          const seen = new Set();
-          interviews.forEach(iv => {
-            (iv.interviewers || []).forEach(u => {
-              if (u?.id && !seen.has(u.id)) {
-                seen.add(u.id);
-                interviewerList.push(u);
-              }
-            });
-          });
-        }
-        setInterviewers(interviewerList);
         setSupportingDataLoaded(true);
       } catch (err) {
         console.error('Failed to load scheduler supporting data:', err);
@@ -1043,56 +688,29 @@ const InterviewSchedule = () => {
     loadSupportingData();
   }, [viewMode, showScheduleModal, supportingDataLoaded, interviews]);
 
-  const debouncedCandidateSearch = useDebounce(candidateSearch, 300);
-  const debouncedJobSearch = useDebounce(jobSearch, 300);
+  const debouncedCandidateSearch = useDebounce(candidateSearch, 200);
+  const debouncedJobSearch = useDebounce(jobSearch, 200);
 
-  useEffect(() => {
-    if (!showScheduleModal) return;
-    let active = true;
+  const { data: candidateSearchData, isFetching: isSearchingCandidates } = useQuery({
+    queryKey: ['candidates', 'suggest', debouncedCandidateSearch],
+    queryFn: ({ signal }) => search('/api/candidates/search', { q: debouncedCandidateSearch, limit: 20 }, signal),
+    enabled: showScheduleModal && debouncedCandidateSearch.trim().length >= 2,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
 
-    const fetchCandidates = async () => {
-      try {
-        setSearchingCandidates(true);
-        const res = await apiGet(`/candidates?search=${encodeURIComponent(debouncedCandidateSearch)}&limit=20`);
-        if (!active) return;
-        setCandidateSuggestions(res.data || res.items || []);
-      } catch (err) {
-        console.error('Failed to search candidates:', err);
-      } finally {
-        if (active) setSearchingCandidates(false);
-      }
-    };
+  const { data: jobSearchData, isFetching: isSearchingJobs } = useQuery({
+    queryKey: ['jobs', 'suggest', debouncedJobSearch],
+    queryFn: ({ signal }) => search('/api/jobs/search', { q: debouncedJobSearch, filters: { isActive: true }, limit: 20 }, signal),
+    enabled: showScheduleModal && debouncedJobSearch.trim().length >= 2,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
 
-    fetchCandidates();
-
-    return () => {
-      active = false;
-    };
-  }, [debouncedCandidateSearch, showScheduleModal]);
-
-  useEffect(() => {
-    if (!showScheduleModal) return;
-    let active = true;
-
-    const fetchJobs = async () => {
-      try {
-        setSearchingJobs(true);
-        const res = await apiGet(`/jobs?search=${encodeURIComponent(debouncedJobSearch)}&isActive=true&limit=20`);
-        if (!active) return;
-        setJobSuggestions(res.data || res.items || []);
-      } catch (err) {
-        console.error('Failed to search jobs:', err);
-      } finally {
-        if (active) setSearchingJobs(false);
-      }
-    };
-
-    fetchJobs();
-
-    return () => {
-      active = false;
-    };
-  }, [debouncedJobSearch, showScheduleModal]);
+  const candidateSuggestions = candidateSearchData?.data || [];
+  const jobSuggestions = jobSearchData?.data || [];
+  const searchingCandidates = isSearchingCandidates;
+  const searchingJobs = isSearchingJobs;
 
   useEffect(() => {
     return () => {
@@ -1123,10 +741,35 @@ const InterviewSchedule = () => {
     const RELEVANT = [
       'INTERVIEW_PANELISTS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
       'APPLICATION_STATUS_UPDATED', 'INTERVIEW_SCHEDULED',
-      'CANDIDATE_UPDATED', 'CANDIDATE_CREATED'
+      'CANDIDATE_UPDATED', 'CANDIDATE_CREATED',
+      'SCHEDULING_UPDATE', 'ROUND_CREATED', 'ROUND_DELETED',
+      'VISIBILITY_RECONCILE', 'interview-feedback:updated'
     ];
     const unsub = subscribeSSE((data) => {
       if (!RELEVANT.includes(data.type)) return;
+
+      // 1. Direct local state update for instant client responsiveness
+      if (data.type === 'ROUND_CREATED') {
+        const newRound = data.round;
+        if (newRound?.id) {
+          setAllInterviews(prev => {
+            if (prev.some(i => i.id === newRound.id)) return prev;
+            return [newRound, ...prev];
+          });
+        }
+      } else if (data.type === 'ROUND_DELETED') {
+        const deletedId = data.roundId;
+        if (deletedId) {
+          setAllInterviews(prev => prev.filter(i => i.id !== deletedId));
+        }
+      } else if (data.type === 'SCHEDULING_UPDATE') {
+        const { type: sub, roundId, round } = data;
+        const actualSub = data.subType || sub;
+        if (actualSub === 'ROUND_UPDATED' && roundId && round) {
+          setAllInterviews(prev => prev.map(i => i.id === roundId ? { ...i, ...round } : i));
+        }
+      }
+
       const now = Date.now();
       if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
       lastSSEReloadRef.current = now;
@@ -1306,36 +949,12 @@ const InterviewSchedule = () => {
     [groupedApplications, visibleCount]
   );
 
-  const calendarDays = useMemo(() => {
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const prevMonthDays = new Date(year, month, 0).getDate();
-
-    const days = [];
-    const offset = firstDay === 0 ? 6 : firstDay - 1; // Mon-Sun
-    for (let i = offset; i > 0; i -= 1) {
-      days.push({ day: prevMonthDays - i + 1, month: 'prev', date: new Date(year, month - 1, prevMonthDays - i + 1) });
-    }
-    for (let i = 1; i <= daysInMonth; i += 1) {
-      days.push({ day: i, month: 'current', date: new Date(year, month, i) });
-    }
-    const remaining = 42 - days.length;
-    for (let i = 1; i <= remaining; i += 1) {
-      days.push({ day: i, month: 'next', date: new Date(year, month + 1, i) });
-    }
-    return days;
-  }, [viewDate]);
 
 
-
-  // ── scheduleData: unified calendar grouping using filteredForViews ──
-  // Uses the same toDateKey() helper (local Date methods, IST-safe) for BOTH
-  // the grouping here and the key lookup in the render loop, so they always match.
   const scheduleData = useMemo(() => {
-    // Group filtered interviews by 'YYYY-MM-DD' date key
-    const interviewsByDate = groupInterviewsByDate(filteredForViews, viewDate);
+    // If calendar view, use calendarInterviews; otherwise use filteredForViews
+    const activeInterviews = viewMode === 'calendar' ? calendarInterviews : filteredForViews;
+    const interviewsByDate = groupInterviewsByDate(activeInterviews, viewDate);
 
     // Build the final Map: keys are still toDateKey strings, values have {interviews, joinings}
     const data = new Map();
@@ -1352,7 +971,7 @@ const InterviewSchedule = () => {
     });
 
     return data;
-  }, [filteredForViews, viewDate, applications]);
+  }, [filteredForViews, calendarInterviews, viewMode, viewDate, applications]);
 
   const selectedGroupId = selectedId || groupedApplications[0]?.applicationId || '';
   const selectedGroup = useMemo(
@@ -1398,7 +1017,7 @@ const InterviewSchedule = () => {
     }
   }, [latestInterview, selectedGroup?.interviews, activeInterviewId]);
 
-  const selectedInterview = useMemo(
+  const selectedInterviewRaw = useMemo(
     () => {
       const list = selectedGroup?.interviews || [];
       const activeIv = list.find(i => i.id === activeInterviewId);
@@ -1409,6 +1028,10 @@ const InterviewSchedule = () => {
     },
     [selectedGroup, activeInterviewId, latestInterview, filterMine, currentUser?.id]
   );
+
+  const { data: detailsData, isLoading: isDetailsLoading, error: detailsError, refetch: refetchDetails } = useRoundDetails(selectedInterviewRaw?.id);
+
+  const selectedInterview = detailsData || selectedInterviewRaw;
 
   const selectedFeedbacks = React.useMemo(() => {
     const raw = selectedInterview?.feedback;
@@ -1444,15 +1067,35 @@ const InterviewSchedule = () => {
     }
   };
 
+  const loadCandidateFeedbacks = useCallback(async (candidateId) => {
+    if (!candidateId) return;
+    try {
+      const res = await apiGet(`/interviews/${candidateId}/feedback`);
+      setCandidateFeedbacks(res.data || []);
+    } catch (err) {
+      console.error('Failed to load candidate feedbacks:', err);
+    }
+  }, []);
+
   useEffect(() => {
     setIsEditingFeedback(false);
     if (selectedCandidate?.id) {
       loadCandidateHistory(selectedCandidate.id);
       loadCandidateInterviews(selectedCandidate.id);
+      loadCandidateFeedbacks(selectedCandidate.id);
     } else {
       setCandidateHistory([]);
+      setCandidateFeedbacks([]);
     }
-  }, [selectedCandidate?.id, loadCandidateInterviews]);
+  }, [selectedCandidate?.id, loadCandidateInterviews, loadCandidateFeedbacks]);
+
+  // Load interviews and feedbacks when a candidate is selected inside the Schedule Modal
+  useEffect(() => {
+    if (scheduleForm.candidateId) {
+      loadCandidateInterviews(scheduleForm.candidateId);
+      loadCandidateFeedbacks(scheduleForm.candidateId);
+    }
+  }, [scheduleForm.candidateId, loadCandidateInterviews, loadCandidateFeedbacks]);
 
   const filteredCandidates = useMemo(() => {
     if (!candidateSearch) return candidates;
@@ -1559,23 +1202,28 @@ const InterviewSchedule = () => {
 
     let roundNo = typeof savedForm.roundNo === 'number' ? savedForm.roundNo : (parseInt(savedForm.roundNo) || 1);
     if (savedForm.round === 'Final Round' || savedForm.round === 'Final') roundNo = 99;
-    const notesPayload = JSON.stringify({
-      phoneFollowUp: savedForm.phoneFollowUp || null,
-      emailFollowUp: savedForm.emailFollowUp || null,
-      nextSchedule: savedForm.nextSchedule || null,
-    });
+    
+    const isWalkIn = savedForm.mode === 'WALK_IN_DRIVE';
+    const notesPayload = isWalkIn
+      ? JSON.stringify({ phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null })
+      : JSON.stringify({
+          phoneFollowUp: savedForm.phoneFollowUp || null,
+          emailFollowUp: savedForm.emailFollowUp || null,
+          nextSchedule: savedForm.nextSchedule || null,
+          morningFollowUp: savedForm.morningFollowUp || null,
+        });
 
     try {
       const result = await createRoundMutation.mutateAsync({
         applicationId: targetApplicationId,
         roundNo,
         round: savedForm.round,
-        interviewerIds: savedForm.interviewerIds,
+        interviewerIds: isWalkIn ? [] : savedForm.interviewerIds,
         scheduledStart: new Date(savedForm.scheduledStart).toISOString(),
         scheduledEnd: savedForm.scheduledEnd ? new Date(savedForm.scheduledEnd).toISOString() : null,
         mode: savedForm.mode,
-        meetingLink: savedForm.meetingLink ? savedForm.meetingLink.trim() : null,
-        zohoLink: savedForm.zohoLink ? savedForm.zohoLink.trim() : null,
+        meetingLink: isWalkIn ? null : (savedForm.meetingLink ? savedForm.meetingLink.trim() : null),
+        zohoLink: isWalkIn ? null : (savedForm.zohoLink ? savedForm.zohoLink.trim() : null),
         slotNo: savedForm.slotNo || 1,  // time-slot position (1–7 per hour)
         notes: notesPayload,
       });
@@ -1759,25 +1407,36 @@ const InterviewSchedule = () => {
     }
   };
 
-  const onTransferPanelist = (interviewerId) => {
-    if (!transferringInterview) return;
-    
-    setError('');
-    updatePanelMutation.mutate({
-      roundId: transferringInterview.id,
-      panelMembers: [interviewerId]
-    }, {
-      onSuccess: () => {
-        setBanner('Panelist transferred successfully.');
-      },
-      onError: (err) => {
-        setError(err.message || 'Failed to transfer panelist');
-      }
-    });
+  const [transferringPanelist, setTransferringPanelist] = useState(false);
 
-    setShowTransferModal(false);
-    setTransferringInterview(null);
+  const onTransferPanelist = async (interviewerId) => {
+    if (!transferringInterview || transferringPanelist) return;
+
+    const candidateId = transferringInterview.candidateId || transferringInterview.application?.candidateId || transferringInterview.application?.candidate?.id;
+    if (!candidateId) return;
+
+    setError('');
+    setTransferringPanelist(true);
+
+    try {
+      await schedulingApi.transferPanelist(candidateId, { panelistId: interviewerId });
+
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['candidate', candidateId] });
+      queryClient.invalidateQueries({ queryKey: ['interviews', candidateId] });
+      queryClient.invalidateQueries({ queryKey: ['interviews'] });
+
+      setBanner('Panelist transferred successfully.');
+      setShowTransferModal(false);
+      setTransferringInterview(null);
+      await loadAll();
+    } catch (err) {
+      setError(`Transfer failed: ${err.response?.data?.message || err.message || 'Please try again'}`);
+    } finally {
+      setTransferringPanelist(false);
+    }
   };
+
 
   const clearRecordingTimer = () => {
     if (timerRef.current) {
@@ -1899,20 +1558,20 @@ const InterviewSchedule = () => {
             <span className="material-symbols-outlined text-sm">table_view</span>
             Excel View
           </button>
-          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${!filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(false)}>
+          <button className={`px-4 !h-9 text-xs font-semibold rounded-lg transition-all flex items-center justify-center border border-transparent ${!filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(false)}>
             All
           </button>
-          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(true)}>
+          <button className={`px-4 !h-9 text-xs font-semibold rounded-lg transition-all flex items-center justify-center border border-transparent ${filterMine ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setFilterMine(true)}>
             My Interviews
           </button>
           <span className="h-4 w-[1px] bg-slate-200 self-center hidden sm:inline-block"></span>
-          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === 'all' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('all')}>
+          <button className={`px-4 !h-9 text-xs font-semibold rounded-lg transition-all flex items-center justify-center border border-transparent ${roundFilter === 'all' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('all')}>
             All Rounds
           </button>
-          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === '1' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('1')}>
+          <button className={`px-4 !h-9 text-xs font-semibold rounded-lg transition-all flex items-center justify-center border border-transparent ${roundFilter === '1' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('1')}>
             Round 1
           </button>
-          <button className={`p-1 px-4 text-xs font-semibold rounded-lg transition-all ${roundFilter === '2' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('2')}>
+          <button className={`px-4 !h-9 text-xs font-semibold rounded-lg transition-all flex items-center justify-center border border-transparent ${roundFilter === '2' ? 'bg-[#1f52cc] text-white shadow-md' : 'text-[#64748b] hover:bg-slate-100'}`} onClick={() => setRoundFilter('2')}>
             Round 2
           </button>
         </div>
@@ -2013,7 +1672,9 @@ const InterviewSchedule = () => {
                     </div>
                   )}
                   <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{candidate?.fullName || 'Candidate'}</div>
+                    <div className="text-sm font-medium truncate">
+                      <CandidateNameLink candidateId={candidateId} candidateName={candidate?.fullName} />
+                    </div>
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold inline-block">
@@ -2041,15 +1702,20 @@ const InterviewSchedule = () => {
 
         {viewMode === 'excel' && (
           <Reveal delay={0.04} className="bg-white w-full h-full flex flex-col overflow-hidden">
-            <ExcelView
-              interviews={filteredForViews}
-              viewDate={viewDate}
-              onSelectCandidate={(candidateId, interviewId) => {
-                setViewMode('list');
-                setSelectedId(candidateId);
-                if (interviewId) setActiveInterviewId(interviewId);
-              }}
-            />
+            <React.Suspense fallback={<div className="p-8 text-center text-slate-400">Loading spreadsheet view...</div>}>
+              <ExcelView
+                interviews={filteredForViews}
+                viewDate={viewDate}
+                onSelectCandidate={(candidateId, interviewId) => {
+                  setViewMode('list');
+                  setSelectedId(candidateId);
+                  if (interviewId) setActiveInterviewId(interviewId);
+                }}
+                onLoadMore={loadMoreInterviews}
+                hasMore={serverHasMore}
+                loadingMore={loadingMore}
+              />
+            </React.Suspense>
           </Reveal>
         )}
 
@@ -2074,10 +1740,9 @@ const InterviewSchedule = () => {
                     cellInterviews={cellData.interviews}
                     cellJoinings={cellData.joinings}
                     onChipClick={(candidateId, interviewId) => {
-                      // Switch to List View and select the candidate
-                      setViewMode('list');
-                      setSelectedId(candidateId);
-                      if (interviewId) setActiveInterviewId(interviewId);
+                      // Open Activity Modal for this date
+                      setSelectedCalendarDate(cell.date);
+                      setShowActivityModal(true);
                     }}
                   />
                 );
@@ -2183,7 +1848,20 @@ const InterviewSchedule = () => {
                                             {/* Main info */}
                                             <div className="flex-1 min-w-0">
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <div className="text-base font-bold text-[#10193f] truncate">{iv.application?.candidate?.fullName}</div>
+                                                <div className="text-base font-bold text-[#10193f] truncate">
+                                                  <CandidateNameLink
+                                                    candidateId={iv.application?.candidateId || iv.candidateId}
+                                                    candidateName={iv.application?.candidate?.fullName || iv.candidateName}
+                                                    variant="interview"
+                                                    interviewId={iv.id}
+                                                    onClick={() => {
+                                                      setSelectedId(iv.applicationId);
+                                                      setActiveInterviewId(iv.id);
+                                                      setViewMode('list');
+                                                      setShowActivityModal(false);
+                                                    }}
+                                                  />
+                                                </div>
                                                 <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${resultColor}`}>
                                                   {resultLabel}
                                                 </span>
@@ -2275,7 +1953,7 @@ const InterviewSchedule = () => {
                                               </button>
                                               <button
                                                 className="os-btn-outline !h-8 !px-3 !text-[11px] shrink-0"
-                                                onClick={() => navigate(`/candidate/${iv.application?.candidateId}`)}
+                                                onClick={() => navigate(`/candidates/${iv.application?.candidateId || iv.candidateId}`)}
                                               >
                                                 Profile
                                               </button>
@@ -2306,7 +1984,7 @@ const InterviewSchedule = () => {
                                           <div className="text-xs text-emerald-600 font-medium mt-0.5">Joining as {app.job?.title}</div>
                                         </div>
                                       </div>
-                                      <button className="os-btn-primary !h-9 !bg-emerald-600 !px-5" onClick={() => navigate(`/candidate/${app.candidateId}`)}>
+                                      <button className="os-btn-primary !h-9 !bg-emerald-600 !px-5" onClick={() => navigate(`/candidates/${app.candidateId}`)}>
                                         Onboard
                                       </button>
                                     </div>
@@ -2339,17 +2017,19 @@ const InterviewSchedule = () => {
           <>
 
             <Reveal delay={0.04} className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full">
-              <div className="h-16 bg-white border-b border-[#e4ebf1] px-5 flex items-center justify-between">
-                <div className="flex gap-3 items-center min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-[#b7c7f2] text-[#2f4ea8] text-sm font-semibold flex items-center justify-center">
+              <div className="candidate-card-header min-h-[64px] py-3 bg-white border-b border-[#e4ebf1] px-5">
+                <div className="candidate-identity">
+                  <div className="w-10 h-10 rounded-xl bg-[#b7c7f2] text-[#2f4ea8] text-sm font-semibold flex items-center justify-center shrink-0">
                     {(selectedCandidate?.fullName || 'C').slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xl font-semibold font-[Manrope] truncate">{selectedCandidate?.fullName || (loading ? 'Loading...' : 'Candidate')}</div>
+                  <div className="candidate-name-block">
+                    <div className="text-xl font-semibold font-[Manrope] min-w-0">
+                      <CandidateNameLink candidateId={selectedCandidate?.id} candidateName={selectedCandidate?.fullName || (loading ? 'Loading...' : 'Candidate')} />
+                    </div>
                     <div className={selectedInterview ? 'text-[#2ca764] text-xs' : 'text-[#8c97ad] text-xs'}>{selectedInterview ? 'Interview Active' : 'No active interview'}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="candidate-actions">
                   <button 
                     className="os-btn-primary !h-9 !px-4 !bg-[#1f52cc]" 
                     onClick={() => {
@@ -2378,6 +2058,13 @@ const InterviewSchedule = () => {
                   </button>
                   <button 
                     className="os-btn-outline !h-9 !px-4" 
+                    onClick={() => setShowBulkUploadModal(true)}
+                  >
+                    <span className="material-symbols-outlined text-sm">upload_file</span>
+                    Schedule in Bulk
+                  </button>
+                  <button 
+                    className="os-btn-primary !h-9 !px-4 !bg-[#1f52cc]" 
                     onClick={() => {
                       setFeedbackForm(emptyFeedbackForm);
                       setShowFeedbackModal(true);
@@ -2385,6 +2072,13 @@ const InterviewSchedule = () => {
                   >
                     <span className="material-symbols-outlined text-sm">rate_review</span>
                     Feedback
+                  </button>
+                  <button 
+                    className="os-btn-outline !h-9 !px-4" 
+                    onClick={() => setShowBulkFeedbackModal(true)}
+                  >
+                    <span className="material-symbols-outlined text-sm">upload_file</span>
+                    Feedback in Bulk
                   </button>
                 </div>
               </div>
@@ -2433,7 +2127,7 @@ const InterviewSchedule = () => {
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="font-bold text-base text-[#142651]">
-                        Interview Details ({selectedInterview?.round || `Round ${selectedInterview?.roundNo}`})
+                        Interview Details ({selectedInterview ? (selectedInterview.round || `Round ${selectedInterview.roundNo}`) : 'No Selection'})
                       </div>
                       {selectedInterview && (
                         <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
@@ -2441,7 +2135,7 @@ const InterviewSchedule = () => {
                     </div>
                     
                     {/* Actions */}
-                    {canScheduleInterview && selectedInterview && (
+                    {canScheduleInterview && selectedInterview && !detailsError && !isDetailsLoading && (
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
@@ -2460,669 +2154,249 @@ const InterviewSchedule = () => {
                           title="Edit Schedule Details"
                         >
                           <span className="material-symbols-outlined text-xs">edit</span>
-                          Change Schedule
+                          Edit
                         </button>
                         <button
                           onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.round || `Round ${selectedInterview.roundNo}`)}
-                          className="px-1.5 py-1 rounded bg-red-50 text-[11px] font-semibold text-red-600 hover:bg-red-100 flex items-center"
-                          title="Delete this interview"
+                          className="px-2 py-1 rounded bg-red-50 text-[11px] font-semibold text-red-600 hover:bg-red-100 flex items-center gap-0.5"
+                          title="Cancel/Delete Interview"
                         >
                           <span className="material-symbols-outlined text-xs">delete</span>
+                          Cancel
                         </button>
                       </div>
                     )}
                   </div>
 
-                  {/* Split Columns Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                    
-                    {/* Left Column: Schedule Details */}
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">Schedule Details</h3>
-                        <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            selectedInterview?.result === 'PASS' || selectedInterview?.result === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
-                            selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                            selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
-                            selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
-                            selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
-                            'bg-[#fef4e8] text-[#f2994a]'
-                          }`}>
-                          {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
-                        </div>
+                  {detailsError ? (
+                    <div className="flex flex-col items-center justify-center text-center py-12 space-y-4">
+                      <span className="material-symbols-outlined text-4xl text-red-500 animate-bounce">error</span>
+                      <div>
+                        <h4 className="font-bold text-[#142651]">Failed to Load Details</h4>
+                        <p className="text-xs text-slate-500 mt-1">{detailsError.message || 'The request timed out or the server is unavailable.'}</p>
                       </div>
-                      
-                      <div className="space-y-3 text-sm">
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Role:</span>
-                          <span className="text-[#142651] font-semibold">{selectedInterview?.application?.job?.title || '-'}</span>
-                        </div>
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Interviewers:</span>
-                          <span className="text-[#142651] font-semibold">{selectedInterview?.interviewers?.map(u => u.fullName).join(', ') || '-'}</span>
-                        </div>
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Mode:</span>
-                          <span className="text-[#142651] font-semibold">{selectedInterview?.mode || '-'}</span>
-                        </div>
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Date/Time:</span>
-                          <span className="text-[#142651] font-semibold">
-                            {selectedInterview?.scheduledStart ? formatDateTimeIN(selectedInterview.scheduledStart) : '-'}
-                          </span>
-                        </div>
-                        {/* Slot number row */}
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Time Slot:</span>
-                          <span className="flex items-center gap-1.5">
-                            {selectedInterview?.slotNo > 0 ? (
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                selectedInterview.slotNo >= 6
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}>
-                                Slot {selectedInterview.slotNo}
-                              </span>
-                            ) : (
-                              <span className="text-[#142651] font-semibold">Slot 1</span>
-                            )}
-                            {selectedInterview?.slotNo >= 6 && (
-                              <span className="text-[10px] text-amber-600 font-medium">(near capacity)</span>
-                            )}
-                          </span>
-                        </div>
-                        {/* Phone Follow-up row */}
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Phone Follow-up:</span>
-                          {(() => {
-                            const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
-                            return phoneFollowUp ? (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => downloadBase64File(phoneFollowUp.name, phoneFollowUp.data)}
-                                  className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
-                                >
-                                  <span className="material-symbols-outlined text-xs">attachment</span>
-                                  <span className="truncate max-w-[150px]">{phoneFollowUp.name}</span>
-                                </button>
-                                {isAdmin && (
-                                  <>
-                                    <input
-                                      type="file"
-                                      id={`replace-phone-followup-${selectedInterview?.id}`}
-                                      className="hidden"
-                                      onChange={async (e) => {
-                                        const file = e.target.files[0];
-                                        if (!file || !selectedInterview) return;
-                                        const base64 = await fileToBase64(file);
-                                        const updatedNotes = JSON.stringify({ phoneFollowUp: base64, emailFollowUp });
-                                        const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                        await schedulingApi.updateRound(selectedInterview.id, {
-                                          applicationId: selectedInterview.applicationId,
-                                          roundNo: selectedInterview.roundNo,
-                                          round: selectedInterview.round,
-                                          interviewerIds,
-                                          scheduledStart: selectedInterview.scheduledStart,
-                                          mode: selectedInterview.mode,
-                                          meetingLink: selectedInterview.meetingLink,
-                                          zohoLink: selectedInterview.zohoLink,
-                                          notes: updatedNotes
-                                        });
-                                        await loadAll();
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                    <label
-                                      htmlFor={`replace-phone-followup-${selectedInterview?.id}`}
-                                      className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
-                                    >
-                                      Replace File
-                                    </label>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="file"
-                                  id={`detail-phone-followup-${selectedInterview?.id}`}
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files[0];
-                                    if (!file || !selectedInterview) return;
-                                    const base64 = await fileToBase64(file);
-                                    const updatedNotes = JSON.stringify({ phoneFollowUp: base64, emailFollowUp });
-                                    const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                    await schedulingApi.updateRound(selectedInterview.id, {
-                                      applicationId: selectedInterview.applicationId,
-                                      roundNo: selectedInterview.roundNo,
-                                      round: selectedInterview.round,
-                                      interviewerIds,
-                                      scheduledStart: selectedInterview.scheduledStart,
-                                      mode: selectedInterview.mode,
-                                      meetingLink: selectedInterview.meetingLink,
-                                      zohoLink: selectedInterview.zohoLink,
-                                      notes: updatedNotes
-                                    });
-                                    await loadAll();
-                                    e.target.value = '';
-                                  }}
-                                />
-                                <label
-                                  htmlFor={`detail-phone-followup-${selectedInterview?.id}`}
-                                  className="cursor-pointer flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
-                                >
-                                  <span className="material-symbols-outlined text-xs">upload</span>
-                                  Upload
-                                </label>
-                                <span className="text-rose-400 text-xs">No file yet</span>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                        {/* Email Follow-up row */}
-                        <div className="flex border-b border-slate-50 pb-2">
-                          <span className="w-28 text-[#6d7893] shrink-0 font-medium">Email Follow-up:</span>
-                          {(() => {
-                            const { phoneFollowUp, emailFollowUp } = parseNotesSafely(selectedInterview?.notes);
-                            return emailFollowUp ? (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <button
-                                  type="button"
-                                  onClick={() => downloadBase64File(emailFollowUp.name, emailFollowUp.data)}
-                                  className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
-                                >
-                                  <span className="material-symbols-outlined text-xs">attachment</span>
-                                  <span className="truncate max-w-[150px]">{emailFollowUp.name}</span>
-                                </button>
-                                {isAdmin && (
-                                  <>
-                                    <input
-                                      type="file"
-                                      id={`replace-email-followup-${selectedInterview?.id}`}
-                                      className="hidden"
-                                      onChange={async (e) => {
-                                        const file = e.target.files[0];
-                                        if (!file || !selectedInterview) return;
-                                        const base64 = await fileToBase64(file);
-                                        const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: base64 });
-                                        const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                        await schedulingApi.updateRound(selectedInterview.id, {
-                                          applicationId: selectedInterview.applicationId,
-                                          roundNo: selectedInterview.roundNo,
-                                          round: selectedInterview.round,
-                                          interviewerIds,
-                                          scheduledStart: selectedInterview.scheduledStart,
-                                          mode: selectedInterview.mode,
-                                          meetingLink: selectedInterview.meetingLink,
-                                          zohoLink: selectedInterview.zohoLink,
-                                          notes: updatedNotes
-                                        });
-                                        await loadAll();
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                    <label
-                                      htmlFor={`replace-email-followup-${selectedInterview?.id}`}
-                                      className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
-                                    >
-                                      Replace File
-                                    </label>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <input
-                                  type="file"
-                                  id={`detail-email-followup-${selectedInterview?.id}`}
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const file = e.target.files[0];
-                                    if (!file || !selectedInterview) return;
-                                    const base64 = await fileToBase64(file);
-                                    const updatedNotes = JSON.stringify({ phoneFollowUp, emailFollowUp: base64 });
-                                    const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                                    await schedulingApi.updateRound(selectedInterview.id, {
-                                      applicationId: selectedInterview.applicationId,
-                                      roundNo: selectedInterview.roundNo,
-                                      round: selectedInterview.round,
-                                      interviewerIds,
-                                      scheduledStart: selectedInterview.scheduledStart,
-                                      mode: selectedInterview.mode,
-                                      meetingLink: selectedInterview.meetingLink,
-                                      zohoLink: selectedInterview.zohoLink,
-                                      notes: updatedNotes
-                                    });
-                                    await loadAll();
-                                    e.target.value = '';
-                                  }}
-                                />
-                                <label
-                                  htmlFor={`detail-email-followup-${selectedInterview?.id}`}
-                                  className="cursor-pointer flex items-center gap-1 text-xs text-blue-600 font-semibold hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md transition-colors"
-                                >
-                                  <span className="material-symbols-outlined text-xs">upload</span>
-                                  Upload
-                                </label>
-                                <span className="text-rose-400 text-xs">No file yet</span>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        {(() => {
-                          const { nextSchedule } = parseNotesSafely(selectedInterview?.notes);
-                          return nextSchedule ? (
-                            <div className="flex border-b border-slate-50 pb-2">
-                              <span className="w-28 text-[#6d7893] shrink-0 font-medium">Next Schedule:</span>
-                              <input
-                                type="text"
-                                readOnly
-                                value={nextSchedule}
-                                title={nextSchedule}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.target.select();
-                                }}
-                                className="text-slate-800 text-xs font-semibold focus:outline-none"
-                                style={{
-                                  border: 'none',
-                                  background: 'transparent',
-                                  outline: 'none',
-                                  cursor: 'text',
-                                  width: '100%',
-                                }}
-                              />
-                            </div>
-                          ) : null;
-                        })()}
-
-                        {selectedInterview?.zohoLink && (
-                          <div className="flex pb-2">
-                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Zoho Meet:</span>
-                            <span className="truncate text-blue-600 font-bold cursor-pointer hover:underline" onClick={() => window.open(selectedInterview.zohoLink, '_blank')}>
-                              Join via Zoho
-                            </span>
+                      <button 
+                        type="button"
+                        onClick={() => refetchDetails()} 
+                        className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Retry Load
+                      </button>
+                    </div>
+                  ) : isDetailsLoading ? (
+                    <div className="space-y-6 py-6 animate-pulse">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div className="h-4 bg-slate-200 rounded w-1/3"></div>
+                          <div className="space-y-3">
+                            <div className="h-4 bg-slate-100 rounded w-full"></div>
+                            <div className="h-4 bg-slate-100 rounded w-5/6"></div>
+                            <div className="h-4 bg-slate-100 rounded w-4/5"></div>
                           </div>
-                        )}
+                        </div>
+                        <div className="space-y-4 md:border-l md:border-slate-100 md:pl-6">
+                          <div className="h-4 bg-slate-200 rounded w-1/3"></div>
+                          <div className="h-12 bg-slate-50 rounded w-full"></div>
+                        </div>
                       </div>
                     </div>
-
-                    {/* Right Column: Divider + Form or Details */}
-                    <div className="border-t md:border-t-0 md:border-l border-slate-200 pt-6 md:pt-0 md:pl-6">
-                      {selectedInterview && (!myFeedback || isEditingFeedback) && !savingFeedback && (
-                        <div className="space-y-4">
-                          <div>
-                            <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">
-                              {isEditingFeedback ? 'Edit Assessment' : 'Submit Assessment'}
-                            </h3>
-                            <p className="text-[10px] text-slate-500 mt-0.5">
-                              {isEditingFeedback ? 'Update candidate performance details for this round' : `Review candidate performance for Round ${selectedInterview.roundNo === 99 ? 'Final' : selectedInterview.roundNo}`}
-                            </p>
+                  ) : (
+                    /* Stacked Layout */
+                    <div className="flex flex-col gap-6 items-stretch">
+                      
+                      {/* Left Column: Schedule Details */}
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">Schedule Details</h3>
+                          <div className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              selectedInterview?.result === 'PASS' || selectedInterview?.result === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
+                              selectedInterview?.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                              selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
+                              selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
+                              selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                              'bg-[#fef4e8] text-[#f2994a]'
+                            }`}>
+                            {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
                           </div>
-                          <form className="space-y-4" onSubmit={onFeedbackSubmit}>
-                            {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
-                              <div className="grid grid-cols-3 gap-2">
-                                <div className="space-y-0.5 text-center">
-                                  <label className="text-[9px] uppercase font-bold text-slate-400">Technical</label>
-                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
-                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                  </select>
-                                </div>
-                                <div className="space-y-0.5 text-center">
-                                  <label className="text-[9px] uppercase font-bold text-slate-400">Comm.</label>
-                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
-                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                  </select>
-                                </div>
-                                <div className="space-y-0.5 text-center">
-                                  <label className="text-[9px] uppercase font-bold text-slate-400">Culture</label>
-                                  <select className="h-8 w-full rounded-lg border border-slate-200 px-1 text-xs text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
-                                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="space-y-1">
-                              <label className="text-[9px] uppercase font-bold text-slate-400">Recommendation</label>
-                              <select className="h-8 w-full rounded-lg border border-slate-200 px-2 text-xs focus:border-[#1f52cc] outline-none font-semibold text-slate-700" value={feedbackForm.recommendation} onChange={e => setFeedbackForm(prev => ({...prev, recommendation: e.target.value}))}>
-                                <option value="SELECTED">Selected</option>
-                                <option value="OFFER_LETTER">Offer Letter</option>
-                                <option value="ON_HOLD">On Hold</option>
-                                <option value="DIDNT_JOIN">Didn't Join</option>
-                                <option value="REJECTED">Rejected</option>
-                              </select>
-                            </div>
-
-                            {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-0.5">
-                                  <label className="text-[9px] uppercase font-bold text-slate-400">Strengths</label>
-                                  <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Key strengths..." value={feedbackForm.strengths} onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
-                                </div>
-                                <div className="space-y-0.5">
-                                  <label className="text-[9px] uppercase font-bold text-slate-400">Concerns</label>
-                                  <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Any red flags..." value={feedbackForm.weaknesses} onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="space-y-0.5">
-                              <label className="text-[9px] uppercase font-bold text-slate-400">Overall Summary</label>
-                              <textarea className="w-full rounded-lg border border-slate-200 p-2 text-xs min-h-[50px] focus:border-[#1f52cc] outline-none" placeholder="Notes..." value={feedbackForm.overallComments} onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))} required={feedbackForm.recommendation !== 'DIDNT_JOIN'} />
-                            </div>
-
-                            {/* Offer Letter Required Uploads */}
-                            {feedbackForm.recommendation === 'OFFER_LETTER' && (
-                              <div className="space-y-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                                <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-wider">Offer Letter Attachments Required</div>
-                                
-                                {/* Offer Phone Follow-up File */}
-                                <div className="space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-500 block">Offer Letter Phone Follow-up</label>
-                                  {feedbackForm.offerPhoneFollowUp ? (
-                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
-                                      <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerPhoneFollowUp.name}</span>
-                                      {isAdmin && (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id="replace-feedback-phone"
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (file) {
-                                                const base64 = await fileToBase64(file);
-                                                setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: base64 }));
-                                              }
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor="replace-feedback-phone"
-                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold"
-                                          >
-                                            Replace
-                                          </label>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-1">
-                                      {isAdmin ? (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id="offer-phone-followup"
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (file) {
-                                                const base64 = await fileToBase64(file);
-                                                setFeedbackForm(prev => ({ ...prev, offerPhoneFollowUp: base64 }));
-                                              }
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor="offer-phone-followup"
-                                            className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
-                                          >
-                                            <span className="material-symbols-outlined text-sm">add</span> Upload phone follow-up
-                                          </label>
-                                        </>
-                                      ) : null}
-                                      <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Offer Email Follow-up File */}
-                                <div className="space-y-1">
-                                  <label className="text-[10px] font-bold text-slate-500 block">Offer Letter Email Follow-up</label>
-                                  {feedbackForm.offerEmailFollowUp ? (
-                                    <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200 text-xs">
-                                      <span className="truncate max-w-[180px] font-medium text-slate-700">{feedbackForm.offerEmailFollowUp.name}</span>
-                                      {isAdmin && (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id="replace-feedback-email"
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (file) {
-                                                const base64 = await fileToBase64(file);
-                                                setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: base64 }));
-                                              }
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor="replace-feedback-email"
-                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold"
-                                          >
-                                            Replace
-                                          </label>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-1">
-                                      {isAdmin ? (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id="offer-email-followup"
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (file) {
-                                                const base64 = await fileToBase64(file);
-                                                setFeedbackForm(prev => ({ ...prev, offerEmailFollowUp: base64 }));
-                                              }
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor="offer-email-followup"
-                                            className="cursor-pointer text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
-                                          >
-                                            <span className="material-symbols-outlined text-sm">add</span> Upload email follow-up
-                                          </label>
-                                        </>
-                                      ) : null}
-                                      <div className="text-[10px] text-rose-500 font-bold">Didn't upload</div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-
-                            <div className="flex gap-2">
-                              {isEditingFeedback && (
-                                <button type="button" onClick={() => setIsEditingFeedback(false)} className="flex-1 h-10 rounded-xl bg-slate-100 text-slate-600 font-bold text-xs hover:bg-slate-200 transition-all">
-                                  Cancel
-                                </button>
-                              )}
-                              <button
-                                type="submit"
-                                className="flex-1 h-10 rounded-xl bg-[#2ca764] text-white font-bold text-xs shadow-md shadow-emerald-100 hover:bg-[#258a52] transition-all disabled:opacity-50"
-                                disabled={
-                                  savingFeedback ||
-                                  (feedbackForm.recommendation === 'OFFER_LETTER' && (!feedbackForm.offerPhoneFollowUp || !feedbackForm.offerEmailFollowUp))
-                                }
-                              >
-                                {savingFeedback ? 'Saving...' : (isEditingFeedback ? 'Save Changes' : 'Submit Assessment')}
-                              </button>
-                            </div>
-                          </form>
                         </div>
-                      )}
-
-                      {selectedInterview && myFeedback && !savingFeedback && !isEditingFeedback && (
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                            <div>
-                              <h3 className="text-xs uppercase font-bold text-slate-400 tracking-wider">Assessment Submitted</h3>
-                              <p className="text-[10px] text-emerald-600 mt-0.5 font-medium flex items-center gap-1">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
-                                Recorded
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFeedbackForm({
-                                  technicalRating: myFeedback.ratings?.technical || myFeedback.technicalRating || 4,
-                                  communicationRating: myFeedback.ratings?.communication || myFeedback.communicationRating || 4,
-                                  cultureFitRating: myFeedback.ratings?.culture || myFeedback.cultureFitRating || 4,
-                                  strengths: myFeedback.strengths || '',
-                                  weaknesses: myFeedback.concerns || myFeedback.weaknesses || '',
-                                  recommendation: myFeedback.recommendation || 'SELECTED',
-                                  overallComments: myFeedback.notes || myFeedback.overallComments || '',
-                                  offerPhoneFollowUp: myFeedback.offerPhoneFollowUp || null,
-                                  offerEmailFollowUp: myFeedback.offerEmailFollowUp || null,
-                                });
-                                setIsEditingFeedback(true);
-                              }}
-                              className="px-2.5 h-7 rounded-lg bg-blue-50 border border-blue-200 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-all flex items-center gap-0.5"
-                            >
-                              <span className="material-symbols-outlined text-xs">edit</span>
-                              Change
-                            </button>
+                        
+                        <div className="space-y-3 text-sm">
+                          <div className="flex border-b border-slate-50 pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Role:</span>
+                            <span className="text-[#142651] font-semibold">{selectedInterview?.application?.job?.title || '-'}</span>
                           </div>
+                          <div className="flex border-b border-slate-50 pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Interviewers:</span>
+                            <span className="text-[#142651] font-semibold">{selectedInterview?.interviewers?.map(u => u.fullName).join(', ') || '-'}</span>
+                          </div>
+                          <div className="flex border-b border-slate-50 pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Mode:</span>
+                            <span className="text-[#142651] font-semibold">{selectedInterview?.mode || '-'}</span>
+                          </div>
+                          <div className="flex border-b border-slate-50 pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Date/Time:</span>
+                            <span className="text-[#142651] font-semibold">
+                              {selectedInterview?.scheduledStart ? formatDateTimeIN(selectedInterview.scheduledStart) : '-'}
+                            </span>
+                          </div>
+                          {/* Slot number row */}
+                          <div className="flex border-b border-slate-50 pb-2">
+                            <span className="w-28 text-[#6d7893] shrink-0 font-medium">Time Slot:</span>
+                            <span className="flex items-center gap-1.5">
+                              {selectedInterview?.slotNo > 0 ? (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                  selectedInterview.slotNo >= 6
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}>
+                                  Slot {selectedInterview.slotNo}
+                                </span>
+                              ) : (
+                                <span className="text-[#142651] font-semibold">Slot 1</span>
+                              )}
+                              {selectedInterview?.slotNo >= 6 && (
+                                <span className="text-[10px] text-amber-600 font-medium">(near capacity)</span>
+                              )}
+                            </span>
+                          </div>
+                          {/* Follow-up Upload Fields */}
+                          {(() => {
+                            const { phoneFollowUp, emailFollowUp, morningFollowUp, nextSchedule } = parseNotesSafely(selectedInterview?.notes);
+                            const handleUpload = async (type, base64) => {
+                              if (!selectedInterview) return;
+                              const currentNotes = parseNotesSafely(selectedInterview.notes);
+                              const nextNotesObj = {
+                                ...currentNotes,
+                                [type]: base64
+                              };
+                              const updatedNotes = JSON.stringify(nextNotesObj);
+                              const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
+                              await schedulingApi.updateRound(selectedInterview.id, {
+                                applicationId: selectedInterview.applicationId,
+                                roundNo: selectedInterview.roundNo,
+                                round: selectedInterview.round,
+                                interviewerIds,
+                                scheduledStart: selectedInterview.scheduledStart,
+                                mode: selectedInterview.mode,
+                                meetingLink: selectedInterview.meetingLink,
+                                zohoLink: selectedInterview.zohoLink,
+                                notes: updatedNotes
+                              });
+                              await loadAll();
+                            };
 
-                          {myFeedback.recommendation !== 'DIDNT_JOIN' && (
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Tech</div>
-                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.technical || myFeedback.technicalRating || 0)} / 5</div>
+                            return (
+                              <>
+                                <FollowUpUploadField
+                                  label="Phone Follow-up"
+                                  id={`phone-followup-${selectedInterview?.id}`}
+                                  value={phoneFollowUp}
+                                  isAdmin={isAdmin}
+                                  onUpload={(base64) => handleUpload('phoneFollowUp', base64)}
+                                />
+                                <FollowUpUploadField
+                                  label="Email Follow-up"
+                                  id={`email-followup-${selectedInterview?.id}`}
+                                  value={emailFollowUp}
+                                  isAdmin={isAdmin}
+                                  onUpload={(base64) => handleUpload('emailFollowUp', base64)}
+                                />
+                                <FollowUpUploadField
+                                  label="Morning Follow-up"
+                                  id={`morning-followup-${selectedInterview?.id}`}
+                                  value={morningFollowUp}
+                                  isAdmin={isAdmin}
+                                  onUpload={(base64) => handleUpload('morningFollowUp', base64)}
+                                />
+                              </>
+                            );
+                          })()}
+                          
+                          {(() => {
+                            const { nextSchedule } = parseNotesSafely(selectedInterview?.notes);
+                            return nextSchedule ? (
+                              <div className="flex border-b border-slate-50 pb-2">
+                                <span className="w-28 text-[#6d7893] shrink-0 font-medium">Next Schedule:</span>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={nextSchedule}
+                                  title={nextSchedule}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.target.select();
+                                  }}
+                                  className="text-slate-800 text-xs font-semibold focus:outline-none"
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    outline: 'none',
+                                    cursor: 'text',
+                                    width: '100%',
+                                  }}
+                                />
                               </div>
-                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Comm</div>
-                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.communication || myFeedback.communicationRating || 0)} / 5</div>
-                              </div>
-                              <div className="bg-[#f8f9fa] p-2 rounded text-center">
-                                <div className="text-[9px] text-[#868fa0] uppercase tracking-wider font-bold">Culture</div>
-                                <div className="text-xs font-bold text-[#142651]">{(myFeedback.ratings?.culture || myFeedback.cultureFitRating || 0)} / 5</div>
-                              </div>
+                            ) : null;
+                          })()}
+
+                          {selectedInterview?.zohoLink && (
+                            <div className="flex pb-2">
+                              <span className="w-28 text-[#6d7893] shrink-0 font-medium">Zoho Meet:</span>
+                              <span className="truncate text-blue-600 font-bold cursor-pointer hover:underline" onClick={() => window.open(selectedInterview.zohoLink, '_blank')}>
+                                Join via Zoho
+                              </span>
                             </div>
                           )}
-
-                          <div className="space-y-2 text-xs text-[#5e6a85]">
-                            {myFeedback.recommendation !== 'DIDNT_JOIN' && (
-                              <>
-                                <div>
-                                  <span className="font-semibold text-[#142651]">Strengths:</span> {myFeedback.strengths || '-'}
-                                </div>
-                                <div>
-                                  <span className="font-semibold text-[#142651]">Concerns:</span> {(myFeedback.concerns || myFeedback.weaknesses || '-')}
-                                </div>
-                              </>
-                            )}
-                            <div>
-                              <span className="font-semibold text-[#142651]">Overall Summary:</span>
-                              <p className="text-[#5e6a85] mt-1 italic bg-white border border-slate-100 p-2 rounded-lg text-[11px] leading-relaxed">
-                                "{(myFeedback.notes || myFeedback.overallComments || 'No additional comments.')}"
-                              </p>
-                            </div>
-
-                            {myFeedback.recommendation === 'OFFER_LETTER' && (
-                              <div className="space-y-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 mt-3 text-xs">
-                                <div className="font-bold text-[#1f52cc] text-[10px] uppercase tracking-wider">Offer Letter Attachments</div>
-                                
-                                <div className="flex justify-between items-center py-1 border-b border-blue-50">
-                                  <span className="text-slate-500 font-medium">Phone Follow-up:</span>
-                                  {myFeedback.offerPhoneFollowUp ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => downloadBase64File(myFeedback.offerPhoneFollowUp.name, myFeedback.offerPhoneFollowUp.data)}
-                                        className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
-                                      >
-                                        <span className="material-symbols-outlined text-xs">attachment</span>
-                                        <span className="truncate max-w-[120px]">{myFeedback.offerPhoneFollowUp.name}</span>
-                                      </button>
-                                      {isAdmin && (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id={`replace-offer-phone-${selectedInterview?.id}`}
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (!file) return;
-                                              const base64 = await fileToBase64(file);
-                                              const updatedFeedback = { ...myFeedback, offerPhoneFollowUp: base64 };
-                                              await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
-                                              await loadAll();
-                                              e.target.value = '';
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor={`replace-offer-phone-${selectedInterview?.id}`}
-                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-[10px] font-semibold bg-blue-50 px-1.5 py-0.5 rounded hover:bg-blue-100 transition-colors"
-                                          >
-                                            Replace
-                                          </label>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-rose-500 font-bold text-[10px]">Didn't upload</span>
-                                  )}
-                                </div>
-
-                                <div className="flex justify-between items-center py-1">
-                                  <span className="text-slate-500 font-medium">Email Follow-up:</span>
-                                  {myFeedback.offerEmailFollowUp ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => downloadBase64File(myFeedback.offerEmailFollowUp.name, myFeedback.offerEmailFollowUp.data)}
-                                        className="text-blue-600 font-bold hover:underline flex items-center gap-1 text-left text-xs"
-                                      >
-                                        <span className="material-symbols-outlined text-xs">attachment</span>
-                                        <span className="truncate max-w-[120px]">{myFeedback.offerEmailFollowUp.name}</span>
-                                      </button>
-                                      {isAdmin && (
-                                        <>
-                                          <input
-                                            type="file"
-                                            id={`replace-offer-email-${selectedInterview?.id}`}
-                                            className="hidden"
-                                            onChange={async (e) => {
-                                              const file = e.target.files[0];
-                                              if (!file) return;
-                                              const base64 = await fileToBase64(file);
-                                              const updatedFeedback = { ...myFeedback, offerEmailFollowUp: base64 };
-                                              await schedulingApi.submitFeedback(selectedInterview.id, updatedFeedback);
-                                              await loadAll();
-                                              e.target.value = '';
-                                            }}
-                                          />
-                                          <label
-                                            htmlFor={`replace-offer-email-${selectedInterview?.id}`}
-                                            className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-[10px] font-semibold bg-blue-50 px-1.5 py-0.5 rounded hover:bg-blue-100 transition-colors"
-                                          >
-                                            Replace
-                                          </label>
-                                        </>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-rose-500 font-bold text-[10px]">Didn't upload</span>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
                         </div>
+                      </div>
 
-                      )}      </div>
-                  </div>
+                      {/* Divider + Form or Details */}
+                      <div className="border-t border-slate-200 pt-6">
+                        <React.Suspense fallback={<div className="p-8 text-center text-slate-400 animate-pulse">Loading assessment form...</div>}>
+                          {selectedInterview && (!myFeedback || isEditingFeedback) && !savingFeedback && (
+                            <InterviewFeedbackForm
+                              round={
+                                selectedInterview.roundNo === 1
+                                  ? InterviewRound.ROUND_1
+                                  : selectedInterview.roundNo === 2
+                                  ? InterviewRound.ROUND_2
+                                  : selectedInterview.roundNo === 3
+                                  ? InterviewRound.ROUND_3
+                                  : InterviewRound.FINAL_ROUND
+                              }
+                              candidateId={selectedInterview.candidateId}
+                              candidateName={selectedInterview.candidateName}
+                              initialValues={myFeedback?.feedbackData || myFeedback || {}}
+                              onSuccess={() => {
+                                setShowFeedbackModal(false);
+                                setIsEditingFeedback(false);
+                                setBanner('Assessment saved successfully.');
+                              }}
+                              onCancel={isEditingFeedback ? () => setIsEditingFeedback(false) : undefined}
+                            />
+                          )}
+
+                          {selectedInterview && myFeedback && !savingFeedback && !isEditingFeedback && (
+                            <InterviewFeedbackView
+                              round={
+                                selectedInterview.roundNo === 1
+                                  ? InterviewRound.ROUND_1
+                                  : selectedInterview.roundNo === 2
+                                  ? InterviewRound.ROUND_2
+                                  : selectedInterview.roundNo === 3
+                                  ? InterviewRound.ROUND_3
+                                  : InterviewRound.FINAL_ROUND
+                              }
+                              feedbackData={myFeedback.feedbackData || myFeedback}
+                              candidateName={selectedInterview.candidateName}
+                            />
+                          )}
+                        </React.Suspense>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
 
                 {selectedInterview?.voiceRecordingFile?.storageKey ? (
                     <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl">
@@ -3164,32 +2438,69 @@ const InterviewSchedule = () => {
 
       {/* MODALS */}
       {showScheduleModal && (
-        <ScheduleModal
-          scheduleForm={scheduleForm}
-          setScheduleForm={setScheduleForm}
-          candidateSearch={candidateSearch}
-          setCandidateSearch={setCandidateSearch}
-          jobSearch={jobSearch}
-          setJobSearch={setJobSearch}
-          interviewerSearch={interviewerSearch}
-          setInterviewerSearch={setInterviewerSearch}
-          showCandidateList={showCandidateList}
-          setShowCandidateList={setShowCandidateList}
-          showJobList={showJobList}
-          setShowJobList={setShowJobList}
-          candidateSuggestions={candidateSuggestions}
-          jobSuggestions={jobSuggestions}
-          interviewers={interviewers}
-          searchingCandidates={searchingCandidates}
-          searchingJobs={searchingJobs}
-          savingSchedule={savingSchedule}
-          allInterviews={allInterviews}
-          onClose={() => setShowScheduleModal(false)}
-          onSubmit={async (e) => {
-            const success = await onScheduleSubmit(e);
-            if (success) setShowScheduleModal(false);
-          }}
-        />
+        <React.Suspense fallback={null}>
+          <ScheduleModal
+            scheduleForm={scheduleForm}
+            setScheduleForm={setScheduleForm}
+            candidateSearch={candidateSearch}
+            setCandidateSearch={setCandidateSearch}
+            jobSearch={jobSearch}
+            setJobSearch={setJobSearch}
+            interviewerSearch={interviewerSearch}
+            setInterviewerSearch={setInterviewerSearch}
+            showCandidateList={showCandidateList}
+            setShowCandidateList={setShowCandidateList}
+            showJobList={showJobList}
+            setShowJobList={setShowJobList}
+            candidateSuggestions={candidateSuggestions}
+            jobSuggestions={jobSuggestions}
+            interviewers={interviewers}
+            interviewersLoading={isPanelistsLoading}
+            interviewersError={panelistsError}
+            refetchInterviewers={refetchPanelists}
+            searchingCandidates={searchingCandidates}
+            searchingJobs={searchingJobs}
+            savingSchedule={savingSchedule}
+            allInterviews={allInterviews}
+            candidateFeedbacks={candidateFeedbacks}
+            setBanner={setBanner}
+            setError={setError}
+            onClose={() => setShowScheduleModal(false)}
+
+            onSubmit={async (e) => {
+              const success = await onScheduleSubmit(e);
+              if (success) setShowScheduleModal(false);
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {showBulkUploadModal && (
+        <React.Suspense fallback={null}>
+          <BulkInterviewUploadModal
+            isOpen={showBulkUploadModal}
+            onClose={() => setShowBulkUploadModal(false)}
+            onSuccess={async () => {
+              queryClient.invalidateQueries({ queryKey: ['interviews'] });
+              queryClient.invalidateQueries({ queryKey: ['candidates'] });
+              refetchInterviews?.();
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {showBulkFeedbackModal && (
+        <React.Suspense fallback={null}>
+          <BulkFeedbackUploadModal
+            isOpen={showBulkFeedbackModal}
+            onClose={() => setShowBulkFeedbackModal(false)}
+            onSuccess={async () => {
+              queryClient.invalidateQueries({ queryKey: ['interviews'] });
+              queryClient.invalidateQueries({ queryKey: ['candidates'] });
+              refetchInterviews?.();
+            }}
+          />
+        </React.Suspense>
       )}
 
 
@@ -3210,45 +2521,65 @@ const InterviewSchedule = () => {
               </div>
 
               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {interviewers
-                  .filter(i => !transferringInterview.interviewerIds?.includes(i.id))
-                  .map((person) => (
-                    <button
-                      key={person.id}
-                      onClick={() => onTransferPanelist(person.id)}
-                      className="w-full text-left p-4 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all group flex items-center gap-4"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
-                        {(person.fullName || 'I').split(' ').map(n => n[0]).join('').toUpperCase()}
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-bold text-slate-700 text-sm">{person.fullName || 'Interviewer'}</div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">{person.role}</div>
-                      </div>
-                      <span className="material-symbols-outlined text-blue-400 opacity-0 group-hover:opacity-100 transition-all translate-x-[-10px] group-hover:translate-x-0">
-                        arrow_forward
-                      </span>
-                    </button>
-                  ))}
+                {isPanelistsLoading ? (
+                  <div className="text-xs text-slate-400 text-center py-4 animate-pulse">Loading panelists...</div>
+                ) : panelistsError ? (
+                  <div className="text-xs text-center py-4 space-y-2">
+                    <div className="text-red-500">{panelistsError.message}</div>
+                    <button onClick={() => refetchPanelists()} className="px-3 py-1 bg-blue-600 text-white rounded-xl text-xs font-bold transition-all">Retry</button>
+                  </div>
+                ) : !panelistsList || panelistsList.length === 0 ? (
+                  <div className="text-xs text-slate-400 text-center py-4 italic">No panelists available</div>
+                ) : (
+                  (() => {
+                    const availablePanelists = panelistsList.filter(i => !transferringInterview.interviewerIds?.includes(i.id));
+                    if (availablePanelists.length === 0) {
+                      return <div className="text-xs text-slate-400 text-center py-4 italic font-medium">All panelists are already assigned to this round</div>;
+                    }
+                    return availablePanelists.map((person) => (
+                      <button
+                        key={person.id}
+                        disabled={transferringPanelist}
+                        onClick={() => onTransferPanelist(person.id)}
+                        className="w-full text-left p-4 rounded-2xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/50 transition-all group flex items-center gap-4 disabled:opacity-50"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm group-hover:bg-blue-600 group-hover:text-white transition-all">
+                          {(person.fullName || 'I').split(' ').map(n => n[0]).join('').toUpperCase()}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-slate-700 text-sm">{person.fullName || 'Interviewer'}</div>
+                          <div className="text-[10px] text-slate-400 uppercase tracking-wider">{person.role}</div>
+                        </div>
+                        <span className="material-symbols-outlined text-blue-400 opacity-0 group-hover:opacity-100 transition-all translate-x-[-10px] group-hover:translate-x-0">
+                          {transferringPanelist ? 'sync' : 'arrow_forward'}
+                        </span>
+                      </button>
+                    ));
+                  })()
+                )}
               </div>
 
               <button
-                className="w-full mt-6 h-12 rounded-2xl border border-slate-200 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all"
+                disabled={transferringPanelist}
+                className="w-full mt-6 h-12 rounded-2xl border border-slate-200 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-all disabled:opacity-50"
                 onClick={() => setShowTransferModal(false)}
               >
                 Cancel
               </button>
+
             </div>
           </Reveal>
         </div>
       )}
       
-      <EditInterviewModal
-        isOpen={!!editingInterviewId}
-        interviewId={editingInterviewId}
-        onClose={() => setEditingInterviewId(null)}
-        onUpdate={loadAll}
-      />
+      <React.Suspense fallback={null}>
+        <EditInterviewModal
+          isOpen={!!editingInterviewId}
+          interviewId={editingInterviewId}
+          onClose={() => setEditingInterviewId(null)}
+          onUpdate={loadAll}
+        />
+      </React.Suspense>
 
       {showFeedbackModal && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
@@ -3264,149 +2595,30 @@ const InterviewSchedule = () => {
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
-              <form className="space-y-4" onSubmit={async (e) => {
-                const success = await onFeedbackSubmit(e);
-                if (success) {
-                  setShowFeedbackModal(false);
-                }
-              }}>
-                {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1 text-center">
-                      <label className="text-[10px] uppercase font-bold text-slate-500">Technical</label>
-                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.technicalRating} onChange={e => setFeedbackForm(prev => ({...prev, technicalRating: parseInt(e.target.value, 10)}))}>
-                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1 text-center">
-                      <label className="text-[10px] uppercase font-bold text-slate-500">Comm.</label>
-                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.communicationRating} onChange={e => setFeedbackForm(prev => ({...prev, communicationRating: parseInt(e.target.value, 10)}))}>
-                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                      </select>
-                    </div>
-                    <div className="space-y-1 text-center">
-                      <label className="text-[10px] uppercase font-bold text-slate-500">Culture</label>
-                      <select className="h-10 w-full rounded-xl border border-slate-200 px-2 text-sm text-center focus:border-[#1f52cc] outline-none" value={feedbackForm.cultureFitRating} onChange={e => setFeedbackForm(prev => ({...prev, cultureFitRating: parseInt(e.target.value, 10)}))}>
-                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}/5</option>)}
-                      </select>
-                    </div>
-                  </div>
-                )}
 
-                <div className="space-y-2">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Recommendation</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                    {['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'REJECTED'].map(rec => {
-                      const icons = {
-                        SELECTED: 'verified',
-                        OFFER_LETTER: 'card_membership',
-                        ON_HOLD: 'pause_circle',
-                        DIDNT_JOIN: 'sentiment_dissatisfied',
-                        REJECTED: 'block'
-                      };
-                      const labels = {
-                        SELECTED: 'Selected',
-                        OFFER_LETTER: 'Offer Letter',
-                        ON_HOLD: 'On Hold',
-                        DIDNT_JOIN: "Didn't Join",
-                        REJECTED: 'Rejected'
-                      };
-                      return (
-                        <button 
-                          key={rec}
-                          type="button" 
-                          className={`h-12 rounded-2xl border font-bold text-[10px] uppercase flex flex-col items-center justify-center gap-1 transition-all ${
-                            feedbackForm.recommendation === rec 
-                              ? rec === 'DIDNT_JOIN' 
-                                ? 'bg-slate-100 border-slate-400 text-slate-700 shadow-inner'
-                                : rec === 'SELECTED'
-                                  ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-inner'
-                                  : rec === 'OFFER_LETTER'
-                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-inner'
-                                    : rec === 'ON_HOLD'
-                                      ? 'bg-amber-50 border-amber-500 text-amber-700 shadow-inner'
-                                      : 'bg-rose-50 border-rose-500 text-rose-700 shadow-inner'
-                              : 'border-slate-100 text-slate-400 hover:bg-slate-50'
-                          }`}
-                          onClick={() => setFeedbackForm(prev => ({ ...prev, recommendation: rec }))}
-                        >
-                          <span className="material-symbols-outlined text-lg">{icons[rec]}</span>
-                          {labels[rec]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {feedbackForm.recommendation !== 'DIDNT_JOIN' && (
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Key Strengths</label>
-                      <textarea 
-                        className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                        placeholder="What did they do well?"
-                        value={feedbackForm.strengths}
-                        onChange={e => setFeedbackForm(prev => ({...prev, strengths: e.target.value}))}
-                        required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Concerns / Weaknesses</label>
-                      <textarea 
-                        className="w-full rounded-xl border border-slate-200 p-3 text-xs min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                        placeholder="Any red flags?"
-                        value={feedbackForm.weaknesses}
-                        onChange={e => setFeedbackForm(prev => ({...prev, weaknesses: e.target.value}))}
-                        required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Overall Summary</label>
-                  <textarea 
-                    className="w-full rounded-2xl border border-slate-200 p-4 text-sm min-h-[80px] focus:border-[#1f52cc] outline-none transition-all" 
-                    placeholder="Final verdict and detailed notes..."
-                    value={feedbackForm.overallComments}
-                    onChange={e => setFeedbackForm(prev => ({...prev, overallComments: e.target.value}))}
-                    required={feedbackForm.recommendation !== 'DIDNT_JOIN'}
+              <React.Suspense fallback={<div className="p-8 text-center text-slate-400 animate-pulse">Loading assessment form...</div>}>
+                {selectedInterview && (
+                  <InterviewFeedbackForm
+                    round={
+                      selectedInterview.roundNo === 1
+                        ? 'ROUND_1'
+                        : selectedInterview.roundNo === 2
+                        ? 'ROUND_2'
+                        : 'FINAL_ROUND'
+                    }
+                    candidateId={selectedInterview.candidateId}
+                    candidateName={selectedInterview.candidateName}
+                    initialValues={myFeedback?.feedbackData || myFeedback || {}}
+                    onCancel={() => setShowFeedbackModal(false)}
+                    onSuccess={() => {
+                      setShowFeedbackModal(false);
+                      setIsEditingFeedback(false);
+                      setBanner('Assessment saved successfully.');
+                      loadAll();
+                    }}
                   />
-                </div>
-
-                {/* Optional Offer Letter Attachment */}
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 hover:border-[#1f52cc]/40 hover:bg-blue-50/20 transition-all">
-                  <span className="material-symbols-outlined text-slate-400 text-xl">attach_file</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] uppercase font-bold text-slate-400">Attach Document <span className="normal-case font-normal text-slate-300">(optional)</span></div>
-                    {offerLetterFile && (
-                      <div className="text-xs text-[#1f52cc] font-semibold mt-0.5 truncate">{offerLetterFile.name}</div>
-                    )}
-                  </div>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    id="modal-offer-upload" 
-                    onChange={(e) => setOfferLetterFile(e.target.files[0])}
-                    accept=".pdf,.doc,.docx"
-                  />
-                  <label htmlFor="modal-offer-upload" className="shrink-0 px-4 h-8 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600 flex items-center cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
-                    {offerLetterFile ? 'Change' : 'Browse'}
-                  </label>
-                  {offerLetterFile && (
-                    <button type="button" onClick={() => setOfferLetterFile(null)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 flex items-center justify-center transition-all">
-                      <span className="material-symbols-outlined text-sm">close</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button type="button" className="flex-1 h-12 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all" onClick={() => setShowFeedbackModal(false)}>Cancel</button>
-                  <button type="submit" className="flex-1 h-12 rounded-xl bg-[#2ca764] text-white font-bold shadow-lg shadow-emerald-200 hover:bg-[#258a52] transition-all disabled:opacity-50" disabled={savingFeedback}>
-                    {savingFeedback ? 'Saving...' : 'Save Assessment'}
-                  </button>
-                </div>
-              </form>
+                )}
+              </React.Suspense>
             </div>
           </Reveal>
         </div>
