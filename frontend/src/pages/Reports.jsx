@@ -31,7 +31,7 @@ function formatBytes(bytes) {
 }
 
 // ─── Added Reports Tab ────────────────────────────────────────────
-function AddedReportsTab({ currentUser }) {
+function AddedReportsTab({ currentUser, searchQuery }) {
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const canUpload = isSuperAdmin && currentUser?.canAddRecruitmentReports === true;
 
@@ -60,6 +60,14 @@ function AddedReportsTab({ currentUser }) {
   };
 
   useEffect(() => { fetchReports(); }, []);
+
+  const filteredReports = useMemo(() => {
+    if (!searchQuery?.trim()) return reports;
+    const key = searchQuery.trim().toLowerCase();
+    return reports.filter(r => 
+      [r.title, r.description, r.fileName].some(v => String(v || '').toLowerCase().includes(key))
+    );
+  }, [reports, searchQuery]);
 
   const handleUpload = async (e) => {
     e.preventDefault(); setUploadError('');
@@ -172,15 +180,15 @@ function AddedReportsTab({ currentUser }) {
             </div>
           ))}
         </div>
-      ) : reports.length === 0 ? (
+      ) : filteredReports.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <span className="material-symbols-outlined text-5xl mb-3 text-slate-300">folder_open</span>
-          <p className="text-sm font-semibold mb-1">No reports have been added yet.</p>
-          {canUpload && <p className="text-xs text-slate-400">Click “Add Report” to upload the first report.</p>}
+          <p className="text-sm font-semibold mb-1">No reports found matching your criteria.</p>
+          {canUpload && <p className="text-xs text-slate-400">Click “Add Report” to upload a report.</p>}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {reports.map(report => {
+          {filteredReports.map(report => {
             const fi = getFileIcon(report.mimeType);
             return (
               <div key={report.id} className="os-card p-4 hover:shadow-md transition-shadow duration-200">
@@ -271,17 +279,33 @@ const Reports = () => {
   // Sorting state
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [search, setSearch] = useState('');
 
-  // Filter candidates based on selected tab
+  // Filter candidates based on selected tab + search query
   const displayedCandidates = useMemo(() => {
+    let list = candidates;
     if (activeTab === 'JOINED') {
-      return candidates.filter(c => c.status === 'JOINED' || c.stageName?.toUpperCase() === 'JOINED' || c.stageName?.toLowerCase() === 'joined');
+      list = candidates.filter(c => c.status === 'JOINED' || c.stageName?.toUpperCase() === 'JOINED' || c.stageName?.toLowerCase() === 'joined');
+    } else if (activeTab === 'OFFER_LETTERS') {
+      list = candidates.filter(c => c.status === 'OFFER_SENT' || c.stageName?.toUpperCase().includes('OFFER') || c.stageName?.toLowerCase().includes('offer'));
     }
-    if (activeTab === 'OFFER_LETTERS') {
-      return candidates.filter(c => c.status === 'OFFER_SENT' || c.stageName?.toUpperCase().includes('OFFER') || c.stageName?.toLowerCase().includes('offer'));
+
+    if (search.trim()) {
+      const key = search.trim().toLowerCase();
+      list = list.filter(c => 
+        [c.fullName, c.email, c.phone, c.preferredRole, c.location].some(v => String(v || '').toLowerCase().includes(key))
+      );
     }
-    return candidates;
-  }, [candidates, activeTab]);
+    return list;
+  }, [candidates, activeTab, search]);
+
+  const filteredJobsData = useMemo(() => {
+    if (!search.trim()) return jobsData;
+    const key = search.trim().toLowerCase();
+    return jobsData.filter(j => 
+      [j.title, j.department, j.jobStatus].some(v => String(v || '').toLowerCase().includes(key))
+    );
+  }, [jobsData, search]);
 
   // Load baseline data (recruiters list, stages list)
   useEffect(() => {
@@ -584,6 +608,8 @@ const Reports = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search report features..."
+          searchValue={search}
+          onSearchChange={(e) => setSearch(e.target.value)}
           right={
             <>
               <NotificationBell />
@@ -648,7 +674,7 @@ const Reports = () => {
         {banner && activeTab !== 'ADDED_REPORTS' && <div className="os-card p-3 mb-4 text-blue-600 bg-blue-50 text-sm font-semibold">{banner}</div>}
 
         {activeTab === 'ADDED_REPORTS' ? (
-          <AddedReportsTab currentUser={currentUser} />
+          <AddedReportsTab currentUser={currentUser} searchQuery={search} />
         ) : (
           <div className="flex gap-6 items-start relative">
           {/* 1. COLLAPSIBLE FILTER SIDEBAR (280px) */}
@@ -824,7 +850,7 @@ const Reports = () => {
             <div className="flex justify-between items-center mb-3">
               <span className="text-xs font-bold text-slate-500">
                 {activeTab === 'JOBS' 
-                  ? `Total: ${jobsData.length} jobs` 
+                  ? `Total: ${filteredJobsData.length} jobs` 
                   : `Total: ${displayedCandidates.length} candidates`}
               </span>
               {canExportReports && (
@@ -890,8 +916,8 @@ const Reports = () => {
                             <td className="p-4"><div className="h-4 w-8 bg-slate-100 rounded mx-auto" /></td>
                           </tr>
                         ))
-                      ) : jobsData.length > 0 ? (
-                        jobsData.map((job) => (
+                      ) : filteredJobsData.length > 0 ? (
+                        filteredJobsData.map((job) => (
                           <tr key={job.jobId} className="border-b border-slate-100 hover:bg-slate-50/50">
                             <td className="p-4 font-semibold text-slate-800">{job.title}</td>
                             <td className="p-4 text-slate-600">{job.department}</td>

@@ -1519,6 +1519,8 @@ const InterviewSchedule = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search candidates or interviews..."
+          searchValue={interviewListSearch}
+          onSearchChange={e => setInterviewListSearch(e.target.value)}
           tabs={[]}
           right={
             <>

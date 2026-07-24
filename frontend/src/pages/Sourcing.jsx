@@ -50,6 +50,8 @@ const Sourcing = () => {
       topbar={(
         <EnterpriseTopbar
           searchPlaceholder="Search sourced profiles..."
+          searchValue={query}
+          onSearchChange={(e) => setQuery(e.target.value)}
           tabs={[
             { key: 'sourcing', label: 'Sourcing', href: '/sourcing', active: true },
             { key: 'referrals', label: 'Referrals', href: '/referrals' },

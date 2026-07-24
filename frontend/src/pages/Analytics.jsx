@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
@@ -30,6 +31,7 @@ import {
 } from 'recharts';
 
 const Analytics = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString());
@@ -229,6 +231,7 @@ const Analytics = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search analytics..."
+          onSearchChange={(e) => navigate(`/candidates?search=${encodeURIComponent(e.target.value)}`)}
           right={
             <>
               <NotificationBell />

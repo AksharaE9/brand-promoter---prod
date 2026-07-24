@@ -10,7 +10,7 @@ const JoinModal = React.lazy(() => import('../components/JoinModal'));
 const RejectModal = React.lazy(() => import('../components/RejectModal'));
 const BulkUploadModal = React.lazy(() => import('../components/BulkUpload/BulkUploadModal'));
 import { API_BASE_URL, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
-import { search } from '../lib/searchClient';
+import { search as apiSearch } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
 import Skeleton, { CardSkeleton } from '../components/Skeleton';
@@ -304,8 +304,8 @@ const Candidates = () => {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || '');
   const [nextCursor, setNextCursor] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
@@ -376,7 +376,7 @@ const Candidates = () => {
     try {
       let res;
       if (searchQuery.trim()) {
-        res = await search('/api/candidates/search', {
+        res = await apiSearch('/api/candidates/search', {
           q: searchQuery.trim(),
           filters: {
             status: statFilter,

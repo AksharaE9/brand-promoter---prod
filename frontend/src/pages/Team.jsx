@@ -29,6 +29,7 @@ const Team = () => {
   const [editingUserId, setEditingUserId] = useState(null);
   const [editingUserRole, setEditingUserRole] = useState(null);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [search, setSearch] = useState('');
 
   // Filters
   const [roleFilter, setRoleFilter] = useState('ALL'); // ALL, SUPER_ADMIN, RECRUITER
@@ -127,8 +128,16 @@ const Team = () => {
       list = list.filter(m => m.userType === typeFilter);
     }
 
+    // Search filter
+    if (search.trim()) {
+      const key = search.trim().toLowerCase();
+      list = list.filter(m => 
+        [m.fullName, m.email, m.phone].some(v => String(v || '').toLowerCase().includes(key))
+      );
+    }
+
     return list;
-  }, [members, activeTab, roleFilter, typeFilter]);
+  }, [members, activeTab, roleFilter, typeFilter, search]);
 
   const hasActiveFilters = roleFilter !== 'ALL' || typeFilter !== 'ALL';
 
@@ -306,6 +315,8 @@ const Team = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search team members..."
+          searchValue={search}
+          onSearchChange={(e) => setSearch(e.target.value)}
           right={
             <>
               <NotificationBell />

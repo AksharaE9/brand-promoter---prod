@@ -148,6 +148,7 @@ const Dashboard = () => {
         topbar={
           <EnterpriseTopbar
             searchPlaceholder="Search candidates..."
+            onSearchChange={(e) => navigate(`/candidates?search=${encodeURIComponent(e.target.value)}`)}
             tabs={[]}
             right={<><NotificationBell /><UserChip avatarSeed="dashboard" /></>}
           />
@@ -168,6 +169,7 @@ const Dashboard = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search candidates..."
+          onSearchChange={(e) => navigate(`/candidates?search=${encodeURIComponent(e.target.value)}`)}
           tabs={[]}
           right={<><NotificationBell /><UserChip avatarSeed="dashboard" /></>}
         />

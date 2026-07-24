@@ -13,6 +13,7 @@ const Referrals = () => {
   const [jobs, setJobs] = useState([]);
   const [error, setError] = useState('');
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -37,10 +38,16 @@ const Referrals = () => {
   }, []);
 
   const referralRows = useMemo(() => {
-    const rows = applications.filter((app) => String(app?.candidate?.source || '').toLowerCase().includes('ref'));
+    let rows = applications.filter((app) => String(app?.candidate?.source || '').toLowerCase().includes('ref'));
+    if (query.trim()) {
+      const key = query.trim().toLowerCase();
+      rows = rows.filter((app) => 
+        [app.candidate?.fullName, app.candidate?.email, app.candidate?.phone].some((v) => String(v || '').toLowerCase().includes(key))
+      );
+    }
     if (!selectedJobId) return rows.slice(0, 20);
     return rows.filter((app) => app.jobId === selectedJobId).slice(0, 20);
-  }, [applications, selectedJobId]);
+  }, [applications, selectedJobId, query]);
 
   return (
     <EnterpriseLayout
@@ -48,6 +55,8 @@ const Referrals = () => {
       topbar={(
         <EnterpriseTopbar
           searchPlaceholder="Search referrals..."
+          searchValue={query}
+          onSearchChange={(e) => setQuery(e.target.value)}
           tabs={[
             { key: 'sourcing', label: 'Sourcing', href: '/sourcing' },
             { key: 'referrals', label: 'Referrals', href: '/referrals', active: true },

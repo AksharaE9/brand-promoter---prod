@@ -26,6 +26,24 @@ const Settings = () => {
   const [activeTab, setActiveTab] = useState('PROFILE'); // PROFILE, ORG, CONTACT, PREFS, SECURITY
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
+  const [search, setSearch] = useState('');
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearch(val);
+    const lower = val.toLowerCase();
+    if (lower.includes('profile') || lower.includes('name') || lower.includes('photo') || lower.includes('bio')) {
+      setActiveTab('PROFILE');
+    } else if (lower.includes('org') || lower.includes('company') || lower.includes('industry')) {
+      setActiveTab('ORG');
+    } else if (lower.includes('contact') || lower.includes('address') || lower.includes('email') || lower.includes('phone')) {
+      setActiveTab('CONTACT');
+    } else if (lower.includes('pref') || lower.includes('timezone') || lower.includes('date') || lower.includes('time')) {
+      setActiveTab('PREFS');
+    } else if (lower.includes('security') || lower.includes('password')) {
+      setActiveTab('SECURITY');
+    }
+  };
 
   // Profile fields state
   const [profileForm, setProfileForm] = useState({ fullName: '', workPhone: '', bio: '', profilePhoto: null, profilePhotoUrl: '' });
@@ -374,6 +392,8 @@ const Settings = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search configuration settings..."
+          searchValue={search}
+          onSearchChange={handleSearchChange}
           right={
             <>
               <NotificationBell />

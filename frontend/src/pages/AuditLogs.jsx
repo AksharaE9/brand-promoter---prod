@@ -335,6 +335,8 @@ const AuditLogs = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search audit events..."
+          searchValue={search}
+          onSearchChange={e => setSearch(e.target.value)}
           right={
             <>
               <NotificationBell />

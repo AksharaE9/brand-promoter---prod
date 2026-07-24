@@ -11,6 +11,7 @@ const RecruiterDashboard = () => {
   const [candidates, setCandidates] = useState([]);
   const [stats, setStats] = useState({ active: 0, pendingOffer: 0, joined: 0 });
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
   const user = getStoredUser();
 
   useEffect(() => {
@@ -37,12 +38,22 @@ const RecruiterDashboard = () => {
     loadDashboard();
   }, []);
 
+  const filteredCandidates = React.useMemo(() => {
+    if (!query.trim()) return candidates;
+    const key = query.trim().toLowerCase();
+    return candidates.filter((c) =>
+      [c.fullName, c.email, c.phone, c.currentCompany].some((v) => String(v || '').toLowerCase().includes(key))
+    );
+  }, [candidates, query]);
+
   return (
     <EnterpriseLayout
       sidebar={<EnterpriseSidebar active="dashboard" items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search my candidates..."
+          searchValue={query}
+          onSearchChange={(e) => setQuery(e.target.value)}
           right={
             <>
               <NotificationBell />
@@ -84,8 +95,8 @@ const RecruiterDashboard = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {loading ? (
               Array.from({ length: 3 }).map((_, i) => <CandidateCardSkeleton key={i} />)
-            ) : candidates.length > 0 ? (
-              candidates.map((candidate, idx) => (
+            ) : filteredCandidates.length > 0 ? (
+              filteredCandidates.map((candidate, idx) => (
                 <Reveal key={candidate.id} delay={idx * 0.05}>
                   <div className="os-card p-5 group cursor-pointer hover:shadow-md transition-all">
                     <div className="flex items-center gap-4">

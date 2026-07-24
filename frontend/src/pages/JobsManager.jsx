@@ -29,6 +29,7 @@ const JobsManager = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState(defaultJobForm);
   const [shortlistByJob, setShortlistByJob] = useState({});
   const currentUser = getStoredUser();
@@ -139,8 +140,15 @@ const JobsManager = () => {
   };
 
   const jobs = useMemo(
-    () =>
-      items
+    () => {
+      let list = items;
+      if (search.trim()) {
+        const key = search.trim().toLowerCase();
+        list = list.filter(j => 
+          [j.title, j.department, j.location].some(v => String(v || '').toLowerCase().includes(key))
+        );
+      }
+      return list
         .map((job) => ({
           id: job.id,
           title: job.title,
@@ -156,8 +164,9 @@ const JobsManager = () => {
         .sort((a, b) => {
           if (sortBy === 'title') return a.title.localeCompare(b.title);
           return b.applicants - a.applicants;
-        }),
-    [items, shortlistByJob, sortBy],
+        });
+    },
+    [items, shortlistByJob, sortBy, search],
   );
 
   const prefetchJobDetails = useCallback((jobId) => {
@@ -187,6 +196,8 @@ const JobsManager = () => {
       topbar={
         <EnterpriseTopbar
           searchPlaceholder="Search jobs, candidates, or applications..."
+          searchValue={search}
+          onSearchChange={(e) => setSearch(e.target.value)}
           tabs={[
             { key: 'all', label: 'All Jobs', href: '/jobs', active: true },
           ]}
