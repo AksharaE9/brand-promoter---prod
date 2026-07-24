@@ -19,12 +19,13 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
     setError('');
     try {
       const res = await schedulingLeadApi.getMemberFiles(memberId, { from: date, to: date });
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         // GET /files returns grouped structure: [{ date: 'YYYY-MM-DD', files: [...] }]
         const group = res.data.find(g => g.date === date);
         setFiles(group ? group.files : []);
       } else {
         setFiles([]);
+        setError(res?.message || 'Failed to fetch files for this date.');
       }
     } catch (err) {
       setError(err.message || 'Failed to fetch files for this date.');
@@ -84,12 +85,14 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
 
     try {
       const res = await schedulingLeadApi.uploadMemberFile(memberId, selectedFile, selectedDate, note);
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         setSuccess('File uploaded successfully!');
         setFiles(prev => [...prev, res.data]);
         setSelectedFile(null);
         setNote('');
         if (onRefresh) onRefresh();
+      } else {
+        setError(res?.message || 'Failed to upload file.');
       }
     } catch (err) {
       setError(err.message || 'Failed to upload file.');
