@@ -191,6 +191,33 @@ router.post(
   })
 );
 
+// ── Safety constants ──────────────────────────────────────────────────────
+// Reduced from 250 — see queryBuilder.js for restoration instructions.
+const INTERVIEWS_PAGE_SIZE = 100;
+
+// Hard byte-size ceiling per list response.
+// If a lean-projection bug or future field addition causes the payload to grow unexpectedly,
+// this will throw a loud 500 with diagnostics BEFORE the response is sent — preventing
+// the silent OOM crash pattern that caused 8 instance failures in one hour.
+const MAX_RESPONSE_BYTES = 500 * 1024; // 500 KB
+
+/**
+ * Enforce response size limit.
+ * Returns the serialized buffer if safe, throws ApiError(500) if not.
+ */
+function enforceResponseSizeLimit(payload) {
+  const serialized = Buffer.from(JSON.stringify(payload));
+  if (serialized.byteLength > MAX_RESPONSE_BYTES) {
+    const kb = Math.round(serialized.byteLength / 1024);
+    throw new ApiError(
+      500,
+      `[InterviewList] Response payload (${kb}KB) exceeds the ${Math.round(MAX_RESPONSE_BYTES / 1024)}KB safety limit. ` +
+      `This indicates a query returning unexpectedly large rows — reduce page size or trim the projection.`
+    );
+  }
+  return serialized;
+}
+
 function buildCacheKey(orgId, query) {
   const parts = [
     query.status       || '',
@@ -332,8 +359,11 @@ router.get(
     // ── 3. Dirty queue merge (target: < 200ms, times out and skips if slower) ──
     const withDirty = await mergeDirtyQueue(pageRounds, orgId);
 
-    // ── 4. Relation population (target: < 500ms with full Redis hit) ──
-    const populated = await populateInterviewRelations(withDirty, req.user);
+    // ── 4. Lean relation population — list mode skips all DB joins ──
+    // Using listMode: true means populateInterviewRelations only reshapes
+    // the denormalized columns already on each row (candidateName, jobTitle,
+    // interviewerNames) without firing any additional DB queries.
+    const populated = await populateInterviewRelations(withDirty, req.user, { listMode: true });
 
     // ── 5. Build response ──
     const responseData = {
@@ -343,21 +373,28 @@ router.get(
       pagination: { total: populated.length, hasMore }
     };
 
-    // ── 6. Cache write (non-blocking) ──
+    // ── 6. Enforce hard byte-size cap BEFORE sending or caching ──
+    // This is the defense-in-depth safety net: if a future change reintroduces
+    // fat payloads (bad join, added field, corrupt row), this throws a loud 500
+    // with diagnostics BEFORE it silently OOMs the instance.
+    enforceResponseSizeLimit({ success: true, ...responseData });
+
+    // ── 7. Cache write (non-blocking) ──
     setCache(cacheKey, responseData, TTL.SCHEDULING_LIST).catch(() => {});
 
-    // ── 7. Send response immediately ──
+    // ── 8. Send response ──
+    const duration = Date.now() - requestStart;
     res.setHeader('X-Cache',         'MISS');
-    res.setHeader('X-Response-Time', `${Date.now() - requestStart}ms`);
+    res.setHeader('X-Response-Time', `${duration}ms`);
+    res.setHeader('X-Page-Size',     String(pageRounds.length));
     res.json({ success: true, ...responseData });
 
-    // ── 8. Pre-warm individual round caches AFTER response is sent ──
+    // ── 9. Pre-warm individual round caches AFTER response is sent ──
     setImmediate(() => {
       prewarmRounds(populated).catch(() => {});
     });
 
-    // ── 9. Monitor response time ──
-    const duration = Date.now() - requestStart;
+    // ── 10. Monitor response time ──
     if (duration > 2000) {
       console.warn(
         `[InterviewList:SLOW] ${duration}ms | org:${orgId} | ` +

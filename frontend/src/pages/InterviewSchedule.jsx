@@ -431,7 +431,7 @@ const InterviewSchedule = () => {
     refetch: refetchInterviews,
     error: queryError
   } = usePaginatedList('/interviews', {
-    pageSize: 250,
+    pageSize: 100, // reduced from 250 — restoring to 250 requires confirming payload < 200KB via curl measurement
     filters: roundsFilters,
     queryKey: ['scheduling', 'rounds']
   });
@@ -597,7 +597,12 @@ const InterviewSchedule = () => {
     };
   }, [calendarDays]);
 
-  const { data: calendarResponse } = useQuery({
+  const {
+    data: calendarResponse,
+    isLoading: isCalendarLoading,
+    isError: isCalendarError,
+    refetch: refetchCalendar,
+  } = useQuery({
     queryKey: ['scheduling', 'calendar', calendarRange?.start, filterMine, roundFilter],
     queryFn: () => schedulingApi.getRounds({
       view: 'calendar',
@@ -815,14 +820,31 @@ const InterviewSchedule = () => {
       : displayInterviews;
 
     filteredInterviews.forEach((interview) => {
-      const cId = interview.application?.candidate?.id || interview.application?.candidateId;
+      // The lean list response has candidateId directly on the row (no nested application.candidate).
+      // Fall back through the hierarchy: lean top-level candidate.id -> applicationId's candidateId -> direct candidateId
+      const cId = interview.application?.candidate?.id
+        || interview.application?.candidateId
+        || interview.candidate?.id
+        || interview.candidateId;
       if (!cId) return;
 
       if (!map.has(cId)) {
+        // Build a synthetic application shape from the lean row for sidebar display
+        const syntheticApplication = interview.application || {
+          id: interview.applicationId,
+          candidateId: cId,
+          jobId: interview.jobId,
+          candidate: interview.candidate || (interview.candidateName
+            ? { id: cId, fullName: interview.candidateName }
+            : null),
+          job: interview.job || (interview.jobTitle
+            ? { id: interview.jobId, title: interview.jobTitle }
+            : null),
+        };
         map.set(cId, {
           candidateId: cId,
           applicationId: interview.applicationId,
-          application: interview.application,
+          application: syntheticApplication,
           interviews: [],
           latestInterview: null,
           createdAt: 0,
@@ -837,12 +859,13 @@ const InterviewSchedule = () => {
       group.interviews.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
 
       // Track latest interview by scheduledStart date for sidebar sorting
-      const isCurrent = !group.latestInterview || 
+      const isCurrent = !group.latestInterview ||
         new Date(interview.scheduledStart) > new Date(group.latestInterview.scheduledStart);
       if (isCurrent) {
         group.latestInterview = interview;
         if (!group.application?.id) {
-          group.application = interview.application;
+          // Prefer the real application object if present, otherwise keep synthetic
+          group.application = interview.application || group.application;
           group.applicationId = interview.applicationId;
         }
       }
@@ -1610,25 +1633,87 @@ const InterviewSchedule = () => {
 
         {viewMode === 'excel' && (
           <Reveal delay={0.04} className="bg-white w-full h-full flex flex-col overflow-hidden">
-            <React.Suspense fallback={<div className="p-8 text-center text-slate-400">Loading spreadsheet view...</div>}>
-              <ExcelView
-                interviews={filteredForViews}
-                viewDate={viewDate}
-                onSelectCandidate={(candidateId, interviewId) => {
-                  setViewMode('list');
-                  setSelectedId(candidateId);
-                  if (interviewId) setActiveInterviewId(interviewId);
-                }}
-                onLoadMore={loadMoreInterviews}
-                hasMore={serverHasMore}
-                loadingMore={loadingMore}
-              />
-            </React.Suspense>
+            {queryError && !isQueryLoading ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
+                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl text-red-400">table_view</span>
+                </div>
+                <div>
+                  <div className="text-base font-semibold text-slate-700 mb-1">Couldn't load spreadsheet data</div>
+                  <div className="text-sm text-slate-400">The interview data failed to load. Please try again.</div>
+                </div>
+                <button
+                  className="os-btn-primary !h-9 px-4 text-xs"
+                  onClick={() => refetchInterviews()}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-sm">refresh</span>
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <React.Suspense fallback={<div className="p-8 text-center text-slate-400">Loading spreadsheet view...</div>}>
+                <ExcelView
+                  interviews={filteredForViews}
+                  viewDate={viewDate}
+                  onSelectCandidate={(candidateId, interviewId) => {
+                    setViewMode('list');
+                    setSelectedId(candidateId);
+                    if (interviewId) setActiveInterviewId(interviewId);
+                  }}
+                  onLoadMore={loadMoreInterviews}
+                  hasMore={serverHasMore}
+                  loadingMore={loadingMore}
+                />
+              </React.Suspense>
+            )}
           </Reveal>
         )}
 
         {viewMode === 'calendar' && (
           <Reveal delay={0.06} className="bg-white p-6 overflow-auto w-full h-full">
+            {/* Calendar loading state */}
+            {isCalendarLoading && (
+              <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                  <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
+                ))}
+                {Array.from({ length: 42 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="min-h-[110px] p-2 border-r border-b border-[#e4ebf1] bg-white animate-pulse"
+                  >
+                    <div className="w-5 h-3 bg-slate-100 rounded mb-2" />
+                    <div className="w-full h-4 bg-slate-50 rounded mb-1" />
+                    <div className="w-3/4 h-4 bg-slate-50 rounded" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Calendar error state */}
+            {isCalendarError && !isCalendarLoading && (
+              <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl text-red-400">calendar_month</span>
+                </div>
+                <div>
+                  <div className="text-base font-semibold text-slate-700 mb-1">Couldn't load interviews for this month</div>
+                  <div className="text-sm text-slate-400">The calendar data failed to load. Please try again.</div>
+                </div>
+                <button
+                  className="os-btn-primary !h-9 px-4 text-xs"
+                  onClick={() => refetchCalendar()}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-sm">refresh</span>
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {/* Calendar grid — only shown when data is available */}
+            {!isCalendarLoading && !isCalendarError && (
             <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
                 <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
@@ -1656,6 +1741,7 @@ const InterviewSchedule = () => {
                 );
               })}
             </div>
+            )}
 
             {/* Activity Modal Pop-up */}
             {showActivityModal && selectedCalendarDate && (

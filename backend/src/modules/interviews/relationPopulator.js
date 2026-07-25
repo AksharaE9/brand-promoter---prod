@@ -7,15 +7,70 @@ const ENTITY_PREFIX = 'entity:';
 
 /**
  * Populates relations for a list of interview rounds in ONE operation.
- * 
- * Flow:
+ *
+ * @param {object[]} rounds
+ * @param {object|null} currentUser
+ * @param {object} [opts]
+ * @param {boolean} [opts.listMode=false]  When true, skips ALL DB queries and returns a
+ *   lean shape built purely from denormalized columns already on the interview row.
+ *   Use this for the GET /api/interviews list endpoint to avoid the 4-5 extra DB
+ *   fetches (candidates, jobs, users, feedback, internal reports) that were causing
+ *   OOM crashes at 250 rows on the 512MB Render instance.
+ *
+ * Flow (full mode only):
  *   1. Collect all unique IDs (candidates, jobs, users/panelists)
  *   2. Local l1Cache lookup for all of them
  *   3. Database query for misses only, run in parallel
  *   4. Merge results in memory
  */
-async function populateInterviewRelations(rounds, currentUser = null) {
+async function populateInterviewRelations(rounds, currentUser = null, opts = {}) {
   if (!rounds || rounds.length === 0) return rounds;
+
+  // ─── LIST MODE: no DB queries, use only denormalized columns ───────────────
+  if (opts.listMode) {
+    return rounds.map(round => {
+      // Parse interviewerIds JSON so the frontend can use the array
+      let interviewerIds = [];
+      try {
+        interviewerIds = typeof round.interviewerIds === 'string'
+          ? JSON.parse(round.interviewerIds)
+          : round.interviewerIds;
+      } catch (_) {}
+      if (!Array.isArray(interviewerIds)) interviewerIds = [];
+
+      // Build a minimal panelist list from the comma-separated interviewerNames string
+      // (already stored on the row — no DB join needed)
+      const interviewers = round.interviewerNames
+        ? round.interviewerNames.split(',').map(n => ({ fullName: n.trim() })).filter(p => p.fullName)
+        : [];
+
+      return {
+        ...round,
+        // Lean candidate shape — only what the list sidebar uses
+        candidate: round.candidateName
+          ? { id: round.candidateId, fullName: round.candidateName }
+          : null,
+        // Lean job shape
+        job: round.jobTitle
+          ? { id: round.jobId, title: round.jobTitle }
+          : null,
+        interviewers,
+        interviewerIds,
+        // Explicitly null out heavy fields so they never appear in the list response
+        feedback: [],
+        rescheduleHistory: undefined,
+        transferHistory: undefined,
+        notes: undefined,
+        offerLetterUrl: undefined,
+        voiceRecordingUrl: undefined,
+        voiceRecordingFileId: undefined,
+        // Virtual helpers the frontend may reference
+        _candidateName: round.candidateName || null,
+        _jobTitle: round.jobTitle || null,
+        _panelNames: interviewers.map(u => u.fullName),
+      };
+    });
+  }
 
   // Collect all unique IDs needed across all rounds (resolve from application relation if needed)
   const candidateIds = [...new Set(rounds.map(r => r.candidateId || r.application?.candidateId).filter(Boolean))];

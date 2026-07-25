@@ -1,7 +1,23 @@
 'use strict';
 const prisma = require('../../config/db');
 
-// Only these fields are needed for the interview list view
+/**
+ * LEAN list projection — used ONLY for GET /api/interviews list responses.
+ *
+ * Deliberately excluded (these load via a separate detail endpoint only):
+ *   - feedback           (potentially large JSON blob per row)
+ *   - rescheduleHistory  (history array)
+ *   - transferHistory    (history array)
+ *   - notes              (may contain base64-encoded file data)
+ *   - offerLetterUrl     (URL / large string)
+ *   - voiceRecordingUrl  (URL / large string)
+ *   - voiceRecordingFileId
+ *   - application join   (unnecessary for list; candidateName/jobTitle already denormalized on the row)
+ *
+ * The denormalized columns candidateName, jobTitle, interviewerNames are already
+ * stored directly on the interview row and are sufficient for list-view rendering.
+ * No cross-table joins are needed here.
+ */
 const LIST_SELECT_FIELDS = {
   id: true,
   applicationId: true,
@@ -12,36 +28,14 @@ const LIST_SELECT_FIELDS = {
   roundNo: true,
   round: true,
   scheduledStart: true,
-  durationMinutes: true,
   mode: true,
-  meetingLink: true,
-  zohoLink: true,
   status: true,
   result: true,
-  outcome: true,
-  outcomeSetAt: true,
   organizationId: true,
-  createdById: true,
   interviewerIds: true,
   interviewerNames: true,
-  feedback: true,
-  rescheduleHistory: true,
-  transferHistory: true,
-  offerLetterUrl: true,
-  voiceRecordingFileId: true,
-  voiceRecordingUrl: true,
-  notes: true,
   createdAt: true,
   updatedAt: true,
-  // Select application to resolve candidateId and jobId
-  application: {
-    select: {
-      id: true,
-      candidateId: true,
-      jobId: true,
-      status: true,
-    }
-  }
 };
 
 async function buildInterviewListQuery({
@@ -56,7 +50,12 @@ async function buildInterviewListQuery({
   limit = 20,
   date,
 }) {
-  const lim = Math.min(250, Math.max(1, parseInt(limit) || 20));
+  // Safety cap: 100 rows max per page.
+  // Was 250 before the lean-projection fix — that caused OOM crashes on the 512MB Render instance
+  // because relation population fetched full feedback/candidate/user objects for every row.
+  // Restore to 250 only after confirming the lean projection keeps payloads well under 200KB
+  // via `curl .../api/interviews?limit=250 | wc -c` on a production-like dataset.
+  const lim = Math.min(100, Math.max(1, parseInt(limit) || 20));
 
   // Base query filter
   const where = {
