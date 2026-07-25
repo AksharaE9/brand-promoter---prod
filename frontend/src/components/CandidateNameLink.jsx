@@ -12,7 +12,7 @@ export const CandidateNameLink = React.memo(function CandidateNameLink({
   variant = 'profile', // 'profile' | 'activity' | 'interview'
   onClick,
 }) {
-  if (!candidateId) return <TruncatedText text={candidateName || name || 'Unknown'} />;
+  if (!candidateId) return <TruncatedText text={candidateName || name || 'Deleted Candidate'} />;
 
   // Decide if we should apply the default link color or let the parent color class flow down
   const hasCustomColor = className.includes('text-');

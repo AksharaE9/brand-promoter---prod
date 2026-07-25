@@ -1891,67 +1891,73 @@ const InterviewSchedule = () => {
                                               )}
                                             </div>
 
-                                            <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                                              <button
-                                                className="os-btn-primary !h-8 !px-3 !text-[11px] bg-[#1f52cc] shrink-0"
-                                                onClick={() => {
-                                                  const candId = iv.application?.candidateId || iv.candidateId;
-                                                  const candName = iv.application?.candidate?.fullName || iv.candidateName || '';
-                                                  const jobId = iv.application?.jobId || iv.application?.job?.id || iv.jobId || '';
-                                                  const jobTitle = iv.application?.job?.title || iv.jobTitle || '';
-                                                  
-                                                  // Find all interviews for this candidate to calculate the next round number
-                                                  const candInterviews = allInterviews.filter(
-                                                    x => (x.application?.candidateId || x.candidateId) === candId
-                                                  );
-                                                  const nextRound = candInterviews.length + 1;
+                                            {(() => {
+                                              const candId = iv.application?.candidateId || iv.candidateId;
+                                              if (!candId) return null; // Hide actions for deleted/orphaned candidates
+                                              
+                                              return (
+                                                <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                                                  <button
+                                                    className="os-btn-primary !h-8 !px-3 !text-[11px] bg-[#1f52cc] shrink-0"
+                                                    onClick={() => {
+                                                      const candName = iv.application?.candidate?.fullName || iv.candidateName || '';
+                                                      const jobId = iv.application?.jobId || iv.application?.job?.id || iv.jobId || '';
+                                                      const jobTitle = iv.application?.job?.title || iv.jobTitle || '';
+                                                      
+                                                      // Find all interviews for this candidate to calculate the next round number
+                                                      const candInterviews = allInterviews.filter(
+                                                        x => (x.application?.candidateId || x.candidateId) === candId
+                                                      );
+                                                      const nextRound = candInterviews.length + 1;
 
-                                                  // Format the selected calendar date to local ISO (YYYY-MM-DDT09:00)
-                                                  let dateStr = '';
-                                                  if (selectedCalendarDate) {
-                                                    const yyyy = selectedCalendarDate.getFullYear();
-                                                    const mm = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
-                                                    const dd = String(selectedCalendarDate.getDate()).padStart(2, '0');
-                                                    dateStr = `${yyyy}-${mm}-${dd}T09:00`;
-                                                  }
+                                                      // Format the selected calendar date to local ISO (YYYY-MM-DDT09:00)
+                                                      let dateStr = '';
+                                                      if (selectedCalendarDate) {
+                                                        const yyyy = selectedCalendarDate.getFullYear();
+                                                        const mm = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
+                                                        const dd = String(selectedCalendarDate.getDate()).padStart(2, '0');
+                                                        dateStr = `${yyyy}-${mm}-${dd}T09:00`;
+                                                      }
 
-                                                  setScheduleForm({
-                                                    ...emptyScheduleForm,
-                                                    candidateId: candId,
-                                                    jobId: jobId,
-                                                    roundNo: nextRound,
-                                                    round: `Round ${nextRound}`,
-                                                    scheduledStart: dateStr
-                                                  });
+                                                      setScheduleForm({
+                                                        ...emptyScheduleForm,
+                                                        candidateId: candId,
+                                                        jobId: jobId,
+                                                        roundNo: nextRound,
+                                                        round: `Round ${nextRound}`,
+                                                        scheduledStart: dateStr
+                                                      });
 
-                                                  setCandidateSearch(candName);
-                                                  setJobSearch(jobTitle);
-                                                  
-                                                  // Select candidate and view List view
-                                                  setSelectedId(candId);
-                                                  setViewMode('list');
-                                                  setShowActivityModal(false);
-                                                  setShowScheduleModal(true);
-                                                }}
-                                              >
-                                                Schedule Next
-                                              </button>
-                                              <button
-                                                className="os-btn-outline !h-8 !px-3 !text-[11px] border-blue-500 text-blue-600 hover:bg-blue-50 shrink-0"
-                                                onClick={() => {
-                                                  setTransferringInterview(iv);
-                                                  setShowTransferModal(true);
-                                                }}
-                                              >
-                                                Keep a Transfer Panellist
-                                              </button>
-                                              <button
-                                                className="os-btn-outline !h-8 !px-3 !text-[11px] shrink-0"
-                                                onClick={() => navigate(`/candidates/${iv.application?.candidateId || iv.candidateId}`)}
-                                              >
-                                                Profile
-                                              </button>
-                                            </div>
+                                                      setCandidateSearch(candName);
+                                                      setJobSearch(jobTitle);
+                                                      
+                                                      // Select candidate and view List view
+                                                      setSelectedId(candId);
+                                                      setViewMode('list');
+                                                      setShowActivityModal(false);
+                                                      setShowScheduleModal(true);
+                                                    }}
+                                                  >
+                                                    Schedule Next
+                                                  </button>
+                                                  <button
+                                                    className="os-btn-outline !h-8 !px-3 !text-[11px] border-blue-500 text-blue-600 hover:bg-blue-50 shrink-0"
+                                                    onClick={() => {
+                                                      setTransferringInterview(iv);
+                                                      setShowTransferModal(true);
+                                                    }}
+                                                  >
+                                                    Keep a Transfer Panellist
+                                                  </button>
+                                                  <button
+                                                    className="os-btn-outline !h-8 !px-3 !text-[11px] shrink-0"
+                                                    onClick={() => navigate(`/candidates/${candId}`)}
+                                                  >
+                                                    Profile
+                                                  </button>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         </div>
                                       );
