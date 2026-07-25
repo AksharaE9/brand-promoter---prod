@@ -185,11 +185,18 @@ async function getRoundsList(orgId, filters = {}) {
 
   try {
     // ─── Build base WHERE for interviews ─────────────────────────────────────
-    const where = { organizationId: orgId };
+    const where = { 
+      organizationId: orgId,
+      candidateId: { not: null }
+    };
 
     if (filters.status) where.status = filters.status;
 
-    const applicationWhere = {};
+    const applicationWhere = {
+      candidate: {
+        isDeleted: false
+      }
+    };
     if (filters.candidateId)   applicationWhere.candidateId = filters.candidateId;
     if (filters.jobId)         applicationWhere.jobId = filters.jobId;
 
@@ -200,7 +207,7 @@ async function getRoundsList(orgId, filters = {}) {
         { job:       { title:    { contains: q, mode: 'insensitive' } } },
       ];
     }
-    if (Object.keys(applicationWhere).length > 0) where.application = applicationWhere;
+    where.application = applicationWhere;
     if (filters.interviewerId)  where.interviewerIds = { array_contains: filters.interviewerId };
 
     // ─── When fetching for a specific candidate/application, return all rounds ─
