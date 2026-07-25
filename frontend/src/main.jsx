@@ -51,8 +51,15 @@ const queryClient = new QueryClient({
       staleTime: 2 * 60 * 1000,
       // 15 minutes: keep data in memory after component unmounts
       gcTime: 15 * 60 * 1000,
-      retry: 1,                        // retry once on failure
-      retryDelay: 1000,
+      retry: (failureCount, error) => {
+        // Never retry 4xx errors - they're deterministic failures, not transient.
+        if (error && error.status >= 400 && error.status < 500) {
+          return false;
+        }
+        // Retry other errors (network blips, 5xx) up to 2 times.
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
       refetchOnWindowFocus: false,      // do not refetch on window focus
       refetchOnReconnect: 'always',
       // 'always' but staleTime=2min means: show cached + revalidate in background

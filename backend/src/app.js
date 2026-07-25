@@ -36,8 +36,9 @@ const { notFound, errorHandler } = require('./middleware/error-handler');
 const { setSecurityHeaders }     = require('./middleware/security');
 const { timingMiddleware }        = require('./middleware/timing');
 const dedupMiddleware             = require('./middleware/deduplication');
-const cc                         = require('./middleware/cacheHeaders');
-const { authLimiter, apiLimiter, analyticsLimiter, uploadLimiter } = require('./middleware/rateLimiter');
+const { authLimiter, apiLimiter, analyticsLimiter, uploadLimiter, globalLimiter, heavyEndpointLimiter } = require('./middleware/rateLimiter');
+const responseSizeLogger = require('./middleware/responseSizeLogger');
+const cc = require('./middleware/cacheHeaders');
 const pushHints = require('./middleware/pushHints');
 
 const app = express();
@@ -100,6 +101,13 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), { maxAge: '1d' }));
 
+const { concurrencyLimiter } = require('./middleware/concurrencyLimiter');
+
+// ── Global Middleware for all /api routes ──────────────────────────────────
+app.use('/api', globalLimiter);
+app.use('/api', responseSizeLogger);
+app.use('/api', concurrencyLimiter);
+
 // ── Health endpoints ──────────────────────────────────────────────────────
 const prisma = require('./config/db');
 
@@ -137,10 +145,14 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
   res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
 });
 
-const { concurrencyLimiter } = require('./middleware/concurrencyLimiter');
-
 // ── Routes ────────────────────────────────────────────────────────────────
-app.use('/api', concurrencyLimiter);
+
+// Heavy endpoints rate limiters (applied first)
+app.use('/api/candidates/bulk-upload', heavyEndpointLimiter);
+app.use('/api/interviews/bulk-upload', heavyEndpointLimiter);
+app.use('/api/interview-feedback/bulk-upload', heavyEndpointLimiter);
+app.use('/api/reports', heavyEndpointLimiter);
+
 app.use('/api/auth', authLimiter, authRoutes);
 
 app.use('/api/users', apiLimiter, cc(120), userRoutes);

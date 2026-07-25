@@ -802,12 +802,9 @@ const InterviewSchedule = () => {
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
 
-  // ── Search: re-fetch from server ONLY when there is an active query ──
-  // Using `enabled: false` equivalent — only pass filters when debouncedSearch exists.
-  // This prevents a second /interviews request on every render when idle.
   const { data: searchResponse, isFetching: isSearching, error: searchError, refetch: refetchSearch } = useRoundsList(
     debouncedSearch
-      ? { search: debouncedSearch, limit: 10000, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
+      ? { search: debouncedSearch, limit: 100, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
       : null  // null → hook is disabled (handled in useRoundsList)
   );
 

@@ -13,6 +13,7 @@ export default function LeadListImportModal({ isOpen, onClose, member, selectedD
   if (!isOpen || !member) return null;
 
   const handleFileChange = (e) => {
+    if (uploading) return;
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       if (selectedFile.size > MAX_UPLOAD_BYTES) {
@@ -111,7 +112,8 @@ export default function LeadListImportModal({ isOpen, onClose, member, selectedD
                 type="file"
                 accept=".csv, .xlsx, .xls"
                 onChange={handleFileChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                disabled={uploading}
+                className={`absolute inset-0 w-full h-full opacity-0 ${uploading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               />
               <span className="material-symbols-outlined text-3xl text-slate-400">upload_file</span>
               <p className="text-xs font-bold text-slate-700 mt-1">

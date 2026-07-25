@@ -29,6 +29,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
   };
 
   const handleFileSelect = (e) => {
+    if (isUploading) return;
     const selectedFile = e.dataTransfer?.files[0] || e.target?.files[0];
     if (!selectedFile) return;
 

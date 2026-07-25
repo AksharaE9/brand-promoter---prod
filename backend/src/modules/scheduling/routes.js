@@ -109,6 +109,7 @@ const parseQueryBody = (req, res, next) => {
 };
 
 const executeLeadsSearch = async (listIds, q, cursor, limit, res) => {
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
   const listIdInList = listIds.map(id => `'${id}'`).join(',');
   let sql = `SELECT id, "leadData" FROM scheduling_leads WHERE "listId" IN (${listIdInList})`;
   const params = [];
@@ -121,10 +122,10 @@ const executeLeadsSearch = async (listIds, q, cursor, limit, res) => {
     params.push(cursor);
   }
   sql += ` ORDER BY id ASC LIMIT $${params.length + 1}`;
-  params.push(limit + 1);
+  params.push(safeLimit + 1);
 
   const items = await prisma.$queryRawUnsafe(sql, ...params);
-  const hasMore = items.length > limit;
+  const hasMore = items.length > safeLimit;
   if (hasMore) {
     items.pop();
   }
@@ -596,7 +597,7 @@ router.get(
       where: { memberId: targetMemberId, listDate: targetDate },
       include: {
         member: { select: { id: true, name: true, active: true } },
-        leads: { select: { id: true, leadData: true } },
+        leads: { select: { id: true, leadData: true }, take: 100 },
       },
     });
 

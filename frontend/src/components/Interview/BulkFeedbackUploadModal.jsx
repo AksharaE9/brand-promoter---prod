@@ -23,6 +23,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
   if (!isOpen) return null;
 
   const handleFileChange = (e) => {
+    if (uploading) return;
     const selected = e.target.files?.[0];
     if (selected) {
       if (selected.size > MAX_UPLOAD_BYTES) {
@@ -37,6 +38,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
 
   const handleDrop = (e) => {
     e.preventDefault();
+    if (uploading) return;
     const dropped = e.dataTransfer.files?.[0];
     if (dropped) {
       if (dropped.size > MAX_UPLOAD_BYTES) {
@@ -189,7 +191,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => !uploading && fileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
                   file ? 'border-[#1f52cc] bg-blue-50/30' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
                 }`}
