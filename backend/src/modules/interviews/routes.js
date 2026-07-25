@@ -345,7 +345,17 @@ router.get(
       take: takeLimit
     };
 
-    const docs = await prisma.interview.findMany(dbQueryParams);
+    // ── 2b. Run list query AND total COUNT in parallel ──
+    // COUNT returns a single integer — no rows fetched, safe for byte-size limit.
+    // Only run totalCount on page 1 (no cursor) to avoid the extra DB round-trip
+    // on every subsequent page; consumers read totalCount from page 1 only.
+    const isFirstPage = !req.query.cursor;
+    const [docs, totalCount] = await Promise.all([
+      prisma.interview.findMany(dbQueryParams),
+      isFirstPage
+        ? prisma.interview.count({ where: queryParams.where })
+        : Promise.resolve(null),
+    ]);
 
     // Determine hasMore
     const hasMore = docs.length > limit;
@@ -365,11 +375,14 @@ router.get(
     const populated = await populateInterviewRelations(withDirty, req.user, { listMode: true });
 
     // ── 5. Build response ──
+    // totalCount: real DB COUNT(*) from page 1; null on subsequent pages (consumers
+    // read it once from page 1 and cache it — see usePaginatedList usage in frontend).
     const responseData = {
       data:       populated,
       nextCursor,
       hasMore,
-      pagination: { total: populated.length, hasMore }
+      ...(totalCount !== null ? { totalCount } : {}),
+      pagination: { total: totalCount ?? populated.length, hasMore }
     };
 
     // ── 6. Enforce hard byte-size cap BEFORE sending or caching ──

@@ -15,6 +15,12 @@ async function fetchDashboardData(orgId) {
   // Fetch pipeline stages
   const stages = await prisma.pipelineStage.findMany();
 
+  // Compute today's UTC midnight boundaries for interview count
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const startOfToday = new Date(`${todayStr}T00:00:00.000Z`);
+  const endOfToday   = new Date(`${todayStr}T23:59:59.999Z`);
+
   // Run all counts/lookups in parallel
   const [
     candidateCount,
@@ -23,6 +29,7 @@ async function fetchDashboardData(orgId) {
     totalApps,
     recentApplications,
     upcomingInterviews,
+    interviewsTodayCount,
     statusGroups,
     stageCountsRaw
   ] = await Promise.all([
@@ -40,9 +47,18 @@ async function fetchDashboardData(orgId) {
       },
     }),
     prisma.interview.findMany({
-      where: { organizationId: orgId, scheduledStart: { gte: new Date() } },
+      where: { organizationId: orgId, scheduledStart: { gte: now } },
       orderBy: { scheduledStart: "asc" },
-      take: 10,
+      take: 10, // Bounded for upcoming interviews feed (not used for the count metric)
+    }),
+    // Real COUNT(*) for today's interviews — accurate regardless of how many there are.
+    // Previously computed as upcomingInterviews.filter(today).length which was capped at 10.
+    prisma.interview.count({
+      where: {
+        organizationId: orgId,
+        scheduledStart: { gte: startOfToday, lte: endOfToday },
+        status: { not: 'CANCELLED' },
+      },
     }),
     prisma.application.groupBy({
       by: ["status"],
@@ -116,6 +132,7 @@ async function fetchDashboardData(orgId) {
     },
     recentApplications,
     upcomingInterviews,
+    interviewsTodayCount,  // real COUNT(*) — replaces the capped filter on frontend
   };
 }
 

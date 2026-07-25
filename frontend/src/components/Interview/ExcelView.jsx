@@ -647,6 +647,7 @@ export default function ExcelView({
   onLoadMore,
   hasMore = false,
   loadingMore = false,
+  totalCount = null,  // real DB COUNT(*) from backend — null until page 1 loads
 }) {
   const containerRef = useRef(null);
 
@@ -1205,8 +1206,9 @@ export default function ExcelView({
           Showing{' '}
           <strong style={{ color: '#1f52cc' }}>{filteredRows.length}</strong>
           {' '}of{' '}
-          <strong>{interviews.length}</strong>{' '}
-          interview{interviews.length !== 1 ? 's' : ''}
+          {/* Use real DB totalCount when available; fall back to loaded interviews.length */}
+          <strong>{(totalCount ?? interviews.length).toLocaleString()}</strong>{' '}
+          interview{(totalCount ?? interviews.length) !== 1 ? 's' : ''}
           {viewDate && (
             <span style={{ marginLeft: 6, color: '#94a3b8' }}>
               for {viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })}

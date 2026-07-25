@@ -121,14 +121,19 @@ const Dashboard = () => {
     return unsub;
   }, [queryClient]);
 
-  // Metrics computed from state
+  // interviewsTodayCount: real COUNT(*) from backend (not filtered from a capped 10-row array).
+  // Falls back to the old client-side filter if the backend hasn't returned interviewsTodayCount yet.
   const interviewsToday = useMemo(() => {
+    if (typeof dashData?.interviewsTodayCount === 'number') {
+      return dashData.interviewsTodayCount;
+    }
+    // Legacy fallback: count today's interviews from the capped 10-row feed
     const todayStr = new Date().toDateString();
     return upcomingInterviews.filter(iv => {
       const d = iv.scheduledStart ? new Date(iv.scheduledStart) : null;
       return d && d.toDateString() === todayStr;
     }).length;
-  }, [upcomingInterviews]);
+  }, [dashData?.interviewsTodayCount, upcomingInterviews]);
 
   const offerPending = useMemo(
     () => recentApplications.filter(a => a.status === 'OFFER_SENT' || a.status === 'SELECTED').length,

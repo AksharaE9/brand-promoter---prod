@@ -439,6 +439,11 @@ const InterviewSchedule = () => {
   const serverHasMore = hasNextPage;
   const loadingMore = isFetchingNextPage;
 
+  // totalCount: real DB COUNT(*) returned by the backend on page 1.
+  // Available immediately when page 1 loads — no need to wait for all pages.
+  // Falls back to null while loading (sidebar shows nothing until first page arrives).
+  const totalCount = infiniteData?.pages?.[0]?.totalCount ?? null;
+
   // Synchronize infinite query data to allInterviews local state
   useEffect(() => {
     if (infiniteData?.pages) {
@@ -1550,13 +1555,19 @@ const InterviewSchedule = () => {
               </div>
             </div>
             {/* Member count indicator */}
-            {groupedApplications.length > 0 && (
-              <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium">
-                {debouncedSearch
-                  ? `${groupedApplications.length} result${groupedApplications.length !== 1 ? 's' : ''} for "${debouncedSearch}"`
-                  : `${groupedApplications.length} member${groupedApplications.length !== 1 ? 's' : ''}`
-                }
-              </div>
+            {/* Member count indicator — uses real DB totalCount from page 1, not in-memory array length */}
+            {debouncedSearch ? (
+              groupedApplications.length > 0 && (
+                <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium">
+                  {groupedApplications.length} result{groupedApplications.length !== 1 ? 's' : ''} for &ldquo;{debouncedSearch}&rdquo;
+                </div>
+              )
+            ) : (
+              totalCount !== null && (
+                <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium">
+                  {totalCount.toLocaleString()} member{totalCount !== 1 ? 's' : ''}
+                </div>
+              )
             )}
             {visibleGroups.map((group) => {
               const candidate = group.application?.candidate;
@@ -1664,6 +1675,7 @@ const InterviewSchedule = () => {
                   onLoadMore={loadMoreInterviews}
                   hasMore={serverHasMore}
                   loadingMore={loadingMore}
+                  totalCount={totalCount}
                 />
               </React.Suspense>
             )}

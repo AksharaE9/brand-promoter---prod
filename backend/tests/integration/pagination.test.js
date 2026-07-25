@@ -104,3 +104,99 @@ test('Interviews list pagination returns nextCursor when limit is smaller than t
     await prisma.candidate.delete({ where: { id: candidate.id } });
   }
 });
+
+describe('Consolidated Pagination and Count Sync Regression Tests', () => {
+  test('interview list pagination retrieves the full dataset matching DB truth and totalCount matches', async () => {
+    const { prisma } = require('../setup/db');
+    const orgId = FIXTURE.ORG_ID;
+
+    // DB count of active interviews for this organization (matches the query builder logic)
+    const dbCount = await prisma.interview.count({
+      where: {
+        organizationId: orgId,
+        candidateId: { not: null },
+        application: {
+          candidate: {
+            isDeleted: false
+          }
+        }
+      }
+    });
+
+    let allRows = [];
+    let cursor = null;
+    let totalCountFromPage1 = null;
+
+    do {
+      const url = cursor
+        ? `/api/interviews?limit=5&cursor=${cursor}`
+        : `/api/interviews?limit=5`;
+
+      const res = await request(app)
+        .get(url)
+        .set('Authorization', `Bearer ${hrToken}`)
+        .expect(200);
+
+      if (cursor === null) {
+        totalCountFromPage1 = res.body.totalCount;
+      }
+
+      allRows = allRows.concat(res.body.data);
+      cursor = res.body.hasMore ? res.body.nextCursor : null;
+    } while (cursor);
+
+    // Verify all traversed rows match DB total count
+    expect(allRows.length).toBe(dbCount);
+    // Verify first page returned the correct totalCount
+    expect(totalCountFromPage1).toBe(dbCount);
+  });
+
+  test('candidate list pagination retrieves the full dataset matching DB truth and total matches', async () => {
+    const { prisma } = require('../setup/db');
+    const orgId = FIXTURE.ORG_ID;
+
+    const dbCount = await prisma.candidate.count({
+      where: { organizationId: orgId, isDeleted: false }
+    });
+
+    let allRows = [];
+    let cursor = null;
+    let totalFromPage1 = null;
+
+    do {
+      const url = cursor
+        ? `/api/candidates?limit=5&cursor=${cursor}`
+        : `/api/candidates?limit=5`;
+
+      const res = await request(app)
+        .get(url)
+        .set('Authorization', `Bearer ${hrToken}`)
+        .expect(200);
+
+      if (cursor === null) {
+        totalFromPage1 = res.body.pagination?.total;
+      }
+
+      allRows = allRows.concat(res.body.rows || res.body.data);
+      cursor = res.body.hasMore ? res.body.nextCursor : null;
+    } while (cursor);
+
+    expect(allRows.length).toBe(dbCount);
+    expect(totalFromPage1).toBe(dbCount);
+  });
+
+  test('scheduling members list matches DB truth', async () => {
+    const { prisma } = require('../setup/db');
+
+    const dbCount = await prisma.schedulingMember.count();
+
+    const res = await request(app)
+      .get('/api/scheduling/members')
+      .set('Authorization', `Bearer ${hrToken}`)
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.length).toBe(dbCount);
+  });
+});
+
