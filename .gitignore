@@ -29,3 +29,6 @@ tmp/
 # Scratch scripts
 backend/scratch/
 
+# Uploaded files, reports, and temp assets
+backend/uploads/
+frontend/stats.html
