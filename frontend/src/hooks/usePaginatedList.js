@@ -45,17 +45,14 @@ export function usePaginatedList(endpoint, options = {}) {
     gcTime: 300000,
   });
 
-  const { hasNextPage, isFetchingNextPage, fetchNextPage, isLoading } = queryResult;
+  const { hasNextPage, isFetching, fetchNextPage, isLoading } = queryResult;
 
   // Background progressive prefetching of subsequent chunks to load full dataset smoothly
   useEffect(() => {
-    if (enabled && hasNextPage && !isFetchingNextPage && !isLoading) {
-      const timer = setTimeout(() => {
-        fetchNextPage();
-      }, 1000);
-      return () => clearTimeout(timer);
+    if (enabled && hasNextPage && !isFetching && !isLoading) {
+      fetchNextPage();
     }
-  }, [enabled, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
+  }, [enabled, hasNextPage, isFetching, isLoading, fetchNextPage]);
 
   return queryResult;
 }
