@@ -3,12 +3,13 @@
 /**
  * Response size enforcement middleware.
  *
- * For list/array endpoints (/interviews, /candidates, /audit-logs, /scheduling):
- *   - Hard blocks responses exceeding MAX_RESPONSE_BYTES (500KB) by replacing the
- *     response with a 500 diagnostic. This is a secondary safety net independent of
- *     the per-endpoint page-size caps.
- *   - The loud failure (500 + diagnostic message) is intentional — it surfaces the
- *     problem immediately rather than silently building memory pressure until OOM.
+ * For list/array endpoints (/interviews list only — NOT calendar):
+ *   - Hard blocks responses where body.data is an array AND the response
+ *     exceeds MAX_LIST_RESPONSE_BYTES (500KB). This is secondary defense against
+ *     fat-payload bugs reintroducing themselves.
+ *   - EXCEPTION: calendar view (?view=calendar) fetches all interviews in a
+ *     date range — no row limit is applied, so a larger payload is expected.
+ *     Calendar responses are checked against a separate 2MB ceiling.
  *
  * For all other endpoints:
  *   - Logs a warning when the response exceeds 1MB (passive monitoring only).
@@ -20,10 +21,11 @@
  *   class of bug independently of row count.
  */
 
-const MAX_RESPONSE_BYTES = 500 * 1024; // 500 KB — hard cap for list endpoints
-const WARN_RESPONSE_BYTES = 1024 * 1024; // 1 MB — warn threshold for other endpoints
+const MAX_LIST_RESPONSE_BYTES    = 500 * 1024;   // 500 KB — paginated list endpoint cap
+const MAX_CALENDAR_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MB  — calendar fetches entire date range
+const WARN_RESPONSE_BYTES         = 1024 * 1024;  // 1 MB  — warn threshold for non-list endpoints
 
-const LIST_ENDPOINT_PATTERNS = [
+const LIST_ENDPOINT_PREFIXES = [
   '/api/interviews',
   '/api/candidates',
   '/api/audit-logs',
@@ -31,7 +33,7 @@ const LIST_ENDPOINT_PATTERNS = [
 ];
 
 function isListEndpoint(path) {
-  return LIST_ENDPOINT_PATTERNS.some(prefix => path.startsWith(prefix));
+  return LIST_ENDPOINT_PREFIXES.some(prefix => path.startsWith(prefix));
 }
 
 module.exports = (req, res, next) => {
@@ -43,30 +45,35 @@ module.exports = (req, res, next) => {
         const jsonString = JSON.stringify(body);
         const sizeBytes = jsonString.length;
         const path = req.originalUrl.split('?')[0];
+        const isCalendar = req.query?.view === 'calendar';
 
-        if (isListEndpoint(path) && Array.isArray(body?.data) && sizeBytes > MAX_RESPONSE_BYTES) {
-          // Hard enforcement: replace response with diagnostic 500
-          const kb = Math.round(sizeBytes / 1024);
-          const capKb = Math.round(MAX_RESPONSE_BYTES / 1024);
-          console.error(
-            `[RESPONSE_SIZE_CAP] BLOCKED ${req.method} ${req.originalUrl} — ` +
-            `${kb}KB exceeds ${capKb}KB cap. ` +
-            `data.length=${body.data.length} rows. ` +
-            `This indicates a fat-payload bug — check projection and page size.`
-          );
-          // Reset status and replace body with diagnostic
-          res.status(500);
-          return originalJson.call(this, {
-            success: false,
-            error: `Response payload (${kb}KB) exceeds the ${capKb}KB safety limit. ` +
-              `The query returned unexpectedly large rows — reduce page size or trim the projection.`,
-            _diagnostic: {
-              sizeKb: kb,
-              capKb,
-              rows: body.data.length,
-              endpoint: req.originalUrl,
-            },
-          });
+        if (isListEndpoint(path) && Array.isArray(body?.data)) {
+          const capBytes = isCalendar ? MAX_CALENDAR_RESPONSE_BYTES : MAX_LIST_RESPONSE_BYTES;
+
+          if (sizeBytes > capBytes) {
+            const kb  = Math.round(sizeBytes / 1024);
+            const capKb = Math.round(capBytes / 1024);
+            console.error(
+              `[RESPONSE_SIZE_CAP] BLOCKED ${req.method} ${req.originalUrl} — ` +
+              `${kb}KB exceeds ${capKb}KB cap. ` +
+              `data.length=${body.data.length} rows. ` +
+              `isCalendar=${isCalendar}. ` +
+              `This indicates a fat-payload bug — check projection and page size.`
+            );
+            res.status(500);
+            return originalJson.call(this, {
+              success: false,
+              error: `Response payload (${kb}KB) exceeds the ${capKb}KB safety limit. ` +
+                `The query returned unexpectedly large rows — reduce page size or trim the projection.`,
+              _diagnostic: {
+                sizeKb: kb,
+                capKb,
+                rows: body.data.length,
+                endpoint: req.originalUrl,
+                isCalendar,
+              },
+            });
+          }
         }
 
         if (sizeBytes > WARN_RESPONSE_BYTES) {

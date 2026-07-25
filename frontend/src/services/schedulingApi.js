@@ -25,7 +25,9 @@ export const schedulingApi = {
         params.append(key, val);
       }
     });
-    if (!params.has('limit')) params.set('limit', '20'); // default 20 per page for fast initial load
+    // Note: do NOT add a default limit here. The calendar view (view=calendar)
+    // fetches all interviews in the date range and does not use limit.
+    // The list endpoint (usePaginatedList) always supplies an explicit limit.
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await api.get(`/interviews${qs}`, { signal });
     return res.data;

@@ -345,7 +345,6 @@ router.get(
       take: takeLimit
     };
 
-    const prisma = require('../../config/db');
     const docs = await prisma.interview.findMany(dbQueryParams);
 
     // Determine hasMore
