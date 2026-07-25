@@ -410,6 +410,11 @@ const InterviewSchedule = () => {
   const shouldSubmitFeedback = searchParams.get('submitFeedback') === 'true';
   const [activeInterviewId, setActiveInterviewId] = useState('');
 
+  // Search: raw typed value (not yet debounced)
+  const [interviewListSearch, setInterviewListSearch] = useState('');
+  // Debounced version sent to the backend
+  const debouncedSearch = useDebounce(interviewListSearch, 300);
+
   const [allInterviews, setAllInterviews] = useState([]);  // accumulates pages
 
   const roundsFilters = useMemo(() => ({
@@ -518,10 +523,6 @@ const InterviewSchedule = () => {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [calendarData, setCalendarData] = useState(() => new Map());
-  // Search: raw typed value (not yet debounced)
-  const [interviewListSearch, setInterviewListSearch] = useState('');
-  // Debounced version sent to the backend
-  const debouncedSearch = useDebounce(interviewListSearch, 300);
   const [jobSearch, setJobSearch] = useState('');
   const [candidateSearch, setCandidateSearch] = useState('');
   const [interviewerSearch, setInterviewerSearch] = useState('');
