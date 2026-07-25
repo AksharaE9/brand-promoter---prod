@@ -288,9 +288,8 @@ router.get(
       return res.json({ success: true, data: formatted });
     }
 
-    // ── 1. Cache check (target: < 10ms on hit) ──
     const cacheKey = buildCacheKey(orgId, { ...req.query, interviewerId });
-    const cached   = await getCache(cacheKey);
+    const cached   = req.query.search?.trim() ? null : await getCache(cacheKey);
 
     if (cached) {
       res.setHeader('X-Cache', 'HIT');

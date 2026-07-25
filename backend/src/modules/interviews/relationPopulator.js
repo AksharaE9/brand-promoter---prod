@@ -129,6 +129,58 @@ async function populateInterviewRelations(rounds, currentUser = null) {
     );
   }
 
+  // Batch fetch feedbacks for the candidates in this list
+  let feedbacksList = [];
+  if (candidateIds.length > 0) {
+    dbFetches.push(
+      prisma.interviewFeedback.findMany({
+        where: { candidateId: { in: candidateIds } },
+        include: {
+          submittedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              role: true,
+            }
+          }
+        }
+      }).then(docs => {
+        feedbacksList = docs;
+      })
+    );
+  }
+
+  // Fetch candidate internal reports for super admin
+  let internalReportsMap = {};
+  if (currentUser?.role === 'SUPER_ADMIN' && candidateIds.length > 0) {
+    dbFetches.push(
+      prisma.candidateInternalReport.findMany({
+        where: { candidateId: { in: candidateIds } },
+        include: {
+          submittedBy: {
+            select: { fullName: true }
+          }
+        },
+        orderBy: { submittedAt: 'desc' }
+      }).then(reportsList => {
+        reportsList.forEach(r => {
+          if (!internalReportsMap[r.candidateId]) {
+            internalReportsMap[r.candidateId] = [];
+          }
+          internalReportsMap[r.candidateId].push({
+            id: r.id,
+            content: r.content,
+            submittedAt: r.submittedAt,
+            submittedBy: r.submittedBy?.fullName || 'Unknown User'
+          });
+        });
+      }).catch(err => {
+        console.error('[relationPopulator] Failed to fetch internal reports:', err.message);
+      })
+    );
+  }
+
   // ALL DB fetches run in parallel
   if (dbFetches.length > 0) {
     await Promise.all(dbFetches);
@@ -144,54 +196,6 @@ async function populateInterviewRelations(rounds, currentUser = null) {
   missingPanel.forEach(id => {
     if (userMap[id]) l1.set(`${ENTITY_PREFIX}users:${id}`, userMap[id], ENTITY_TTL);
   });
-
-  // Batch fetch feedbacks for the candidates in this list
-  let feedbacksList = [];
-  if (candidateIds.length > 0) {
-    feedbacksList = await prisma.interviewFeedback.findMany({
-      where: { candidateId: { in: candidateIds } },
-      include: {
-        submittedBy: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-            role: true,
-          }
-        }
-      }
-    });
-  }
-
-  // Fetch candidate internal reports for super admin
-  let internalReportsMap = {};
-  if (currentUser?.role === 'SUPER_ADMIN' && candidateIds.length > 0) {
-    try {
-      const reportsList = await prisma.candidateInternalReport.findMany({
-        where: { candidateId: { in: candidateIds } },
-        include: {
-          submittedBy: {
-            select: { fullName: true }
-          }
-        },
-        orderBy: { submittedAt: 'desc' }
-      });
-      // Group by candidateId
-      reportsList.forEach(r => {
-        if (!internalReportsMap[r.candidateId]) {
-          internalReportsMap[r.candidateId] = [];
-        }
-        internalReportsMap[r.candidateId].push({
-          id: r.id,
-          content: r.content,
-          submittedAt: r.submittedAt,
-          submittedBy: r.submittedBy?.fullName || 'Unknown User'
-        });
-      });
-    } catch (err) {
-      console.error('[relationPopulator] Failed to fetch internal reports:', err.message);
-    }
-  }
 
   // Merge relations into rounds to keep backwards compatibility with frontend expectation
   return rounds.map(round => {

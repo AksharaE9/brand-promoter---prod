@@ -439,6 +439,8 @@ const InterviewSchedule = () => {
     if (infiniteData?.pages) {
       const flattened = infiniteData.pages.flatMap(page => page.data || page.rows || []);
       setAllInterviews(flattened);
+    } else {
+      setAllInterviews([]);
     }
   }, [infiniteData]);
   const loading = isQueryLoading;

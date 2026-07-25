@@ -11,6 +11,7 @@ import api from '../services/api';
  */
 export function usePaginatedList(endpoint, options = {}) {
   const { pageSize, filters = {}, queryKey, enabled = true } = options;
+  const isSearchActive = !!(filters.search || filters.q);
 
   return useInfiniteQuery({
     queryKey: [...queryKey, filters],
@@ -39,5 +40,7 @@ export function usePaginatedList(endpoint, options = {}) {
     },
     initialPageParam: null,
     enabled,
+    staleTime: isSearchActive ? 0 : 10000,
+    gcTime: 300000,
   });
 }

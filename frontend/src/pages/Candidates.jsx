@@ -358,6 +358,8 @@ const Candidates = () => {
       // Also sync totalCount for the count rendering
       const firstPage = infiniteData.pages[0];
       setTotalCount(firstPage?.pagination?.total || flattened.length);
+    } else {
+      setItems([]);
     }
   }, [infiniteData]);
 
@@ -411,10 +413,6 @@ const Candidates = () => {
   useEffect(() => {
     setRoleFilter('All');
     setLocationFilter('All');
-    // Immediately clear items so old section data never shows
-    setItems([]);
-    setNextCursor(null);
-    setHasMore(false);
     // Scroll back to top of the content container
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;

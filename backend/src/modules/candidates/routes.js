@@ -676,7 +676,7 @@ router.get(
 
     const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}`;
 
-    const data = await getCached(cacheKeyStr, async () => {
+    const fetchCandidatesFromDb = async () => {
       const andConditions = [
         { organizationId: orgId },
         { isDeleted: false }
@@ -778,7 +778,14 @@ router.get(
         : null;
 
       return { items, nextCursor, hasMore, total };
-    }, 20000); // 20s cache
+    };
+
+    let data;
+    if (search) {
+      data = await fetchCandidatesFromDb();
+    } else {
+      data = await getCached(cacheKeyStr, fetchCandidatesFromDb, 20000);
+    }
 
 
     const pagination = {
