@@ -16,7 +16,11 @@ const formatLog = (log) => {
                       data.flow_type === 'feedback' ? 'feedbacks' :
                       data.flow_type === 'interview_schedule' ? 'interviews' :
                       data.flow_type === 'lead_list' ? 'leads' : 'records';
-    description = `${actorName} bulk-uploaded ${data.total_rows || 0} ${flowLabel} on ${dateStr} (${data.created || 0} created, ${data.duplicates || 0} duplicates, ${data.errors || 0} errors)`;
+    if (data.total_rows !== undefined) {
+      description = `${actorName} bulk-uploaded ${data.total_rows || 0} ${flowLabel} on ${dateStr} (${data.created || 0} created, ${data.duplicates || 0} duplicates, ${data.errors || 0} errors)`;
+    } else {
+      description = `${actorName} completed bulk-upload on ${log.entityType}`;
+    }
   }
 
   return {
@@ -170,6 +174,25 @@ const handleSearch = async (req, res) => {
         { id: 'desc' }
       ],
       take: parsedLimit + 1,
+      select: {
+        id: true,
+        actorUserId: true,
+        actorName: true,
+        actorEmail: true,
+        actorRole: true,
+        action: true,
+        entityType: true,
+        entityId: true,
+        entityName: true,
+        subjectType: true,
+        subjectId: true,
+        subjectName: true,
+        ipAddress: true,
+        userAgent: true,
+        organizationId: true,
+        isDeleted: true,
+        createdAt: true,
+      }
     });
 
     const hasMore = logs.length > parsedLimit;

@@ -64,6 +64,9 @@ const AuditLogs = () => {
 
   // Selected Log for Diff slide-over
   const [selectedLog, setSelectedLog] = useState(null);
+  const [selectedLogId, setSelectedLogId] = useState(null);
+  const [detailedLog, setDetailedLog] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   const [cursors, setCursors] = useState({ 1: null });
   const [showSkeleton, setShowSkeleton] = useState(false);
@@ -173,6 +176,28 @@ const AuditLogs = () => {
   useEffect(() => {
     fetchLogs();
   }, [page, entityType, selectedUserId, startDate, endDate, debouncedSearch, debouncedInterviewerSearch, selectedActions]); // eslint-disable-line
+
+  // Load audit log details on demand
+  useEffect(() => {
+    if (!selectedLogId) {
+      setDetailedLog(null);
+      return;
+    }
+    const loadDetails = async () => {
+      setLoadingDetails(true);
+      try {
+        const res = await apiGet(`/audit-logs/${selectedLogId}`);
+        if (res.success) {
+          setDetailedLog(res.data);
+        }
+      } catch (err) {
+        console.error('Failed to load audit log details:', err);
+      } finally {
+        setLoadingDetails(false);
+      }
+    };
+    loadDetails();
+  }, [selectedLogId]);
 
   // Real-time SSE: prepend new log entry at top of table without full reload
   useEffect(() => {
@@ -325,7 +350,7 @@ const AuditLogs = () => {
 
   // Copy JSON log to clipboard
   const handleCopyLog = (log) => {
-    navigator.clipboard.writeText(JSON.stringify(log, null, 2));
+    navigator.clipboard.writeText(JSON.stringify(detailedLog || log, null, 2));
     alert("Log JSON copied to clipboard");
   };
 
@@ -671,7 +696,10 @@ const AuditLogs = () => {
                     <td className="p-4">
                       <button 
                         className="os-btn-outline !h-8 text-xs font-bold border-slate-200" 
-                        onClick={() => setSelectedLog(log)}
+                        onClick={() => {
+                          setSelectedLog(log);
+                          setSelectedLogId(log.id);
+                        }}
                       >
                         View Diff
                       </button>
@@ -712,7 +740,7 @@ const AuditLogs = () => {
         {selectedLog && (
           <div className="fixed inset-0 z-[1300] flex justify-end">
             {/* Backdrop */}
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSelectedLog(null)} />
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => { setSelectedLog(null); setSelectedLogId(null); }} />
             
             {/* Panel */}
             <Reveal className="w-[480px] bg-white h-full shadow-2xl relative z-10 p-6 flex flex-col justify-between border-l border-slate-200 animate-in slide-in-from-right duration-350">
@@ -728,65 +756,74 @@ const AuditLogs = () => {
                       Performed by: <strong>{selectedLog.actor?.fullName || 'System'}</strong> on {new Date(selectedLog.createdAt).toLocaleString()}
                     </p>
                   </div>
-                  <button className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100" onClick={() => setSelectedLog(null)}>
+                  <button className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100" onClick={() => { setSelectedLog(null); setSelectedLogId(null); }}>
                     <span className="material-symbols-outlined">close</span>
                   </button>
                 </div>
 
-                {/* Changed Fields Tags */}
-                {selectedLog.metadata?.changedFields && selectedLog.metadata.changedFields.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Modified Fields</h4>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {selectedLog.metadata.changedFields.map(f => (
-                        <span key={f} className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
-                          {f}
-                        </span>
-                      ))}
-                    </div>
+                {loadingDetails ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#1f52cc]"></div>
+                    <span className="text-xs text-slate-400 font-semibold font-[Manrope]">Fetching change logs...</span>
                   </div>
-                )}
-
-                {/* Diff Comparison View */}
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Change Comparison</h4>
-                  {selectedLog.metadata?.before || selectedLog.metadata?.after ? (
-                    <div className="space-y-3">
-                      {/* Before / After Columns */}
-                      <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold border-b border-slate-100 pb-2">
-                        <div className="bg-red-50 text-red-700 py-1.5 rounded-lg border border-red-100">Before</div>
-                        <div className="bg-emerald-50 text-emerald-700 py-1.5 rounded-lg border border-emerald-100">After</div>
+                ) : (
+                  <>
+                    {/* Changed Fields Tags */}
+                    {detailedLog?.metadata?.changedFields && detailedLog.metadata.changedFields.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Modified Fields</h4>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {detailedLog.metadata.changedFields.map(f => (
+                            <span key={f} className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
+                              {f}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                      
-                      {/* Diff rows */}
-                      {Object.keys(selectedLog.metadata.after || {}).map(key => {
-                        const beforeVal = selectedLog.metadata.before?.[key];
-                        const afterVal = selectedLog.metadata.after?.[key];
-                        // If values are same, we skip showing
-                        if (JSON.stringify(beforeVal) === JSON.stringify(afterVal)) return null;
+                    )}
 
-                        return (
-                          <div key={key} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-2">
-                            <span className="text-[10px] font-bold text-slate-500 font-mono uppercase block">{key}</span>
-                            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                              <div className="text-red-600 break-all bg-white p-2 rounded-lg border border-slate-100">
-                                {beforeVal !== undefined && beforeVal !== null ? String(JSON.stringify(beforeVal)) : 'null'}
-                              </div>
-                              <div className="text-emerald-700 break-all bg-white p-2 rounded-lg border border-slate-100 font-bold">
-                                {afterVal !== undefined && afterVal !== null ? String(JSON.stringify(afterVal)) : 'null'}
-                              </div>
-                            </div>
+                    {/* Diff Comparison View */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Change Comparison</h4>
+                      {detailedLog?.metadata?.before || detailedLog?.metadata?.after ? (
+                        <div className="space-y-3">
+                          {/* Before / After Columns */}
+                          <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold border-b border-slate-100 pb-2">
+                            <div className="bg-red-50 text-red-700 py-1.5 rounded-lg border border-red-100">Before</div>
+                            <div className="bg-emerald-50 text-emerald-700 py-1.5 rounded-lg border border-emerald-100">After</div>
                           </div>
-                        );
-                      })}
+                          
+                          {/* Diff rows */}
+                          {Object.keys(detailedLog.metadata.after || {}).map(key => {
+                            const beforeVal = detailedLog.metadata.before?.[key];
+                            const afterVal = detailedLog.metadata.after?.[key];
+                            // If values are same, we skip showing
+                            if (JSON.stringify(beforeVal) === JSON.stringify(afterVal)) return null;
+
+                            return (
+                              <div key={key} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 space-y-2">
+                                <span className="text-[10px] font-bold text-slate-500 font-mono uppercase block">{key}</span>
+                                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                                  <div className="text-red-600 break-all bg-white p-2 rounded-lg border border-slate-100">
+                                    {beforeVal !== undefined && beforeVal !== null ? String(JSON.stringify(beforeVal)) : 'null'}
+                                  </div>
+                                  <div className="text-emerald-700 break-all bg-white p-2 rounded-lg border border-slate-100 font-bold">
+                                    {afterVal !== undefined && afterVal !== null ? String(JSON.stringify(afterVal)) : 'null'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        /* Show Raw Metadata if no before/after diff is present */
+                        <pre className="bg-[#0b1b3d] text-white p-4 rounded-xl text-xs overflow-x-auto font-mono max-h-72">
+                          {JSON.stringify(detailedLog?.metadata || detailedLog?.newData || detailedLog?.oldData || {}, null, 2)}
+                        </pre>
+                      )}
                     </div>
-                  ) : (
-                    /* Show Raw Metadata if no before/after diff is present */
-                    <pre className="bg-[#0b1b3d] text-white p-4 rounded-xl text-xs overflow-x-auto font-mono max-h-72">
-                      {JSON.stringify(selectedLog.metadata || selectedLog.newData || selectedLog.oldData || {}, null, 2)}
-                    </pre>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
 
               {/* Slide-over Footer Actions */}
@@ -795,7 +832,7 @@ const AuditLogs = () => {
                   <span className="material-symbols-outlined text-base">content_copy</span>
                   Copy JSON Log
                 </button>
-                <button className="os-btn-primary w-full bg-[#1f52cc]" onClick={() => setSelectedLog(null)}>
+                <button className="os-btn-primary w-full bg-[#1f52cc]" onClick={() => { setSelectedLog(null); setSelectedLogId(null); }}>
                   Close
                 </button>
               </div>
