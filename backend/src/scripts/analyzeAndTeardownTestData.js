@@ -122,6 +122,23 @@ async function run() {
     });
   }
 
+  const suspectedUsers = await prisma.user.findMany({
+    where: {
+      OR: [
+        { fullName: { startsWith: 'CI ' } },
+        { email: { endsWith: '@test.ci' } }
+      ],
+      is_test_data: false
+    }
+  });
+  if (suspectedUsers.length > 0) {
+    console.log(`⚠️  Suspected Untagged Users Found: ${suspectedUsers.length}`);
+    await prisma.user.updateMany({
+      where: { id: { in: suspectedUsers.map(u => u.id) } },
+      data: { is_test_data: true }
+    });
+  }
+
   // 5. Execute teardownTestData()
   console.log('\n🗑️  Starting Teardown...');
   await teardownTestData();
