@@ -15,6 +15,8 @@ import { groupInterviewsByDate, toDateKey, formatTime12h, getStatusStyle, getCan
 import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails } from '../hooks/useScheduling';
 import useDebounce from '../hooks/useDebounce';
 import { schedulingApi } from '../services/schedulingApi';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 
 import SyncIndicator from '../components/Interview/SyncIndicator';
 import InterviewMemberSkeleton from '../components/Interview/InterviewMemberSkeleton';
@@ -408,18 +410,37 @@ const InterviewSchedule = () => {
   const shouldSubmitFeedback = searchParams.get('submitFeedback') === 'true';
   const [activeInterviewId, setActiveInterviewId] = useState('');
 
-  // cursor-based load-more state
-  const [loadingMore, setLoadingMore] = useState(false);
   const [allInterviews, setAllInterviews] = useState([]);  // accumulates pages
-  const [serverHasMore, setServerHasMore] = useState(false);
-  const [serverNextCursor, setServerNextCursor] = useState(null);
 
   const roundsFilters = useMemo(() => ({
-    limit: 20,
-    ...(filterMine && currentUser?.id ? { interviewerId: currentUser.id } : {})
-  }), [filterMine, currentUser?.id]);
+    ...(filterMine && currentUser?.id ? { interviewerId: currentUser.id } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {})
+  }), [filterMine, currentUser?.id, debouncedSearch]);
 
-  const { data: roundsResponse, isLoading: isQueryLoading, refetch: refetchInterviews, error: queryError } = useRoundsList(roundsFilters);
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isQueryLoading,
+    refetch: refetchInterviews,
+    error: queryError
+  } = usePaginatedList('/interviews', {
+    pageSize: 250,
+    filters: roundsFilters,
+    queryKey: ['scheduling', 'rounds']
+  });
+
+  const serverHasMore = hasNextPage;
+  const loadingMore = isFetchingNextPage;
+
+  // Synchronize infinite query data to allInterviews local state
+  useEffect(() => {
+    if (infiniteData?.pages) {
+      const flattened = infiniteData.pages.flatMap(page => page.data || page.rows || []);
+      setAllInterviews(flattened);
+    }
+  }, [infiniteData]);
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -512,10 +533,6 @@ const InterviewSchedule = () => {
   const [isEditingFeedback, setIsEditingFeedback] = useState(false);
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
-  // Infinite scroll: how many items to show
-  const [visibleCount, setVisibleCount] = useState(20);
-  const listEndRef = useRef(null);        // sentinel for IntersectionObserver
-  const listPanelRef = useRef(null);     // scrollable container ref for IntersectionObserver root
   const lastCandidateJobKeyRef = useRef('');
   const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
   const recorderRef = useRef(null);
@@ -533,49 +550,11 @@ const InterviewSchedule = () => {
 
 
   // Load-more: fetch next page using cursor
-  const loadMoreInterviews = useCallback(async () => {
-    if (!serverHasMore || loadingMore || !serverNextCursor) return;
-    setLoadingMore(true);
-    try {
-      const nextFilters = {
-        cursor: serverNextCursor,
-        limit: 200,
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-        ...(filterMine ? { interviewerId: currentUser?.id } : {})
-      };
-      const res = await schedulingApi.getRounds(nextFilters);
-      const nextPage = res?.data || [];
-      setAllInterviews(prev => {
-        const map = new Map(prev.map(iv => [iv.id, iv]));
-        nextPage.forEach(iv => map.set(iv.id, iv));
-        return Array.from(map.values());
-      });
-      setServerHasMore(res?.hasMore || false);
-      setServerNextCursor(res?.nextCursor || null);
-      setVisibleCount(prev => prev + nextPage.length);
-    } catch (err) {
-      console.error('[InterviewSchedule] load-more error:', err);
-    } finally {
-      setLoadingMore(false);
+  const loadMoreInterviews = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
     }
-  }, [serverHasMore, loadingMore, serverNextCursor, debouncedSearch, filterMine, currentUser?.id]);
-
-  // Prefetch next page silently when current page is loaded
-  useEffect(() => {
-    if (serverHasMore && serverNextCursor) {
-      const nextFilters = {
-        cursor: serverNextCursor,
-        limit: 20,
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-        ...(filterMine ? { interviewerId: currentUser?.id } : {})
-      };
-      queryClient.prefetchQuery({
-        queryKey: ['scheduling', 'rounds', nextFilters],
-        queryFn: () => schedulingApi.getRounds(nextFilters),
-        staleTime: 30000,
-      });
-    }
-  }, [serverNextCursor, serverHasMore, debouncedSearch, filterMine, currentUser?.id, queryClient]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const calendarDays = useMemo(() => {
     const year = viewDate.getFullYear();
@@ -802,27 +781,9 @@ const InterviewSchedule = () => {
     }
   }, [interviewIdParam, interviews, shouldSubmitFeedback]);
 
-  const { data: searchResponse, isFetching: isSearching, error: searchError, refetch: refetchSearch } = useRoundsList(
-    debouncedSearch
-      ? { search: debouncedSearch, limit: 100, ...(filterMine ? { interviewerId: currentUser?.id } : {}) }
-      : null  // null → hook is disabled (handled in useRoundsList)
-  );
-
-  // Unified useEffect to handle page 1 results for both normal and search lists
-  useEffect(() => {
-    if (debouncedSearch && searchError) {
-      setAllInterviews([]);
-      setServerHasMore(false);
-      setServerNextCursor(null);
-      return;
-    }
-    const activeResponse = debouncedSearch ? searchResponse : roundsResponse;
-    if (!activeResponse) return;
-    const firstPage = activeResponse.data || [];
-    setAllInterviews(firstPage);
-    setServerHasMore(activeResponse.hasMore || false);
-    setServerNextCursor(activeResponse.nextCursor || null);
-  }, [roundsResponse, searchResponse, debouncedSearch, searchError]);
+  const isSearching = isQueryLoading && !!debouncedSearch;
+  const searchError = queryError;
+  const refetchSearch = refetchInterviews;
 
   const displayInterviews = interviews;
 
@@ -907,55 +868,9 @@ const InterviewSchedule = () => {
     });
   }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
 
-  // ── Infinite scroll: reset visible count when list changes ──
-  useEffect(() => {
-    setVisibleCount(20);
-  }, [debouncedSearch, filterMine, roundFilter]);
-
-  // ── Live refs — always hold latest values so the observer never uses stale closures ──
-  const serverHasMoreRef = useRef(serverHasMore);
-  const loadingMoreRef   = useRef(loadingMore);
-  const loadMoreRef2     = useRef(loadMoreInterviews);
-
-  serverHasMoreRef.current = serverHasMore;
-  loadingMoreRef.current   = loadingMore;
-  loadMoreRef2.current     = loadMoreInterviews;
-
-  // ── Sentinel callback ref — attaches observer when node mounts or state changes ──
-  const sentinelCallbackRef = useCallback((node) => {
-    // Cleanup any previous observer
-    if (listEndRef.current?._obs) {
-      listEndRef.current._obs.disconnect();
-    }
-    listEndRef.current = node;
-    if (!node) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting) return;
-        // Read live values — never stale
-        if (serverHasMoreRef.current && !loadingMoreRef.current) {
-          loadMoreRef2.current();
-        } else if (!serverHasMoreRef.current) {
-          setVisibleCount(prev => prev + 20);
-        }
-      },
-      {
-        root: listPanelRef.current || null,
-        threshold: 0,
-        rootMargin: '150px',
-      }
-    );
-    observer.observe(node);
-    node._obs = observer; // store for cleanup
-  }, [serverHasMore, loadingMore, displayInterviews.length]);
 
 
-  // Visible slice for lazy rendering
-  const visibleGroups = useMemo(
-    () => groupedApplications.slice(0, visibleCount),
-    [groupedApplications, visibleCount]
-  );
+  const visibleGroups = groupedApplications;
 
 
 
@@ -1572,7 +1487,7 @@ const InterviewSchedule = () => {
 
       <PageEnter className="schedule-page flex-1 min-h-0 overflow-hidden">
         {viewMode === 'list' && (
-          <Reveal ref={listPanelRef} className="candidate-list-panel bg-white p-4 h-full">
+          <Reveal className="candidate-list-panel bg-white p-4 h-full">
             <div className="pb-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold font-[Manrope] px-2">Interviews</h2>
@@ -1666,11 +1581,12 @@ const InterviewSchedule = () => {
               );
             })}
             {/* Infinite scroll sentinel & skeletons */}
-            {(visibleCount < groupedApplications.length || loadingMore || serverHasMore) && (
-              <div ref={sentinelCallbackRef} className="w-full mt-2 h-4">
-                {loadingMore && <InterviewMemberSkeleton count={3} />}
-              </div>
-            )}
+            <InfiniteScrollSentinel
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              fetchNextPage={fetchNextPage}
+            />
+            {loadingMore && <InterviewMemberSkeleton count={3} />}
             {searchError ? (
               <div className="text-sm px-2 py-6 text-center text-red-600 bg-red-50/50 rounded-xl m-2 border border-red-100 animate-in fade-in">
                 <div className="font-semibold mb-2">Search failed. Please try again.</div>

@@ -10,6 +10,8 @@ const JoinModal = React.lazy(() => import('../components/JoinModal'));
 const RejectModal = React.lazy(() => import('../components/RejectModal'));
 const BulkUploadModal = React.lazy(() => import('../components/BulkUpload/BulkUploadModal'));
 import { buildApiUrl, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
+import { usePaginatedList } from '../hooks/usePaginatedList';
+import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { search as apiSearch } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
@@ -302,12 +304,8 @@ const Candidates = () => {
   const [viewMode, setViewMode] = useState('list');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || '');
-  const [nextCursor, setNextCursor] = useState(null);
-  const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -322,23 +320,70 @@ const Candidates = () => {
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
   const [searchError, setSearchError] = useState(null);
-  const loadMoreRef = useRef(null);       // sentinel DOM node
   const scrollContainerRef = useRef(null); // scrollable os-content element
-  const currentStatusRef = useRef(statusParam || 'All');
-  const currentSearchRef = useRef('');
-  const searchAbortControllerRef = useRef(null);
 
   const currentUser = useMemo(() => getStoredUser(), []);
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
   const isSuperAdmin = useMemo(() => currentUser?.role === 'SUPER_ADMIN', [currentUser]);
 
   // Delete all candidates (SUPER_ADMIN only)
+  const candidatesFilters = useMemo(() => ({
+    ...(statusFilter && statusFilter !== 'All' ? { status: statusFilter } : {}),
+    ...(companyFilter && companyFilter !== 'All' ? { company: companyFilter } : {}),
+    ...(debouncedSearch && debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+  }), [statusFilter, companyFilter, debouncedSearch]);
+
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    refetch,
+    error: queryError,
+  } = usePaginatedList('/candidates', {
+    pageSize: 100,
+    filters: candidatesFilters,
+    queryKey: ['candidates', 'pool'],
+  });
+
+  const loading = isLoading;
+
+  // Synchronize infinite query data to items local state
+  useEffect(() => {
+    if (infiniteData?.pages) {
+      const flattened = infiniteData.pages.flatMap(page => page.data || page.rows || []);
+      setItems(flattened);
+      
+      // Also sync totalCount for the count rendering
+      const firstPage = infiniteData.pages[0];
+      setTotalCount(firstPage?.pagination?.total || flattened.length);
+    }
+  }, [infiniteData]);
+
+  // Handle query error
+  useEffect(() => {
+    if (queryError) {
+      setError(queryError.message || 'Failed to load candidates.');
+    }
+  }, [queryError]);
+
+  const loadCandidates = useCallback((query, stat) => {
+    if (stat !== undefined && stat !== statusFilter) {
+      setStatusFilter(stat);
+    }
+    if (query !== undefined && query !== debouncedSearch) {
+      setSearch(query);
+      setDebouncedSearch(query);
+    }
+    refetch();
+  }, [statusFilter, debouncedSearch, refetch]);
+
   const handleDeleteAll = async () => {
     if (!window.confirm('Are you sure you want to DELETE ALL candidates? This cannot be undone!')) return;
     if (!window.confirm('This will permanently remove ALL candidates from the database. Continue?')) return;
 
     try {
-      setLoading(true);
       const res = await apiDelete('/candidates/all');
       if (res.success) {
         setBanner(`Deleted all candidates: ${res.message}`);
@@ -348,89 +393,8 @@ const Candidates = () => {
       }
     } catch (err) {
       setError(err.message || 'Failed to delete candidates');
-    } finally {
-      setLoading(false);
     }
   };
-
-  // Core fetch — reset=true clears list and cursor (new search/filter), reset=false appends
-  const fetchCandidates = useCallback(async ({ cursorParam = null, reset = false, stat, query } = {}) => {
-    const statFilter = stat !== undefined ? stat : statusFilter;
-    const searchQuery = query !== undefined ? query : debouncedSearch;
-
-    const expectedStatus = statFilter;
-    const expectedSearch = searchQuery;
-
-    if (reset) {
-      setLoading(true);
-      setSearchError(null);
-    } else {
-      setLoadingMore(true);
-    }
-
-    // Cancel any previous in-flight requests to avoid race conditions
-    if (searchAbortControllerRef.current) {
-      searchAbortControllerRef.current.abort();
-    }
-    searchAbortControllerRef.current = new AbortController();
-    const signal = searchAbortControllerRef.current.signal;
-
-    try {
-      let res;
-      if (searchQuery.trim()) {
-        res = await apiSearch('/candidates/search', {
-          q: searchQuery.trim(),
-          filters: {
-            status: statFilter,
-            company: companyFilter
-          },
-          cursor: cursorParam,
-          limit: 24
-        }, signal);
-      } else {
-        const params = new URLSearchParams({ limit: '24' });
-        if (statFilter && statFilter !== 'All') params.set('status', statFilter);
-        if (cursorParam) params.set('cursor', cursorParam);
-        if (companyFilter && companyFilter !== 'All') params.set('company', companyFilter);
-        res = await apiGet(`/candidates?${params.toString()}`, true, { signal });
-      }
-
-      // If the filter or search query has changed since this request was made, discard it to prevent corruption.
-      if (expectedStatus !== currentStatusRef.current || expectedSearch !== currentSearchRef.current) {
-        return;
-      }
-
-      const newData = res.data || [];
-
-      setItems(prev => (reset ? newData : [...prev, ...newData]));
-      setNextCursor(res.nextCursor || null);
-      setHasMore(res.hasMore || false);
-      setTotalCount(res.pagination?.total || 0);
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        // Request was aborted by a newer keystroke - ignore
-        return;
-      }
-      console.error('[Candidates] fetch error:', err);
-      if (searchQuery.trim()) {
-        setItems([]);
-        setTotalCount(0);
-        setSearchError('Search failed. Please try again.');
-      } else {
-        setError(err.message || 'Failed to load candidates.');
-      }
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, [statusFilter, debouncedSearch, companyFilter]);
-
-  // Reset and reload when search or filter changes
-  const loadCandidates = useCallback((query, stat) => {
-    setNextCursor(null);
-    setHasMore(false);
-    fetchCandidates({ reset: true, stat, query });
-  }, [fetchCandidates]);
 
   // Debounce search
   useEffect(() => {
@@ -485,43 +449,7 @@ const Candidates = () => {
     scrollContainerRef.current = document.querySelector('.os-content');
   }, []);
 
-  // Initial load + reload when search/filter changes
-  useEffect(() => {
-    fetchCandidates({ reset: true, stat: statusFilter, query: debouncedSearch });
-  }, [debouncedSearch, statusFilter]);
 
-  // ── Live refs for observer — never stale ──
-  const hasMoreRef     = useRef(hasMore);
-  const loadingMoreRef = useRef(loadingMore);
-  const nextCursorRef  = useRef(nextCursor);
-  const fetchRef       = useRef(fetchCandidates);
-
-  hasMoreRef.current     = hasMore;
-  loadingMoreRef.current = loadingMore;
-  nextCursorRef.current  = nextCursor;
-  fetchRef.current       = fetchCandidates;
-
-  currentStatusRef.current = statusFilter;
-  currentSearchRef.current = debouncedSearch;
-
-  // ── Sentinel callback ref — attaches observer when node mounts or state changes ──
-  const sentinelCbRef = useCallback((node) => {
-    if (loadMoreRef.current?._obs) {
-      loadMoreRef.current._obs.disconnect();
-    }
-    loadMoreRef.current = node;
-    if (!node) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreRef.current && !loadingMoreRef.current) {
-          fetchRef.current({ cursorParam: nextCursorRef.current, reset: false });
-        }
-      },
-      { threshold: 0, rootMargin: '200px' }
-    );
-    observer.observe(node);
-    node._obs = observer;
-  }, [hasMore, loadingMore, items.length]);
 
   const handleNavigate = useCallback((id) => navigate(`/candidate/${id}`), [navigate]);
   
@@ -616,6 +544,9 @@ const Candidates = () => {
       setError(err.message || 'Failed to delete candidate');
       setTimeout(() => setError(''), 3000);
     },
+    onSuccess: () => {
+      refetch();
+    }
   });
 
   const onDeleteCandidate = useCallback(async (id, name) => {
@@ -636,6 +567,7 @@ const Candidates = () => {
     onSuccess: () => {
       setBanner('Candidate created successfully!');
       setTimeout(() => setBanner(''), 3000);
+      refetch();
     },
     onError: (err) => {
       setError(err.message || 'Failed to create candidate');
@@ -1015,13 +947,14 @@ const Candidates = () => {
                 />
               ))}
             </div>
-            {/* Infinite scroll sentinel — always rendered so observer can watch it */}
-            <div ref={sentinelCbRef} className="h-16 flex items-center justify-center mt-6 w-full">
-              {loadingMore && <Loader size="small" message="Loading more..." />}
-              {!hasMore && items.length > 0 && !loadingMore && (
-                <p className="text-xs text-slate-400 font-medium">All {totalCount > 0 ? totalCount : items.length} candidates loaded</p>
-              )}
-            </div>
+            <InfiniteScrollSentinel
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              fetchNextPage={fetchNextPage}
+            />
+            {!hasNextPage && items.length > 0 && (
+              <p className="text-xs text-slate-400 font-medium text-center mt-6 w-full">All {totalCount > 0 ? totalCount : items.length} candidates loaded</p>
+            )}
           </>
         )}
       </PageEnter>

@@ -29,6 +29,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { parseNotesSafely, getFirstFeedback } from '../../lib/interviewUtils';
 import { getStoredUser, apiGet, apiPost } from '../../lib/api';
+import InfiniteScrollSentinel from '../InfiniteScrollSentinel';
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -648,35 +649,7 @@ export default function ExcelView({
   loadingMore = false,
 }) {
   const containerRef = useRef(null);
-  const sentinelRef = useRef(null);
 
-  useEffect(() => {
-    if (!onLoadMore || !hasMore) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loadingMore) {
-          onLoadMore();
-        }
-      },
-      {
-        root: containerRef.current,
-        threshold: 0,
-        rootMargin: '150px',
-      }
-    );
-
-    const currentSentinel = sentinelRef.current;
-    if (currentSentinel) {
-      observer.observe(currentSentinel);
-    }
-
-    return () => {
-      if (currentSentinel) {
-        observer.unobserve(currentSentinel);
-      }
-    };
-  }, [onLoadMore, hasMore, loadingMore]);
 
   const isSuperAdmin = useMemo(() => {
     const user = getStoredUser();
@@ -1208,9 +1181,13 @@ export default function ExcelView({
               );
             })}
             {hasMore && (
-              <tr ref={sentinelRef}>
-                <td colSpan={visibleColumns.length + 1} style={{ textAlign: 'center', padding: '16px 0', color: '#94a3b8', fontSize: 12, borderBottom: '1px solid #f1f5f9' }}>
-                  {loadingMore ? 'Loading more records...' : 'Scroll to load more'}
+              <tr className="border-none hover:bg-transparent">
+                <td colSpan={visibleColumns.length + 1} className="p-0 border-none">
+                  <InfiniteScrollSentinel
+                    hasNextPage={hasMore}
+                    isFetchingNextPage={loadingMore}
+                    fetchNextPage={onLoadMore}
+                  />
                 </td>
               </tr>
             )}

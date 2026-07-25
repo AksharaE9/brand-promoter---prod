@@ -51,7 +51,7 @@ const parseQueryBody = (req, res, next) => {
 const candidateSearchHandler = async (req, res) => {
   const q = (req.body.q || '').trim();
   const filters = req.body.filters || {};
-  const limit = Math.min(50, Math.max(1, Number.parseInt(req.body.limit, 10) || 24));
+  const limit = Math.min(250, Math.max(1, Number.parseInt(req.body.limit, 10) || 24));
   const cursor = req.body.cursor?.trim();
   const orgId = req.user.organizationId || "defaultOrg";
 
@@ -149,6 +149,7 @@ const candidateSearchHandler = async (req, res) => {
   res.json({
     success: true,
     data: items,
+    rows: items,
     nextCursor,
     hasMore,
     pagination: {
@@ -664,7 +665,7 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
-    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
+    const limit = Math.min(250, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
     const cursor = req.query.cursor?.trim(); 
     const search = req.query.search?.trim();
     const category = req.query.category?.trim();
@@ -788,12 +789,13 @@ router.get(
 
     if (data.items && data.items.length > 30) {
       const { streamPaginatedJson } = require("../../utils/streamResponse");
-      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore, pagination });
+      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore, pagination, rows: data.items });
     }
 
     res.json({
       success: true,
       data: data.items,
+      rows: data.items,
       nextCursor: data.nextCursor,
       hasMore: data.hasMore,
       pagination
