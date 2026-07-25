@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import api from '../services/api';
 
@@ -13,7 +14,7 @@ export function usePaginatedList(endpoint, options = {}) {
   const { pageSize, filters = {}, queryKey, enabled = true } = options;
   const isSearchActive = !!(filters.search || filters.q);
 
-  return useInfiniteQuery({
+  const queryResult = useInfiniteQuery({
     queryKey: [...queryKey, filters],
     queryFn: async ({ pageParam, signal }) => {
       const params = new URLSearchParams();
@@ -43,4 +44,18 @@ export function usePaginatedList(endpoint, options = {}) {
     staleTime: isSearchActive ? 0 : 10000,
     gcTime: 300000,
   });
+
+  const { hasNextPage, isFetchingNextPage, fetchNextPage, isLoading } = queryResult;
+
+  // Background progressive prefetching of subsequent chunks to load full dataset smoothly
+  useEffect(() => {
+    if (enabled && hasNextPage && !isFetchingNextPage && !isLoading) {
+      const timer = setTimeout(() => {
+        fetchNextPage();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [enabled, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
+
+  return queryResult;
 }
