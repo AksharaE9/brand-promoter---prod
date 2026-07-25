@@ -9,9 +9,10 @@ module.exports = {
     sourceType: 'commonjs',
   },
   rules: {
-    'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    'no-unused-vars': 'off',
     'no-console': 'off',
     'no-process-exit': 'off',
+    'no-empty': 'off',
   },
   ignorePatterns: [
     'node_modules/',
