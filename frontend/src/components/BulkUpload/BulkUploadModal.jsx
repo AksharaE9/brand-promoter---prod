@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useBulkUploadJob } from '../../features/candidates/bulk-upload/useBulkUploadJob';
 import BulkUploadProgress from '../../features/candidates/bulk-upload/BulkUploadProgress';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
 const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
+  const isOnline = useOnlineStatus();
 
   const { jobId, jobState, startJob, resetJob } = useBulkUploadJob();
 
@@ -28,8 +30,17 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
     return null;
   };
 
+  useEffect(() => {
+    if (!isOnline && (isUploading || jobId)) {
+      setIsUploading(false);
+      resetJob();
+      setFile(null);
+      setError("Connection lost. Your upload was interrupted. You'll need to re-select the file and try again once you're back online.");
+    }
+  }, [isOnline, isUploading, jobId, resetJob]);
+
   const handleFileSelect = (e) => {
-    if (isUploading) return;
+    if (isUploading || !isOnline) return;
     const selectedFile = e.dataTransfer?.files[0] || e.target?.files[0];
     if (!selectedFile) return;
 
@@ -46,6 +57,10 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
   };
 
   const uploadAndStartImport = async (targetFile) => {
+    if (!isOnline) {
+      setError("You're offline. Please connect to the internet to upload files.");
+      return;
+    }
     setIsUploading(true);
     setError('');
 
@@ -125,6 +140,13 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto flex-1">
+          {!isOnline && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold flex items-center gap-2 mb-4 animate-in fade-in duration-200">
+              <span className="text-sm">⚠️</span>
+              You're offline. Your upload will be paused until your connection returns.
+            </div>
+          )}
+
           {isJobActiveOrDone ? (
             <BulkUploadProgress
               jobId={jobId}
@@ -138,11 +160,14 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
+                  if (!isOnline) return;
                   handleFileSelect(e);
                 }}
-                className="border-2 border-dashed border-blue-300 bg-blue-50/40 rounded-2xl p-12 text-center relative hover:bg-blue-50 transition-colors flex flex-col items-center justify-center"
+                className={`border-2 border-dashed rounded-2xl p-12 text-center relative transition-colors flex flex-col items-center justify-center ${
+                  !isOnline ? 'border-slate-200 bg-slate-100/50 cursor-not-allowed' : 'border-blue-300 bg-blue-50/40 hover:bg-blue-50 cursor-pointer'
+                }`}
               >
-                <div className="w-16 h-16 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-4 shadow-sm">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm ${!isOnline ? 'bg-slate-200 text-slate-400' : 'bg-blue-100 text-blue-600'}`}>
                   <span className="material-symbols-outlined text-3xl">cloud_upload</span>
                 </div>
                 <h3 className="text-lg font-extrabold text-slate-800">Drag your CSV or XLSX file here</h3>
@@ -152,10 +177,10 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
                 </span>
                 <input
                   type="file"
-                  className="absolute inset-0 opacity-0 cursor-pointer"
+                  className={`absolute inset-0 opacity-0 ${!isOnline ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   accept=".csv,.xlsx,.xls"
                   onChange={handleFileSelect}
-                  disabled={isUploading}
+                  disabled={isUploading || !isOnline}
                 />
               </div>
 

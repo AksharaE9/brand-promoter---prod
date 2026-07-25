@@ -7,8 +7,7 @@ import { buildApiUrl } from './api';
 
 let eventSource = null;
 let reconnectTimer = null;
-let reconnectDelay = 2000;
-const MAX_RECONNECT_DELAY = 30000;
+let reconnectAttempt = 0;
 
 const subscribers = new Map(); // id -> callback
 
@@ -28,7 +27,7 @@ function connect() {
     eventSource = new EventSource(`${sseOrigin}${url}?token=${token}`);
 
     eventSource.onopen = () => {
-      reconnectDelay = 2000; // reset backoff on success
+      reconnectAttempt = 0; // reset attempts on success
     };
 
     eventSource.onmessage = (event) => {
@@ -44,11 +43,21 @@ function connect() {
     eventSource.onerror = () => {
       eventSource?.close();
       eventSource = null;
-      // Exponential backoff reconnect
+
+      reconnectAttempt++;
+      if (reconnectAttempt > 8) {
+        console.warn('[SSE] Max reconnect attempts reached (8). Stopping auto-reconnect.');
+        subscribers.forEach((cb) => {
+          try { cb({ type: 'SSE_MAX_RECONNECT_REACHED' }); } catch (_) { /* ignore */ }
+        });
+        return;
+      }
+
+      // Exponential backoff: 1s * 2^attempt -> max 30s
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 30000);
       reconnectTimer = setTimeout(() => {
-        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
         connect();
-      }, reconnectDelay);
+      }, delay);
     };
   } catch (_) { /* ignore */ }
 }
@@ -57,6 +66,7 @@ function disconnect() {
   clearTimeout(reconnectTimer);
   eventSource?.close();
   eventSource = null;
+  reconnectAttempt = 0;
 }
 
 let subIdCounter = 0;
@@ -103,10 +113,18 @@ export function destroySSE() {
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      reconnectAttempt = 0;
       connect();
       subscribers.forEach((cb) => {
         try { cb({ type: 'VISIBILITY_RECONCILE' }); } catch (_) { /* ignore */ }
       });
     }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    reconnectAttempt = 0;
+    connect();
   });
 }

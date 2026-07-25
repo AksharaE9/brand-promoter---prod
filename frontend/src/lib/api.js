@@ -66,6 +66,25 @@ export function getStoredToken() {
   return localStorage.getItem('ats_token');
 }
 
+export function isAuthenticatedRoute(url) {
+  if (!url) return false;
+  let pathname = url;
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      pathname = new URL(url).pathname;
+    } catch (_) {}
+  }
+  const cleanPath = pathname.replace(/\/+/g, '/');
+  const publicRoutes = [
+    '/api/auth/login',
+    '/api/auth/signup',
+    '/api/health'
+  ];
+  const isApi = cleanPath.startsWith('/api') || cleanPath.startsWith(API_BASE_URL);
+  if (!isApi) return false;
+  return !publicRoutes.some(route => cleanPath.startsWith(route));
+}
+
 async function request(path, options = {}, retries = 1) {
   const url = buildApiUrl(path);
   const token = getStoredToken();
@@ -76,6 +95,13 @@ async function request(path, options = {}, retries = 1) {
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (isAuthenticatedRoute(url) && !headers.Authorization) {
+    console.error('Authenticated request built without Authorization header:', url);
+    if (import.meta.env.DEV) {
+      throw new Error(`[Security Guard] Authenticated request built without Authorization header: ${url}`);
+    }
   }
 
   const isGet = !options.method || options.method === 'GET';

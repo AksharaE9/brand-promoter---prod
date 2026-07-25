@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getStoredUser, buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
+import { getStoredToken, buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import api from '../../services/api';
 
 export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess }) {
   const [file, setFile] = useState(null);
@@ -10,6 +12,8 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
   const [jobStatus, setJobStatus] = useState(null); // { state, progress, processed, succeeded, failed, errorReportUrl, error }
   const [errorMsg, setErrorMsg] = useState(null);
   const fileInputRef = useRef(null);
+  const pollIntervalRef = useRef(null);
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     if (!isOpen) {
@@ -19,13 +23,37 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
       setUploading(false);
       setJobStatus(null);
       setErrorMsg(null);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline && uploading) {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      setUploading(false);
+      setFile(null);
+      setErrorMsg("Connection lost. Your upload was interrupted. You'll need to re-select the file and try again once you're back online.");
+    }
+  }, [isOnline, uploading]);
 
   if (!isOpen) return null;
 
   const handleFileChange = (e) => {
-    if (uploading) return;
+    if (uploading || !isOnline) return;
     const selected = e.target.files?.[0];
     if (selected) {
       if (selected.size > MAX_UPLOAD_BYTES) {
@@ -40,7 +68,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
 
   const handleDrop = (e) => {
     e.preventDefault();
-    if (uploading) return;
+    if (uploading || !isOnline) return;
     const dropped = e.dataTransfer.files?.[0];
     if (dropped) {
       if (dropped.size > MAX_UPLOAD_BYTES) {
@@ -67,6 +95,10 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
       setErrorMsg('Please select a CSV or Excel file to upload');
       return;
     }
+    if (!isOnline) {
+      setErrorMsg("You're offline. Please connect to the internet to upload files.");
+      return;
+    }
 
     setUploading(true);
     setErrorMsg(null);
@@ -81,45 +113,33 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
     }
 
     try {
-      const user = getStoredUser();
-      const token = user?.token;
-
-      const response = await fetch(buildApiUrl('/interviews/bulk-upload'), {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit bulk upload');
+      const { data } = await api.post('/interviews/bulk-upload', formData);
+      if (!data || !data.success) {
+        throw new Error(data?.error || 'Failed to submit bulk upload');
       }
 
       const { jobId } = data;
-      pollJobStatus(jobId, token);
+      pollJobStatus(jobId);
     } catch (err) {
       setErrorMsg(err.message || 'An error occurred during upload');
       setUploading(false);
     }
   };
 
-  const pollJobStatus = (jobId, token) => {
-    const interval = setInterval(async () => {
+  const pollJobStatus = (jobId) => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+
+    pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(buildApiUrl(`/interviews/bulk-upload/${jobId}`), {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await res.json();
-        if (data.success && data.data) {
+        const { data } = await api.get(`/interviews/bulk-upload/${jobId}`);
+        if (data && data.success && data.data) {
           const status = data.data;
           setJobStatus(status);
           if (status.state === 'completed' || status.state === 'failed') {
-            clearInterval(interval);
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
             setUploading(false);
             if (status.state === 'completed' && onSuccess) {
               onSuccess(status);
@@ -127,7 +147,8 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
           }
         }
       } catch (_) {
-        clearInterval(interval);
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
         setUploading(false);
       }
     }, 1000);
@@ -135,8 +156,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
 
   const downloadReport = () => {
     if (!jobStatus?.jobId) return;
-    const user = getStoredUser();
-    const token = user?.token;
+    const token = getStoredToken();
     window.open(buildApiUrl(`/interviews/bulk-upload/${jobStatus.jobId}/report?token=${encodeURIComponent(token || '')}`), '_blank');
   };
 
@@ -160,6 +180,13 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          {!isOnline && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold flex items-center gap-2">
+              <span className="text-sm">⚠️</span>
+              You're offline. Your upload will be paused until your connection returns.
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
               {errorMsg}
@@ -214,9 +241,11 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
               <div
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
-                onClick={() => !uploading && fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-                  file ? 'border-[#1f52cc] bg-blue-50/30' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
+                onClick={() => !uploading && isOnline && fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
+                  !isOnline ? 'border-slate-200 bg-slate-100/50 cursor-not-allowed' :
+                  file ? 'border-[#1f52cc] bg-blue-50/30 cursor-pointer' :
+                  'border-slate-300 hover:border-slate-400 bg-slate-50/50 cursor-pointer'
                 }`}
               >
                 <input
@@ -224,6 +253,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
                   type="file"
                   accept=".csv, .xlsx, .xls"
                   onChange={handleFileChange}
+                  disabled={uploading || !isOnline}
                   className="hidden"
                 />
                 <div className="space-y-2">
@@ -308,7 +338,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
             <button
               type="button"
               onClick={handleUpload}
-              disabled={uploading || !file}
+              disabled={uploading || !file || !isOnline}
               className="px-5 py-2 text-xs font-semibold text-white bg-[#1f52cc] rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 shadow-xs"
             >
               {uploading ? 'Processing File...' : 'Start Bulk Upload'}

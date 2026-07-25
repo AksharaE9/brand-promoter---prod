@@ -1,4 +1,4 @@
-import { apiGet, apiDelete } from '../lib/api';
+import { apiGet, apiDelete, isAuthenticatedRoute } from '../lib/api';
 import { getStoredToken, buildApiUrl } from '../lib/api';
 
 async function customRequest(path, options = {}) {
@@ -12,6 +12,15 @@ async function customRequest(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const url = buildApiUrl(path);
+
+  if (isAuthenticatedRoute(url) && !headers.Authorization) {
+    console.error('Authenticated request built without Authorization header:', url);
+    if (import.meta.env.DEV) {
+      throw new Error(`[Security Guard] Authenticated request built without Authorization header: ${url}`);
+    }
+  }
+
   // Handle FormData
   if (options.body instanceof FormData) {
     delete headers['Content-Type']; // Let browser set boundary
@@ -19,7 +28,7 @@ async function customRequest(path, options = {}) {
     options.body = JSON.stringify(options.body);
   }
 
-  const response = await fetch(buildApiUrl(path), {
+  const response = await fetch(url, {
     ...options,
     headers,
   });

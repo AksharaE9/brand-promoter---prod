@@ -17,6 +17,7 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
   const reconnectTimerRef = useRef(null);
   const reconnectDelayRef = useRef(1000);
   const relevantTypesRef = useRef(relevantTypes);
+  const reconnectAttemptsRef = useRef(0);
 
   // Keep relevantTypes ref current without causing reconnects
   useEffect(() => {
@@ -125,12 +126,18 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
       }
     });
 
+    eventSource.onopen = () => {
+      reconnectAttemptsRef.current = 0; // reset attempts
+      reconnectDelayRef.current = 1000;
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'ping') return;
 
         // Reset backoff on successful message
+        reconnectAttemptsRef.current = 0;
         reconnectDelayRef.current = 1000;
 
         const types = relevantTypesRef.current;
@@ -152,15 +159,29 @@ export const useRealtime = (onUpdate, relevantTypes = []) => {
       eventSource.close();
       eventSourceRef.current = null;
 
-      // Exponential backoff: 1s → 2s → 4s → 8s → 16s → max 30s
-      const delay = reconnectDelayRef.current;
-      reconnectDelayRef.current = Math.min(delay * 2, 30000);
+      reconnectAttemptsRef.current++;
+      if (reconnectAttemptsRef.current > 8) {
+        console.warn('[Realtime] Max reconnect attempts reached (8). Stopping auto-reconnect.');
+        return;
+      }
 
+      // Exponential backoff reconnect
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
       reconnectTimerRef.current = setTimeout(() => {
         connect();
       }, delay);
     };
   }, [onUpdate]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      reconnectAttemptsRef.current = 0;
+      reconnectDelayRef.current = 1000;
+      connect();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [connect]);
 
   useEffect(() => {
     connect();
