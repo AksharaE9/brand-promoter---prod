@@ -335,7 +335,7 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
       {/* Interview event chips — up to MAX_CHIPS visible */}
       <div className="flex flex-col gap-[3px]">
         {visible.map((iv) => {
-          const name = iv.application?.candidate?.fullName || iv.candidateName || '?';
+          const name = iv.application?.candidate?.fullName || iv.candidateName || 'Deleted Candidate';
           const initials = getCandidateInitials(name);
           const roundLabel = iv.roundNo === 99 ? 'F' : `R${iv.roundNo || 1}`;
           const timeLabel = iv.scheduledStart ? formatTime12h(new Date(iv.scheduledStart)) : '';
