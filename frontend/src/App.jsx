@@ -62,7 +62,9 @@ function RouteSuspense({ children, type = 'table' }) {
 const protectedElement = (element, allowedRoles = ALL_ROLES, skeletonType = 'table') => (
   <ProtectedRoute allowedRoles={allowedRoles}>
     <RouteSuspense type={skeletonType}>
-      {element}
+      <RouteTransition>
+        {element}
+      </RouteTransition>
     </RouteSuspense>
   </ProtectedRoute>
 );
@@ -101,49 +103,45 @@ function AppRoutes() {
   }, []);
 
   return (
-    // RouteTransition sits inside BrowserRouter so it can call useLocation().
-    // It plays a brief fade+slide whenever pathname changes.
-    <RouteTransition>
-      <Routes>
-        {/* Public */}
-        <Route path="/"       element={<Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>} />
-        <Route path="/login"  element={<Suspense fallback={<PageSkeleton />}><LoginPage /></Suspense>} />
-        <Route path="/signup" element={<Suspense fallback={<PageSkeleton />}><SignupPage /></Suspense>} />
-        <Route path="/careers" element={<Suspense fallback={<PageSkeleton />}><PublicCareers /></Suspense>} />
+    <Routes>
+      {/* Public */}
+      <Route path="/"       element={<Suspense fallback={<PageSkeleton />}><RouteTransition><LandingPage /></RouteTransition></Suspense>} />
+      <Route path="/login"  element={<Suspense fallback={<PageSkeleton />}><RouteTransition><LoginPage /></RouteTransition></Suspense>} />
+      <Route path="/signup" element={<Suspense fallback={<PageSkeleton />}><RouteTransition><SignupPage /></RouteTransition></Suspense>} />
+      <Route path="/careers" element={<Suspense fallback={<PageSkeleton />}><RouteTransition><PublicCareers /></RouteTransition></Suspense>} />
 
-        {/* Protected — ATS */}
-        <Route path="/workspaces"                element={protectedElement(<WorkspaceSelector />)} />
-        <Route path="/dashboard"                 element={protectedElement(<Dashboard />, ALL_ROLES, 'dashboard')} />
-        <Route path="/candidates"                element={protectedElement(<Candidates />)} />
-        <Route path="/candidate/:id"             element={protectedElement(<CandidateProfile />, ALL_ROLES, 'profile')} />
-        <Route path="/candidates/:id"            element={protectedElement(<CandidateProfile />, ALL_ROLES, 'profile')} />
-        <Route path="/jobs"                      element={protectedElement(<JobsManager />)} />
-        <Route path="/jobs/:id"                  element={protectedElement(<JobDetailModule />)} />
-        <Route path="/schedule"                  element={protectedElement(<InterviewSchedule />)} />
-        <Route path="/scheduling"                element={protectedElement(<SchedulingPage />)} />
-        <Route path="/scheduling/members/:memberId" element={protectedElement(<MemberProfilePage />)} />
-        <Route path="/drives"                    element={protectedElement(<Drives />)} />
+      {/* Protected — ATS */}
+      <Route path="/workspaces"                element={protectedElement(<WorkspaceSelector />)} />
+      <Route path="/dashboard"                 element={protectedElement(<Dashboard />, ALL_ROLES, 'dashboard')} />
+      <Route path="/candidates"                element={protectedElement(<Candidates />)} />
+      <Route path="/candidate/:id"             element={protectedElement(<CandidateProfile />, ALL_ROLES, 'profile')} />
+      <Route path="/candidates/:id"            element={protectedElement(<CandidateProfile />, ALL_ROLES, 'profile')} />
+      <Route path="/jobs"                      element={protectedElement(<JobsManager />)} />
+      <Route path="/jobs/:id"                  element={protectedElement(<JobDetailModule />)} />
+      <Route path="/schedule"                  element={protectedElement(<InterviewSchedule />)} />
+      <Route path="/scheduling"                element={protectedElement(<SchedulingPage />)} />
+      <Route path="/scheduling/members/:memberId" element={protectedElement(<MemberProfilePage />)} />
+      <Route path="/drives"                    element={protectedElement(<Drives />)} />
 
-        {/* Admin-only */}
-        <Route path="/analytics" element={protectedElement(<Analytics />, ['SUPER_ADMIN'], 'dashboard')} />
-        <Route path="/reports"   element={protectedElement(<Reports />,   ['SUPER_ADMIN'])} />
-        <Route path="/audit"     element={protectedElement(<AuditLogs />, ['SUPER_ADMIN'])} />
-        <Route path="/team"      element={protectedElement(<Team />,      ['SUPER_ADMIN'])} />
-        <Route path="/settings"  element={protectedElement(<Settings />)} />
+      {/* Admin-only */}
+      <Route path="/analytics" element={protectedElement(<Analytics />, ['SUPER_ADMIN'], 'dashboard')} />
+      <Route path="/reports"   element={protectedElement(<Reports />,   ['SUPER_ADMIN'])} />
+      <Route path="/audit"     element={protectedElement(<AuditLogs />, ['SUPER_ADMIN'])} />
+      <Route path="/team"      element={protectedElement(<Team />,      ['SUPER_ADMIN'])} />
+      <Route path="/settings"  element={protectedElement(<Settings />)} />
 
-        {/* Sales module (nested routes) */}
-        <Route path="/sales" element={protectedElement(<SalesLayout />, ADMIN_RECRUITER)}>
-          <Route index           element={<Suspense fallback={null}><SalesDashboard /></Suspense>} />
-          <Route path="products" element={<Suspense fallback={null}><ProductList /></Suspense>} />
-          <Route path="candidates" element={<Suspense fallback={null}><SalesCandidates /></Suspense>} />
-          <Route path="tracker"  element={<Suspense fallback={null}><SalesTracker /></Suspense>} />
-          <Route path="team"     element={<Suspense fallback={null}><SalesTeam /></Suspense>} />
-          <Route path="settings" element={<Suspense fallback={null}><SalesSettings /></Suspense>} />
-        </Route>
+      {/* Sales module (nested routes) */}
+      <Route path="/sales" element={protectedElement(<SalesLayout />, ADMIN_RECRUITER)}>
+        <Route index           element={<Suspense fallback={null}><SalesDashboard /></Suspense>} />
+        <Route path="products" element={<Suspense fallback={null}><ProductList /></Suspense>} />
+        <Route path="candidates" element={<Suspense fallback={null}><SalesCandidates /></Suspense>} />
+        <Route path="tracker"  element={<Suspense fallback={null}><SalesTracker /></Suspense>} />
+        <Route path="team"     element={<Suspense fallback={null}><SalesTeam /></Suspense>} />
+        <Route path="settings" element={<Suspense fallback={null}><SalesSettings /></Suspense>} />
+      </Route>
 
-        <Route path="*" element={<Suspense fallback={<PageSkeleton />}><NotFound /></Suspense>} />
-      </Routes>
-    </RouteTransition>
+      <Route path="*" element={<Suspense fallback={<PageSkeleton />}><RouteTransition><NotFound /></RouteTransition></Suspense>} />
+    </Routes>
   );
 }
 

@@ -141,6 +141,18 @@ async function request(path, options = {}, retries = 1) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+      const onAbort = () => {
+        controller.abort();
+      };
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          controller.abort();
+        } else {
+          options.signal.addEventListener('abort', onAbort);
+        }
+      }
+
       try {
         const response = await fetch(url, {
           ...options,
@@ -148,6 +160,9 @@ async function request(path, options = {}, retries = 1) {
           signal: controller.signal,
         });
         clearTimeout(timeout);
+        if (options.signal) {
+          options.signal.removeEventListener('abort', onAbort);
+        }
 
         let data = null;
         try { data = await response.json(); } catch (_) { data = null; }
@@ -179,7 +194,13 @@ async function request(path, options = {}, retries = 1) {
         return data;
       } catch (err) {
         clearTimeout(timeout);
+        if (options.signal) {
+          options.signal.removeEventListener('abort', onAbort);
+        }
         if (err.name === 'AbortError') {
+          if (options.signal?.aborted) {
+            throw err;
+          }
           // Genuine timeout — the request was started but didn't respond in time.
           // This is the cold-start / slow-server scenario in production.
           lastErr = new Error('Request timed out. Server may be waking up — please try again.');

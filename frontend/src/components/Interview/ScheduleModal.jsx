@@ -178,7 +178,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   }, [setScheduleForm]);
 
   const handleCandidateSelect = React.useCallback((c) => {
-    const candInterviews = allInterviews.filter(
+    const candInterviews = (allInterviews || []).filter(
       iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id && !iv._optimistic
     );
     const nextRound = candInterviews.length + 1;
@@ -216,8 +216,9 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     const chosenHour   = chosenDate.getHours();
 
     // Count real (non-optimistic) interviews already in the same date+hour bucket
-    const sameSlotInterviews = allInterviews.filter(iv => {
-      if (iv._optimistic) return false;
+    const sameSlotInterviews = (allInterviews || []).filter(iv => {
+      if (iv?._optimistic) return false;
+      if (!iv?.scheduledStart) return false;
       const d = new Date(iv.scheduledStart);
       return d.toDateString() === chosenDateKey && d.getHours() === chosenHour;
     });
