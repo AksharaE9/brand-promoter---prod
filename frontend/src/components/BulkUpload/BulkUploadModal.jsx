@@ -13,6 +13,15 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
   const { jobId, jobState, startJob, resetJob } = useBulkUploadJob();
 
+  useEffect(() => {
+    if (!isOnline && (isUploading || jobId)) {
+      setIsUploading(false);
+      resetJob();
+      setFile(null);
+      setError("Connection lost. Your upload was interrupted. You'll need to re-select the file and try again once you're back online.");
+    }
+  }, [isOnline, isUploading, jobId, resetJob]);
+
   if (!isOpen) return null;
 
   const validateFile = (selectedFile) => {
@@ -29,15 +38,6 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
     return null;
   };
-
-  useEffect(() => {
-    if (!isOnline && (isUploading || jobId)) {
-      setIsUploading(false);
-      resetJob();
-      setFile(null);
-      setError("Connection lost. Your upload was interrupted. You'll need to re-select the file and try again once you're back online.");
-    }
-  }, [isOnline, isUploading, jobId, resetJob]);
 
   const handleFileSelect = (e) => {
     if (isUploading || !isOnline) return;
