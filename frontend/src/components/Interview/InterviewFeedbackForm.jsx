@@ -156,6 +156,7 @@ export default function InterviewFeedbackForm({
   }, [initialValues]);
 
   const [values, setValues] = useState(() => {
+    const initial = {};
     let flattened = { ...initialValues };
     if (Number(templateVersion) === 1) {
       if (initialValues?.ratings) {
@@ -182,11 +183,18 @@ export default function InterviewFeedbackForm({
         flattened.attachedDocument = initialValues.offerFileUrl || initialValues.offerFileName || initialValues.attachedDocument;
       }
     }
-    return {
-      name: candidateName,
-      roundNumber: roundLabel,
-      ...flattened,
-    };
+
+    template.forEach((field) => {
+      if (field.key === 'name') {
+        initial.name = flattened.name || candidateName || '';
+      } else if (field.key === 'roundNumber') {
+        initial.roundNumber = flattened.roundNumber || roundLabel || '';
+      } else {
+        initial[field.key] = flattened[field.key] ?? '';
+      }
+    });
+
+    return initial;
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -196,47 +204,51 @@ export default function InterviewFeedbackForm({
   const [lookingUpNumber, setLookingUpNumber] = useState(false);
 
   useEffect(() => {
-    if (initialValues && Object.keys(initialValues).length > 0) {
-      let flattened = { ...initialValues };
-      if (Number(templateVersion) === 1) {
-        if (initialValues?.ratings) {
-          flattened.technical = typeof initialValues.ratings.technical === 'number'
-            ? `${initialValues.ratings.technical}/5`
-            : initialValues.ratings.technical;
-          flattened.communication = typeof initialValues.ratings.communication === 'number'
-            ? `${initialValues.ratings.communication}/5`
-            : initialValues.ratings.communication;
-          flattened.culture = typeof initialValues.ratings.culture === 'number'
-            ? `${initialValues.ratings.culture}/5`
-            : initialValues.ratings.culture;
-        }
-        if (initialValues?.recommendation) {
-          flattened.overallRecommendation = initialValues.recommendation;
-        }
-        if (initialValues?.strengths) {
-          flattened.keyStrengths = initialValues.strengths;
-        }
-        if (initialValues?.notes) {
-          flattened.overallSummary = initialValues.notes;
-        }
-        if (initialValues?.offerFileUrl || initialValues?.offerFileName || initialValues?.attachedDocument) {
-          flattened.attachedDocument = initialValues.offerFileUrl || initialValues.offerFileName || initialValues.attachedDocument;
-        }
+    let flattened = { ...initialValues };
+    if (Number(templateVersion) === 1) {
+      if (initialValues?.ratings) {
+        flattened.technical = typeof initialValues.ratings.technical === 'number'
+          ? `${initialValues.ratings.technical}/5`
+          : initialValues.ratings.technical;
+        flattened.communication = typeof initialValues.ratings.communication === 'number'
+          ? `${initialValues.ratings.communication}/5`
+          : initialValues.ratings.communication;
+        flattened.culture = typeof initialValues.ratings.culture === 'number'
+          ? `${initialValues.ratings.culture}/5`
+          : initialValues.ratings.culture;
       }
-      setValues((prev) => ({
-        ...prev,
-        ...flattened,
-        name: candidateName || prev.name || flattened.name || '',
-        roundNumber: roundLabel,
-      }));
-    } else {
-      setValues((prev) => ({
-        ...prev,
-        name: candidateName || prev.name || '',
-        roundNumber: roundLabel,
-      }));
+      if (initialValues?.recommendation) {
+        flattened.overallRecommendation = initialValues.recommendation;
+      }
+      if (initialValues?.strengths) {
+        flattened.keyStrengths = initialValues.strengths;
+      }
+      if (initialValues?.notes) {
+        flattened.overallSummary = initialValues.notes;
+      }
+      if (initialValues?.offerFileUrl || initialValues?.offerFileName || initialValues?.attachedDocument) {
+        flattened.attachedDocument = initialValues.offerFileUrl || initialValues.offerFileName || initialValues.attachedDocument;
+      }
     }
-  }, [initialValues, templateVersion, candidateName, roundLabel]);
+
+    setValues((prev) => {
+      const nextValues = { ...prev };
+      template.forEach((field) => {
+        if (field.key === 'name') {
+          nextValues.name = flattened.name || candidateName || prev.name || '';
+        } else if (field.key === 'roundNumber') {
+          nextValues.roundNumber = flattened.roundNumber || roundLabel || prev.roundNumber || '';
+        } else {
+          if (flattened[field.key] !== undefined) {
+            nextValues[field.key] = flattened[field.key];
+          } else if (nextValues[field.key] === undefined) {
+            nextValues[field.key] = '';
+          }
+        }
+      });
+      return nextValues;
+    });
+  }, [initialValues, templateVersion, candidateName, roundLabel, template]);
 
   // Live lookup candidate by phone number
   useEffect(() => {

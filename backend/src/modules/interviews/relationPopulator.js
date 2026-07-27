@@ -104,6 +104,26 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
     });
   }
 
+  // For any rounds missing candidateId or jobId, query their applications to resolve them
+  const roundsMissingIds = rounds.filter(r => (!r.candidateId || !r.jobId) && r.applicationId);
+  if (roundsMissingIds.length > 0) {
+    const appIds = [...new Set(roundsMissingIds.map(r => r.applicationId))];
+    const apps = await prisma.application.findMany({
+      where: { id: { in: appIds } },
+      select: { id: true, candidateId: true, jobId: true }
+    });
+    const appMap = {};
+    apps.forEach(a => { appMap[a.id] = a; });
+    
+    // Assign candidateId/jobId to the round objects locally
+    rounds.forEach(r => {
+      if (r.applicationId && appMap[r.applicationId]) {
+        r.candidateId = r.candidateId || appMap[r.applicationId].candidateId;
+        r.jobId = r.jobId || appMap[r.applicationId].jobId;
+      }
+    });
+  }
+
   // Collect all unique IDs needed across all rounds (resolve from application relation if needed)
   const candidateIds = [...new Set(rounds.map(r => r.candidateId || r.application?.candidateId).filter(Boolean))];
   const jobIds       = [...new Set(rounds.map(r => r.jobId || r.application?.jobId).filter(Boolean))];
