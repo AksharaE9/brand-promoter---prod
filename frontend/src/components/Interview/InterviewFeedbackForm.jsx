@@ -143,6 +143,15 @@ export default function InterviewFeedbackForm({
 
   const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
 
+  const isEdit = React.useMemo(() => {
+    return !!(
+      initialValues?.selectionStatus ||
+      initialValues?.status ||
+      initialValues?.overallRecommendation ||
+      initialValues?.ratings
+    );
+  }, [initialValues]);
+
   const [values, setValues] = useState(() => {
     let flattened = { ...initialValues };
     if (Number(templateVersion) === 1) {
@@ -184,12 +193,47 @@ export default function InterviewFeedbackForm({
   const [lookingUpNumber, setLookingUpNumber] = useState(false);
 
   useEffect(() => {
-    setValues((prev) => ({
-      ...prev,
-      name: candidateName || prev.name || '',
-      roundNumber: roundLabel,
-    }));
-  }, [candidateName, roundLabel]);
+    if (initialValues && Object.keys(initialValues).length > 0) {
+      let flattened = { ...initialValues };
+      if (Number(templateVersion) === 1) {
+        if (initialValues?.ratings) {
+          flattened.technical = typeof initialValues.ratings.technical === 'number'
+            ? `${initialValues.ratings.technical}/5`
+            : initialValues.ratings.technical;
+          flattened.communication = typeof initialValues.ratings.communication === 'number'
+            ? `${initialValues.ratings.communication}/5`
+            : initialValues.ratings.communication;
+          flattened.culture = typeof initialValues.ratings.culture === 'number'
+            ? `${initialValues.ratings.culture}/5`
+            : initialValues.ratings.culture;
+        }
+        if (initialValues?.recommendation) {
+          flattened.overallRecommendation = initialValues.recommendation;
+        }
+        if (initialValues?.strengths) {
+          flattened.keyStrengths = initialValues.strengths;
+        }
+        if (initialValues?.notes) {
+          flattened.overallSummary = initialValues.notes;
+        }
+        if (initialValues?.offerFileUrl || initialValues?.offerFileName || initialValues?.attachedDocument) {
+          flattened.attachedDocument = initialValues.offerFileUrl || initialValues.offerFileName || initialValues.attachedDocument;
+        }
+      }
+      setValues((prev) => ({
+        ...prev,
+        ...flattened,
+        name: candidateName || prev.name || flattened.name || '',
+        roundNumber: roundLabel,
+      }));
+    } else {
+      setValues((prev) => ({
+        ...prev,
+        name: candidateName || prev.name || '',
+        roundNumber: roundLabel,
+      }));
+    }
+  }, [initialValues, templateVersion, candidateName, roundLabel]);
 
   // Live lookup candidate by phone number
   useEffect(() => {
@@ -296,11 +340,20 @@ export default function InterviewFeedbackForm({
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-3.5">
         <div>
-          <h3 className="text-base font-bold text-slate-900">
-            Interview Assessment Form — {roundLabel}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-900">
+              {isEdit ? `Editing Submitted Assessment — ${roundLabel}` : `Interview Assessment Form — ${roundLabel}`}
+            </h3>
+            {isEdit && (
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 uppercase tracking-wider">
+                Submitted ✓
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
-            Complete candidate feedback metrics for {candidateName || values.name || 'Candidate'}
+            {isEdit
+              ? `Modify candidate performance details for ${candidateName || values.name || 'Candidate'}`
+              : `Complete candidate feedback metrics for ${candidateName || values.name || 'Candidate'}`}
           </p>
         </div>
 

@@ -770,26 +770,59 @@ router.post(
       }).catch(() => {});
     }
 
-    // Automatically complete matching Interview round in scheduling system
-    const roundNo = round === 'ROUND_1' ? 1 : round === 'ROUND_2' ? 2 : 3;
-    const activeInterview = await prisma.interview.findFirst({
+    // Automatically complete or update matching Interview round in scheduling system
+    const roundNoList = round === 'ROUND_1' ? [1]
+                      : round === 'ROUND_2' ? [2]
+                      : [3, 99];
+    const matchedInterviews = await prisma.interview.findMany({
       where: {
         candidateId,
-        roundNo,
-        status: { in: ['SCHEDULED', 'PENDING'] },
+        roundNo: { in: roundNoList },
       },
     });
-    if (activeInterview) {
-      const srv = require('../../services/schedulingCacheService');
+
+    const srv = require('../../services/schedulingCacheService');
+    for (const activeInterview of matchedInterviews) {
+      let feedbackList = [];
+      try {
+        feedbackList = typeof activeInterview.feedback === 'string' ? JSON.parse(activeInterview.feedback) : activeInterview.feedback;
+      } catch (_) {}
+      if (!Array.isArray(feedbackList)) feedbackList = [];
+
+      const newFbItem = {
+        id: feedbackRecord.id,
+        submittedById: feedbackRecord.submittedById,
+        feedbackData: data,
+        templateVersion: templateVersion,
+        selectionStatus: selectionStatus,
+        overallRating: overallRating,
+        createdAt: feedbackRecord.createdAt,
+        updatedAt: feedbackRecord.updatedAt,
+      };
+
+      let updatedList = [];
+      const existingIdx = feedbackList.findIndex(f => f.id === feedbackRecord.id || (!f.id && f.submittedById === req.user.id));
+      if (existingIdx >= 0) {
+        updatedList = [...feedbackList];
+        updatedList[existingIdx] = { ...feedbackList[existingIdx], ...newFbItem };
+      } else {
+        updatedList = [...feedbackList, newFbItem];
+      }
+
+      const updatePayload = {
+        feedback: updatedList,
+      };
+
+      if (activeInterview.status === 'SCHEDULED' || activeInterview.status === 'PENDING') {
+        updatePayload.status = 'COMPLETED';
+        updatePayload.result = selectionStatus;
+        updatePayload.outcome = selectionStatus;
+        updatePayload.outcomeSetAt = new Date().toISOString();
+      }
+
       await srv.writeRound(
         activeInterview.id,
-        {
-          status: "COMPLETED",
-          result: selectionStatus,
-          outcome: selectionStatus,
-          outcomeSetAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
+        updatePayload,
         req.user.id,
         req.user.organizationId || "defaultOrg",
         activeInterview

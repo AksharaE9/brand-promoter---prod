@@ -2395,8 +2395,6 @@ const InterviewSchedule = () => {
                                   ? InterviewRound.ROUND_1
                                   : selectedInterview.roundNo === 2
                                   ? InterviewRound.ROUND_2
-                                  : selectedInterview.roundNo === 3
-                                  ? InterviewRound.ROUND_3
                                   : InterviewRound.FINAL_ROUND
                               }
                               candidateId={selectedInterview.candidateId}
@@ -2407,6 +2405,7 @@ const InterviewSchedule = () => {
                                 setShowFeedbackModal(false);
                                 setIsEditingFeedback(false);
                                 setBanner('Assessment saved successfully.');
+                                loadAll();
                               }}
                               onCancel={isEditingFeedback ? () => setIsEditingFeedback(false) : undefined}
                             />
@@ -2419,8 +2418,6 @@ const InterviewSchedule = () => {
                                   ? InterviewRound.ROUND_1
                                   : selectedInterview.roundNo === 2
                                   ? InterviewRound.ROUND_2
-                                  : selectedInterview.roundNo === 3
-                                  ? InterviewRound.ROUND_3
                                   : InterviewRound.FINAL_ROUND
                               }
                               feedbackData={myFeedback.feedbackData || myFeedback}
@@ -2647,6 +2644,7 @@ const InterviewSchedule = () => {
                     candidateId={selectedInterview.candidateId}
                     candidateName={selectedInterview.candidateName}
                     initialValues={myFeedback?.feedbackData || myFeedback || {}}
+                    templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
                     onCancel={() => setShowFeedbackModal(false)}
                     onSuccess={() => {
                       setShowFeedbackModal(false);

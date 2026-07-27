@@ -29,6 +29,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { parseNotesSafely, getFirstFeedback, isFollowUpUploaded } from '../../lib/interviewUtils';
 import { getStoredUser, apiGet, apiPost } from '../../lib/api';
+import { resolveFeedbackValue } from '../../lib/interviewTemplates';
 import InfiniteScrollSentinel from '../InfiniteScrollSentinel';
 
 // ─────────────────────────────────────────────
@@ -306,13 +307,16 @@ const ALL_COLUMNS = [
     filterType: 'text',
     getValue: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.technical;
-      return score != null ? String(score) : '';
+      if (!fb) return '';
+      const ver = fb.templateVersion || fb.template_version || 1;
+      return resolveFeedbackValue(fb.feedbackData || fb, 'technical', ver);
     },
     render: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.technical;
-      return <span>{score != null ? `${score}/5` : '-'}</span>;
+      if (!fb) return <span>-</span>;
+      const ver = fb.templateVersion || fb.template_version || 1;
+      const val = resolveFeedbackValue(fb.feedbackData || fb, 'technical', ver);
+      return <span>{val || '-'}</span>;
     },
   },
   {
@@ -322,13 +326,16 @@ const ALL_COLUMNS = [
     filterType: 'text',
     getValue: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.communication;
-      return score != null ? String(score) : '';
+      if (!fb) return '';
+      const ver = fb.templateVersion || fb.template_version || 1;
+      return resolveFeedbackValue(fb.feedbackData || fb, 'communication', ver);
     },
     render: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.communication;
-      return <span>{score != null ? `${score}/5` : '-'}</span>;
+      if (!fb) return <span>-</span>;
+      const ver = fb.templateVersion || fb.template_version || 1;
+      const val = resolveFeedbackValue(fb.feedbackData || fb, 'communication', ver);
+      return <span>{val || '-'}</span>;
     },
   },
   {
@@ -338,13 +345,16 @@ const ALL_COLUMNS = [
     filterType: 'text',
     getValue: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.culture;
-      return score != null ? String(score) : '';
+      if (!fb) return '';
+      const ver = fb.templateVersion || fb.template_version || 1;
+      return resolveFeedbackValue(fb.feedbackData || fb, 'culture', ver);
     },
     render: (iv) => {
       const fb = getFirstFeedback(iv);
-      const score = fb?.ratings?.culture;
-      return <span>{score != null ? `${score}/5` : '-'}</span>;
+      if (!fb) return <span>-</span>;
+      const ver = fb.templateVersion || fb.template_version || 1;
+      const val = resolveFeedbackValue(fb.feedbackData || fb, 'culture', ver);
+      return <span>{val || '-'}</span>;
     },
   },
   {
@@ -543,14 +553,16 @@ const ALL_COLUMNS = [
     label: 'Overall Summary',
     width: 200,
     filterType: 'text',
-    // feedback[].notes = overall comments (backend stores overallComments as "notes" in feedback entry)
     getValue: (iv) => {
       const fb = getFirstFeedback(iv);
-      return fb?.notes || '';
+      if (!fb) return '';
+      const ver = fb.templateVersion || fb.template_version || 1;
+      return resolveFeedbackValue(fb.feedbackData || fb, 'overallSummary', ver);
     },
     render: (iv) => {
       const fb = getFirstFeedback(iv);
-      const text = fb?.notes || '';
+      const ver = fb ? (fb.templateVersion || fb.template_version || 1) : 1;
+      const text = fb ? resolveFeedbackValue(fb.feedbackData || fb, 'overallSummary', ver) : '';
       return (
         <input
           type="text"

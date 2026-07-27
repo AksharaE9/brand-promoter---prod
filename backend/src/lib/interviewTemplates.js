@@ -125,6 +125,45 @@ const FEEDBACK_TEMPLATE_VERSIONS = [
 const CURRENT_FEEDBACK_TEMPLATE_VERSION = 2;
 
 /**
+ * resolveFeedbackFields - Consolidates template field resolution for both read-only and editable forms.
+ */
+function resolveFeedbackFields(templateVersion, round) {
+  const ver = Number(templateVersion) || 1;
+  const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === ver);
+  if (!versionDef) {
+    throw new Error(`Unknown feedback template version: ${ver}`);
+  }
+  return versionDef.getFields(round);
+}
+
+/**
+ * resolveFeedbackValue - Dynamically resolves the value of a feedback field
+ * based on whether it is version 1 (legacy rating-based) or version 2 (schema-driven).
+ */
+function resolveFeedbackValue(feedbackData, key, templateVersion = 1) {
+  if (!feedbackData) return '';
+  if (Number(templateVersion) === 2) return feedbackData[key] ?? '';
+
+  // Direct match
+  if (feedbackData[key] !== undefined && feedbackData[key] !== null) return feedbackData[key];
+
+  // Legacy mappings (ratings nesting)
+  if (['technical', 'communication', 'culture'].includes(key)) {
+    const val = feedbackData.ratings?.[key];
+    return val !== undefined && val !== null ? (typeof val === 'number' ? `${val}/5` : val) : '';
+  }
+
+  if (key === 'overallRecommendation') return feedbackData.recommendation || '';
+  if (key === 'keyStrengths') return feedbackData.strengths || '';
+  if (key === 'overallSummary') return feedbackData.notes || '';
+  if (key === 'attachedDocument') {
+    return feedbackData.offerFileUrl || feedbackData.offerFileName || feedbackData.attachedDocument || '';
+  }
+  return '';
+}
+
+
+/**
  * Returns the next schedulable round in sequence based on completed rounds array.
  * @param {string[]} completedRounds 
  * @returns {string|null}
@@ -354,6 +393,8 @@ module.exports = {
   LEGACY_ASSESSMENT_FIELDS,
   FEEDBACK_TEMPLATE_VERSIONS,
   CURRENT_FEEDBACK_TEMPLATE_VERSION,
+  resolveFeedbackFields,
+  resolveFeedbackValue,
   getNextSchedulableRound,
   validateFeedbackData,
   formatFeedbackForClipboard,
