@@ -7,6 +7,35 @@ const QUERY_KEYS = {
   round: (id) => ['scheduling', 'round', id],
 };
 
+// Helper to safely update query list cache for both flat lists and infinite scroll pages
+function updateInfiniteOrFlatList(old, updateFn) {
+  if (!old) return old;
+  
+  // TanStack Query Infinite Query shape: { pages: [...], pageParams: [...] }
+  if (old.pages && Array.isArray(old.pages)) {
+    return {
+      ...old,
+      pages: old.pages.map(page => {
+        const list = page.data || page.rows || [];
+        if (!Array.isArray(list)) return page;
+        const updatedList = updateFn(list);
+        if (page.data !== undefined) {
+          return { ...page, data: updatedList };
+        } else if (page.rows !== undefined) {
+          return { ...page, rows: updatedList };
+        }
+        return { ...page, data: updatedList };
+      })
+    };
+  }
+  
+  // Flat array or simple { data: [...] } shape
+  const list = old.data ?? old;
+  if (!Array.isArray(list)) return old;
+  const updatedList = updateFn(list);
+  return old.data !== undefined ? { ...old, data: updatedList } : updatedList;
+}
+
 // ── Fetch rounds list ──
 export function useRoundsList(filters = {}) {
   // Pass null to completely disable this query instance (e.g. when search is empty)
@@ -82,14 +111,12 @@ export function useUpdateRoundStatus() {
 
       queryClient.setQueriesData(
         { queryKey: ['scheduling', 'rounds'] },
-        (/** @type {any} */ old) => {
-          const list = old?.data ?? old;
-          if (!Array.isArray(list)) return old;
-          const updated = list.map((r) =>
-            r.id === roundId ? { ...r, status, _optimistic: true } : r
-          );
-          return old?.data ? { ...old, data: updated } : updated;
-        }
+        (/** @type {any} */ old) =>
+          updateInfiniteOrFlatList(old, (list) =>
+            list.map((r) =>
+              r.id === roundId ? { ...r, status, _optimistic: true } : r
+            )
+          )
       );
 
       return { previousRound, previousLists };
@@ -157,16 +184,15 @@ export function useRescheduleRound() {
         };
       });
 
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.map((r) =>
-          r.id === roundId
-            ? { ...r, scheduledStart: scheduledDate, durationMinutes, status: 'RESCHEDULED', _optimistic: true }
-            : r
-        );
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId
+              ? { ...r, scheduledStart: scheduledDate, durationMinutes, status: 'RESCHEDULED', _optimistic: true }
+              : r
+          )
+        )
+      );
 
       return { previousRound, previousLists };
     },
@@ -210,14 +236,13 @@ export function useSaveMeetLink() {
         };
       });
 
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.map((r) =>
-          r.id === roundId ? { ...r, meetingLink: meetLink, _optimistic: true } : r
-        );
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId ? { ...r, meetingLink: meetLink, _optimistic: true } : r
+          )
+        )
+      );
 
       return { previousRound, previousLists };
     },
@@ -258,14 +283,13 @@ export function useUpdatePanel() {
         };
       });
 
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.map((r) =>
-          r.id === roundId ? { ...r, interviewerIds: panelMembers, _optimistic: true } : r
-        );
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId ? { ...r, interviewerIds: panelMembers, _optimistic: true } : r
+          )
+        )
+      );
 
       return { previousRound, previousLists };
     },
@@ -309,14 +333,13 @@ export function useTransferCandidate() {
         };
       });
 
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.map((r) =>
-          r.id === roundId ? { ...r, jobId: toJobId, jobTitle: toJobTitle, _optimistic: true } : r
-        );
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId ? { ...r, jobId: toJobId, jobTitle: toJobTitle, _optimistic: true } : r
+          )
+        )
+      );
 
       return { previousRound, previousLists };
     },
@@ -409,12 +432,18 @@ export function useCreateRound() {
 
       // Insert in ascending roundNo order — never prepend blindly
       queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return { data: [tempRound], hasMore: false, nextCursor: null };
-        const merged = [...list, tempRound];
-        // Sort so newest round for each application appears in ascending roundNo order
-        merged.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
-        return old?.data ? { ...old, data: merged } : merged;
+        // If there's no cache at all, we can seed it with the infinite query shape
+        if (!old) {
+          return {
+            pages: [{ data: [tempRound], hasMore: false, nextCursor: null, totalCount: 1 }],
+            pageParams: [null]
+          };
+        }
+        return updateInfiniteOrFlatList(old, (list) => {
+          const merged = [...list, tempRound];
+          merged.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
+          return merged;
+        });
       });
 
       return { previousLists, tempId: tempRound.id };
@@ -431,16 +460,15 @@ export function useCreateRound() {
       const realId = data?.data?.id || data?.tempId || data?.id;
       const responseData = data?.data ?? data;
       if (realId && context?.tempId) {
-        queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-          const list = old?.data ?? old;
-          if (!Array.isArray(list)) return old;
-          const updated = list.map((r) =>
-            r.id === context.tempId ? { ...responseData, _optimistic: false } : r
-          );
-          // Re-sort after replacement to keep ascending roundNo order
-          updated.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
-          return old?.data ? { ...old, data: updated } : updated;
-        });
+        queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+          updateInfiniteOrFlatList(old, (list) => {
+            const updated = list.map((r) =>
+              r.id === context.tempId ? { ...responseData, _optimistic: false } : r
+            );
+            updated.sort((a, b) => (a.roundNo ?? 0) - (b.roundNo ?? 0));
+            return updated;
+          })
+        );
       }
 
       queryClient.invalidateQueries({ queryKey: ['scheduling'] });
@@ -476,12 +504,11 @@ export function useDeleteRound() {
       const previousLists = queryClient.getQueriesData({ queryKey: ['scheduling', 'rounds'] });
 
       // ✨ Instantly remove from every cached list — this is the "instant delete"
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.filter((r) => r.id !== roundId);
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.filter((r) => r.id !== roundId)
+        )
+      );
 
       return { previousLists, deletedId: roundId };
     },
@@ -531,14 +558,13 @@ export function useUpdateRound() {
         };
       });
 
-      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-        const list = old?.data ?? old;
-        if (!Array.isArray(list)) return old;
-        const updated = list.map((r) =>
-          r.id === roundId ? { ...r, ...payload, _optimistic: true } : r
-        );
-        return old?.data ? { ...old, data: updated } : updated;
-      });
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId ? { ...r, ...payload, _optimistic: true } : r
+          )
+        )
+      );
 
       return { previousRound, previousLists };
     },
@@ -553,14 +579,13 @@ export function useUpdateRound() {
       // Reconcile with server data — clear optimistic flag
       const realData = data?.data ?? data;
       if (realData) {
-        queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) => {
-          const list = old?.data ?? old;
-          if (!Array.isArray(list)) return old;
-          const updated = list.map((r) =>
-            r.id === variables.roundId ? { ...r, ...realData, _optimistic: false } : r
-          );
-          return old?.data ? { ...old, data: updated } : updated;
-        });
+        queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (/** @type {any} */ old) =>
+          updateInfiniteOrFlatList(old, (list) =>
+            list.map((r) =>
+              r.id === variables.roundId ? { ...r, ...realData, _optimistic: false } : r
+            )
+          )
+        );
       }
       queryClient.invalidateQueries({ queryKey: ['scheduling'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });

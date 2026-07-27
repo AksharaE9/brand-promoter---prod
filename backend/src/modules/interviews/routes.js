@@ -378,11 +378,12 @@ router.get(
     // totalCount: real DB COUNT(*) from page 1; null on subsequent pages (consumers
     // read it once from page 1 and cache it — see usePaginatedList usage in frontend).
     const responseData = {
-      data:       populated,
+      data:       populated || [],
+      rows:       populated || [],
       nextCursor,
       hasMore,
       ...(totalCount !== null ? { totalCount } : {}),
-      pagination: { total: totalCount ?? populated.length, hasMore }
+      pagination: { total: totalCount ?? (populated || []).length, hasMore }
     };
 
     // ── 6. Enforce hard byte-size cap BEFORE sending or caching ──
