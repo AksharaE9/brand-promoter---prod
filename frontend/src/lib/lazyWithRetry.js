@@ -1,6 +1,35 @@
 import { lazy } from 'react';
 
 /**
+ * forceUpdateAndReload
+ * Bypasses PWA Cache Storage and unregisters Service Workers before reloading
+ * to guarantee that the browser fetches the new index.html referencing the current hashes.
+ */
+async function forceUpdateAndReload() {
+  try {
+    if (typeof caches !== 'undefined' && caches.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+    }
+  } catch (e) {}
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(r => r.unregister()));
+    }
+  } catch (e) {}
+
+  try {
+    window.location.reload();
+  } catch (e) {
+    if (typeof location !== 'undefined' && location.reload) {
+      location.reload();
+    }
+  }
+}
+
+/**
  * lazyWithRetry
  *
  * Wraps dynamic imports in React.lazy with retry logic.
@@ -26,8 +55,8 @@ export function lazyWithRetry(componentImport, chunkName) {
       if (!alreadyRetried) {
         // First failure for this chunk in this session — reload once to pick up the fresh build.
         sessionStorage.setItem(storageKey, 'true');
-        console.warn(`Chunk load failed for ${chunkName}. Reloading page to get latest scripts...`, error);
-        window.location.reload();
+        console.warn(`Chunk load failed for ${chunkName}. Force reloading page bypassing PWA cache...`, error);
+        forceUpdateAndReload();
         // Return a promise that never resolves; the reload takes over before this matters.
         return new Promise(() => {});
       }
