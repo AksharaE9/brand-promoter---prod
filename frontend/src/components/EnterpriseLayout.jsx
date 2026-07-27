@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearAuth, getStoredUser, apiGet } from '../lib/api';
+import { RouteTransition } from './PageMotion';
 
 // ── Prefetch map: href → { queryKey, queryFn }
 // When user hovers a nav link for 150ms, we start fetching data for the destination.
@@ -214,7 +215,11 @@ export default React.memo(function EnterpriseLayout({ sidebar, topbar, children,
       {sidebar}
       <div className="main-content os-main">
         {topbar}
-        <main className={`os-content ${contentClassName}`}>{children}</main>
+        <main className={`os-content ${contentClassName}`}>
+          <RouteTransition>
+            {children}
+          </RouteTransition>
+        </main>
       </div>
     </div>
   );

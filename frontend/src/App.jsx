@@ -62,9 +62,7 @@ function RouteSuspense({ children, type = 'table' }) {
 const protectedElement = (element, allowedRoles = ALL_ROLES, skeletonType = 'table') => (
   <ProtectedRoute allowedRoles={allowedRoles}>
     <RouteSuspense type={skeletonType}>
-      <RouteTransition>
-        {element}
-      </RouteTransition>
+      {element}
     </RouteSuspense>
   </ProtectedRoute>
 );

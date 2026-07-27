@@ -299,7 +299,7 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
 
 const Candidates = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const statusParam = useMemo(() => searchParams.get('status'), [searchParams]);
   const [items, setItems] = useState([]);
   const [viewMode, setViewMode] = useState('list');
@@ -308,7 +308,7 @@ const Candidates = () => {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || '');
   const [totalCount, setTotalCount] = useState(0);
-  const [statusFilter, setStatusFilter] = useState(statusParam || 'All');
+  const statusFilter = statusParam || 'All';
   const [roleFilter, setRoleFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
   const [companyFilter, setCompanyFilter] = useState('All');     // ── NEW ──
@@ -372,15 +372,31 @@ const Candidates = () => {
   }, [queryError]);
 
   const loadCandidates = useCallback((query, stat) => {
-    if (stat !== undefined && stat !== statusFilter) {
-      setStatusFilter(stat);
-    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (stat !== undefined) {
+        if (stat === 'All') {
+          next.delete('status');
+        } else {
+          next.set('status', stat);
+        }
+      }
+      if (query !== undefined) {
+        if (!query.trim()) {
+          next.delete('search');
+        } else {
+          next.set('search', query.trim());
+        }
+      }
+      return next;
+    });
+
     if (query !== undefined && query !== debouncedSearch) {
       setSearch(query);
       setDebouncedSearch(query);
     }
     refetch();
-  }, [statusFilter, debouncedSearch, refetch]);
+  }, [debouncedSearch, refetch, setSearchParams]);
 
   const handleDeleteAll = async () => {
     if (!window.confirm('Are you sure you want to DELETE ALL candidates? This cannot be undone!')) return;
@@ -405,10 +421,7 @@ const Candidates = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Sync status from URL param
-  useEffect(() => {
-    setStatusFilter(statusParam || 'All');
-  }, [statusParam]);
+  // statusFilter is now derived directly from URL statusParam
 
   // Reset role/location filter AND scroll to top on section change
   useEffect(() => {
@@ -809,7 +822,7 @@ const Candidates = () => {
         ) : items.length === 0 ? (
           <div className="py-20 text-center os-card">
             <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>
-            <button className="os-btn-outline" onClick={() => { setSearch(''); setStatusFilter('All'); }}>Clear Filters</button>
+            <button className="os-btn-outline" onClick={() => { setSearch(''); setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('status'); next.delete('search'); return next; }); }}>Clear Filters</button>
           </div>
         ) : viewMode === 'grid' && statusFilter === 'JOINED' ? (
           <>

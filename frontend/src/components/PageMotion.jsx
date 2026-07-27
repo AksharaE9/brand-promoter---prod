@@ -90,7 +90,9 @@ export function RouteTransition({ children }) {
             : 'opacity 0.18s ease, transform 0.18s cubic-bezier(0.22,1,0.36,1)',
           willChange: 'opacity, transform',
           height: '100%',
-          display: 'contents',
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {children}
