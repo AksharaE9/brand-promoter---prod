@@ -872,6 +872,13 @@ const InterviewSchedule = () => {
           queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
             updateInfiniteOrFlatList(old, (list) => list.filter(i => i.id !== deletedId))
           );
+
+          // Immediately evict the detail cache for the deleted round so the
+          // detail panel doesn't keep showing the stale 'SELECTED' badge
+          queryClient.removeQueries({ queryKey: ['scheduling', 'round-details', deletedId] });
+
+          // Reset the active interview selection if the deleted round was selected
+          setActiveInterviewId(prev => (prev === deletedId ? '' : prev));
         }
       } else if (data.type === 'SCHEDULING_UPDATE') {
         const { type: sub, roundId, round } = data;
@@ -890,7 +897,17 @@ const InterviewSchedule = () => {
       const now = Date.now();
       if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
       lastSSEReloadRef.current = now;
-      // Mark scheduling queries as stale and let next natural mount/refetch update them (no forced immediate fetch to avoid flicker)
+
+      // For feedback events, force-refetch the currently open round-details so
+      // the status badge updates immediately in all open tabs/windows
+      if (data.type === 'interview-feedback:updated' || data.type === 'INTERVIEW_FEEDBACK_SUBMITTED') {
+        queryClient.invalidateQueries({
+          queryKey: ['scheduling', 'round-details'],
+          refetchType: 'active',
+        });
+      }
+
+      // Mark all other scheduling queries stale; let natural mount/refetch update them
       queryClient.invalidateQueries({
         queryKey: ['scheduling'],
         refetchType: 'none',
@@ -1385,14 +1402,26 @@ const InterviewSchedule = () => {
       return;
     }
     try {
-      const mappedRound = round === 'Round 1' ? 'ROUND_1'
-                        : round === 'Round 2' ? 'ROUND_2'
-                        : 'FINAL_ROUND';
+      // `round` is already the DB enum value (e.g. 'ROUND_1', 'ROUND_2', 'FINAL_ROUND').
+      // Only convert if it's a display label (legacy call paths).
+      const ENUM_VALUES = ['ROUND_1', 'ROUND_2', 'FINAL_ROUND'];
+      const mappedRound = ENUM_VALUES.includes(round)
+        ? round
+        : round === 'Round 1' ? 'ROUND_1'
+        : round === 'Round 2' ? 'ROUND_2'
+        : 'FINAL_ROUND';
+
       const res = await apiDelete(`/interviews/${candidateId}/feedback/${mappedRound}`);
       if (res?.success) {
         setBanner('Feedback soft-deleted successfully.');
+        // Force-refetch the currently open round so the result badge resets
+        // immediately rather than waiting for the 10s staleTime to expire.
+        queryClient.invalidateQueries({
+          queryKey: ['scheduling', 'round-details'],
+          refetchType: 'active',
+        });
+        queryClient.invalidateQueries({ queryKey: ['scheduling'] });
         await loadAll();
-        refetchDetails();
       } else {
         setError(res?.error || 'Failed to delete feedback');
       }
@@ -1465,6 +1494,15 @@ const InterviewSchedule = () => {
     }
 
     setError('');
+
+    // Pre-emptively clear the detail-panel selection and detail cache so the
+    // UI collapses immediately and doesn't keep showing a stale SELECTED badge.
+    if (activeInterviewId === interviewId) {
+      const remaining = (selectedGroup?.interviews || []).filter(i => i.id !== interviewId);
+      setActiveInterviewId(remaining.length > 0 ? remaining[0].id : '');
+    }
+    queryClient.removeQueries({ queryKey: ['scheduling', 'round-details', interviewId] });
+
     deleteRoundMutation.mutate(interviewId, {
       onSuccess: () => {
         setBanner('Interview deleted successfully.');
@@ -1473,15 +1511,6 @@ const InterviewSchedule = () => {
         setError(err.message || 'Failed to delete interview');
       }
     });
-
-    if (activeInterviewId === interviewId) {
-      const remaining = (selectedGroup?.interviews || []).filter(i => i.id !== interviewId);
-      if (remaining.length > 0) {
-        setActiveInterviewId(remaining[0].id);
-      } else {
-        setActiveInterviewId('');
-      }
-    }
   };
 
   const [transferringPanelist, setTransferringPanelist] = useState(false);

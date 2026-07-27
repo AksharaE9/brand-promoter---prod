@@ -499,6 +499,8 @@ export function useDeleteRound() {
     onMutate: async (roundId) => {
       // Stop any in-flight background refetch from restoring the item
       await queryClient.cancelQueries({ queryKey: ['scheduling', 'rounds'] });
+      // Also cancel any in-flight detail fetch for this round to prevent stale data restoring the badge
+      await queryClient.cancelQueries({ queryKey: ['scheduling', 'round-details', roundId] });
 
       // Snapshot current state for rollback
       const previousLists = queryClient.getQueriesData({ queryKey: ['scheduling', 'rounds'] });
@@ -510,6 +512,10 @@ export function useDeleteRound() {
         )
       );
 
+      // Immediately evict the round-details cache so the detail panel doesn't
+      // keep showing stale data (e.g. result: 'SELECTED') for up to staleTime ms
+      queryClient.removeQueries({ queryKey: ['scheduling', 'round-details', roundId] });
+
       return { previousLists, deletedId: roundId };
     },
 
@@ -520,8 +526,9 @@ export function useDeleteRound() {
     },
 
     onSuccess: (data, roundId) => {
-      // Also evict the single-round cache so a direct fetch won't return stale data
+      // Evict both the single-round cache AND the round-details cache
       queryClient.removeQueries({ queryKey: QUERY_KEYS.round(roundId) });
+      queryClient.removeQueries({ queryKey: ['scheduling', 'round-details', roundId] });
 
       queryClient.invalidateQueries({ queryKey: ['scheduling'] });
       queryClient.invalidateQueries({ queryKey: ['candidates'] });
