@@ -35,17 +35,22 @@ export const Reveal = React.forwardRef(({ children, className = '', delay = 0, s
 Reveal.displayName = 'Reveal';
 
 /**
- * RouteTransition — wraps the router outlet and plays a clean fade-slide
- * animation every time the pathname changes.
+ * RouteTransition — plays a clean fade-slide animation on pathname change.
  *
- * Rendered INSIDE <Routes> so it has access to useLocation().
- * The key={pathname} approach forces a fresh mount (and therefore a fresh
- * animation) on every navigation without any heavy animation library.
+ * KEY DESIGN DECISION: We deliberately do NOT use key={pathname} (or any
+ * key-based remounting) here. The previous implementation used key={displayKey}
+ * which forced React to destroy and remount the entire page component subtree
+ * 80ms after every navigation. This aborted in-flight API fetches, caused
+ * TanStack Query to see the request as stale/failed, and produced the
+ * "URL changes but content doesn't load" bug.
+ *
+ * Instead, we achieve the visual transition purely via CSS opacity + transform,
+ * without ever unmounting the child. The page component remains alive and its
+ * data fetches complete normally.
  */
 export function RouteTransition({ children }) {
   const { pathname, search } = useLocation();
   const currentKey = pathname + search;
-  const [displayKey, setDisplayKey] = useState(currentKey);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showBar, setShowBar] = useState(false);
   const prevPath = useRef(currentKey);
@@ -54,19 +59,19 @@ export function RouteTransition({ children }) {
     if (currentKey === prevPath.current) return;
     prevPath.current = currentKey;
 
-    // Show the top progress bar immediately
+    // Flash the top progress bar and briefly fade out, then fade back in.
     setShowBar(true);
     setIsTransitioning(true);
 
-    const swapTimer = setTimeout(() => {
-      setDisplayKey(currentKey);
+    // Fade back in after a short delay — no key change, no remount.
+    const fadeInTimer = setTimeout(() => {
       setIsTransitioning(false);
     }, 80);
 
     const barTimer = setTimeout(() => setShowBar(false), 700);
 
     return () => {
-      clearTimeout(swapTimer);
+      clearTimeout(fadeInTimer);
       clearTimeout(barTimer);
     };
   }, [currentKey]);
@@ -77,7 +82,6 @@ export function RouteTransition({ children }) {
       {showBar && <div className="route-loading-bar" key={currentKey + '-bar'} />}
 
       <div
-        key={displayKey}
         style={{
           opacity: isTransitioning ? 0 : 1,
           transform: isTransitioning ? 'translateY(4px)' : 'translateY(0)',

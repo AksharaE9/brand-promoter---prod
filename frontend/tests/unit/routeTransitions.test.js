@@ -70,10 +70,10 @@ describe('RouteTransition Unit Verification', () => {
   it('updates displayKey and triggers effect when pathname changes', () => {
     const children = React.createElement('div', {}, 'Page Content');
     
-    // 1. Initial render scenario
+    // 1. Initial render — isTransitioning (index 0) starts false (no displayKey state anymore)
     resetHooks();
     RouteTransition({ children });
-    expect(hookStates[0]).toBe('/candidates'); // displayKey is index 0
+    expect(hookStates[0]).toBe(false); // isTransitioning is index 0
 
     // 2. Change location parameters
     mockLocation = { pathname: '/jobs', search: '' };
@@ -82,7 +82,8 @@ describe('RouteTransition Unit Verification', () => {
     resetHooks();
     RouteTransition({ children });
 
-    // 4. Run the registered effect which will update the state
+    // 4. Run the registered effect which sets isTransitioning=true then (via synchronous
+    //    mocked setTimeout) immediately calls the fadeInTimer, setting isTransitioning=false.
     if (registeredEffect) {
       const cleanup = registeredEffect();
       if (cleanup) cleanup();
@@ -92,17 +93,19 @@ describe('RouteTransition Unit Verification', () => {
     resetHooks();
     RouteTransition({ children });
 
-    // The displayKey state should now hold '/jobs'
-    expect(hookStates[0]).toBe('/jobs');
+    // isTransitioning resolved to false; showBar is also false (synchronous mock fires
+    // both timers immediately, so setShowBar(false) overwrites setShowBar(true))
+    expect(hookStates[0]).toBe(false); // isTransitioning resolved
+    expect(hookStates[1]).toBe(false); // showBar ends false (both timers fired sync)
   });
 
   it('updates displayKey and triggers transition when query params change', () => {
     const children = React.createElement('div', {}, 'Page Content');
     
-    // 1. Initial render scenario
+    // 1. Initial render — isTransitioning (index 0) starts false
     resetHooks();
     RouteTransition({ children });
-    expect(hookStates[0]).toBe('/candidates');
+    expect(hookStates[0]).toBe(false); // isTransitioning is index 0
 
     // 2. Change query params
     mockLocation = { pathname: '/candidates', search: '?status=OFFER_SENT' };
@@ -111,7 +114,7 @@ describe('RouteTransition Unit Verification', () => {
     resetHooks();
     RouteTransition({ children });
 
-    // 4. Run the effect
+    // 4. Run the effect (synchronous setTimeout immediately fires the fade-in callback)
     if (registeredEffect) {
       const cleanup = registeredEffect();
       if (cleanup) cleanup();
@@ -121,7 +124,9 @@ describe('RouteTransition Unit Verification', () => {
     resetHooks();
     RouteTransition({ children });
 
-    // The displayKey state should now hold the full pathname + search
-    expect(hookStates[0]).toBe('/candidates?status=OFFER_SENT');
+    // isTransitioning resolved to false; showBar is also false (synchronous mock fires
+    // both timers immediately, so setShowBar(false) overwrites setShowBar(true))
+    expect(hookStates[0]).toBe(false); // isTransitioning resolved
+    expect(hookStates[1]).toBe(false); // showBar ends false (both timers fired sync)
   });
 });
