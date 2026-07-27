@@ -103,7 +103,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
       .map((f) => f.round);
 
     const candInterviews = (allInterviews || []).filter(
-      (i) => i.candidateId === scheduleForm.candidateId && (i.status === 'COMPLETED' || (Array.isArray(i.feedback) && i.feedback.length > 0))
+      (i) => i.candidateId === scheduleForm.candidateId && !i.isDeleted && i.status !== 'CANCELLED'
     );
     const interviewRounds = candInterviews.map((i) => {
       if (i.roundNo === 1) return InterviewRound.ROUND_1;
@@ -178,19 +178,41 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   }, [setScheduleForm]);
 
   const handleCandidateSelect = React.useCallback((c) => {
+    const feedbackRounds = (candidateFeedbacks || [])
+      .filter((f) => f.candidateId === c.id)
+      .map((f) => f.round);
+
     const candInterviews = (allInterviews || []).filter(
-      iv => (iv.application?.candidate?.id || iv.application?.candidateId) === c.id && !iv._optimistic
+      (iv) => (iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId) === c.id &&
+              !iv._optimistic &&
+              !iv.isDeleted &&
+              iv.status !== 'CANCELLED'
     );
-    const nextRound = candInterviews.length + 1;
+    const interviewRounds = candInterviews.map((i) => {
+      if (i.roundNo === 1) return InterviewRound.ROUND_1;
+      if (i.roundNo === 2) return InterviewRound.ROUND_2;
+      return InterviewRound.FINAL_ROUND;
+    });
+
+    const completed = Array.from(new Set([...feedbackRounds, ...interviewRounds]));
+    const nextDerived = getNextSchedulableRound(completed);
+    
+    const nextRoundNo = nextDerived === 'ROUND_1' ? 1
+                      : nextDerived === 'ROUND_2' ? 2
+                      : nextDerived === 'FINAL_ROUND' ? 99
+                      : 1;
+
+    const roundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
+
     setScheduleForm(prev => ({
       ...prev,
       candidateId: c.id,
-      roundNo: nextRound,
-      round: `Round ${nextRound}`,
+      roundNo: nextRoundNo,
+      round: roundLabel,
     }));
     setCandidateSearch(c.fullName);
     setShowCandidateList(false);
-  }, [allInterviews, setScheduleForm, setCandidateSearch, setShowCandidateList]);
+  }, [allInterviews, candidateFeedbacks, setScheduleForm, setCandidateSearch, setShowCandidateList]);
 
   const handleJobSelect = React.useCallback((j) => {
     setScheduleForm(prev => ({ ...prev, jobId: j.id }));

@@ -340,6 +340,11 @@ export function useRealtimeUpdates() {
         qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
+        if (newRound?.candidateId) {
+          qc.invalidateQueries({ queryKey: ['candidate', newRound.candidateId] });
+          qc.invalidateQueries({ queryKey: ['interviews', newRound.candidateId] });
+          qc.invalidateQueries({ queryKey: ['candidate-feedbacks', newRound.candidateId] });
+        }
         addToast({ type: 'success', message: 'Interview scheduled' });
         break;
       }
@@ -352,6 +357,7 @@ export function useRealtimeUpdates() {
         if (data.candidateId) {
           qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
           qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['candidate-feedbacks', data.candidateId] });
         }
         addToast({ type:'info', message:'Interview round removed' });
         break;
@@ -364,6 +370,7 @@ export function useRealtimeUpdates() {
         if (data.candidateId) {
           qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
           qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['candidate-feedbacks', data.candidateId] });
         }
         break;
 
@@ -373,6 +380,7 @@ export function useRealtimeUpdates() {
         qc.invalidateQueries({ queryKey: ['dashboard'] });
         if (data.candidateId) {
           qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['candidate-feedbacks', data.candidateId] });
         }
         break;
 

@@ -1341,6 +1341,7 @@ const InterviewSchedule = () => {
         if (candidateId) {
           queryClient.invalidateQueries({ queryKey: ['candidate', candidateId] });
           queryClient.invalidateQueries({ queryKey: ['interviews', candidateId] });
+          queryClient.invalidateQueries({ queryKey: ['candidate-feedbacks', candidateId] });
         }
         await loadAll();
       } else {
@@ -1431,6 +1432,7 @@ const InterviewSchedule = () => {
         if (candId) {
           queryClient.invalidateQueries({ queryKey: ['candidate', candId] });
           queryClient.invalidateQueries({ queryKey: ['interviews', candId] });
+          queryClient.invalidateQueries({ queryKey: ['candidate-feedbacks', candId] });
         }
       },
       onError: (err) => {
