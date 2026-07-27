@@ -43,22 +43,23 @@ Reveal.displayName = 'Reveal';
  * animation) on every navigation without any heavy animation library.
  */
 export function RouteTransition({ children }) {
-  const { pathname } = useLocation();
-  const [displayKey, setDisplayKey] = useState(pathname);
+  const { pathname, search } = useLocation();
+  const currentKey = pathname + search;
+  const [displayKey, setDisplayKey] = useState(currentKey);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showBar, setShowBar] = useState(false);
-  const prevPath = useRef(pathname);
+  const prevPath = useRef(currentKey);
 
   useEffect(() => {
-    if (pathname === prevPath.current) return;
-    prevPath.current = pathname;
+    if (currentKey === prevPath.current) return;
+    prevPath.current = currentKey;
 
     // Show the top progress bar immediately
     setShowBar(true);
     setIsTransitioning(true);
 
     const swapTimer = setTimeout(() => {
-      setDisplayKey(pathname);
+      setDisplayKey(currentKey);
       setIsTransitioning(false);
     }, 80);
 
@@ -68,12 +69,12 @@ export function RouteTransition({ children }) {
       clearTimeout(swapTimer);
       clearTimeout(barTimer);
     };
-  }, [pathname]);
+  }, [currentKey]);
 
   return (
     <>
       {/* Top progress bar — shows during navigation */}
-      {showBar && <div className="route-loading-bar" key={pathname + '-bar'} />}
+      {showBar && <div className="route-loading-bar" key={currentKey + '-bar'} />}
 
       <div
         key={displayKey}
