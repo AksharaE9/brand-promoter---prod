@@ -131,7 +131,10 @@ export default function InterviewFeedbackForm({
       return Number(initialValues.templateVersion || initialValues.template_version);
     }
     const keys = Object.keys(initialValues || {});
-    if (keys.includes('technical') || keys.includes('overallRecommendation') || keys.includes('keyStrengths')) {
+    // Detect legacy v1 records: may use 'technical'/'overallRecommendation'/'keyStrengths' (v1 flat keys)
+    // OR the raw shape stored in interviews.feedback JSON: 'ratings' (nested obj), 'recommendation', 'strengths', 'concerns'
+    const v1Keys = ['technical', 'overallRecommendation', 'keyStrengths', 'ratings', 'recommendation', 'strengths', 'concerns'];
+    if (v1Keys.some(k => keys.includes(k))) {
       return 1;
     }
     return CURRENT_FEEDBACK_TEMPLATE_VERSION;
