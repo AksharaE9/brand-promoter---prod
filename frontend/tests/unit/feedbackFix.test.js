@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveFeedbackValue, resolveFeedbackFields } from '../../src/lib/interviewTemplates';
+import { resolveFeedbackValue, resolveFeedbackFields, getEffectiveSelectionStatus } from '../../src/lib/interviewTemplates';
 
 describe('resolveFeedbackFields', () => {
   it('returns version 1 fields for template version 1', () => {
@@ -86,5 +86,40 @@ describe('resolveFeedbackValue', () => {
     const data = {};
     expect(resolveFeedbackValue(data, 'technical', 1)).toBe('');
     expect(resolveFeedbackValue(data, 'overallRecommendation', 1)).toBe('');
+  });
+});
+
+describe('getEffectiveSelectionStatus', () => {
+  it('correctly resolves root selectionStatus', () => {
+    const record = {
+      selectionStatus: 'SELECTED',
+      templateVersion: 2,
+    };
+    expect(getEffectiveSelectionStatus(record)).toBe('SELECTED');
+  });
+
+  it('correctly resolves nested selectionStatus in feedbackData (v2)', () => {
+    const record = {
+      feedbackData: {
+        selectionStatus: 'REJECTED',
+        templateVersion: 2,
+      },
+    };
+    expect(getEffectiveSelectionStatus(record)).toBe('REJECTED');
+  });
+
+  it('correctly resolves nested overallRecommendation in feedbackData (v1)', () => {
+    const record = {
+      feedbackData: {
+        recommendation: 'ON_HOLD',
+        templateVersion: 1,
+      },
+    };
+    expect(getEffectiveSelectionStatus(record)).toBe('ON_HOLD');
+  });
+
+  it('returns null when no status is found', () => {
+    const record = {};
+    expect(getEffectiveSelectionStatus(record)).toBeNull();
   });
 });

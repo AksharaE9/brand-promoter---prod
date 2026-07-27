@@ -11,6 +11,7 @@ import CompanyDropdownInput from '../components/CompanyDropdownInput';
 import { formatDateTime24h } from '../lib/datetime';
 import { ScheduleModal } from '../components/Interview/ScheduleModal';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
+import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 
 
 const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, navigate, currentUser }) => {
@@ -245,14 +246,14 @@ const CandidateProfile = () => {
   // Compute prior rejections
   const isRejected = useMemo(() => {
     if (candidate?.status === 'REJECTED') return true;
-    const hasRejectedFeedback = (candidate?.interviewFeedbacks || []).some(f => f.selectionStatus === 'REJECTED');
+    const hasRejectedFeedback = (candidate?.interviewFeedbacks || []).some(f => getEffectiveSelectionStatus(f) === 'REJECTED');
     const hasRejectedInterview = interviews.some(i => i.result === 'REJECTED' || i.result === 'FAIL');
     return hasRejectedFeedback || hasRejectedInterview;
   }, [candidate, interviews]);
 
   const rejectedRoundLabel = useMemo(() => {
     if (!isRejected) return '';
-    const feedback = (candidate?.interviewFeedbacks || []).find(f => f.selectionStatus === 'REJECTED');
+    const feedback = (candidate?.interviewFeedbacks || []).find(f => getEffectiveSelectionStatus(f) === 'REJECTED');
     if (feedback) {
       const clean = String(feedback.round).trim().toUpperCase();
       if (clean === 'ROUND_1' || clean === 'ROUND1' || clean === 'ROUND 1') return 'Round 1';

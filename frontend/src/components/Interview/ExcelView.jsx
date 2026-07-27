@@ -29,7 +29,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { parseNotesSafely, getFirstFeedback, isFollowUpUploaded } from '../../lib/interviewUtils';
 import { getStoredUser, apiGet, apiPost } from '../../lib/api';
-import { resolveFeedbackValue } from '../../lib/interviewTemplates';
+import { resolveFeedbackValue, getEffectiveSelectionStatus } from '../../lib/interviewTemplates';
 import InfiniteScrollSentinel from '../InfiniteScrollSentinel';
 
 // ─────────────────────────────────────────────
@@ -267,9 +267,22 @@ const ALL_COLUMNS = [
     label: 'Status',
     width: 130,
     filterType: 'set',
-    // Uses `result` (outcome) NOT `status` (workflow), matching List View pill display
-    getValue: (iv) => iv.result || 'PENDING',
-    render: (iv) => <StatusPill result={iv.result} />,
+    getValue: (iv) => {
+      if (iv.result) return iv.result;
+      const fb = getFirstFeedback(iv);
+      if (!fb) return 'PENDING';
+      return getEffectiveSelectionStatus(fb) || 'PENDING';
+    },
+    render: (iv) => {
+      let res = iv.result;
+      if (!res) {
+        const fb = getFirstFeedback(iv);
+        if (fb) {
+          res = getEffectiveSelectionStatus(fb);
+        }
+      }
+      return <StatusPill result={res} />;
+    },
   },
   {
     key: 'offerLetterSent',

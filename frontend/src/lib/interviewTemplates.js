@@ -161,6 +161,25 @@ export function resolveFeedbackValue(feedbackData, key, templateVersion = 1) {
 }
 
 /**
+ * getEffectiveSelectionStatus - Resolves the selection status (outcome) of a feedback record
+ * across both template version 1 (legacy) and version 2 (current).
+ * Bridges overallRecommendation (v1) and selectionStatus (v2).
+ */
+export function getEffectiveSelectionStatus(record) {
+  if (!record) return null;
+  if (record.selectionStatus) return record.selectionStatus;
+  const data = record.feedbackData || record;
+  const templateVersion = record.templateVersion || record.template_version || (data && (data.templateVersion || data.template_version)) || 1;
+  if (Number(templateVersion) === 2) {
+    return data.selectionStatus || data.status || record.selectionStatus || null;
+  }
+  if (Number(templateVersion) === 1) {
+    return data.overallRecommendation || data.recommendation || record.overallRecommendation || record.recommendation || null;
+  }
+  return record.selectionStatus || null;
+}
+
+/**
  * Derives the next schedulable round enum from array of completed round enums.
  */
 export function getNextSchedulableRound(completedRounds) {

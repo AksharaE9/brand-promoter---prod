@@ -257,6 +257,38 @@ function formatFeedbackForClipboard(round, values, templateVersion = CURRENT_FEE
 }
 
 /**
+ * HISTORICAL CONSTRAINT RULE:
+ * ---------------------------
+ * Legacy template version 1 records and current version 2 records represent fundamentally
+ * different questionnaires. Version 2 captures logistical candidate background fields (course,
+ * family, college, languagesKnown, priorExperience, projects, location, area, timings, duration,
+ * panelists, number) which have no source value in legacy (v1) records.
+ *
+ * DO NOT FABRICATE OR DEFAULT these fields to empty/blank/N/A values for historical v1 records
+ * during display or migrations. They should simply remain unrendered or explicitly marked as
+ * "Not collected under this assessment's format" (the default behavior of template-driven views).
+ */
+
+/**
+ * getEffectiveSelectionStatus - Resolves the selection status (outcome) of a feedback record
+ * across both template version 1 (legacy) and version 2 (current).
+ * Bridges overallRecommendation (v1) and selectionStatus (v2).
+ */
+function getEffectiveSelectionStatus(record) {
+  if (!record) return null;
+  if (record.selectionStatus) return record.selectionStatus;
+  const data = record.feedbackData || record;
+  const templateVersion = record.templateVersion || record.template_version || (data && (data.templateVersion || data.template_version)) || 1;
+  if (Number(templateVersion) === 2) {
+    return data.selectionStatus || data.status || record.selectionStatus || null;
+  }
+  if (Number(templateVersion) === 1) {
+    return data.overallRecommendation || data.recommendation || record.overallRecommendation || record.recommendation || null;
+  }
+  return record.selectionStatus || null;
+}
+
+/**
  * Asserts that the prior round's feedback exists before scheduling requestedRound.
  * @param {object} prisma
  * @param {string} candidateId
@@ -269,7 +301,7 @@ async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
   });
   
   const blockingFeedback = allFeedbacks.find(
-    (f) => ['REJECTED', 'DIDNT_JOIN', 'OFFER_LETTER'].includes(f.selectionStatus)
+    (f) => ['REJECTED', 'DIDNT_JOIN', 'OFFER_LETTER'].includes(getEffectiveSelectionStatus(f))
   );
   if (blockingFeedback) {
     const ApiError = require('../utils/errors').ApiError;
@@ -395,6 +427,7 @@ module.exports = {
   CURRENT_FEEDBACK_TEMPLATE_VERSION,
   resolveFeedbackFields,
   resolveFeedbackValue,
+  getEffectiveSelectionStatus,
   getNextSchedulableRound,
   validateFeedbackData,
   formatFeedbackForClipboard,
