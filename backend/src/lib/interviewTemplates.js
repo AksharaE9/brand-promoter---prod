@@ -439,3 +439,13 @@ module.exports = {
   verifyBufferSignature,
 };
 
+/**
+ * ARCHITECTURAL GUIDELINE: HOLLOW-RECORD PREVENTION
+ * 
+ * Any status-bearing database record or transaction must be protected by validation gates.
+ * When marking a record with a status indicating completion (e.g. COMPLETED feedback,
+ * SCHEDULED/COMPLETED interviews, IMPORTED lead lists, UPLOADED recruitment reports),
+ * the corresponding write path MUST validate that all substantive data fields required
+ * by that status are provided and non-empty. This prevents the system from transitioning
+ * to a successful/completed status with hollow/empty data.
+ */

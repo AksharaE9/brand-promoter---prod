@@ -614,6 +614,25 @@ router.post(
     const { candidateId } = req.params;
     const { scheduledStart, mode, interviewerIds, durationMinutes, meetingLink } = req.body;
 
+    if (!mode || typeof mode !== 'string' || !mode.trim()) {
+      throw new ApiError(400, "Interview mode is required");
+    }
+    const validModes = ['IN_PERSON', 'VIRTUAL', 'PHONE', 'DRIVE', 'WALK_IN_DRIVE'];
+    if (!validModes.includes(mode)) {
+      throw new ApiError(400, `Invalid interview mode: "${mode}"`);
+    }
+    if (!scheduledStart) {
+      throw new ApiError(400, "Scheduled start date/time is required");
+    }
+    if (isNaN(Date.parse(scheduledStart))) {
+      throw new ApiError(400, "Invalid scheduled start date/time format");
+    }
+    if (mode !== 'WALK_IN_DRIVE') {
+      if (!interviewerIds || !Array.isArray(interviewerIds) || interviewerIds.length === 0) {
+        throw new ApiError(400, "At least one interviewer must be selected");
+      }
+    }
+
     const candidate = await prisma.candidate.findUnique({
       where: { id: candidateId },
     });
