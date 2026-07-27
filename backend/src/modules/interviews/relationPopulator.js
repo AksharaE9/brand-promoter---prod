@@ -44,6 +44,37 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
         ? round.interviewerNames.split(',').map(n => ({ fullName: n.trim() })).filter(p => p.fullName)
         : [];
 
+      // ── Notes: strip base64 blobs, keep only name + exists flag ──────────────
+      // The notes field stores JSON: { phoneFollowUp: { name, data }, emailFollowUp: { name, data }, ... }
+      // Sending base64-encoded file data in a list response would balloon the payload.
+      // We keep only { name, exists: true } so the frontend can show upload status.
+      // Full file data loads via the detail panel endpoint.
+      let notesStripped = undefined;
+      if (round.notes) {
+        try {
+          const parsed = typeof round.notes === 'string' ? JSON.parse(round.notes) : round.notes;
+          if (parsed && typeof parsed === 'object') {
+            const stripBlob = (f) => (f && (f.data || f.exists || f.name)) ? { name: f.name || '', exists: true } : null;
+            notesStripped = JSON.stringify({
+              phoneFollowUp:   stripBlob(parsed.phoneFollowUp),
+              emailFollowUp:   stripBlob(parsed.emailFollowUp),
+              morningFollowUp: stripBlob(parsed.morningFollowUp),
+              nextSchedule:    parsed.nextSchedule || null,
+            });
+          }
+        } catch (_) { /* malformed notes — leave undefined */ }
+      }
+
+      // ── Offer Letter Sent: derive from result field in list mode ──────────────
+      // Full mode computes this via fbRecord.offerLetterDocumentUrl — unavailable here.
+      // Best available signal without a DB join: result === 'OFFER_LETTER' → show status.
+      let offer_letter_sent = '—';
+      if (round.result === 'OFFER_LETTER') {
+        // We can't confirm both docs are present without the FB join,
+        // so we indicate the status is set, not that both docs are uploaded.
+        offer_letter_sent = 'Yes';
+      }
+
       return {
         ...round,
         // Lean candidate shape — only what the list sidebar uses
@@ -60,10 +91,11 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
         feedback: [],
         rescheduleHistory: undefined,
         transferHistory: undefined,
-        notes: undefined,
+        notes: notesStripped,       // stripped — base64 data removed, existence preserved
         offerLetterUrl: undefined,
         voiceRecordingUrl: undefined,
         voiceRecordingFileId: undefined,
+        offer_letter_sent,
         // Virtual helpers the frontend may reference
         _candidateName: round.candidateName || null,
         _jobTitle: round.jobTitle || null,

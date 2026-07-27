@@ -8,11 +8,15 @@ const prisma = require('../../config/db');
  *   - feedback           (potentially large JSON blob per row)
  *   - rescheduleHistory  (history array)
  *   - transferHistory    (history array)
- *   - notes              (may contain base64-encoded file data)
  *   - offerLetterUrl     (URL / large string)
  *   - voiceRecordingUrl  (URL / large string)
  *   - voiceRecordingFileId
  *   - application join   (unnecessary for list; candidateName/jobTitle already denormalized on the row)
+ *
+ * Conditionally included (with server-side stripping in relationPopulator.js listMode):
+ *   - notes              Fetched but base64 file data is stripped before sending.
+ *                        Only { name, exists: true } metadata is sent, to support
+ *                        Excel View's follow-up upload status columns. Safe for payload limits.
  *
  * The denormalized columns candidateName, jobTitle, interviewerNames are already
  * stored directly on the interview row and are sufficient for list-view rendering.
@@ -36,6 +40,11 @@ const LIST_SELECT_FIELDS = {
   interviewerNames: true,
   createdAt: true,
   updatedAt: true,
+  // Included for Excel View follow-up upload status.
+  // IMPORTANT: base64 file blobs within this field are stripped by
+  // relationPopulator.js (listMode) before the response is sent, so
+  // the payload stays lean. Only { name, exists: true } metadata is sent.
+  notes: true,
 };
 
 async function buildInterviewListQuery({

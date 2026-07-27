@@ -1,5 +1,5 @@
 import { apiGet, apiDelete, isAuthenticatedRoute } from '../lib/api';
-import { getStoredToken, buildApiUrl } from '../lib/api';
+import { getStoredToken, buildApiUrl, handle401SessionExpiry } from '../lib/api';
 
 async function customRequest(path, options = {}) {
   const token = getStoredToken();
@@ -46,6 +46,10 @@ async function customRequest(path, options = {}) {
       status: response.status,
       response: { data }
     });
+    // 401 = dead session (token expired/revoked) — clear auth state and redirect.
+    if (response.status === 401) {
+      handle401SessionExpiry();
+    }
     throw error;
   }
 

@@ -27,7 +27,7 @@
  */
 
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { parseNotesSafely, getFirstFeedback } from '../../lib/interviewUtils';
+import { parseNotesSafely, getFirstFeedback, isFollowUpUploaded } from '../../lib/interviewUtils';
 import { getStoredUser, apiGet, apiPost } from '../../lib/api';
 import InfiniteScrollSentinel from '../InfiniteScrollSentinel';
 
@@ -353,38 +353,50 @@ const ALL_COLUMNS = [
     width: 135,
     filterType: 'set',
     // notes column is JSON-encoded {phoneFollowUp: {name, data}, emailFollowUp: {name, data}}
+    // In list mode, the server strips base64 data and sends {name, exists: true} instead.
     getValue: (iv) => {
       const { phoneFollowUp } = parseNotesSafely(iv?.notes);
-      return phoneFollowUp ? 'Uploaded' : "Didn't upload";
+      return isFollowUpUploaded(phoneFollowUp) ? 'Uploaded' : "Didn't upload";
     },
     render: (iv) => {
       const { phoneFollowUp } = parseNotesSafely(iv?.notes);
-      return phoneFollowUp ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadBase64File(phoneFollowUp.name, phoneFollowUp.data);
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            color: '#2ca764',
-            fontWeight: 600,
-            fontSize: 11,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-          title={`Click to download: ${phoneFollowUp.name}`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+      if (!isFollowUpUploaded(phoneFollowUp)) {
+        return <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>;
+      }
+      // Full format: has base64 data — show downloadable button
+      if (phoneFollowUp.data) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadBase64File(phoneFollowUp.name, phoneFollowUp.data);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: '#2ca764',
+              fontWeight: 600,
+              fontSize: 11,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            title={`Click to download: ${phoneFollowUp.name}`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+            Uploaded
+          </button>
+        );
+      }
+      // Stripped list-mode format: exists flag only — show status without download
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
           Uploaded
-        </button>
-      ) : (
-        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+        </span>
       );
     },
   },
@@ -395,36 +407,45 @@ const ALL_COLUMNS = [
     filterType: 'set',
     getValue: (iv) => {
       const { emailFollowUp } = parseNotesSafely(iv?.notes);
-      return emailFollowUp ? 'Uploaded' : "Didn't upload";
+      return isFollowUpUploaded(emailFollowUp) ? 'Uploaded' : "Didn't upload";
     },
     render: (iv) => {
       const { emailFollowUp } = parseNotesSafely(iv?.notes);
-      return emailFollowUp ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadBase64File(emailFollowUp.name, emailFollowUp.data);
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            color: '#2ca764',
-            fontWeight: 600,
-            fontSize: 11,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-          title={`Click to download: ${emailFollowUp.name}`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+      if (!isFollowUpUploaded(emailFollowUp)) {
+        return <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>;
+      }
+      if (emailFollowUp.data) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadBase64File(emailFollowUp.name, emailFollowUp.data);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: '#2ca764',
+              fontWeight: 600,
+              fontSize: 11,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            title={`Click to download: ${emailFollowUp.name}`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+            Uploaded
+          </button>
+        );
+      }
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
           Uploaded
-        </button>
-      ) : (
-        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+        </span>
       );
     },
   },
@@ -435,36 +456,45 @@ const ALL_COLUMNS = [
     filterType: 'set',
     getValue: (iv) => {
       const { morningFollowUp } = parseNotesSafely(iv?.notes);
-      return morningFollowUp ? 'Uploaded' : "Didn't upload";
+      return isFollowUpUploaded(morningFollowUp) ? 'Uploaded' : "Didn't upload";
     },
     render: (iv) => {
       const { morningFollowUp } = parseNotesSafely(iv?.notes);
-      return morningFollowUp ? (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadBase64File(morningFollowUp.name, morningFollowUp.data);
-          }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            color: '#2ca764',
-            fontWeight: 600,
-            fontSize: 11,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-          title={`Click to download: ${morningFollowUp.name}`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+      if (!isFollowUpUploaded(morningFollowUp)) {
+        return <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>;
+      }
+      if (morningFollowUp.data) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadBase64File(morningFollowUp.name, morningFollowUp.data);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: '#2ca764',
+              fontWeight: 600,
+              fontSize: 11,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+            title={`Click to download: ${morningFollowUp.name}`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
+            Uploaded
+          </button>
+        );
+      }
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
           Uploaded
-        </button>
-      ) : (
-        <span style={{ color: '#cf3a3a', fontWeight: 600, fontSize: 11 }}>✗ Didn't upload</span>
+        </span>
       );
     },
   },

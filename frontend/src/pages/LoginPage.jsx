@@ -13,6 +13,11 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Detect session-expiry redirect (set by handle401SessionExpiry in lib/api.js)
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionExpired = urlParams.get('sessionExpired') === 'true';
+  const returnTo = urlParams.get('returnTo') || null;
+
   const handleLogin = async (event) => {
     event.preventDefault();
     setError('');
@@ -41,7 +46,14 @@ const LoginPage = () => {
 
       localStorage.setItem('ats_token', result.data.token);
       localStorage.setItem('ats_user', JSON.stringify(result.data.user));
-      navigate('/workspaces');
+
+      // If the user was redirected here after session expiry, send them back
+      // to where they were — not always to /workspaces.
+      if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+        navigate(returnTo);
+      } else {
+        navigate('/workspaces');
+      }
     } catch (err) {
       setError(err.message || 'Login failed. Please try again.');
     } finally {
@@ -118,6 +130,25 @@ const LoginPage = () => {
           <p className="mt-3 text-lg text-[#5d6784]">
             Enter your credentials to access the talent architecture console.
           </p>
+
+          {/* Session expiry banner — shown when redirected from handle401SessionExpiry */}
+          {sessionExpired && (
+            <div
+              className="mt-5 flex items-start gap-3 rounded-xl border border-[#b8d0ff] bg-[#eff6ff] px-4 py-3"
+              role="alert"
+              aria-live="polite"
+            >
+              <span
+                className="material-symbols-outlined text-[#1f52cc] mt-0.5 flex-shrink-0"
+                style={{ fontSize: 18 }}
+              >
+                info
+              </span>
+              <p className="text-sm text-[#1e3a8a] leading-snug">
+                <strong>Your session has expired.</strong> Please log in again to continue.
+              </p>
+            </div>
+          )}
 
 
           <div className="mt-6 space-y-4">

@@ -9,13 +9,21 @@
 /**
  * parseNotesSafely — parses the interview `notes` JSON field.
  *
- * The `notes` column stores an encoded JSON object:
- *   { phoneFollowUp: { name, data }, emailFollowUp: { name, data } }
+ * The `notes` column stores an encoded JSON object. Two formats are possible:
+ *
+ * 1. Full format (detail endpoint / ScheduleModal):
+ *    { phoneFollowUp: { name, data }, emailFollowUp: { name, data }, ... }
+ *    where `data` is the base64-encoded file content.
+ *
+ * 2. Stripped list-mode format (Excel View list endpoint):
+ *    { phoneFollowUp: { name, exists: true }, emailFollowUp: { name, exists: true }, ... }
+ *    base64 data is stripped server-side to keep list payloads lean.
+ *    The frontend should check `f.data || f.exists` to determine if a file is uploaded.
  *
  * If the field is null, empty, or malformed, returns safe defaults.
  *
  * @param {string | null} notesStr
- * @returns {{ phoneFollowUp: object|null, emailFollowUp: object|null }}
+ * @returns {{ phoneFollowUp: object|null, emailFollowUp: object|null, morningFollowUp: object|null, nextSchedule: string|null }}
  */
 export function parseNotesSafely(notesStr) {
   if (!notesStr) return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
@@ -23,14 +31,32 @@ export function parseNotesSafely(notesStr) {
     const parsed = JSON.parse(notesStr);
     if (parsed && typeof parsed === 'object') {
       return {
-        phoneFollowUp:  parsed.phoneFollowUp  || null,
-        emailFollowUp:  parsed.emailFollowUp  || null,
-        nextSchedule:   parsed.nextSchedule   || null,
+        phoneFollowUp:   parsed.phoneFollowUp   || null,
+        emailFollowUp:   parsed.emailFollowUp   || null,
+        nextSchedule:    parsed.nextSchedule    || null,
         morningFollowUp: parsed.morningFollowUp || null,
       };
     }
   } catch (_) { /* ignore */ }
   return { phoneFollowUp: null, emailFollowUp: null, nextSchedule: null, morningFollowUp: null };
+}
+
+/**
+ * isFollowUpUploaded — returns true if a follow-up file entry represents an uploaded file.
+ *
+ * Handles both the full format { name, data } (from detail endpoint) and the
+ * stripped list-mode format { name, exists: true } (from list endpoint).
+ *
+ * @param {object|null} followUpEntry
+ * @returns {boolean}
+ */
+export function isFollowUpUploaded(followUpEntry) {
+  if (!followUpEntry) return false;
+  // Full format: has base64 data
+  if (followUpEntry.data) return true;
+  // Stripped list-mode format: has exists flag
+  if (followUpEntry.exists === true) return true;
+  return false;
 }
 
 /**

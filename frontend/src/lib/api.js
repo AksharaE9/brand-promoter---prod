@@ -155,7 +155,15 @@ async function request(path, options = {}, retries = 1) {
           error.payload = data;
           error.retryAfter = response.headers.get('Retry-After');
           // Don't retry 4xx errors (client errors)
-          if (response.status >= 400 && response.status < 500) throw error;
+          if (response.status >= 400 && response.status < 500) {
+            // 401 on an authenticated route = dead session (token expired/revoked).
+            // Clear auth state and redirect to login — do this BEFORE throwing so
+            // callers receive the error but the redirect has already been queued.
+            if (response.status === 401) {
+              handle401SessionExpiry();
+            }
+            throw error;
+          }
           lastErr = error;
           continue; // retry on 5xx
         }
@@ -227,6 +235,9 @@ export async function apiGetBlob(path) {
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      handle401SessionExpiry();
+    }
     const data = await response.json().catch(() => ({}));
     throw new Error(data.message || `Export failed (${response.status})`);
   }
@@ -311,6 +322,31 @@ export function clearAuth() {
   localStorage.removeItem('ats_token');
   localStorage.removeItem('ats_user');
   apiCache.clear();
+}
+
+/**
+ * handle401SessionExpiry — called whenever any API request receives a 401.
+ *
+ * Differentiates between two 401 scenarios:
+ *  a) Missing Authorization header — already caught by the security guard above;
+ *     the request was never sent. This function won't be called in that case.
+ *  b) Token present but expired/invalid — the server rejected a valid-looking request.
+ *     This is the genuine session-expiry case. We must clear state and redirect.
+ *
+ * One central call site prevents the UI from continuing to render as authenticated
+ * while all requests silently fail in the background.
+ */
+export function handle401SessionExpiry() {
+  // Clear all auth state immediately
+  localStorage.removeItem('ats_token');
+  localStorage.removeItem('ats_user');
+  apiCache.clear();
+
+  // Avoid a redirect loop if we're already on the login page
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    const returnTo = window.location.pathname + window.location.search;
+    window.location.href = `/login?sessionExpired=true&returnTo=${encodeURIComponent(returnTo)}`;
+  }
 }
 
 export function getStoredUser() {
