@@ -67,13 +67,52 @@ const CRITICAL_QUERY_KEYS = [
 ];
 
 // ── Cache helpers ──
-function updateInList(old, id, changes) {
-  if (!old?.data) return old;
-  return { ...old, data: old.data.map(i => i.id === id ? { ...i, ...changes } : i) };
+function updateInfiniteOrFlatList(old, updateFn) {
+  if (!old) return old;
+
+  // 1. Infinite query cache: { pages: [ { data: [...], rows: [...] } ], pageParams: [...] }
+  if (Array.isArray(old.pages)) {
+    return {
+      ...old,
+      pages: old.pages.map((page) => {
+        const currentData = Array.isArray(page.data) ? page.data : [];
+        const currentRows = Array.isArray(page.rows) ? page.rows : [];
+        
+        return {
+          ...page,
+          data: updateFn(currentData),
+          rows: updateFn(currentRows),
+        };
+      }),
+    };
+  }
+
+  // 2. Standard flat list object: { data: [...] }
+  if (Array.isArray(old.data)) {
+    return {
+      ...old,
+      data: updateFn(old.data),
+    };
+  }
+
+  // 3. Raw array
+  if (Array.isArray(old)) {
+    return updateFn(old);
+  }
+
+  return old;
 }
+
+function updateInList(old, id, changes) {
+  return updateInfiniteOrFlatList(old, (list) =>
+    list.map((i) => (i.id === id ? { ...i, ...changes } : i))
+  );
+}
+
 function removeFromList(old, id) {
-  if (!old?.data) return old;
-  return { ...old, data: old.data.filter(i => i.id !== id) };
+  return updateInfiniteOrFlatList(old, (list) =>
+    list.filter((i) => i.id !== id)
+  );
 }
 
 export function useRealtimeUpdates() {
@@ -141,11 +180,12 @@ export function useRealtimeUpdates() {
         if (newCandidate?.id) {
           // Surgically prepend to every cached list without a refetch.
           // Dedup check ensures the acting user's optimistic entry is not doubled.
-          qc.setQueriesData({ queryKey: ['candidates'] }, (old) => {
-            if (!old?.data) return old;
-            if (old.data.some(c => c.id === newCandidate.id)) return old; // already present
-            return { ...old, data: [newCandidate, ...old.data] };
-          });
+          qc.setQueriesData({ queryKey: ['candidates'] }, (old) =>
+            updateInfiniteOrFlatList(old, (list) => {
+              if (list.some(c => c.id === newCandidate.id)) return list;
+              return [newCandidate, ...list];
+            })
+          );
         } else {
           // Fallback: no candidate payload — do a soft invalidation (no immediate refetch)
           qc.invalidateQueries({ queryKey: ['candidates'], refetchType: 'none' });
@@ -252,6 +292,7 @@ export function useRealtimeUpdates() {
         if (sub === 'ROUND_UPDATED') {
           qc.setQueryData(['scheduling','round',roundId], o => ({ ...o, data:{ ...(o?.data??{}), ...round, _optimistic:false }}));
           qc.setQueriesData({ queryKey:['scheduling','rounds'] }, o => updateInList(o, roundId, { ...round, _optimistic:false }));
+          qc.invalidateQueries({ queryKey: ['scheduling'] });
           qc.invalidateQueries({ queryKey: ['candidates'] });
           qc.invalidateQueries({ queryKey: ['dashboard'] });
         }
@@ -281,7 +322,7 @@ export function useRealtimeUpdates() {
             })
           };
         });
-        qc.invalidateQueries({ queryKey:['scheduling','rounds'] });
+        qc.invalidateQueries({ queryKey:['scheduling'] });
         break;
       }
 
@@ -289,15 +330,14 @@ export function useRealtimeUpdates() {
         const { round: newRound } = data;
         if (newRound?.id) {
           // Surgically prepend to every cached scheduling list without refetch.
-          qc.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) => {
-            if (!old?.data) return old;
-            if (old.data.some(r => r.id === newRound.id)) return old; // dedup
-            return { ...old, data: [newRound, ...old.data] };
-          });
-        } else {
-          // Fallback: mark stale without immediate refetch
-          qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'], refetchType: 'none' });
+          qc.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
+            updateInfiniteOrFlatList(old, (list) => {
+              if (list.some(r => r.id === newRound.id)) return list;
+              return [newRound, ...list];
+            })
+          );
         }
+        qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
         addToast({ type: 'success', message: 'Interview scheduled' });
@@ -306,6 +346,7 @@ export function useRealtimeUpdates() {
 
       case 'ROUND_DELETED':
         qc.setQueriesData({ queryKey:['scheduling','rounds'] }, o => removeFromList(o, data.roundId));
+        qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
         addToast({ type:'info', message:'Interview round removed' });
@@ -318,7 +359,7 @@ export function useRealtimeUpdates() {
         break;
 
       case 'INTERVIEW_FEEDBACK_SUBMITTED':
-        qc.invalidateQueries({ queryKey: ['scheduling', 'rounds'] });
+        qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
         if (data.candidateId) {

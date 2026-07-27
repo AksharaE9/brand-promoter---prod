@@ -740,7 +740,7 @@ const InterviewSchedule = () => {
     const RELEVANT = [
       'INTERVIEW_PANELISTS_UPDATED', 'INTERVIEW_FEEDBACK_SUBMITTED',
       'APPLICATION_STATUS_UPDATED', 'INTERVIEW_SCHEDULED',
-      'CANDIDATE_UPDATED', 'CANDIDATE_CREATED',
+      'CANDIDATE_UPDATED', 'CANDIDATE_CREATED', 'CANDIDATE_DELETED',
       'SCHEDULING_UPDATE', 'ROUND_CREATED', 'ROUND_DELETED',
       'VISIBILITY_RECONCILE', 'interview-feedback:updated'
     ];
@@ -774,7 +774,7 @@ const InterviewSchedule = () => {
       lastSSEReloadRef.current = now;
       // Mark scheduling queries as stale and trigger immediate refetch for real-time sync.
       queryClient.invalidateQueries({
-        queryKey: ['scheduling', 'rounds'],
+        queryKey: ['scheduling'],
         refetchType: 'active',
       });
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
