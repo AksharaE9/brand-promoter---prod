@@ -923,10 +923,21 @@ router.delete(
       });
 
       if (updated) {
-        await prisma.interview.update({
-          where: { id: interview.id },
-          data: { feedback: updatedFeedbackList },
-        });
+        const updatePayload = {
+          status: 'SCHEDULED',
+          result: null,
+          outcome: null,
+          outcomeSetAt: null,
+          feedback: updatedFeedbackList,
+        };
+
+        await cache.writeRound(
+          interview.id,
+          updatePayload,
+          req.user.id,
+          req.user.organizationId || "defaultOrg",
+          interview
+        );
       }
     }
 
