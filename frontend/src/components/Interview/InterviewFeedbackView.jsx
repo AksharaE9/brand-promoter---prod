@@ -2,8 +2,8 @@ import * as React from 'react';
 import {
   ROUND_DISPLAY_LABEL,
   InterviewRound,
-  FEEDBACK_TEMPLATE_VERSIONS,
   resolveFeedbackValue,
+  resolveFeedbackFields,
 } from '../../lib/interviewTemplates';
 import CopyFeedbackButton from './CopyFeedbackButton';
 import { getStoredUser } from '../../lib/api';
@@ -46,13 +46,29 @@ const downloadBase64File = (fileName, base64Data) => {
 export default function InterviewFeedbackView({
   round = InterviewRound.ROUND_1,
   feedbackData = {},
+  templateVersion,
   candidateName = '',
   onEdit,
   onDelete,
 }) {
-  const ver = feedbackData.templateVersion || feedbackData.template_version || 1;
-  const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === ver) || FEEDBACK_TEMPLATE_VERSIONS[0];
-  const template = versionDef.getFields(round);
+  const ver = React.useMemo(() => {
+    if (templateVersion !== undefined && templateVersion !== null) {
+      return Number(templateVersion);
+    }
+    if (feedbackData.templateVersion || feedbackData.template_version) {
+      return Number(feedbackData.templateVersion || feedbackData.template_version);
+    }
+    const keys = Object.keys(feedbackData || {});
+    if (keys.includes('technical') || keys.includes('overallRecommendation') || keys.includes('keyStrengths')) {
+      return 1;
+    }
+    return 2;
+  }, [templateVersion, feedbackData]);
+
+  const template = React.useMemo(() => {
+    return resolveFeedbackFields(ver, round);
+  }, [ver, round]);
+
   const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
 
   const currentUser = getStoredUser();

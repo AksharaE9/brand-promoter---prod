@@ -123,6 +123,18 @@ export const FEEDBACK_TEMPLATE_VERSIONS = [
 export const CURRENT_FEEDBACK_TEMPLATE_VERSION = 2;
 
 /**
+ * resolveFeedbackFields - Consolidates template field resolution for both read-only and editable forms.
+ */
+export function resolveFeedbackFields(templateVersion, round) {
+  const ver = Number(templateVersion) || 1;
+  const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === ver);
+  if (!versionDef) {
+    throw new Error(`Unknown feedback template version: ${ver}`);
+  }
+  return versionDef.getFields(round);
+}
+
+/**
  * resolveFeedbackValue - Dynamically resolves the value of a feedback field
  * based on whether it is version 1 (legacy rating-based) or version 2 (schema-driven).
  */

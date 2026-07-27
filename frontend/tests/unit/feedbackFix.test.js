@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { resolveFeedbackValue } from '../../src/lib/interviewTemplates';
+import { resolveFeedbackValue, resolveFeedbackFields } from '../../src/lib/interviewTemplates';
+
+describe('resolveFeedbackFields', () => {
+  it('returns version 1 fields for template version 1', () => {
+    const fields = resolveFeedbackFields(1, 'ROUND_1');
+    const keys = fields.map(f => f.key);
+    expect(keys).toContain('technical');
+    expect(keys).toContain('communication');
+    expect(keys).toContain('culture');
+    expect(keys).toContain('overallRecommendation');
+    expect(keys).not.toContain('overallRating');
+    expect(keys).not.toContain('college');
+  });
+
+  it('returns version 2 fields for template version 2', () => {
+    const fields = resolveFeedbackFields(2, 'ROUND_1');
+    const keys = fields.map(f => f.key);
+    expect(keys).not.toContain('technical');
+    expect(keys).not.toContain('communication');
+    expect(keys).not.toContain('culture');
+    expect(keys).toContain('overallRating');
+    expect(keys).toContain('college');
+    expect(keys).toContain('languagesKnown');
+  });
+
+  it('throws error for unknown template version', () => {
+    expect(() => resolveFeedbackFields(99, 'ROUND_1')).toThrow('Unknown feedback template version: 99');
+  });
+});
 
 describe('resolveFeedbackValue', () => {
   it('correctly resolves version 2 fields directly', () => {

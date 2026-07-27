@@ -2402,6 +2402,7 @@ const InterviewSchedule = () => {
                               candidateId={selectedInterview.candidateId}
                               candidateName={selectedInterview.candidateName}
                               initialValues={myFeedback?.feedbackData || myFeedback || {}}
+                              templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
                               onSuccess={() => {
                                 setShowFeedbackModal(false);
                                 setIsEditingFeedback(false);
@@ -2423,6 +2424,7 @@ const InterviewSchedule = () => {
                                   : InterviewRound.FINAL_ROUND
                               }
                               feedbackData={myFeedback.feedbackData || myFeedback}
+                              templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
                               candidateName={selectedInterview.candidateName}
                               onEdit={() => setIsEditingFeedback(true)}
                               onDelete={() => handleDeleteFeedback(selectedInterview.candidateId, selectedInterview.round)}

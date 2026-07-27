@@ -5,8 +5,8 @@ import {
   ROUND_DISPLAY_LABEL,
   InterviewRound,
   formatFeedbackForClipboard,
-  FEEDBACK_TEMPLATE_VERSIONS,
   CURRENT_FEEDBACK_TEMPLATE_VERSION,
+  resolveFeedbackFields,
 } from '../../lib/interviewTemplates';
 import CopyFeedbackButton from './CopyFeedbackButton';
 import { apiPost, apiGet } from '../../lib/api';
@@ -119,22 +119,28 @@ export default function InterviewFeedbackForm({
   candidateId: initialCandidateId,
   candidateName = '',
   initialValues = {},
+  templateVersion: propTemplateVersion,
   onSuccess,
   onCancel,
 }) {
   const templateVersion = React.useMemo(() => {
+    if (propTemplateVersion !== undefined && propTemplateVersion !== null) {
+      return Number(propTemplateVersion);
+    }
     if (initialValues?.templateVersion || initialValues?.template_version) {
-      return initialValues.templateVersion || initialValues.template_version;
+      return Number(initialValues.templateVersion || initialValues.template_version);
     }
     const keys = Object.keys(initialValues || {});
     if (keys.includes('technical') || keys.includes('overallRecommendation') || keys.includes('keyStrengths')) {
       return 1;
     }
     return CURRENT_FEEDBACK_TEMPLATE_VERSION;
-  }, [initialValues]);
+  }, [propTemplateVersion, initialValues]);
 
-  const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === templateVersion) || FEEDBACK_TEMPLATE_VERSIONS[1];
-  const template = versionDef.getFields(round);
+  const template = React.useMemo(() => {
+    return resolveFeedbackFields(templateVersion, round);
+  }, [templateVersion, round]);
+
   const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
 
   const [values, setValues] = useState(() => {
