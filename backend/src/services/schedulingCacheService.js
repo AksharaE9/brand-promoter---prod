@@ -499,11 +499,42 @@ async function deleteRound(roundId, orgId, deletedBy, currentData = null) {
       where: { id: roundId }
     });
     
+    // Soft-delete the associated feedback in the interview_feedbacks table
+    // if no other active interviews remain for this candidate and round.
+    if (currentData && currentData.candidateId && currentData.round) {
+      const mappedRoundName = currentData.round === 'Round 1' ? 'ROUND_1'
+                            : currentData.round === 'Round 2' ? 'ROUND_2'
+                            : 'FINAL_ROUND';
+      
+      const otherRounds = await prisma.interview.findMany({
+        where: {
+          candidateId: currentData.candidateId,
+          round: currentData.round,
+          id: { not: roundId },
+          status: { not: 'CANCELLED' }
+        }
+      });
+      
+      if (otherRounds.length === 0) {
+        await prisma.interviewFeedback.updateMany({
+          where: {
+            candidateId: currentData.candidateId,
+            round: mappedRoundName,
+            deletedAt: null
+          },
+          data: {
+            deletedAt: new Date()
+          }
+        });
+      }
+    }
+
     inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
     
     sse.broadcastToOrg(orgId, 'ROUND_DELETED', {
       roundId,
       orgId,
+      candidateId: currentData?.candidateId || null,
     });
     
     return { success: true };

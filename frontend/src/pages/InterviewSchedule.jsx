@@ -467,9 +467,7 @@ const InterviewSchedule = () => {
   // Debounced version sent to the backend
   const debouncedSearch = useDebounce(interviewListSearch, 300);
 
-  const [allInterviews, setAllInterviews] = useState([]);  // accumulates pages
-  const [excelAllInterviews, setExcelAllInterviews] = useState([]);
-  const [excelLoadStatus, setExcelLoadStatus] = useState('idle'); // 'idle' | 'loading' | 'done' | 'error'
+  const [allInterviews, setAllInterviews] = useState([]); // accumulates pages
 
   const roundsFilters = useMemo(() => ({
     ...(filterMine && currentUser?.id ? { interviewerId: currentUser.id } : {}),
@@ -485,7 +483,7 @@ const InterviewSchedule = () => {
     refetch: refetchInterviews,
     error: queryError
   } = usePaginatedList('/interviews', {
-    pageSize: 100, // reduced from 250 — restoring to 250 requires confirming payload < 200KB via curl measurement
+    pageSize: 250,
     filters: roundsFilters,
     queryKey: ['scheduling', 'rounds']
   });
@@ -495,7 +493,7 @@ const InterviewSchedule = () => {
 
   // totalCount: real DB COUNT(*) returned by the backend on page 1.
   // Available immediately when page 1 loads — no need to wait for all pages.
-  // Falls back to null while loading (sidebar shows nothing until first page arrives).
+  // Falls back to null while loading.
   const totalCount = infiniteData?.pages?.[0]?.totalCount ?? null;
 
   // Synchronize infinite query data to allInterviews local state
@@ -508,92 +506,6 @@ const InterviewSchedule = () => {
     }
   }, [infiniteData]);
 
-  // Reset excel parallel load whenever filters change
-  useEffect(() => {
-    setExcelAllInterviews([]);
-    setExcelLoadStatus('idle');
-  }, [roundsFilters]);
-
-  // Parallel Excel Loading
-  useEffect(() => {
-    if (viewMode !== 'excel' || totalCount === null || excelLoadStatus !== 'idle') return;
-
-    if (totalCount <= 100) {
-      setExcelLoadStatus('done');
-      return;
-    }
-
-    const loadRemainingPages = async () => {
-      setExcelLoadStatus('loading');
-      try {
-        const filterStr = (() => {
-          const params = new URLSearchParams();
-          if (roundsFilters) {
-            Object.entries(roundsFilters).forEach(([key, val]) => {
-              if (val !== undefined && val !== null && val !== '' && val !== 'All') {
-                params.set(key, String(val));
-              }
-            });
-          }
-          return params.toString();
-        })();
-
-        // Generate offsets: 100, 200, 300, ...
-        const offsets = [];
-        for (let offset = 100; offset < totalCount; offset += 100) {
-          offsets.push(offset);
-        }
-
-        const urls = offsets.map(offset => `/interviews?skip=${offset}&limit=100${filterStr ? `&${filterStr}` : ''}`);
-        
-        const fetchInBatches = async (paths, batchSize = 4) => {
-          const results = [];
-          for (let i = 0; i < paths.length; i += batchSize) {
-            const batch = paths.slice(i, i + batchSize);
-            const batchResults = await Promise.all(
-              batch.map(async (path) => {
-                const res = await apiGet(path, true);
-                return res?.data || res?.rows || [];
-              })
-            );
-            results.push(...batchResults.flat());
-          }
-          return results;
-        };
-
-        const extraData = await fetchInBatches(urls, 4);
-
-        setExcelAllInterviews(() => {
-          const page1 = allInterviews.slice(0, 100);
-          const combined = [...page1, ...extraData];
-          
-          const seen = new Set();
-          const unique = [];
-          combined.forEach(item => {
-            if (item && item.id && !seen.has(item.id)) {
-              seen.add(item.id);
-              unique.push(item);
-            }
-          });
-
-          unique.sort((a, b) => {
-            const dateA = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0;
-            const dateB = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0;
-            return dateB - dateA;
-          });
-
-          return unique;
-        });
-
-        setExcelLoadStatus('done');
-      } catch (err) {
-        console.error('[ExcelParallelLoad] Failed to load interviews in parallel:', err);
-        setExcelLoadStatus('error');
-      }
-    };
-
-    loadRemainingPages();
-  }, [viewMode, totalCount, excelLoadStatus, allInterviews, roundsFilters]);
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -702,7 +614,7 @@ const InterviewSchedule = () => {
     isError: isCalendarError,
     refetch: refetchCalendar,
   } = useQuery({
-    queryKey: ['scheduling', 'calendar', calendarRange?.start, filterMine, roundFilter],
+    queryKey: ['scheduling', 'calendar', viewDate.getFullYear(), viewDate.getMonth(), filterMine, roundFilter],
     queryFn: () => schedulingApi.getRounds({
       view: 'calendar',
       startDate: calendarRange.start,
@@ -724,9 +636,11 @@ const InterviewSchedule = () => {
     const nextMonthDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
     const nextStart = new Date(nextMonthDate.getFullYear(), nextMonthDate.getMonth(), -7).toISOString();
     const nextEnd = new Date(nextMonthDate.getFullYear(), nextMonthDate.getMonth() + 1, 14).toISOString();
+    const nextYear = nextMonthDate.getFullYear();
+    const nextMonth = nextMonthDate.getMonth();
 
     queryClient.prefetchQuery({
-      queryKey: ['scheduling', 'calendar', nextStart, filterMine, roundFilter],
+      queryKey: ['scheduling', 'calendar', nextYear, nextMonth, filterMine, roundFilter],
       queryFn: () => schedulingApi.getRounds({
         view: 'calendar',
         startDate: nextStart,
@@ -741,9 +655,11 @@ const InterviewSchedule = () => {
     const prevMonthDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
     const prevStart = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), -7).toISOString();
     const prevEnd = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 14).toISOString();
+    const prevYear = prevMonthDate.getFullYear();
+    const prevMonth = prevMonthDate.getMonth();
 
     queryClient.prefetchQuery({
-      queryKey: ['scheduling', 'calendar', prevStart, filterMine, roundFilter],
+      queryKey: ['scheduling', 'calendar', prevYear, prevMonth, filterMine, roundFilter],
       queryFn: () => schedulingApi.getRounds({
         view: 'calendar',
         startDate: prevStart,
@@ -951,7 +867,7 @@ const InterviewSchedule = () => {
   }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
 
   const filteredForExcel = useMemo(() => {
-    const source = excelLoadStatus === 'done' || excelAllInterviews.length > 0 ? excelAllInterviews : displayInterviews;
+    const source = allInterviews;
     let filtered = filterMine
       ? source.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
       : source;
@@ -962,7 +878,7 @@ const InterviewSchedule = () => {
     }
 
     return filtered;
-  }, [excelAllInterviews, displayInterviews, excelLoadStatus, filterMine, currentUser?.id, roundFilter]);
+  }, [allInterviews, filterMine, currentUser?.id, roundFilter]);
 
 
   // ── groupedApplications: built purely from interviews data, no candidates limit ──
@@ -1421,6 +1337,11 @@ const InterviewSchedule = () => {
           refetchType: 'active',
         });
         queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+        queryClient.invalidateQueries({ queryKey: ['candidates'] });
+        if (candidateId) {
+          queryClient.invalidateQueries({ queryKey: ['candidate', candidateId] });
+          queryClient.invalidateQueries({ queryKey: ['interviews', candidateId] });
+        }
         await loadAll();
       } else {
         setError(res?.error || 'Failed to delete feedback');
@@ -1506,6 +1427,11 @@ const InterviewSchedule = () => {
     deleteRoundMutation.mutate(interviewId, {
       onSuccess: () => {
         setBanner('Interview deleted successfully.');
+        const candId = selectedInterview?.candidateId || selectedInterview?.application?.candidateId || selectedInterview?.application?.candidate?.id || selectedGroup?.candidateId || selectedGroup?.application?.candidateId;
+        if (candId) {
+          queryClient.invalidateQueries({ queryKey: ['candidate', candId] });
+          queryClient.invalidateQueries({ queryKey: ['interviews', candId] });
+        }
       },
       onError: (err) => {
         setError(err.message || 'Failed to delete interview');
@@ -1746,8 +1672,16 @@ const InterviewSchedule = () => {
               )
             ) : (
               totalCount !== null && (
-                <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium">
-                  {totalCount.toLocaleString()} member{totalCount !== 1 ? 's' : ''}
+                <div className="px-2 pb-1 text-[10px] text-slate-400 font-medium flex items-center justify-between">
+                  <span>
+                    {isFetchingNextPage ? `Loading: ${allInterviews.length} of ${totalCount}` : `${totalCount.toLocaleString()} interview${totalCount !== 1 ? 's' : ''}`}
+                  </span>
+                  {isFetchingNextPage && (
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75 animate-duration-1000"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                  )}
                 </div>
               )
             )}
@@ -1855,8 +1789,8 @@ const InterviewSchedule = () => {
                     if (interviewId) setActiveInterviewId(interviewId);
                   }}
                   onLoadMore={loadMoreInterviews}
-                  hasMore={excelLoadStatus === 'done' ? false : serverHasMore}
-                  loadingMore={excelLoadStatus === 'loading' ? true : loadingMore}
+                  hasMore={serverHasMore}
+                  loadingMore={loadingMore}
                   totalCount={totalCount}
                 />
               </React.Suspense>
@@ -1865,23 +1799,11 @@ const InterviewSchedule = () => {
         )}
 
         {viewMode === 'calendar' && (
-          <div className="bg-white p-6 overflow-auto w-full h-full view-enter">
-            {/* Calendar loading state */}
+          <div className="bg-white p-6 overflow-auto w-full h-full view-enter relative">
+            {/* Subtle Progress Bar on top of Calendar when fetching */}
             {isCalendarLoading && (
-              <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                  <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
-                ))}
-                {Array.from({ length: 42 }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className="min-h-[110px] p-2 border-r border-b border-[#e4ebf1] bg-white animate-pulse"
-                  >
-                    <div className="w-5 h-3 bg-slate-100 rounded mb-2" />
-                    <div className="w-full h-4 bg-slate-50 rounded mb-1" />
-                    <div className="w-3/4 h-4 bg-slate-50 rounded" />
-                  </div>
-                ))}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-blue-100 overflow-hidden z-20">
+                <div className="h-full bg-[#1f52cc] animate-pulse w-1/3 rounded" style={{ animationDuration: '1s' }} />
               </div>
             )}
 
@@ -1906,35 +1828,35 @@ const InterviewSchedule = () => {
               </div>
             )}
 
-            {/* Calendar grid — only shown when data is available */}
-            {!isCalendarLoading && !isCalendarError && (
-            <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
-              ))}
-              {calendarDays.map((cell, idx) => {
-                // Use toDateKey() (local-timezone 'YYYY-MM-DD') — same function used
-                // when building scheduleData, so the lookup always matches.
-                const dateKey = toDateKey(cell.date);
-                const cellData = scheduleData.get(dateKey) || { interviews: [], joinings: [] };
-                return (
-                  <MemoizedCalendarCell
-                    key={`${cell.month}-${cell.day}-${idx}`}
-                    date={cell.date}
-                    isCurrentMonth={cell.month === 'current'}
-                    isToday={new Date().toDateString() === cell.date.toDateString()}
-                    onSelectDate={handleSelectDate}
-                    cellInterviews={cellData.interviews}
-                    cellJoinings={cellData.joinings}
-                    onChipClick={(candidateId, interviewId) => {
-                      // Open Activity Modal for this date
-                      setSelectedCalendarDate(cell.date);
-                      setShowActivityModal(true);
-                    }}
-                  />
-                );
-              })}
-            </div>
+            {/* Calendar grid — always shown to avoid clearing the shell */}
+            {!isCalendarError && (
+              <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                  <div key={day} className="py-2 text-center text-xs font-bold text-[#64748b] bg-[#f8fafc] border-r border-b border-[#e4ebf1]">{day}</div>
+                ))}
+                {calendarDays.map((cell, idx) => {
+                  // Use toDateKey() (local-timezone 'YYYY-MM-DD') — same function used
+                  // when building scheduleData, so the lookup always matches.
+                  const dateKey = toDateKey(cell.date);
+                  const cellData = scheduleData.get(dateKey) || { interviews: [], joinings: [] };
+                  return (
+                    <MemoizedCalendarCell
+                      key={`${cell.month}-${cell.day}-${idx}`}
+                      date={cell.date}
+                      isCurrentMonth={cell.month === 'current'}
+                      isToday={new Date().toDateString() === cell.date.toDateString()}
+                      onSelectDate={handleSelectDate}
+                      cellInterviews={isCalendarLoading ? [] : cellData.interviews}
+                      cellJoinings={isCalendarLoading ? [] : cellData.joinings}
+                      onChipClick={(candidateId, interviewId) => {
+                        // Open Activity Modal for this date
+                        setSelectedCalendarDate(cell.date);
+                        setShowActivityModal(true);
+                      }}
+                    />
+                  );
+                })}
+              </div>
             )}
 
             {/* Activity Modal Pop-up */}

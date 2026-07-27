@@ -349,6 +349,10 @@ export function useRealtimeUpdates() {
         qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
+        if (data.candidateId) {
+          qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
+        }
         addToast({ type:'info', message:'Interview round removed' });
         break;
 
@@ -356,6 +360,11 @@ export function useRealtimeUpdates() {
         qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
+        qc.invalidateQueries({ queryKey: ['scheduling', 'round-details'], refetchType: 'active' });
+        if (data.candidateId) {
+          qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
+        }
         break;
 
       case 'INTERVIEW_FEEDBACK_SUBMITTED':

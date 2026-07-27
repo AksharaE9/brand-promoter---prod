@@ -51,7 +51,7 @@ const parseQueryBody = (req, res, next) => {
 const interviewSearchHandler = async (req, res) => {
   const q = (req.body.q || '').trim();
   const filters = req.body.filters || {};
-  const limit = Math.min(50, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
+  const limit = Math.min(250, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
   const cursor = req.body.cursor?.trim();
   const orgId = req.user.organizationId || "defaultOrg";
 
@@ -193,7 +193,7 @@ router.post(
 
 // ── Safety constants ──────────────────────────────────────────────────────
 // Reduced from 250 — see queryBuilder.js for restoration instructions.
-const INTERVIEWS_PAGE_SIZE = 100;
+const INTERVIEWS_PAGE_SIZE = 250;
 
 // Hard byte-size ceiling per list response.
 // If a lean-projection bug or future field addition causes the payload to grow unexpectedly,
@@ -676,6 +676,19 @@ router.post(
 
 
     const roundNo = completedRounds.length + 1;
+
+    // Check if this exact round already exists (Duplicate Check)
+    const existingRound = await prisma.interview.findFirst({
+      where: {
+        candidateId,
+        roundNo,
+        status: { not: "CANCELLED" }
+      }
+    });
+    if (existingRound) {
+      throw new ApiError(409, `Round ${roundNo} is already scheduled or completed for this candidate (Duplicate).`);
+    }
+
     const roundLabel = ROUND_DISPLAY_LABEL[nextRound];
     const orgId = req.user.organizationId || "defaultOrg";
 
@@ -689,14 +702,11 @@ router.post(
       mode: mode || "VIRTUAL",
       meetingLink: meetingLink || "",
       interviewerIds: Array.isArray(interviewerIds) ? interviewerIds : [],
-      organizationId: orgId,
-      createdById: req.user.id,
       status: "SCHEDULED",
     };
 
-    const newInterview = await prisma.interview.create({
-      data: roundData,
-    });
+    const result = await cache.createRound(roundData, orgId, req.user.id);
+    const newInterview = result.data;
 
     res.status(201).json({
       success: true,
@@ -705,6 +715,23 @@ router.post(
         derivedRound: nextRound,
         roundLabel,
       },
+    });
+
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "SCHEDULE_INTERVIEW",
+        entityType: "INTERVIEW",
+        entityId: newInterview.id,
+        entityName: `${roundData.candidateName || newInterview.candidateName || 'Candidate'} - ${roundData.round || ('Round ' + (roundData.roundNo || 1))}`,
+        newData: roundData,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        orgId,
+      });
     });
   })
 );
@@ -996,6 +1023,24 @@ router.delete(
           req.user.organizationId || "defaultOrg",
           interview
         );
+      }
+    }
+
+    // Revert candidate status to ACTIVE if the deleted feedback was REJECTED
+    // and no other active feedbacks are REJECTED for this candidate
+    if (previousStatus === 'REJECTED') {
+      const otherRejected = await prisma.interviewFeedback.findFirst({
+        where: {
+          candidateId,
+          selectionStatus: 'REJECTED',
+          deletedAt: null,
+        },
+      });
+      if (!otherRejected) {
+        await prisma.candidate.update({
+          where: { id: candidateId },
+          data: { status: 'ACTIVE' },
+        }).catch(() => {});
       }
     }
 
