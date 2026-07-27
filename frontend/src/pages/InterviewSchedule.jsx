@@ -432,6 +432,7 @@ const InterviewSchedule = () => {
   const [recordedUrl, setRecordedUrl] = useState('');
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [viewMode, setViewMode] = useState('list');
+  const prevViewModeRef = useRef('list');
   const [joiningDate, setJoiningDate] = useState('');
   const [showJoiningConfirm, setShowJoiningConfirm] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
@@ -1613,24 +1614,24 @@ const InterviewSchedule = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between px-5 py-3 md:py-0 md:h-14 bg-white border-b border-[#e4ebf1] gap-3 flex-wrap">
         <div className="flex gap-2 flex-wrap items-center">
           <button
-            className={`os-btn-outline !h-9 ${viewMode === 'list' ? '!bg-[#1f52cc] !text-white' : ''}`}
-            onClick={() => setViewMode('list')}
+            className={`os-btn-outline !h-9 transition-all duration-200 ${viewMode === 'list' ? '!bg-[#1f52cc] !text-white !border-[#1f52cc] shadow-md shadow-blue-200' : ''}`}
+            onClick={() => { prevViewModeRef.current = viewMode; setViewMode('list'); }}
             type="button"
           >
             <span className="material-symbols-outlined text-sm">list</span>
             List View
           </button>
           <button
-            className={`os-btn-outline !h-9 ${viewMode === 'calendar' ? '!bg-[#1f52cc] !text-white' : ''}`}
-            onClick={() => setViewMode('calendar')}
+            className={`os-btn-outline !h-9 transition-all duration-200 ${viewMode === 'calendar' ? '!bg-[#1f52cc] !text-white !border-[#1f52cc] shadow-md shadow-blue-200' : ''}`}
+            onClick={() => { prevViewModeRef.current = viewMode; setViewMode('calendar'); }}
             type="button"
           >
             <span className="material-symbols-outlined text-sm">calendar_month</span>
             Calendar Grid
           </button>
           <button
-            className={`os-btn-outline !h-9 ${viewMode === 'excel' ? '!bg-[#1f52cc] !text-white' : ''}`}
-            onClick={() => setViewMode('excel')}
+            className={`os-btn-outline !h-9 transition-all duration-200 ${viewMode === 'excel' ? '!bg-[#1f52cc] !text-white !border-[#1f52cc] shadow-md shadow-blue-200' : ''}`}
+            onClick={() => { prevViewModeRef.current = viewMode; setViewMode('excel'); }}
             type="button"
           >
             <span className="material-symbols-outlined text-sm">table_view</span>
@@ -1670,7 +1671,7 @@ const InterviewSchedule = () => {
 
       <PageEnter className="schedule-page flex-1 min-h-0 overflow-hidden">
         {viewMode === 'list' && (
-          <Reveal className="candidate-list-panel bg-white p-4 h-full">
+          <div className="candidate-list-panel bg-white p-4 h-full view-enter-left">
             <div className="pb-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold font-[Manrope] px-2">Interviews</h2>
@@ -1791,11 +1792,11 @@ const InterviewSchedule = () => {
                 )}
               </>
             )}
-          </Reveal>
+          </div>
         )}
 
         {viewMode === 'excel' && (
-          <Reveal delay={0.04} className="bg-white w-full h-full flex flex-col overflow-hidden">
+          <div className="bg-white w-full h-full flex flex-col overflow-hidden view-enter">
             {queryError && !isQueryLoading ? (
               <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
                 <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
@@ -1831,11 +1832,11 @@ const InterviewSchedule = () => {
                 />
               </React.Suspense>
             )}
-          </Reveal>
+          </div>
         )}
 
         {viewMode === 'calendar' && (
-          <Reveal delay={0.06} className="bg-white p-6 overflow-auto w-full h-full">
+          <div className="bg-white p-6 overflow-auto w-full h-full view-enter">
             {/* Calendar loading state */}
             {isCalendarLoading && (
               <div className="calendar-grid grid grid-cols-7 border-t border-l border-[#e4ebf1]">
@@ -2174,13 +2175,13 @@ const InterviewSchedule = () => {
                 </Reveal>
               </div>
             )}
-          </Reveal>
+          </div>
         )}
 
         {viewMode === 'list' && (
           <>
 
-            <Reveal delay={0.04} className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full">
+            <div key={selectedGroupId} className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full view-enter">
               <div className="candidate-card-header min-h-[64px] py-3 bg-white border-b border-[#e4ebf1] px-5">
                 <div className="candidate-identity">
                   <div className="w-10 h-10 rounded-xl bg-[#b7c7f2] text-[#2f4ea8] text-sm font-semibold flex items-center justify-center shrink-0">
@@ -2526,8 +2527,8 @@ const InterviewSchedule = () => {
                                   ? InterviewRound.ROUND_2
                                   : InterviewRound.FINAL_ROUND
                               }
-                              candidateId={selectedInterview.candidateId}
-                              candidateName={selectedInterview.candidateName}
+                              candidateId={selectedInterview.candidateId || selectedInterview.application?.candidateId || selectedInterview.application?.candidate?.id}
+                              candidateName={selectedInterview.candidateName || selectedInterview.application?.candidate?.fullName || selectedCandidate?.fullName || ''}
                               initialValues={myFeedback?.feedbackData || myFeedback || {}}
                               templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
                               onSuccess={() => {
@@ -2551,9 +2552,9 @@ const InterviewSchedule = () => {
                               }
                               feedbackData={myFeedback.feedbackData || myFeedback}
                               templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
-                              candidateName={selectedInterview.candidateName}
+                              candidateName={selectedInterview.candidateName || selectedInterview.application?.candidate?.fullName || selectedCandidate?.fullName || ''}
                               onEdit={() => setIsEditingFeedback(true)}
-                              onDelete={() => handleDeleteFeedback(selectedInterview.candidateId, selectedInterview.round)}
+                              onDelete={() => handleDeleteFeedback(selectedInterview.candidateId || selectedInterview.application?.candidateId, selectedInterview.round)}
                             />
                           )}
                         </React.Suspense>
@@ -2594,7 +2595,7 @@ const InterviewSchedule = () => {
 
 
               </div>
-            </Reveal>
+            </div>
 
 
           </>
@@ -2770,8 +2771,8 @@ const InterviewSchedule = () => {
                         ? 'ROUND_2'
                         : 'FINAL_ROUND'
                     }
-                    candidateId={selectedInterview.candidateId}
-                    candidateName={selectedInterview.candidateName}
+                    candidateId={selectedInterview.candidateId || selectedInterview.application?.candidateId || selectedInterview.application?.candidate?.id}
+                    candidateName={selectedInterview.candidateName || selectedInterview.application?.candidate?.fullName || selectedCandidate?.fullName || ''}
                     initialValues={myFeedback?.feedbackData || myFeedback || {}}
                     templateVersion={myFeedback?.templateVersion || myFeedback?.template_version}
                     onCancel={() => setShowFeedbackModal(false)}
