@@ -231,7 +231,7 @@ async function request(path, options = {}, retries = 1) {
 
   if (isGet) {
     inflightRequests.set(requestKey, fetchPromise);
-    fetchPromise.finally(() => inflightRequests.delete(requestKey));
+    fetchPromise.finally(() => inflightRequests.delete(requestKey)).catch(() => {});
   }
 
   return fetchPromise;

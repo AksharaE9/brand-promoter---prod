@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import api from '../services/api';
 
@@ -55,22 +55,25 @@ export function usePaginatedList(endpoint, options = {}) {
   }, [enabled, hasNextPage, isFetching, isLoading, fetchNextPage]);
 
   // Safe wrapper for pages and rows to prevent cache-corruption crashes
-  const safeData = queryResult.data ? {
-    ...queryResult.data,
-    pages: Array.isArray(queryResult.data.pages)
-      ? queryResult.data.pages.map(page => {
-          if (!page) return { data: [], rows: [], totalCount: 0, hasMore: false };
-          const dataArray = Array.isArray(page.data) ? page.data : [];
-          const rowsArray = Array.isArray(page.rows) ? page.rows : dataArray;
-          return {
-            ...page,
-            data: dataArray,
-            rows: rowsArray,
-            totalCount: typeof page.totalCount === 'number' ? page.totalCount : 0
-          };
-        })
-      : []
-  } : undefined;
+  const safeData = useMemo(() => {
+    if (!queryResult.data) return undefined;
+    return {
+      ...queryResult.data,
+      pages: Array.isArray(queryResult.data.pages)
+        ? queryResult.data.pages.map(page => {
+            if (!page) return { data: [], rows: [], totalCount: 0, hasMore: false };
+            const dataArray = Array.isArray(page.data) ? page.data : [];
+            const rowsArray = Array.isArray(page.rows) ? page.rows : dataArray;
+            return {
+              ...page,
+              data: dataArray,
+              rows: rowsArray,
+              totalCount: typeof page.totalCount === 'number' ? page.totalCount : 0
+            };
+          })
+        : []
+    };
+  }, [queryResult.data]);
 
   return {
     ...queryResult,
