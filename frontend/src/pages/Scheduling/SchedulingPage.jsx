@@ -6,10 +6,11 @@ import MemberFileAttachmentModal from '../../components/Scheduling/MemberFileAtt
 import { getStoredUser } from '../../lib/api';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { computeCompletionPercentage } from '../../lib/leadImportSchema';
+import { lazyWithRetry } from '../../lib/lazyWithRetry';
 // Lazy load modals to optimize Scheduling page bundle size
-const MembersManagementModal = React.lazy(() => import('../../components/Scheduling/MembersManagementModal'));
-const LeadListImportModal = React.lazy(() => import('../../components/Scheduling/LeadListImportModal'));
-const WorkDoneReportModal = React.lazy(() => import('../../components/Scheduling/WorkDoneReportModal'));
+const MembersManagementModal = lazyWithRetry(() => import('../../components/Scheduling/MembersManagementModal'), 'MembersManagementModal');
+const LeadListImportModal = lazyWithRetry(() => import('../../components/Scheduling/LeadListImportModal'), 'LeadListImportModal');
+const WorkDoneReportModal = lazyWithRetry(() => import('../../components/Scheduling/WorkDoneReportModal'), 'WorkDoneReportModal');
 import { useQuery } from '@tanstack/react-query';
 import useDebounce from '../../hooks/useDebounce';
 import { search } from '../../lib/searchClient';

@@ -5,10 +5,11 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 // Lazy load modals to optimize Candidates page bundle size
-const JoinModal = React.lazy(() => import('../components/JoinModal'));
-const RejectModal = React.lazy(() => import('../components/RejectModal'));
-const BulkUploadModal = React.lazy(() => import('../components/BulkUpload/BulkUploadModal'));
+const JoinModal = lazyWithRetry(() => import('../components/JoinModal'), 'JoinModal');
+const RejectModal = lazyWithRetry(() => import('../components/RejectModal'), 'RejectModal');
+const BulkUploadModal = lazyWithRetry(() => import('../components/BulkUpload/BulkUploadModal'), 'BulkUploadModal');
 import { buildApiUrl, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { usePaginatedList } from '../hooks/usePaginatedList';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';

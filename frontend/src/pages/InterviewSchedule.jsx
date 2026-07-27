@@ -25,13 +25,15 @@ import { CandidateNameLink } from '../components/CandidateNameLink';
 import { usePanelists } from '../hooks/usePanelists';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
 // Lazy load secondary sub-components to reduce initial load weight
-const EditInterviewModal = React.lazy(() => import('../components/Interview/EditInterviewModal'));
-const ExcelView = React.lazy(() => import('../components/Interview/ExcelView'));
-const InterviewFeedbackForm = React.lazy(() => import('../components/Interview/InterviewFeedbackForm'));
-const InterviewFeedbackView = React.lazy(() => import('../components/Interview/InterviewFeedbackView'));
-const BulkInterviewUploadModal = React.lazy(() => import('../components/Interview/BulkInterviewUploadModal'));
-const BulkFeedbackUploadModal = React.lazy(() => import('../components/Interview/BulkFeedbackUploadModal'));
+const EditInterviewModal = lazyWithRetry(() => import('../components/Interview/EditInterviewModal'), 'EditInterviewModal');
+const ExcelView = lazyWithRetry(() => import('../components/Interview/ExcelView'), 'ExcelView');
+const InterviewFeedbackForm = lazyWithRetry(() => import('../components/Interview/InterviewFeedbackForm'), 'InterviewFeedbackForm');
+const InterviewFeedbackView = lazyWithRetry(() => import('../components/Interview/InterviewFeedbackView'), 'InterviewFeedbackView');
+const BulkInterviewUploadModal = lazyWithRetry(() => import('../components/Interview/BulkInterviewUploadModal'), 'BulkInterviewUploadModal');
+const BulkFeedbackUploadModal = lazyWithRetry(() => import('../components/Interview/BulkFeedbackUploadModal'), 'BulkFeedbackUploadModal');
 import { ContactAttemptPopover } from '../components/Interview/ContactAttemptPopover';
 import { formatTime24h, formatDateTime24h } from '../lib/datetime';
 import {
@@ -394,7 +396,7 @@ function CalendarCell({ date, isCurrentMonth, isToday, onSelectDate, cellIntervi
 const MemoizedCalendarCell = React.memo(CalendarCell);
 
 // ScheduleModal is lazy-loaded to optimize initial bundle size and load performance
-const ScheduleModal = React.lazy(() => import('../components/Interview/ScheduleModal').then(module => ({ default: module.ScheduleModal })));
+const ScheduleModal = lazyWithRetry(() => import('../components/Interview/ScheduleModal').then(module => ({ default: module.ScheduleModal })), 'ScheduleModal');
 
 
 const InterviewSchedule = () => {

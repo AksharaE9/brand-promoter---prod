@@ -3,8 +3,9 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
+import { lazyWithRetry } from '../lib/lazyWithRetry';
 // Lazy load drive campaign workspace to optimize Campaigns page bundle size
-const CollegeDriveWorkspace = React.lazy(() => import('../components/CollegeDriveWorkspace'));
+const CollegeDriveWorkspace = lazyWithRetry(() => import('../components/CollegeDriveWorkspace'), 'CollegeDriveWorkspace');
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
 const Drives = () => {

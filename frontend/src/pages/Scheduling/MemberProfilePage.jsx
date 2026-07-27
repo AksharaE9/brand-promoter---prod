@@ -11,7 +11,9 @@ import UserChip from '../../components/UserChip';
 import NotificationBell from '../../components/NotificationBell';
 import MemberFileAttachmentModal from '../../components/Scheduling/MemberFileAttachmentModal';
 
-const LeadListImportModal = React.lazy(() => import('../../components/Scheduling/LeadListImportModal'));
+import { lazyWithRetry } from '../../lib/lazyWithRetry';
+
+const LeadListImportModal = lazyWithRetry(() => import('../../components/Scheduling/LeadListImportModal'), 'LeadListImportModal_MemberProfile');
 
 export default function MemberProfilePage() {
   const { memberId } = useParams();

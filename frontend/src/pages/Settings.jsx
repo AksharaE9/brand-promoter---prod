@@ -6,11 +6,13 @@ import NotificationBell from '../components/NotificationBell';
 import { buildApiUrl, apiGet, apiPut, apiPost, apiDelete, apiPatch, startKeepAlive } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 
-const ProfileTab = React.lazy(() => import('../components/Settings/ProfileTab'));
-const OrganizationTab = React.lazy(() => import('../components/Settings/OrganizationTab'));
-const ContactTab = React.lazy(() => import('../components/Settings/ContactTab'));
-const PreferencesTab = React.lazy(() => import('../components/Settings/PreferencesTab'));
-const SecurityTab = React.lazy(() => import('../components/Settings/SecurityTab'));
+import { lazyWithRetry } from '../lib/lazyWithRetry';
+
+const ProfileTab = lazyWithRetry(() => import('../components/Settings/ProfileTab'), 'ProfileTab');
+const OrganizationTab = lazyWithRetry(() => import('../components/Settings/OrganizationTab'), 'OrganizationTab');
+const ContactTab = lazyWithRetry(() => import('../components/Settings/ContactTab'), 'ContactTab');
+const PreferencesTab = lazyWithRetry(() => import('../components/Settings/PreferencesTab'), 'PreferencesTab');
+const SecurityTab = lazyWithRetry(() => import('../components/Settings/SecurityTab'), 'SecurityTab');
 
 const timezoneOptions = [
   { value: 'Asia/Kolkata', label: 'India Standard Time (IST) - Asia/Kolkata' },
