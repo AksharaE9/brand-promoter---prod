@@ -3,19 +3,60 @@ import {
   ROUND_DISPLAY_LABEL,
   InterviewRound,
   FEEDBACK_TEMPLATE_VERSIONS,
+  resolveFeedbackValue,
 } from '../../lib/interviewTemplates';
 import CopyFeedbackButton from './CopyFeedbackButton';
+import { getStoredUser } from '../../lib/api';
+
+const downloadBase64File = (fileName, base64Data) => {
+  try {
+    let blob;
+    if (base64Data.startsWith('data:')) {
+      const parts = base64Data.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1];
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: mime });
+    } else {
+      const bstr = atob(base64Data);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: 'application/octet-stream' });
+    }
+    
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (err) {
+    console.error('Failed to download base64 file:', err);
+  }
+};
 
 export default function InterviewFeedbackView({
   round = InterviewRound.ROUND_1,
   feedbackData = {},
   candidateName = '',
   onEdit,
+  onDelete,
 }) {
   const ver = feedbackData.templateVersion || feedbackData.template_version || 1;
   const versionDef = FEEDBACK_TEMPLATE_VERSIONS.find(v => v.version === ver) || FEEDBACK_TEMPLATE_VERSIONS[0];
   const template = versionDef.getFields(round);
   const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
+
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN';
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
@@ -43,12 +84,21 @@ export default function InterviewFeedbackView({
               Edit Feedback
             </button>
           )}
+          {isAdmin && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 hover:text-red-700 rounded-lg transition-colors"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {template.map((field) => {
-          const raw = feedbackData[field.key];
+          const raw = resolveFeedbackValue(feedbackData, field.key, ver);
           const isEmpty = raw === null || raw === undefined || String(raw).trim() === '';
           const display = isEmpty ? '—' : raw;
           const suffix = field.suffix && !isEmpty ? field.suffix : '';
@@ -64,7 +114,35 @@ export default function InterviewFeedbackView({
                 {field.label}
               </span>
               <div className="text-xs font-medium text-slate-800 whitespace-pre-wrap">
-                {field.key === 'selectionStatus' || field.key === 'status' ? (
+                {field.type === 'file' ? (
+                  !isEmpty ? (
+                    typeof raw === 'object' && raw.data ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadBase64File(raw.name || 'document', raw.data);
+                        }}
+                        className="inline-flex items-center gap-1 text-[#1f52cc] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
+                      >
+                        <span className="material-symbols-outlined text-xs">download</span>
+                        {raw.name || 'Download Attachment'}
+                      </button>
+                    ) : (
+                      <a
+                        href={raw}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[#1f52cc] hover:underline font-semibold"
+                      >
+                        <span className="material-symbols-outlined text-xs">open_in_new</span>
+                        Open Attachment
+                      </a>
+                    )
+                  ) : (
+                    <span>—</span>
+                  )
+                ) : field.key === 'selectionStatus' || field.key === 'status' || field.key === 'overallRecommendation' ? (
                   <span
                     className={`inline-block px-2 py-0.5 text-[11px] font-bold rounded ${
                       display === 'SELECTED'

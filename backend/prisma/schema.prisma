@@ -695,6 +695,7 @@ model InterviewFeedback {
   offerLetterEmailAttachmentUrl String? @map("offer_letter_email_attachment_url")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  deletedAt       DateTime? @map("deleted_at")
 
   candidate       Candidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   submittedBy     User?      @relation(fields: [submittedById], references: [id])

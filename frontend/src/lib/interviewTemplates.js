@@ -123,6 +123,32 @@ export const FEEDBACK_TEMPLATE_VERSIONS = [
 export const CURRENT_FEEDBACK_TEMPLATE_VERSION = 2;
 
 /**
+ * resolveFeedbackValue - Dynamically resolves the value of a feedback field
+ * based on whether it is version 1 (legacy rating-based) or version 2 (schema-driven).
+ */
+export function resolveFeedbackValue(feedbackData, key, templateVersion = 1) {
+  if (!feedbackData) return '';
+  if (Number(templateVersion) === 2) return feedbackData[key] ?? '';
+
+  // Direct match
+  if (feedbackData[key] !== undefined && feedbackData[key] !== null) return feedbackData[key];
+
+  // Legacy mappings (ratings nesting)
+  if (['technical', 'communication', 'culture'].includes(key)) {
+    const val = feedbackData.ratings?.[key];
+    return val !== undefined && val !== null ? (typeof val === 'number' ? `${val}/5` : val) : '';
+  }
+
+  if (key === 'overallRecommendation') return feedbackData.recommendation || '';
+  if (key === 'keyStrengths') return feedbackData.strengths || '';
+  if (key === 'overallSummary') return feedbackData.notes || '';
+  if (key === 'attachedDocument') {
+    return feedbackData.offerFileUrl || feedbackData.offerFileName || feedbackData.attachedDocument || '';
+  }
+  return '';
+}
+
+/**
  * Derives the next schedulable round enum from array of completed round enums.
  */
 export function getNextSchedulableRound(completedRounds) {
@@ -140,7 +166,7 @@ export function formatFeedbackForClipboard(round, values, templateVersion = CURR
   const vals = values || {};
   return template
     .map((field) => {
-      const raw = vals[field.key];
+      const raw = resolveFeedbackValue(vals, field.key, templateVersion);
       const isEmpty = raw === null || raw === undefined || raw === '';
       const display = isEmpty ? '—' : raw;
       const suffix = field.suffix && !isEmpty ? field.suffix : '';

@@ -858,6 +858,110 @@ router.get(
   })
 );
 
+// ── DELETE stored feedback for specific candidate and round (soft delete) ──
+router.delete(
+  '/:candidateId/feedback/:round',
+  requireRoles("SUPER_ADMIN", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { candidateId, round } = req.params;
+
+    // Get candidate for audit log
+    const candidate = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+      select: { fullName: true }
+    });
+
+    const candidateName = candidate?.fullName || 'Unknown Candidate';
+
+    // 1. Soft-delete in interview_feedbacks table if exists
+    const existingFeedback = await prisma.interviewFeedback.findFirst({
+      where: {
+        candidateId,
+        round,
+      },
+    });
+
+    let previousStatus = 'UNKNOWN';
+    let feedbackId = 'N/A';
+
+    if (existingFeedback) {
+      feedbackId = existingFeedback.id;
+      previousStatus = existingFeedback.selectionStatus;
+      
+      await prisma.interviewFeedback.update({
+        where: { id: existingFeedback.id },
+        data: { deletedAt: new Date() },
+      });
+    }
+
+    // 2. Also check and soft delete in interviews table feedback JSON column
+    const roundNo = round === 'ROUND_1' ? 1
+                  : round === 'ROUND_2' ? 2
+                  : 99; // Final Round is 99 or similar
+    
+    const interviews = await prisma.interview.findMany({
+      where: {
+        candidateId,
+        roundNo,
+      },
+    });
+
+    for (const interview of interviews) {
+      let feedbackList = [];
+      try {
+        feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
+      } catch (_) {}
+      if (!Array.isArray(feedbackList)) feedbackList = [];
+
+      let updated = false;
+      const updatedFeedbackList = feedbackList.map(f => {
+        if (!f.deletedAt && !f.deleted_at) {
+          f.deletedAt = new Date().toISOString();
+          updated = true;
+        }
+        return f;
+      });
+
+      if (updated) {
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { feedback: updatedFeedbackList },
+        });
+      }
+    }
+
+    // 3. Write audit log
+    logAudit({
+      actorUserId: req.user.id,
+      actorName: req.user.fullName,
+      actorEmail: req.user.email,
+      actorRole: req.user.role,
+      action: 'DELETE_INTERVIEW_FEEDBACK',
+      entityType: 'INTERVIEW_FEEDBACK',
+      entityId: feedbackId,
+      entityName: `Feedback for ${candidateName} - ${round}`,
+      newData: null,
+      oldData: { round, previousStatus },
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      orgId: req.user.organizationId || 'defaultOrg',
+    });
+
+    // Broadcast SSE event so frontend updates
+    const sse = require('../../utils/sse');
+    sse.broadcastToOrg(req.user.organizationId || 'defaultOrg', 'interview-feedback:updated', {
+      candidateId,
+      round,
+      deleted: true,
+    });
+
+    res.json({
+      success: true,
+      message: 'Feedback soft-deleted successfully.',
+    });
+  })
+);
+
 
 // ── POST submit feedback ──
 router.post(

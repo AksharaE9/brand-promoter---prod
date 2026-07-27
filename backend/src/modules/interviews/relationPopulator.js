@@ -221,7 +221,7 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
   if (candidateIds.length > 0) {
     dbFetches.push(
       prisma.interviewFeedback.findMany({
-        where: { candidateId: { in: candidateIds } },
+        where: { candidateId: { in: candidateIds }, deletedAt: null },
         include: {
           submittedBy: {
             select: {
@@ -309,6 +309,7 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
       feedback = typeof round.feedback === 'string' ? JSON.parse(round.feedback) : round.feedback;
     } catch (_) {}
     if (!Array.isArray(feedback)) feedback = [];
+    feedback = feedback.filter(f => !f.deletedAt && !f.deleted_at);
 
     const mappedRoundName = round.round === 'Round 1' ? 'ROUND_1'
                           : round.round === 'Round 2' ? 'ROUND_2'

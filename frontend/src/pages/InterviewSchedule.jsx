@@ -6,7 +6,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { buildApiUrl, API_ROOT_URL, apiGet, apiGetBlob, apiPost, getStoredUser } from '../lib/api';
+import { buildApiUrl, API_ROOT_URL, apiGet, apiGetBlob, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { search } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
@@ -1250,6 +1250,27 @@ const InterviewSchedule = () => {
     }
   };
 
+  const handleDeleteFeedback = async (candidateId, round) => {
+    if (!window.confirm('Delete this feedback? This action can only be reversed by direct database access.')) {
+      return;
+    }
+    try {
+      const mappedRound = round === 'Round 1' ? 'ROUND_1'
+                        : round === 'Round 2' ? 'ROUND_2'
+                        : 'FINAL_ROUND';
+      const res = await apiDelete(`/interviews/${candidateId}/feedback/${mappedRound}`);
+      if (res?.success) {
+        setBanner('Feedback soft-deleted successfully.');
+        await loadAll();
+        refetchDetails();
+      } else {
+        setError(res?.error || 'Failed to delete feedback');
+      }
+    } catch (err) {
+      setError(err.message || 'An error occurred while deleting feedback');
+    }
+  };
+
   const onUpdateStatus = async (applicationId, status) => {
     // Optimistic update via hook — no loading spinner, no refetch
     try {
@@ -2403,6 +2424,8 @@ const InterviewSchedule = () => {
                               }
                               feedbackData={myFeedback.feedbackData || myFeedback}
                               candidateName={selectedInterview.candidateName}
+                              onEdit={() => setIsEditingFeedback(true)}
+                              onDelete={() => handleDeleteFeedback(selectedInterview.candidateId, selectedInterview.round)}
                             />
                           )}
                         </React.Suspense>

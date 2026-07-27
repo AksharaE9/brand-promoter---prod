@@ -137,11 +137,39 @@ export default function InterviewFeedbackForm({
   const template = versionDef.getFields(round);
   const roundLabel = ROUND_DISPLAY_LABEL[round] || 'Round 1';
 
-  const [values, setValues] = useState(() => ({
-    name: candidateName,
-    roundNumber: roundLabel,
-    ...initialValues,
-  }));
+  const [values, setValues] = useState(() => {
+    let flattened = { ...initialValues };
+    if (Number(templateVersion) === 1) {
+      if (initialValues?.ratings) {
+        flattened.technical = typeof initialValues.ratings.technical === 'number'
+          ? `${initialValues.ratings.technical}/5`
+          : initialValues.ratings.technical;
+        flattened.communication = typeof initialValues.ratings.communication === 'number'
+          ? `${initialValues.ratings.communication}/5`
+          : initialValues.ratings.communication;
+        flattened.culture = typeof initialValues.ratings.culture === 'number'
+          ? `${initialValues.ratings.culture}/5`
+          : initialValues.ratings.culture;
+      }
+      if (initialValues?.recommendation) {
+        flattened.overallRecommendation = initialValues.recommendation;
+      }
+      if (initialValues?.strengths) {
+        flattened.keyStrengths = initialValues.strengths;
+      }
+      if (initialValues?.notes) {
+        flattened.overallSummary = initialValues.notes;
+      }
+      if (initialValues?.offerFileUrl || initialValues?.offerFileName || initialValues?.attachedDocument) {
+        flattened.attachedDocument = initialValues.offerFileUrl || initialValues.offerFileName || initialValues.attachedDocument;
+      }
+    }
+    return {
+      name: candidateName,
+      roundNumber: roundLabel,
+      ...flattened,
+    };
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
