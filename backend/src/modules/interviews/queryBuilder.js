@@ -65,7 +65,7 @@ async function buildInterviewListQuery({
   // because relation population fetched full feedback/candidate/user objects for every row.
   // Restore to 250 only after confirming the lean projection keeps payloads well under 200KB
   // via `curl .../api/interviews?limit=250 | wc -c` on a production-like dataset.
-  const lim = Math.min(250, Math.max(1, parseInt(limit) || 20));
+  const lim = Math.min(150, Math.max(1, parseInt(limit) || 20));
 
   // Base query filter (excluding deleted candidates and orphaned interviews)
   const where = {

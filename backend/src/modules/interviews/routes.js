@@ -51,7 +51,7 @@ const parseQueryBody = (req, res, next) => {
 const interviewSearchHandler = async (req, res) => {
   const q = (req.body.q || '').trim();
   const filters = req.body.filters || {};
-  const limit = Math.min(250, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
+  const limit = Math.min(150, Math.max(1, Number.parseInt(req.body.limit, 10) || 20));
   const cursor = req.body.cursor?.trim();
   const orgId = req.user.organizationId || "defaultOrg";
 
@@ -192,14 +192,14 @@ router.post(
 );
 
 // ── Safety constants ──────────────────────────────────────────────────────
-// Reduced from 250 — see queryBuilder.js for restoration instructions.
-const INTERVIEWS_PAGE_SIZE = 250;
+// Adjusted to 150 to keep response payload safely under the 600KB ceiling.
+const INTERVIEWS_PAGE_SIZE = 150;
 
 // Hard byte-size ceiling per list response.
 // If a lean-projection bug or future field addition causes the payload to grow unexpectedly,
 // this will throw a loud 500 with diagnostics BEFORE the response is sent — preventing
 // the silent OOM crash pattern that caused 8 instance failures in one hour.
-const MAX_RESPONSE_BYTES = 500 * 1024; // 500 KB
+const MAX_RESPONSE_BYTES = 600 * 1024; // 600 KB
 
 /**
  * Enforce response size limit.

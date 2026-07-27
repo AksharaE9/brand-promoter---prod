@@ -483,7 +483,7 @@ const InterviewSchedule = () => {
     refetch: refetchInterviews,
     error: queryError
   } = usePaginatedList('/interviews', {
-    pageSize: 250,
+    pageSize: 150,
     filters: roundsFilters,
     queryKey: ['scheduling', 'rounds']
   });
