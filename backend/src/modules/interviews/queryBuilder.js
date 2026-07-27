@@ -40,6 +40,7 @@ const LIST_SELECT_FIELDS = {
   interviewerNames: true,
   createdAt: true,
   updatedAt: true,
+  createdById: true,
   // Included for Excel View follow-up upload status.
   // IMPORTANT: base64 file blobs within this field are stripped by
   // relationPopulator.js (listMode) before the response is sent, so

@@ -4,6 +4,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../../com
 import UserChip from '../../components/UserChip';
 import SalesNotificationBell from '../../components/SalesNotificationBell';
 import { getStoredUser } from '../../lib/api';
+import { useAuthStore } from '../../stores/authStore';
 
 const salesNavItems = [
     { key: 'sales-dashboard', label: 'Dashboard', href: '/sales', icon: 'dashboard' },
@@ -46,8 +47,7 @@ const SalesLayout = () => {
                             href: '/login',
                             icon: 'logout',
                             onClick: () => {
-                                localStorage.removeItem('ats_token');
-                                localStorage.removeItem('ats_user');
+                                useAuthStore.getState().clearAuth();
                             }
                         },
                     ]}

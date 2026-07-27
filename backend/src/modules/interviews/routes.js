@@ -227,6 +227,7 @@ function buildCacheKey(orgId, query) {
     query.search       || '',
     query.cursor       || 'start',
     query.limit        || '20',
+    query.skip         || '',
   ].join(':');
   const hash = crypto.createHash('md5').update(parts).digest('hex').slice(0, 12);
   return `interviews:list:${orgId}:${hash}`;
@@ -340,16 +341,20 @@ router.get(
 
     // We fetch limit + 1 to know if there is a next page
     const takeLimit = limit + 1;
+    const skip = req.query.skip ? parseInt(req.query.skip, 10) : undefined;
     const dbQueryParams = {
       ...queryParams,
       take: takeLimit
     };
+    if (skip !== undefined && !isNaN(skip) && skip >= 0) {
+      dbQueryParams.skip = skip;
+    }
 
     // ── 2b. Run list query AND total COUNT in parallel ──
     // COUNT returns a single integer — no rows fetched, safe for byte-size limit.
     // Only run totalCount on page 1 (no cursor) to avoid the extra DB round-trip
     // on every subsequent page; consumers read totalCount from page 1 only.
-    const isFirstPage = !req.query.cursor;
+    const isFirstPage = !req.query.cursor && (!skip || skip === 0);
     const [docs, totalCount] = await Promise.all([
       prisma.interview.findMany(dbQueryParams),
       isFirstPage

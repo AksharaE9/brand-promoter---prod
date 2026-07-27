@@ -12,7 +12,7 @@ import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseN
 import { subscribeSSE } from '../lib/sse';
 import { groupInterviewsByDate, toDateKey, formatTime12h, getStatusStyle, getCandidateInitials } from '../lib/groupInterviewsByDate';
 
-import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails } from '../hooks/useScheduling';
+import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails, updateInfiniteOrFlatList } from '../hooks/useScheduling';
 import useDebounce from '../hooks/useDebounce';
 import { schedulingApi } from '../services/schedulingApi';
 import { usePaginatedList } from '../hooks/usePaginatedList';
@@ -418,6 +418,8 @@ const InterviewSchedule = () => {
   const debouncedSearch = useDebounce(interviewListSearch, 300);
 
   const [allInterviews, setAllInterviews] = useState([]);  // accumulates pages
+  const [excelAllInterviews, setExcelAllInterviews] = useState([]);
+  const [excelLoadStatus, setExcelLoadStatus] = useState('idle'); // 'idle' | 'loading' | 'done' | 'error'
 
   const roundsFilters = useMemo(() => ({
     ...(filterMine && currentUser?.id ? { interviewerId: currentUser.id } : {}),
@@ -455,6 +457,93 @@ const InterviewSchedule = () => {
       setAllInterviews([]);
     }
   }, [infiniteData]);
+
+  // Reset excel parallel load whenever filters change
+  useEffect(() => {
+    setExcelAllInterviews([]);
+    setExcelLoadStatus('idle');
+  }, [roundsFilters]);
+
+  // Parallel Excel Loading
+  useEffect(() => {
+    if (viewMode !== 'excel' || totalCount === null || excelLoadStatus !== 'idle') return;
+
+    if (totalCount <= 100) {
+      setExcelLoadStatus('done');
+      return;
+    }
+
+    const loadRemainingPages = async () => {
+      setExcelLoadStatus('loading');
+      try {
+        const filterStr = (() => {
+          const params = new URLSearchParams();
+          if (roundsFilters) {
+            Object.entries(roundsFilters).forEach(([key, val]) => {
+              if (val !== undefined && val !== null && val !== '' && val !== 'All') {
+                params.set(key, String(val));
+              }
+            });
+          }
+          return params.toString();
+        })();
+
+        // Generate offsets: 100, 200, 300, ...
+        const offsets = [];
+        for (let offset = 100; offset < totalCount; offset += 100) {
+          offsets.push(offset);
+        }
+
+        const urls = offsets.map(offset => `/interviews?skip=${offset}&limit=100${filterStr ? `&${filterStr}` : ''}`);
+        
+        const fetchInBatches = async (paths, batchSize = 4) => {
+          const results = [];
+          for (let i = 0; i < paths.length; i += batchSize) {
+            const batch = paths.slice(i, i + batchSize);
+            const batchResults = await Promise.all(
+              batch.map(async (path) => {
+                const res = await apiGet(path, true);
+                return res?.data || res?.rows || [];
+              })
+            );
+            results.push(...batchResults.flat());
+          }
+          return results;
+        };
+
+        const extraData = await fetchInBatches(urls, 4);
+
+        setExcelAllInterviews(() => {
+          const page1 = allInterviews.slice(0, 100);
+          const combined = [...page1, ...extraData];
+          
+          const seen = new Set();
+          const unique = [];
+          combined.forEach(item => {
+            if (item && item.id && !seen.has(item.id)) {
+              seen.add(item.id);
+              unique.push(item);
+            }
+          });
+
+          unique.sort((a, b) => {
+            const dateA = a.scheduledStart ? new Date(a.scheduledStart).getTime() : 0;
+            const dateB = b.scheduledStart ? new Date(b.scheduledStart).getTime() : 0;
+            return dateB - dateA;
+          });
+
+          return unique;
+        });
+
+        setExcelLoadStatus('done');
+      } catch (err) {
+        console.error('[ExcelParallelLoad] Failed to load interviews in parallel:', err);
+        setExcelLoadStatus('error');
+      }
+    };
+
+    loadRemainingPages();
+  }, [viewMode, totalCount, excelLoadStatus, allInterviews, roundsFilters]);
   const loading = isQueryLoading;
   const createRoundMutation = useCreateRound();
   const submitFeedbackMutation = useSubmitFeedback();
@@ -751,31 +840,57 @@ const InterviewSchedule = () => {
       if (data.type === 'ROUND_CREATED') {
         const newRound = data.round;
         if (newRound?.id) {
+          const normalizedRound = {
+            ...newRound,
+            candidate: newRound.candidateName ? { id: newRound.candidateId, fullName: newRound.candidateName } : null,
+            job: newRound.jobTitle ? { id: newRound.jobId, title: newRound.jobTitle } : null,
+            interviewers: (newRound.interviewerNames || '').split(',').map(n => ({ fullName: n.trim() })).filter(u => u.fullName),
+            interviewerIds: (() => { try { return typeof newRound.interviewerIds === 'string' ? JSON.parse(newRound.interviewerIds) : newRound.interviewerIds || []; } catch { return []; } })(),
+            feedback: [],
+          };
+
           setAllInterviews(prev => {
-            if (prev.some(i => i.id === newRound.id)) return prev;
-            return [newRound, ...prev];
+            if (prev.some(i => i.id === normalizedRound.id)) return prev;
+            return [normalizedRound, ...prev];
           });
+
+          queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
+            updateInfiniteOrFlatList(old, (list) => {
+              if (list.some(i => i.id === normalizedRound.id)) return list;
+              return [normalizedRound, ...list];
+            })
+          );
         }
       } else if (data.type === 'ROUND_DELETED') {
         const deletedId = data.roundId;
         if (deletedId) {
           setAllInterviews(prev => prev.filter(i => i.id !== deletedId));
+
+          queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
+            updateInfiniteOrFlatList(old, (list) => list.filter(i => i.id !== deletedId))
+          );
         }
       } else if (data.type === 'SCHEDULING_UPDATE') {
         const { type: sub, roundId, round } = data;
         const actualSub = data.subType || sub;
         if (actualSub === 'ROUND_UPDATED' && roundId && round) {
           setAllInterviews(prev => prev.map(i => i.id === roundId ? { ...i, ...round } : i));
+
+          queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
+            updateInfiniteOrFlatList(old, (list) =>
+              list.map(i => i.id === roundId ? { ...i, ...round } : i)
+            )
+          );
         }
       }
 
       const now = Date.now();
       if (now - lastSSEReloadRef.current < SSE_RELOAD_DEBOUNCE) return;
       lastSSEReloadRef.current = now;
-      // Mark scheduling queries as stale and trigger immediate refetch for real-time sync.
+      // Mark scheduling queries as stale and let next natural mount/refetch update them (no forced immediate fetch to avoid flicker)
       queryClient.invalidateQueries({
         queryKey: ['scheduling'],
-        refetchType: 'active',
+        refetchType: 'none',
       });
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
     }, RELEVANT);
@@ -802,8 +917,6 @@ const InterviewSchedule = () => {
 
   const displayInterviews = interviews;
 
-  // ── filteredForViews: single source of truth for Calendar + Excel (respects filterMine + roundFilter) ──
-  // This is the same filtering logic used by groupedApplications but returns a flat array.
   const filteredForViews = useMemo(() => {
     let filtered = filterMine
       ? displayInterviews.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
@@ -816,6 +929,20 @@ const InterviewSchedule = () => {
 
     return filtered;
   }, [displayInterviews, filterMine, currentUser?.id, roundFilter]);
+
+  const filteredForExcel = useMemo(() => {
+    const source = excelLoadStatus === 'done' || excelAllInterviews.length > 0 ? excelAllInterviews : displayInterviews;
+    let filtered = filterMine
+      ? source.filter(iv => iv.interviewerIds?.includes(currentUser?.id))
+      : source;
+
+    if (roundFilter !== 'all') {
+      const targetRound = parseInt(roundFilter, 10);
+      filtered = filtered.filter(iv => (iv.roundNo || 0) === targetRound);
+    }
+
+    return filtered;
+  }, [excelAllInterviews, displayInterviews, excelLoadStatus, filterMine, currentUser?.id, roundFilter]);
 
 
   // ── groupedApplications: built purely from interviews data, no candidates limit ──
@@ -1688,7 +1815,7 @@ const InterviewSchedule = () => {
             ) : (
               <React.Suspense fallback={<div className="p-8 text-center text-slate-400">Loading spreadsheet view...</div>}>
                 <ExcelView
-                  interviews={filteredForViews}
+                  interviews={filteredForExcel}
                   viewDate={viewDate}
                   onSelectCandidate={(candidateId, interviewId) => {
                     setViewMode('list');
@@ -1696,8 +1823,8 @@ const InterviewSchedule = () => {
                     if (interviewId) setActiveInterviewId(interviewId);
                   }}
                   onLoadMore={loadMoreInterviews}
-                  hasMore={serverHasMore}
-                  loadingMore={loadingMore}
+                  hasMore={excelLoadStatus === 'done' ? false : serverHasMore}
+                  loadingMore={excelLoadStatus === 'loading' ? true : loadingMore}
                   totalCount={totalCount}
                 />
               </React.Suspense>

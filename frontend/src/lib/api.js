@@ -1,3 +1,5 @@
+import { useAuthStore } from '../stores/authStore';
+
 // In DEV, use a relative base URL ('/api') so all requests route through the
 // Vite dev-server proxy (vite.config.js proxy: '/api' → localhost:4000).
 // This avoids CORS failures on direct browser→backend calls (EventSource, etc.)
@@ -72,7 +74,9 @@ export function isAuthenticatedRoute(url) {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     try {
       pathname = new URL(url).pathname;
-    } catch (_) {}
+    } catch (_) {
+      // ignore
+    }
   }
   const cleanPath = pathname.replace(/\/+/g, '/');
   const publicRoutes = [
@@ -322,6 +326,11 @@ export function clearAuth() {
   localStorage.removeItem('ats_token');
   localStorage.removeItem('ats_user');
   apiCache.clear();
+  try {
+    useAuthStore.getState().clearAuth();
+  } catch (_) {
+    // ignore
+  }
 }
 
 /**
@@ -341,6 +350,11 @@ export function handle401SessionExpiry() {
   localStorage.removeItem('ats_token');
   localStorage.removeItem('ats_user');
   apiCache.clear();
+  try {
+    useAuthStore.getState().clearAuth();
+  } catch (_) {
+    // ignore
+  }
 
   // Avoid a redirect loop if we're already on the login page
   if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {

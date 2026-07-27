@@ -8,7 +8,7 @@ const QUERY_KEYS = {
 };
 
 // Helper to safely update query list cache for both flat lists and infinite scroll pages
-function updateInfiniteOrFlatList(old, updateFn) {
+export function updateInfiniteOrFlatList(old, updateFn) {
   if (!old) return old;
   
   // TanStack Query Infinite Query shape: { pages: [...], pageParams: [...] }

@@ -28,7 +28,38 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
 
   // ─── LIST MODE: no DB queries, use only denormalized columns ───────────────
   if (opts.listMode) {
+    const creatorIds = [...new Set(rounds.map(r => r.createdById).filter(Boolean))];
+    const userMap = {};
+    const missingIds = [];
+
+    creatorIds.forEach(id => {
+      const cached = l1.get(`entity:users:${id}`);
+      if (cached) {
+        userMap[id] = cached;
+      } else {
+        missingIds.push(id);
+      }
+    });
+
+    if (missingIds.length > 0) {
+      try {
+        const dbUsers = await prisma.user.findMany({
+          where: { id: { in: missingIds } },
+          select: { id: true, fullName: true }
+        });
+        dbUsers.forEach(u => {
+          userMap[u.id] = u;
+          l1.set(`entity:users:${u.id}`, u, ENTITY_TTL);
+        });
+      } catch (err) {
+        console.error('[relationPopulator] Failed to fetch creators in listMode:', err.message);
+      }
+    }
+
     return rounds.map(round => {
+      const creatorUser = round.createdById ? userMap[round.createdById] : null;
+      const createdByName = creatorUser ? creatorUser.fullName : 'Super Admin';
+
       // Parse interviewerIds JSON so the frontend can use the array
       let interviewerIds = [];
       try {
@@ -96,6 +127,7 @@ async function populateInterviewRelations(rounds, currentUser = null, opts = {})
         voiceRecordingUrl: undefined,
         voiceRecordingFileId: undefined,
         offer_letter_sent,
+        createdByName,
         // Virtual helpers the frontend may reference
         _candidateName: round.candidateName || null,
         _jobTitle: round.jobTitle || null,

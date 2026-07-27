@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buildApiUrl, hasToken } from '../lib/api';
+import { useAuthStore } from '../stores/authStore';
 
 const earthImage =
   "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1800&q=80";
@@ -44,8 +45,7 @@ const LoginPage = () => {
         throw new Error(result?.message || 'Login failed. Please check credentials.');
       }
 
-      localStorage.setItem('ats_token', result.data.token);
-      localStorage.setItem('ats_user', JSON.stringify(result.data.user));
+      useAuthStore.getState().setAuth(result.data.token, result.data.user);
 
       // If the user was redirected here after session expiry, send them back
       // to where they were — not always to /workspaces.
