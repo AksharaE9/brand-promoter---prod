@@ -306,11 +306,12 @@ async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
   if (blockingFeedback) {
     const ApiError = require('../utils/errors').ApiError;
     const roundLabel = ROUND_DISPLAY_LABEL[blockingFeedback.round] || blockingFeedback.round;
+    const effectiveStatus = getEffectiveSelectionStatus(blockingFeedback);
     
     let reasonMsg = `This candidate was rejected at ${roundLabel}; further rounds cannot be scheduled.`;
-    if (blockingFeedback.selectionStatus === 'DIDNT_JOIN') {
+    if (effectiveStatus === 'DIDNT_JOIN') {
       reasonMsg = `This candidate has withdrawn (Didn't Join) at ${roundLabel}; further rounds cannot be scheduled.`;
-    } else if (blockingFeedback.selectionStatus === 'OFFER_LETTER') {
+    } else if (effectiveStatus === 'OFFER_LETTER') {
       reasonMsg = `This candidate has already reached Offer Letter stage at ${roundLabel}; further rounds cannot be scheduled.`;
     }
     
