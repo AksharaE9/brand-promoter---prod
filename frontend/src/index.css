@@ -61,8 +61,43 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Page content fade-in on route change.
+   Applied on the os-shell wrapper — only plays on mount, which is exactly
+   when a new route's layout mounts. The sidebar is inside the same shell so
+   it does NOT get re-animated on query-string navigations (same component stays mounted). */
 .page-transition {
-  animation: fadeIn var(--transition-smooth);
+  animation: fadeIn 0.2s ease-out both;
+}
+
+/* The page-enter class is used by PageEnter component inside each page's content area.
+   It gives a subtle upward-float feel to the main content on every route change. */
+@keyframes pageContentEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Smooth nav link active state transition */
+.os-nav-item {
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+/* Route loading progress bar (top of page) */
+@keyframes routeLoadBar {
+  0%   { width: 0%; opacity: 1; }
+  60%  { width: 75%; opacity: 1; }
+  100% { width: 100%; opacity: 0; }
+}
+
+.route-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #1f52cc, #35b577);
+  border-radius: 0 2px 2px 0;
+  z-index: 9999;
+  animation: routeLoadBar 0.6s ease-out forwards;
+  pointer-events: none;
 }
 
 /* Fast Scrollbars */

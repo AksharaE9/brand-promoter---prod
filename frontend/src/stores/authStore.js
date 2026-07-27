@@ -11,17 +11,22 @@ export const useAuthStore = create((set) => ({
   accessToken: getStoredToken(),
   user: getStoredUser(),
   isAuthenticated: Boolean(getStoredToken()),
+  isVerified: false,
   
   setAuth(token, user) {
     localStorage.setItem('ats_token', token);
     localStorage.setItem('ats_user', JSON.stringify(user));
-    set({ accessToken: token, user, isAuthenticated: true });
+    set({ accessToken: token, user, isAuthenticated: true, isVerified: true });
   },
   
   clearAuth() {
     localStorage.removeItem('ats_token');
     localStorage.removeItem('ats_user');
-    set({ accessToken: null, user: null, isAuthenticated: false });
+    set({ accessToken: null, user: null, isAuthenticated: false, isVerified: false });
+  },
+
+  setVerified(verified) {
+    set({ isVerified: verified });
   }
 }));
 
