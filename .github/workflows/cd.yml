@@ -1,13 +1,28 @@
 name: CD
 
+# ──────────────────────────────────────────────────────────────────────────────
+# cd.yml — Artifact build for CD pipeline
+#
+# This workflow builds deployable artifacts ONLY after the CI workflow
+# has passed successfully on main. Previously it triggered independently
+# on every push to main, which meant a broken push could trigger both a
+# failing CI and a successful artifact build simultaneously.
+#
+# gate: triggered by workflow_run (same guard used by deploy.yml)
+# ──────────────────────────────────────────────────────────────────────────────
+
 on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
-  push:
-    branches: [main, master]
 
 jobs:
   build-artifacts:
     runs-on: ubuntu-latest
+    # Only build artifacts when CI passed (not when it failed or was cancelled)
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +43,8 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://ats-sales-backend.onrender.com' }}
 
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4

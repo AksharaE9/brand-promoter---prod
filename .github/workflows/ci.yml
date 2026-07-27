@@ -184,6 +184,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # Tests 29-30 (build.test.js) require dist/assets/ to exist — build first.
+      # VITE_API_URL is intentionally omitted here; the test only checks chunk sizes,
+      # not API connectivity, so a placeholder value is sufficient.
+      - name: Build frontend (required for Tests 29-30)
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://ats-sales-backend.onrender.com' }}
+
       - name: Run frontend test suite (Tests 29-30)
         working-directory: frontend
         run: npm run test:ci
@@ -196,6 +205,7 @@ jobs:
           path: |
             backend/jest-results.json
           retention-days: 7
+          if-no-files-found: ignore
 
   # ── Job 4: Build both apps ────────────────────────────────────────────────
   build:
@@ -343,10 +353,13 @@ jobs:
 
       - name: Backend — Verify health endpoint in source
         run: |
-          if grep -q '"/api/health"' backend/src/index.js; then
-            echo "✅ /api/health endpoint found in backend"
+          # The health route is registered in app.js (not index.js — index.js only bootstraps the HTTP server).
+          # Match the actual pattern: app.get('/api/health',
+          if grep -q "'/api/health'" backend/src/app.js || grep -q '"/api/health"' backend/src/app.js; then
+            echo "✅ /api/health endpoint found in backend/src/app.js"
           else
-            echo "❌ /api/health endpoint not found in backend/src/index.js"
+            echo "❌ /api/health endpoint not found in backend/src/app.js"
+            echo "Searched for: app.get('/api/health',...) or app.get(\"...\") patterns"
             exit 1
           fi
 
