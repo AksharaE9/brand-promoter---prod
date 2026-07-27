@@ -412,6 +412,55 @@ const InterviewSchedule = () => {
   const shouldSubmitFeedback = searchParams.get('submitFeedback') === 'true';
   const [activeInterviewId, setActiveInterviewId] = useState('');
 
+  const [applications, setApplications] = useState([]);
+  const [candidates, setCandidates] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  // Suggestions are now managed by TanStack Query useQuery hooks below
+  const [selectedId, setSelectedId] = useState('');
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
+  const [feedbackForm, setFeedbackForm] = useState(emptyFeedbackForm);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [offerLetterFile, setOfferLetterFile] = useState(null);
+  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [uploadingRecording, setUploadingRecording] = useState(false);
+  const [recordingFile, setRecordingFile] = useState(null);
+  const [scheduleRecordingFile, setScheduleRecordingFile] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState(null);
+  const [recordedUrl, setRecordedUrl] = useState('');
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [viewMode, setViewMode] = useState('list');
+  const [joiningDate, setJoiningDate] = useState('');
+  const [showJoiningConfirm, setShowJoiningConfirm] = useState(false);
+  const [viewDate, setViewDate] = useState(new Date());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [calendarData, setCalendarData] = useState(() => new Map());
+  const [jobSearch, setJobSearch] = useState('');
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [interviewerSearch, setInterviewerSearch] = useState('');
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [showBulkFeedbackModal, setShowBulkFeedbackModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferringInterview, setTransferringInterview] = useState(null);
+  const [editingInterviewId, setEditingInterviewId] = useState(null);
+  const [isEditingFeedback, setIsEditingFeedback] = useState(false);
+  const [showCandidateList, setShowCandidateList] = useState(false);
+  const [showJobList, setShowJobList] = useState(false);
+  const lastCandidateJobKeyRef = useRef('');
+  const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+  // FORCE TRUE FOR VERIFICATION
+  const canScheduleInterview = true;
+  const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+
   // Search: raw typed value (not yet debounced)
   const [interviewListSearch, setInterviewListSearch] = useState('');
   // Debounced version sent to the backend
@@ -593,54 +642,7 @@ const InterviewSchedule = () => {
     });
   }, [allInterviews]);
 
-  const [applications, setApplications] = useState([]);
-  const [candidates, setCandidates] = useState([]);
-  const [jobs, setJobs] = useState([]);
-  // Suggestions are now managed by TanStack Query useQuery hooks below
-  const [selectedId, setSelectedId] = useState('');
-  const [error, setError] = useState('');
-  const [banner, setBanner] = useState('');
-  const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
-  const [feedbackForm, setFeedbackForm] = useState(emptyFeedbackForm);
-  const [savingSchedule, setSavingSchedule] = useState(false);
-  const [offerLetterFile, setOfferLetterFile] = useState(null);
-  const [savingFeedback, setSavingFeedback] = useState(false);
-  const [uploadingRecording, setUploadingRecording] = useState(false);
-  const [recordingFile, setRecordingFile] = useState(null);
-  const [scheduleRecordingFile, setScheduleRecordingFile] = useState(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordedBlob, setRecordedBlob] = useState(null);
-  const [recordedUrl, setRecordedUrl] = useState('');
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [viewMode, setViewMode] = useState('list');
-  const [joiningDate, setJoiningDate] = useState('');
-  const [showJoiningConfirm, setShowJoiningConfirm] = useState(false);
-  const [viewDate, setViewDate] = useState(new Date());
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
-  const [showActivityModal, setShowActivityModal] = useState(false);
-  const [calendarData, setCalendarData] = useState(() => new Map());
-  const [jobSearch, setJobSearch] = useState('');
-  const [candidateSearch, setCandidateSearch] = useState('');
-  const [interviewerSearch, setInterviewerSearch] = useState('');
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
-  const [showBulkFeedbackModal, setShowBulkFeedbackModal] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
-  const [transferringInterview, setTransferringInterview] = useState(null);
-  const [editingInterviewId, setEditingInterviewId] = useState(null);
-  const [isEditingFeedback, setIsEditingFeedback] = useState(false);
-  const [showCandidateList, setShowCandidateList] = useState(false);
-  const [showJobList, setShowJobList] = useState(false);
-  const lastCandidateJobKeyRef = useRef('');
-  const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
-  const recorderRef = useRef(null);
-  const streamRef = useRef(null);
-  const chunksRef = useRef([]);
-  const timerRef = useRef(null);
-  // FORCE TRUE FOR VERIFICATION
-  const canScheduleInterview = true;
-  const recorderSupported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+
 
   const { data: panelistsList, isLoading: isPanelistsLoading, error: panelistsError, refetch: refetchPanelists } = usePanelists({
     enabled: showScheduleModal || showTransferModal
