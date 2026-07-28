@@ -96,6 +96,84 @@ function downloadBase64File(fileName, base64Data) {
 }
 
 /**
+ * FollowUpDownloadButton
+ *
+ * Renders a clickable "✅ Uploaded" button for list-mode stripped follow-ups.
+ * On click it lazily fetches the full interview round from GET /api/interviews/:roundId
+ * (which includes the full base64 notes), extracts the requested field, and downloads it.
+ *
+ * Props:
+ *   interviewId  — interview row id
+ *   fieldKey     — 'phoneFollowUp' | 'emailFollowUp' | 'morningFollowUp'
+ *   fileName     — suggested filename from the stripped entry (may be empty)
+ */
+function FollowUpDownloadButton({ interviewId, fieldKey, fileName }) {
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  const handleClick = async (e) => {
+    e.stopPropagation();
+    if (loading) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await apiGet(`/interviews/${interviewId}`);
+      const round = res?.data || res;
+      const notesRaw = round?.notes;
+      if (!notesRaw) throw new Error('No notes data returned');
+      const parsed = typeof notesRaw === 'string' ? JSON.parse(notesRaw) : notesRaw;
+      const entry = parsed[fieldKey];
+      if (!entry?.data) throw new Error('File data not found — the file may have been removed.');
+      downloadBase64File(entry.name || fileName || fieldKey, entry.data);
+    } catch (err) {
+      console.error('[FollowUpDownloadButton] fetch failed:', err);
+      setError(err.message || 'Download failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (error) {
+    return (
+      <span
+        title={error}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#cf3a3a', fontWeight: 600, fontSize: 11, cursor: 'default' }}
+      >
+        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>error</span>
+        Error
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={loading}
+      title={loading ? 'Fetching file…' : `Click to download${fileName ? ': ' + fileName : ''}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        color: loading ? '#94a3b8' : '#2ca764',
+        fontWeight: 600,
+        fontSize: 11,
+        background: 'none',
+        border: 'none',
+        cursor: loading ? 'wait' : 'pointer',
+        padding: 0,
+        opacity: loading ? 0.7 : 1,
+      }}
+    >
+      <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+        {loading ? 'hourglass_empty' : 'download'}
+      </span>
+      {loading ? 'Loading…' : 'Uploaded'}
+    </button>
+  );
+}
+
+/**
  * StatusPill — coloured badge matching the List View status pill style.
  * Uses `iv.result` (the outcome field), NOT `iv.status` (workflow state).
  * This matches exactly what List View renders.
@@ -414,12 +492,13 @@ const ALL_COLUMNS = [
           </button>
         );
       }
-      // Stripped list-mode format: exists flag only — show status without download
+      // Stripped list-mode format: exists flag only — fetch full data on click
       return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
-          Uploaded
-        </span>
+        <FollowUpDownloadButton
+          interviewId={iv.id}
+          fieldKey="phoneFollowUp"
+          fileName={phoneFollowUp.name || ''}
+        />
       );
     },
   },
@@ -465,10 +544,11 @@ const ALL_COLUMNS = [
         );
       }
       return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
-          Uploaded
-        </span>
+        <FollowUpDownloadButton
+          interviewId={iv.id}
+          fieldKey="emailFollowUp"
+          fileName={emailFollowUp.name || ''}
+        />
       );
     },
   },
@@ -514,10 +594,11 @@ const ALL_COLUMNS = [
         );
       }
       return (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2ca764', fontWeight: 600, fontSize: 11 }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>check_circle</span>
-          Uploaded
-        </span>
+        <FollowUpDownloadButton
+          interviewId={iv.id}
+          fieldKey="morningFollowUp"
+          fileName={morningFollowUp.name || ''}
+        />
       );
     },
   },
