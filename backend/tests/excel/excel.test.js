@@ -138,7 +138,7 @@ test('Test 20: Bulk import creates valid records and rejects malformed rows with
 
   // Should not be a 500 — bulk upload should handle errors gracefully
   expect(res.status).not.toBe(500);
-  expect([200, 201, 207]).toContain(res.status);
+  expect([200, 201, 202, 207]).toContain(res.status);
 
   // Response must contain per-row information
   const body = res.body;

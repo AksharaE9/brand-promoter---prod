@@ -8,6 +8,8 @@ const { FIXTURE } = require('../setup/seed');
 let app;
 let hrToken;
 let testCandidate;
+let interviewerId;
+
 
 beforeAll(async () => {
   const { TEST_DB_URL, prisma } = require('../setup/db');
@@ -41,6 +43,11 @@ beforeAll(async () => {
       status: 'ACTIVE',
     },
   });
+
+  const ivUser = await prisma.user.findFirst({
+    where: { email: FIXTURE.IV_EMAIL },
+  });
+  interviewerId = ivUser ? ivUser.id : 'test-interviewer-id';
 });
 
 afterAll(async () => {
@@ -60,6 +67,7 @@ describe('3 Fixed Interview Rounds & Feedback API Integration', () => {
       .send({
         scheduledStart: new Date().toISOString(),
         mode: 'VIRTUAL',
+        interviewerIds: [interviewerId],
       })
       .expect(201);
 
@@ -161,7 +169,11 @@ describe('3 Fixed Interview Rounds & Feedback API Integration', () => {
     const sch2 = await request(app)
       .post(`/api/interviews/${testCandidate.id}/schedule`)
       .set('Authorization', `Bearer ${hrToken}`)
-      .send({ mode: 'VIRTUAL' })
+      .send({
+        scheduledStart: new Date().toISOString(),
+        mode: 'VIRTUAL',
+        interviewerIds: [interviewerId],
+      })
       .expect(201);
     expect(sch2.body.data.roundLabel).toBe('Round 2');
 
@@ -185,7 +197,11 @@ describe('3 Fixed Interview Rounds & Feedback API Integration', () => {
     const schFinal = await request(app)
       .post(`/api/interviews/${testCandidate.id}/schedule`)
       .set('Authorization', `Bearer ${hrToken}`)
-      .send({ mode: 'VIRTUAL' })
+      .send({
+        scheduledStart: new Date().toISOString(),
+        mode: 'VIRTUAL',
+        interviewerIds: [interviewerId],
+      })
       .expect(201);
     expect(schFinal.body.data.roundLabel).toBe('Final Round');
 
@@ -210,7 +226,11 @@ describe('3 Fixed Interview Rounds & Feedback API Integration', () => {
     const res = await request(app)
       .post(`/api/interviews/${testCandidate.id}/schedule`)
       .set('Authorization', `Bearer ${hrToken}`)
-      .send({ mode: 'VIRTUAL' })
+      .send({
+        scheduledStart: new Date().toISOString(),
+        mode: 'VIRTUAL',
+        interviewerIds: [interviewerId],
+      })
       .expect(409);
 
     expect(res.body.success).toBe(false);

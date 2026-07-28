@@ -24,9 +24,9 @@ beforeAll(async () => {
 
   hrToken = loginRes.body.data.token;
 
-  // Fetch existing interviewer/recruiter user for panelist transfer
+  // Fetch existing recruiter/admin user for panelist transfer
   panelistUser = await prisma.user.findFirst({
-    where: { role: { in: ['RECRUITER', 'INTERVIEWER'] } },
+    where: { role: { in: ['RECRUITER', 'ADMIN'] } },
   });
 
   if (!panelistUser) {
@@ -34,7 +34,7 @@ beforeAll(async () => {
       data: {
         fullName: 'Panelist Transfer User',
         email: `panelist_${Date.now()}@example.com`,
-        role: 'INTERVIEWER',
+        role: 'RECRUITER',
         organizationId: FIXTURE.ORG_ID,
       },
     });

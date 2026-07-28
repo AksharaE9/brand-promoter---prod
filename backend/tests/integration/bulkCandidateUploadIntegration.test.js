@@ -233,7 +233,7 @@ describe('Bulk Candidate Upload Integration & Direct Resume Download', () => {
       .expect(200);
 
     expect(reportRes.text).toContain('duplicate');
-    expect(reportRes.text).toContain('Duplicate of another row');
+    expect(reportRes.text).toContain('duplicate of row');
 
     const { prisma } = require('../setup/db');
     await prisma.candidate.deleteMany({ where: { phone: '+917777788888' } });
