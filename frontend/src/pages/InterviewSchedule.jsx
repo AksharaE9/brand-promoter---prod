@@ -1001,6 +1001,22 @@ const InterviewSchedule = () => {
   const selectedCandidate = selectedGroup?.application?.candidate;
   const latestInterview = selectedGroup?.latestInterview;
 
+  const selectedInterviewRaw = useMemo(
+    () => {
+      const list = selectedGroup?.interviews || [];
+      const activeIv = list.find(i => i.id === activeInterviewId);
+      if (activeIv) return activeIv;
+
+      const filtered = filterMine ? list.filter(iv => iv.interviewerIds?.includes(currentUser?.id)) : list;
+      return filtered.find(i => i.id === latestInterview?.id) || filtered[0] || latestInterview;
+    },
+    [selectedGroup, activeInterviewId, latestInterview, filterMine, currentUser?.id]
+  );
+
+  const { data: detailsData, isLoading: isDetailsLoading, error: detailsError, refetch: refetchDetails } = useRoundDetails(selectedInterviewRaw?.id);
+
+  const selectedInterview = detailsData || selectedInterviewRaw;
+
   const loadCandidateInterviews = useCallback(async (candidateId) => {
     if (!candidateId) return;
     try {
@@ -1038,22 +1054,6 @@ const InterviewSchedule = () => {
       setActiveInterviewId('');
     }
   }, [latestInterview, selectedGroup?.interviews, activeInterviewId]);
-
-  const selectedInterviewRaw = useMemo(
-    () => {
-      const list = selectedGroup?.interviews || [];
-      const activeIv = list.find(i => i.id === activeInterviewId);
-      if (activeIv) return activeIv;
-
-      const filtered = filterMine ? list.filter(iv => iv.interviewerIds?.includes(currentUser?.id)) : list;
-      return filtered.find(i => i.id === latestInterview?.id) || filtered[0] || latestInterview;
-    },
-    [selectedGroup, activeInterviewId, latestInterview, filterMine, currentUser?.id]
-  );
-
-  const { data: detailsData, isLoading: isDetailsLoading, error: detailsError, refetch: refetchDetails } = useRoundDetails(selectedInterviewRaw?.id);
-
-  const selectedInterview = detailsData || selectedInterviewRaw;
 
   const selectedFeedbacks = React.useMemo(() => {
     const raw = selectedInterview?.feedback;
