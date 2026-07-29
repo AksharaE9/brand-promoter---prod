@@ -1053,6 +1053,19 @@ router.get(
 
     const { storageKey, originalName, mimeType } = candidate.resumeFile;
 
+    const isAbsolute = storageKey.startsWith("http://") || storageKey.startsWith("https://");
+    if (!isAbsolute) {
+      const path = require("path");
+      const fs = require("fs");
+      const relativePath = storageKey.startsWith("/") ? storageKey.slice(1) : storageKey;
+      const localFilePath = path.join(__dirname, "..", "..", relativePath);
+      if (fs.existsSync(localFilePath)) {
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(originalName || 'resume.pdf')}"`);
+        res.setHeader("Content-Type", mimeType || "application/octet-stream");
+        return res.sendFile(localFilePath);
+      }
+    }
+
     try {
       let downloadUrl = storageKey;
 
@@ -1319,6 +1332,28 @@ router.get(
     const downloadUrl = candidate.resumeLinkDownload || candidate.resumeLinkOriginal;
     if (!downloadUrl) {
       throw new ApiError(404, 'No resume link on file for candidate');
+    }
+
+    const isAbsolute = downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://");
+    if (!isAbsolute) {
+      const path = require("path");
+      const fs = require("fs");
+      const relativePath = downloadUrl.startsWith("/") ? downloadUrl.slice(1) : downloadUrl;
+      const localFilePath = path.join(__dirname, "..", "..", relativePath);
+      if (fs.existsSync(localFilePath)) {
+        const ext = path.extname(localFilePath).toLowerCase();
+        let mime = 'application/octet-stream';
+        if (ext === '.pdf') mime = 'application/pdf';
+        else if (ext === '.docx') mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (ext === '.doc') mime = 'application/msword';
+
+        const rawFilename = candidate.fullName ? candidate.fullName.trim() : 'candidate';
+        const filename = `${rawFilename.replace(/[^\w-]/g, '_')}_resume${ext || '.pdf'}`;
+
+        res.setHeader('Content-Type', mime);
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        return res.sendFile(localFilePath);
+      }
     }
 
     let upstream;

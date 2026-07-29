@@ -1196,8 +1196,18 @@ router.post(
         orgId: req.user.organizationId || "defaultOrg",
       });
 
-      const { broadcastNamedEvent } = require('../../utils/sse');
-      broadcastNamedEvent('INTERVIEW_FEEDBACK_SUBMITTED', { interviewId: roundId, recommendation });
+      const { broadcastToOrg } = require('../../utils/sse');
+      broadcastToOrg(
+        req.user.organizationId || 'defaultOrg',
+        'INTERVIEW_FEEDBACK_SUBMITTED',
+        {
+          interviewId: roundId,
+          candidateId: current.candidateId || null,
+          candidateName: current.candidateName || null,
+          round: current.round || null,
+          recommendation,
+        }
+      );
     });
   })
 );

@@ -58,6 +58,8 @@ const ALL_EVENTS = [
   'NOTIFICATION',
   'VISIBILITY_RECONCILE',
   'interview-feedback:updated',
+  'INTERVIEW_FEEDBACK_SUBMITTED',
+  'INTERVIEW_PANELISTS_UPDATED',
 ];
 
 // ── Polling fallback query keys ──
@@ -375,13 +377,18 @@ export function useRealtimeUpdates() {
         break;
 
       case 'INTERVIEW_FEEDBACK_SUBMITTED':
+        // Always invalidate the broad scheduling & candidates caches
         qc.invalidateQueries({ queryKey: ['scheduling'] });
+        qc.invalidateQueries({ queryKey: ['scheduling', 'round-details'], refetchType: 'active' });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
+        // Invalidate per-candidate caches when candidateId is available
         if (data.candidateId) {
           qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
+          qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
           qc.invalidateQueries({ queryKey: ['candidate-feedbacks', data.candidateId] });
         }
+        addToast({ type: 'info', message: `Feedback submitted${data.candidateName ? ` for ${data.candidateName}` : ''}` });
         break;
 
       case 'INTERVIEW_PANELISTS_UPDATED':

@@ -47,6 +47,55 @@ function resolveRoundFromRow(rawRound, defaultRound) {
 }
 
 /**
+ * Parses a date/time string that may use Indian date formats:
+ *   "31-7-2026 & 15:00"   (DD-M-YYYY & HH:MM)
+ *   "1-8-2026 & 17:30"    (D-M-YYYY & HH:MM)
+ *   "31/7/2026 15:00"     (DD/MM/YYYY HH:MM)
+ *   "2026-07-31T15:00"    (ISO)
+ *   Any JS-native parseable string
+ */
+function parseIndianDateTime(raw) {
+  if (!raw) return null;
+  const str = String(raw).trim();
+  if (!str) return null;
+
+  // Attempt 1 — strip the "&" separator and try DD-M-YYYY HH:MM → ISO reorder
+  // Matches: "31-7-2026 & 15:00" or "1 8 2026 & 17:30" etc.
+  const indianAmpMatch = str.match(
+    /^(\d{1,2})[\s\-\/](\d{1,2})[\s\-\/](\d{4})\s*(?:&)?\s*(\d{1,2}):(\d{2})\s*([APap][Mm])?$/
+  );
+  if (indianAmpMatch) {
+    let [, day, month, year, hour, minute, ampm] = indianAmpMatch;
+    let h = parseInt(hour, 10);
+    const m = parseInt(minute, 10);
+    if (ampm) {
+      const upper = ampm.toUpperCase();
+      if (upper === 'PM' && h < 12) h += 12;
+      if (upper === 'AM' && h === 12) h = 0;
+    }
+    // Build ISO string and parse
+    const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+    const d = new Date(isoStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Attempt 2 — date only without time: "31-7-2026" or "1/8/2026"
+  const dateOnlyMatch = str.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/);
+  if (dateOnlyMatch) {
+    const [, day, month, year] = dateOnlyMatch;
+    const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T09:00:00`;
+    const d = new Date(isoStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Attempt 3 — native JS parsing (handles ISO, RFC 2822, etc.)
+  const native = new Date(str);
+  if (!isNaN(native.getTime())) return native;
+
+  return null; // Could not parse
+}
+
+/**
  * Normalizes meeting mode
  */
 function resolveModeFromRow(rawMode, defaultMode) {
@@ -128,23 +177,36 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
   if (!rawStart) {
     errors.push('Start Date & Time is required');
   } else {
-    startDateTime = new Date(rawStart);
-    if (isNaN(startDateTime.getTime())) {
-      errors.push(`Invalid date-time format "${rawStart}"`);
+    startDateTime = parseIndianDateTime(rawStart);
+    if (!startDateTime) {
+      errors.push(
+        `Invalid date-time format "${rawStart}". Expected formats: "31-7-2026 & 15:00", "31/07/2026 15:00", or "2026-07-31T15:00"`
+      );
     }
   }
 
   // 6. Sequential Gating & Rejection Blocks
+  // In bulk upload mode, gating failures are treated as WARNINGS (skip row) not hard errors,
+  // so the rest of the file continues processing cleanly.
+  const gatingWarnings = [];
   if (candidate && canonicalRound) {
     try {
       await assertCanScheduleRound(prisma, candidate.id, canonicalRound);
     } catch (gateErr) {
-      errors.push(gateErr.message);
+      gatingWarnings.push(gateErr.message);
     }
   }
 
   if (errors.length > 0) {
     return { valid: false, errors };
+  }
+
+  // Gating warnings cause the row to be skipped with a report entry (not a hard failure)
+  if (gatingWarnings.length > 0) {
+    return {
+      valid: false,
+      errors: gatingWarnings,
+    };
   }
 
   const rawInterviewers = getValue(['interviewers', 'Interviewers', 'panelists', 'Panelists', 'panelist', 'Panelist', 'interviewer', 'Interviewer']) || '';

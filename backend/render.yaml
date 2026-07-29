@@ -7,11 +7,14 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 18.0.0
-      - key: DATABASE_URL
-        sync: false # Set manually in Render Dashboard
+      - key: NODE_ENV
+        value: production
       - key: PORT
         value: 4000
+      - key: DATABASE_URL
+        value: postgresql://ats_to2n_user:ixDs4gP0kpcwDfffaYASiVjJMIK7B7k0@dpg-d9kugflaeets73a88qhg-a/ats_to2n
       - key: JWT_SECRET
-        generateValue: true
+        value: thuyghtssvngtfgukhju,guy655443sgsbfdbgggnfhfnhmrgv
       - key: CORS_ORIGIN
-        sync: false # Set manually to your Vercel URL
+        value: https://brand-promoter-prod.vercel.app
+
