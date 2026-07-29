@@ -1019,10 +1019,13 @@ const InterviewSchedule = () => {
   const loadAll = useCallback(async () => {
     // Refresh the queries list
     refetchInterviews();
+    refetchDetails?.();
     if (selectedCandidate?.id) {
       loadCandidateInterviews(selectedCandidate.id);
+      queryClient.invalidateQueries({ queryKey: ['candidate-feedbacks', selectedCandidate.id] });
+      queryClient.invalidateQueries({ queryKey: ['candidate-interviews', selectedCandidate.id] });
     }
-  }, [refetchInterviews, selectedCandidate?.id, loadCandidateInterviews]);
+  }, [refetchInterviews, refetchDetails, selectedCandidate?.id, loadCandidateInterviews, queryClient]);
 
   // For the individual interview context (e.g. feedback submission), default to latest
   useEffect(() => {

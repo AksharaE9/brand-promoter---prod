@@ -66,6 +66,17 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   });
   const candidateFeedbacks = propCandidateFeedbacks || fetchedFeedbacks;
 
+  const { data: fetchedInterviews = [] } = useQuery({
+    queryKey: ['candidate-interviews', scheduleForm.candidateId],
+    queryFn: async () => {
+      if (!scheduleForm.candidateId) return [];
+      const res = await apiGet(`/interviews?candidateId=${scheduleForm.candidateId}&limit=100`);
+      return res.data || [];
+    },
+    enabled: !!scheduleForm.candidateId,
+    staleTime: 30_000,
+  });
+
   const localToday = React.useMemo(() => {
     const d = new Date();
     const offset = d.getTimezoneOffset();
@@ -78,14 +89,14 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     const suggestion = candidateSuggestions.find(c => c.id === scheduleForm.candidateId);
     if (suggestion?.phone) return suggestion.phone;
 
-    const matchIv = allInterviews?.find(
-      iv => (iv.application?.candidateId || iv.candidateId) === scheduleForm.candidateId
+    const matchIv = [...(allInterviews || []), ...fetchedInterviews].find(
+      iv => (iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId || iv.candidate?.id) === scheduleForm.candidateId
     );
     if (matchIv?.application?.candidate?.phone) {
       return matchIv.application.candidate.phone;
     }
     return '';
-  }, [scheduleForm.candidateId, candidateSuggestions, allInterviews]);
+  }, [scheduleForm.candidateId, candidateSuggestions, allInterviews, fetchedInterviews]);
 
   const handleRoundChange = React.useCallback((e) => {
     const val = e.target.value;
@@ -99,11 +110,15 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   const candidateCompletedRounds = React.useMemo(() => {
     if (!scheduleForm.candidateId) return [];
     const feedbackRounds = (candidateFeedbacks || [])
-      .filter((f) => f.candidateId === scheduleForm.candidateId)
+      .filter((f) => (f.candidateId || f.candidate?.id) === scheduleForm.candidateId)
       .map((f) => f.round);
 
-    const candInterviews = (allInterviews || []).filter(
-      (i) => i.candidateId === scheduleForm.candidateId && !i.isDeleted && i.status !== 'CANCELLED'
+    const mergedInterviews = [...(allInterviews || []), ...fetchedInterviews];
+
+    const candInterviews = mergedInterviews.filter(
+      (i) => (i.application?.candidate?.id || i.application?.candidateId || i.candidateId || i.candidate?.id) === scheduleForm.candidateId &&
+             !i.isDeleted &&
+             i.status !== 'CANCELLED'
     );
     const interviewRounds = candInterviews.map((i) => {
       if (i.roundNo === 1) return InterviewRound.ROUND_1;
@@ -112,7 +127,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     });
 
     return Array.from(new Set([...feedbackRounds, ...interviewRounds]));
-  }, [scheduleForm.candidateId, allInterviews, candidateFeedbacks]);
+  }, [scheduleForm.candidateId, allInterviews, fetchedInterviews, candidateFeedbacks]);
 
   const nextDerivedRound = getNextSchedulableRound(candidateCompletedRounds);
   const nextDerivedLabel = nextDerivedRound ? ROUND_DISPLAY_LABEL[nextDerivedRound] : 'All 3 Rounds Completed';
@@ -120,6 +135,26 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   const priorRound = nextDerivedRound === 'ROUND_2' ? 'ROUND_1' : nextDerivedRound === 'FINAL_ROUND' ? 'ROUND_2' : null;
   const priorRoundLabel = priorRound ? ROUND_DISPLAY_LABEL[priorRound] : '';
   const priorRoundFeedbackMissing = priorRound ? !candidateCompletedRounds.includes(priorRound) : false;
+
+  // Auto-synchronize the round details in the schedule form whenever the derived round changes
+  React.useEffect(() => {
+    if (nextDerivedRound) {
+      const nextRoundNo = nextDerivedRound === 'ROUND_1' ? 1
+                        : nextDerivedRound === 'ROUND_2' ? 2
+                        : nextDerivedRound === 'FINAL_ROUND' ? 99
+                        : 1;
+      const roundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
+      
+      setScheduleForm(prev => {
+        if (prev.roundNo === nextRoundNo && prev.round === roundLabel) return prev;
+        return {
+          ...prev,
+          roundNo: nextRoundNo,
+          round: roundLabel,
+        };
+      });
+    }
+  }, [nextDerivedRound, setScheduleForm]);
 
 
   const handleModeChange = React.useCallback((e) => {
