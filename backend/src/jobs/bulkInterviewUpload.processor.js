@@ -39,10 +39,13 @@ function emitInterviewUploadCompleted(organizationId, jobId, { processed, succee
  * Normalizes round string from CSV row
  */
 function resolveRoundFromRow(rawRound, defaultRound) {
-  const str = String(rawRound || defaultRound || '').trim().toUpperCase().replace(/\s+/g, '_');
-  if (str === 'ROUND_1' || str === 'ROUND1' || str === '1') return 'ROUND_1';
-  if (str === 'ROUND_2' || str === 'ROUND2' || str === '2') return 'ROUND_2';
-  if (str === 'FINAL_ROUND' || str === 'FINAL' || str === 'FINALROUND' || str === '3') return 'FINAL_ROUND';
+  const str = String(rawRound || defaultRound || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s\-_]+/g, '');
+  if (['ROUND1', 'ROUND_1', 'R1', '1', 'R_1'].includes(str)) return 'ROUND_1';
+  if (['ROUND2', 'ROUND_2', 'R2', '2', 'R_2'].includes(str)) return 'ROUND_2';
+  if (['FINALROUND', 'FINAL_ROUND', 'FINAL', 'R3', '3', 'R_3', 'ROUND3', 'ROUND_3'].includes(str)) return 'FINAL_ROUND';
   return null;
 }
 
@@ -101,7 +104,7 @@ function parseIndianDateTime(raw) {
 function resolveModeFromRow(rawMode, defaultMode) {
   const str = String(rawMode || defaultMode || '').trim().toLowerCase();
   if (['online meeting', 'online', 'virtual'].includes(str)) return 'ONLINE';
-  if (['in person', 'inperson'].includes(str)) return 'IN_PERSON';
+  if (['in person', 'inperson', 'offline'].includes(str)) return 'IN_PERSON';
   if (['phone call', 'phone'].includes(str)) return 'PHONE';
   if (['drive meeting', 'drive'].includes(str)) return 'DRIVE';
   if (['walk-in drive', 'walkin drive', 'walk-in', 'walk_in_drive'].includes(str)) return 'WALK_IN_DRIVE';
@@ -145,6 +148,15 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
       errors.push(`Invalid phone number format "${rawPhone}"`);
     } else {
       candidate = await resolveCandidateByNumber(normalizedPhone, context.organizationId);
+      if (!candidate && rawName) {
+        candidate = await prisma.candidate.findFirst({
+          where: {
+            fullName: { equals: rawName.trim(), mode: 'insensitive' },
+            isDeleted: false,
+            organizationId: context.organizationId,
+          }
+        });
+      }
       if (!candidate) {
         errors.push(`Candidate not found for phone "${rawPhone}"`);
       }
@@ -216,6 +228,7 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
   return {
     valid: true,
     data: {
+      rowNumber,
       candidate,
       jobRole,
       canonicalRound,
@@ -273,15 +286,33 @@ async function batchInsertInterviews(batchItems, context) {
   let succeeded = 0;
   let failed = 0;
 
+  const normalizeForComparison = (str) => {
+    let s = String(str || '').toLowerCase().trim();
+    s = s.replace(/&/g, 'and');
+    s = s.replace(/\bops\b/g, 'operations');
+    s = s.replace(/\bdevlopement\b/g, 'development');
+    s = s.replace(/\bdev\b/g, 'development');
+    if (s.includes('business development') || s.includes('bde')) {
+      return 'bde';
+    }
+    return s.replace(/[^a-z0-9]/g, '');
+  };
+
+  let activeJobs = [];
+  try {
+    activeJobs = await prisma.job.findMany({ where: { isActive: true } });
+  } catch (_) {}
+
   for (const item of batchItems) {
     try {
-      // 1. Resolve matching active job
-      const job = await prisma.job.findFirst({
-        where: {
-          title: { equals: item.jobRole, mode: 'insensitive' },
-          isActive: true,
-        }
-      });
+      const searchNorm = normalizeForComparison(item.jobRole);
+      let job = activeJobs.find(j => normalizeForComparison(j.title) === searchNorm);
+      if (!job) {
+        job = activeJobs.find(j => {
+          const titleNorm = normalizeForComparison(j.title);
+          return titleNorm.startsWith(searchNorm) || searchNorm.startsWith(titleNorm) || titleNorm.includes(searchNorm) || searchNorm.includes(titleNorm);
+        });
+      }
 
       if (!job) {
         throw new Error(`Job role "${item.jobRole}" not found or inactive`);
@@ -306,15 +337,25 @@ async function batchInsertInterviews(batchItems, context) {
         });
       }
 
-      // 3. Resolve interviewer details (skip for Walk-in Drive)
+      // 3. Resolve interviewer details (skip for Walk-in Drive, fallback startsWith / contains for truncated names like "super adm")
       let interviewerIds = [];
       let interviewerNamesList = [];
       if (item.canonicalMode !== 'WALK_IN_DRIVE' && item.interviewers) {
         const names = item.interviewers.split(',').map(n => n.trim()).filter(Boolean);
         for (const name of names) {
-          const matchedUser = await prisma.user.findFirst({
+          let matchedUser = await prisma.user.findFirst({
             where: { fullName: { equals: name, mode: 'insensitive' } }
           });
+          if (!matchedUser) {
+            matchedUser = await prisma.user.findFirst({
+              where: { fullName: { startsWith: name, mode: 'insensitive' } }
+            });
+          }
+          if (!matchedUser) {
+            matchedUser = await prisma.user.findFirst({
+              where: { fullName: { contains: name, mode: 'insensitive' } }
+            });
+          }
           if (matchedUser) {
             interviewerIds.push(matchedUser.id);
             interviewerNamesList.push(matchedUser.fullName);
@@ -376,7 +417,7 @@ async function batchInsertInterviews(batchItems, context) {
     } catch (err) {
       console.error('[BulkInterviewProcessor] Item insert error:', err.message);
       const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
-      appendFailedRow(context.jobId, 0, `Row processing failed: ${err.message}`, 'error');
+      appendFailedRow(context.jobId, item.rowNumber || 0, `Row processing failed: ${err.message}`, 'error');
       failed++;
     }
   }

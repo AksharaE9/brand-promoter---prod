@@ -107,7 +107,9 @@ async function runStreamingBulkUploadPipeline(options) {
     } catch (err) {
       console.error(`[StreamingBulkPipeline] Batch insert error on job ${jobId}:`, err.message);
       failed += currentBatch.length;
-      appendFailedRow(jobId, 0, `Batch insert failed: ${err.message}`, 'error');
+      const rowNumbers = currentBatch.map(b => b.rowNumber).filter(Boolean);
+      const rowRange = rowNumbers.length > 0 ? `${rowNumbers[0]}-${rowNumbers[rowNumbers.length - 1]}` : '0';
+      appendFailedRow(jobId, rowRange, `Batch insert failed: ${err.message}`, 'error');
     }
   };
 
@@ -120,10 +122,12 @@ async function runStreamingBulkUploadPipeline(options) {
 
       if (!valResult.valid) {
         failed++;
+        const rowId = rawRow.Name || rawRow.name || rawRow['Candidate Name'] || rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || '';
+        const prefix = rowId ? `[Row Info: ${rowId}] ` : '';
         const reason = (valResult.errors && valResult.errors.length > 0)
           ? valResult.errors.join('; ')
           : (valResult.failureReason || 'Row validation failed');
-        appendFailedRow(jobId, rowNumber, reason, 'error');
+        appendFailedRow(jobId, rowNumber, `${prefix}${reason}`, 'error');
       } else {
         // Primary and secondary duplicate checks
         if (typeof duplicateCheck === 'function') {

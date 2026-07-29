@@ -13,10 +13,13 @@ const cacheInvalidation = require('../utils/cacheInvalidation');
  * to canonical InterviewRound enum key.
  */
 function resolveRoundFromRow(rawRound, defaultRound) {
-  const str = String(rawRound || defaultRound || '').trim().toUpperCase().replace(/\s+/g, '_');
-  if (str === 'ROUND_1' || str === 'ROUND1' || str === '1') return InterviewRound.ROUND_1;
-  if (str === 'ROUND_2' || str === 'ROUND2' || str === '2') return InterviewRound.ROUND_2;
-  if (str === 'FINAL_ROUND' || str === 'FINAL' || str === 'FINALROUND' || str === '3') return InterviewRound.FINAL_ROUND;
+  const str = String(rawRound || defaultRound || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s\-_]+/g, '');
+  if (['ROUND1', 'ROUND_1', 'R1', '1', 'R_1'].includes(str)) return InterviewRound.ROUND_1;
+  if (['ROUND2', 'ROUND_2', 'R2', '2', 'R_2'].includes(str)) return InterviewRound.ROUND_2;
+  if (['FINALROUND', 'FINAL_ROUND', 'FINAL', 'R3', '3', 'R_3', 'ROUND3', 'ROUND_3'].includes(str)) return InterviewRound.FINAL_ROUND;
   return null;
 }
 
@@ -101,6 +104,16 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
     candidateMatch = await resolveCandidateByNumber(rawNumber, context.organizationId);
   }
 
+  if (!candidateMatch && dataPayload.name) {
+    candidateMatch = await prisma.candidate.findFirst({
+      where: {
+        fullName: { equals: dataPayload.name.trim(), mode: 'insensitive' },
+        isDeleted: false,
+        organizationId: context.organizationId,
+      }
+    });
+  }
+
   if (!candidateMatch) {
     warnings.push(`Phone number "${rawNumber || 'N/A'}" didn't match any existing candidate (stored as pending_link).`);
   }
@@ -112,6 +125,7 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
   return {
     valid: true,
     data: {
+      rowNumber,
       canonicalRound,
       dataPayload,
       candidateMatch,
@@ -198,6 +212,7 @@ async function batchInsertFeedback(batchItems, context) {
             ...(docUrl && { offerLetterDocumentUrl: docUrl }),
             ...(attUrl && { offerLetterEmailAttachmentUrl: attUrl }),
             updatedAt: new Date(),
+            deletedAt: null,
           },
         });
 
@@ -231,6 +246,8 @@ async function batchInsertFeedback(batchItems, context) {
       succeeded++;
     } catch (err) {
       console.error('[BulkFeedbackProcessor] Item insert error:', err.message);
+      const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
+      appendFailedRow(context.jobId, item.rowNumber || 0, `Row processing failed: ${err.message}`, 'error');
       failed++;
     }
   }

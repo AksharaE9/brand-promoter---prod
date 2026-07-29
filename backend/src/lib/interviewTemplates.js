@@ -297,9 +297,42 @@ function getEffectiveSelectionStatus(record) {
 async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
   // Check for prior rejections first
   const allFeedbacks = await prisma.interviewFeedback.findMany({
-    where: { candidateId },
+    where: { candidateId, deletedAt: null },
   });
   
+  // Supplement feedback records from the Interview table (in case the feedback is stored inside the Interview JSON)
+  const interviews = await prisma.interview.findMany({
+    where: { candidateId },
+  });
+
+  for (const iv of interviews) {
+    const canonicalRound = iv.roundNo === 1 ? 'ROUND_1'
+                         : iv.roundNo === 2 ? 'ROUND_2'
+                         : 'FINAL_ROUND';
+
+    let parsedFeedback = null;
+    try {
+      const parsed = typeof iv.feedback === 'string' ? JSON.parse(iv.feedback) : iv.feedback;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        parsedFeedback = parsed[0];
+      }
+    } catch (_) {}
+
+    const resultStatus = iv.result || parsedFeedback?.selectionStatus || parsedFeedback?.recommendation || parsedFeedback?.status;
+
+    if (resultStatus && resultStatus !== 'PENDING') {
+      if (!allFeedbacks.find((f) => f.round === canonicalRound)) {
+        allFeedbacks.push({
+          id: iv.id,
+          candidateId: iv.candidateId,
+          round: canonicalRound,
+          selectionStatus: resultStatus,
+          feedbackData: parsedFeedback || null,
+        });
+      }
+    }
+  }
+
   const blockingFeedback = allFeedbacks.find(
     (f) => ['REJECTED', 'DIDNT_JOIN', 'OFFER_LETTER'].includes(getEffectiveSelectionStatus(f))
   );

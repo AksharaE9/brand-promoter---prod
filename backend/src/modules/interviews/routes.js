@@ -646,7 +646,7 @@ router.post(
 
     // Fetch existing completed feedback rounds and scheduled interviews for candidate to derive next round
     const completedFeedbacks = await prisma.interviewFeedback.findMany({
-      where: { candidateId },
+      where: { candidateId, deletedAt: null },
       select: { round: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -811,6 +811,7 @@ router.post(
         offerLetterDocumentUrl,
         offerLetterEmailAttachmentUrl,
         updatedAt: new Date(),
+        deletedAt: null,
       },
     });
 
@@ -912,7 +913,7 @@ router.get(
       },
     });
 
-    if (!feedbackRecord) {
+    if (!feedbackRecord || feedbackRecord.deletedAt) {
       throw new ApiError(404, `No feedback submitted for candidate in ${round}`);
     }
 
@@ -932,7 +933,7 @@ router.get(
     const { candidateId } = req.params;
 
     const feedbacks = await prisma.interviewFeedback.findMany({
-      where: { candidateId },
+      where: { candidateId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     });
 

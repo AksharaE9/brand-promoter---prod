@@ -821,13 +821,21 @@ const InterviewSchedule = () => {
           queryKey: ['scheduling', 'round-details'],
           refetchType: 'active',
         });
+        queryClient.invalidateQueries({
+          queryKey: ['scheduling'],
+          refetchType: 'active',
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['candidates'],
+          refetchType: 'active',
+        });
+      } else {
+        // Mark all other scheduling queries stale; let natural mount/refetch update them
+        queryClient.invalidateQueries({
+          queryKey: ['scheduling'],
+          refetchType: 'active',
+        });
       }
-
-      // Mark all other scheduling queries stale; let natural mount/refetch update them
-      queryClient.invalidateQueries({
-        queryKey: ['scheduling'],
-        refetchType: 'none',
-      });
       if (data.type === 'INTERVIEW_PANELISTS_UPDATED') setBanner('Interviewer transferred in real-time!');
     }, RELEVANT);
     return () => { unsub(); };
@@ -1699,6 +1707,11 @@ const InterviewSchedule = () => {
                 return !isCancelled && !isDeleted;
               });
               const roundCount = activeInterviews.reduce((max, iv) => Math.max(max, iv.roundNo || 0), 0);
+              const latestIv = activeInterviews.reduce((latest, iv) => {
+                if (!latest) return iv;
+                return (iv.roundNo || 0) > (latest.roundNo || 0) ? iv : latest;
+              }, null);
+              const resultStatus = latestIv?.result || 'PENDING';
               return (
                 <button
                   key={candidateId}
@@ -1709,8 +1722,8 @@ const InterviewSchedule = () => {
                   }`}
                   onClick={() => {
                     setSelectedId(candidateId);
-                    // Select the last round (highest roundNo) as active
-                    const lastRound = group.interviews[group.interviews.length - 1];
+                    // Select the last active round (highest roundNo) as active
+                    const lastRound = activeInterviews[activeInterviews.length - 1];
                     if (lastRound?.id) {
                       setActiveInterviewId(lastRound.id);
                     }
@@ -1733,6 +1746,18 @@ const InterviewSchedule = () => {
                       <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold inline-block">
                         {roundCount > 0 ? `Round ${roundCount === 99 ? 'Final' : roundCount}` : 'Not Scheduled'}
                       </div>
+                      {latestIv && (
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          resultStatus === 'PASS' || resultStatus === 'SELECTED' ? 'bg-[#e8f5ed] text-[#2ca764]' :
+                          resultStatus === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                          resultStatus === 'FAIL' || resultStatus === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
+                          resultStatus === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                          resultStatus === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                          'bg-[#fef4e8] text-[#f2994a]'
+                        }`}>
+                          {resultStatus === 'DIDNT_JOIN' ? "Didn't Join" : resultStatus}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </button>

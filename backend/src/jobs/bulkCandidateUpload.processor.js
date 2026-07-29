@@ -98,6 +98,7 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
   const phoneNormalized = normalizePhoneNumber(candidateData.phone);
 
   return {
+    rowNumber,
     fullName: candidateData.name,
     preferredRole: candidateData.role,
     email: candidateData.email || 'N/A',
@@ -124,13 +125,14 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
  */
 async function batchInsertCandidates(batch, context) {
   if (batch.length === 0) return { succeeded: 0, failed: 0 };
+  const dbPayload = batch.map(({ rowNumber, ...rest }) => rest);
   try {
     await prisma.candidate.createMany({
-      data: batch,
+      data: dbPayload,
       skipDuplicates: true,
     });
 
-    const phones = batch.map(b => b.phoneNormalized).filter(Boolean);
+    const phones = dbPayload.map(b => b.phoneNormalized).filter(Boolean);
     const matched = await prisma.candidate.findMany({
       where: {
         phoneNormalized: { in: phones },
@@ -163,8 +165,9 @@ async function batchInsertCandidates(batch, context) {
     let failed = 0;
     const { logAudit } = require('../utils/audit');
     for (const row of batch) {
+      const { rowNumber, ...dbData } = row;
       try {
-        const created = await prisma.candidate.create({ data: row });
+        const created = await prisma.candidate.create({ data: dbData });
         logAudit({
           actorUserId: context.uploadedBy,
           action: 'candidate_created',
@@ -178,8 +181,10 @@ async function batchInsertCandidates(batch, context) {
           organizationId: context.organizationId,
         });
         succeeded++;
-      } catch (_) {
+      } catch (rowErr) {
         failed++;
+        const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
+        appendFailedRow(context.jobId, rowNumber || 0, `Candidate insert failed: ${rowErr.message}`, 'error');
       }
     }
     return { succeeded, failed };

@@ -72,6 +72,23 @@ const HEADER_ALIASES = {
   'scheduled_start': 'startDateTime',
   'scheduledstart': 'startDateTime',
   'start': 'startDateTime',
+
+  // Interviewer / Panelist Aliases
+  'interviewers': 'interviewers',
+  'interviewer': 'interviewers',
+  'panelists': 'interviewers',
+  'panelist': 'interviewers',
+  'panelist name': 'interviewers',
+  'panelist_name': 'interviewers',
+
+  // Meeting Link / Zoho Link Aliases
+  'meeting link': 'meetingLink',
+  'meeting_link': 'meetingLink',
+  'meetinglink': 'meetingLink',
+  'link': 'meetingLink',
+  'zoho link': 'zohoLink',
+  'zoho_link': 'zohoLink',
+  'zoholink': 'zohoLink',
 };
 
 function resolveHeader(rawHeader) {
@@ -83,7 +100,21 @@ function resolveHeader(rawHeader) {
     .replace(/\s*\*+$/, '')
     .trim();
   const key = cleaned.toLowerCase();
-  return HEADER_ALIASES[key] ?? null;
+  if (HEADER_ALIASES[key]) return HEADER_ALIASES[key];
+
+  // Robust prefix-based fallback matching for common truncations (e.g. "Phone Nu", "Meeting Mod", "Interviewe")
+  if (key.startsWith('phone') || key.startsWith('mobile') || key.startsWith('contact')) return 'phone';
+  if (key.startsWith('meeting mod') || key.startsWith('interview mod') || key.startsWith('mode') || key.startsWith('mod')) return 'mode';
+  if (key.startsWith('interviewer') || key.startsWith('interviewe') || key.startsWith('panelist')) return 'interviewers';
+  if (key.startsWith('job role') || key.startsWith('role') || key.startsWith('position')) return 'role';
+  if (key.startsWith('name') || key.startsWith('candidate')) return 'name';
+  if (key.startsWith('email') || key.startsWith('e-mail')) return 'email';
+  if (key.startsWith('resume') || key.startsWith('cv')) return 'resumeLink';
+  if (key.startsWith('start date') || key.startsWith('scheduled start') || key.startsWith('start')) return 'startDateTime';
+  if (key.startsWith('zoho')) return 'zohoLink';
+  if (key.startsWith('meeting link') || key.startsWith('meeting_link') || key.startsWith('link')) return 'meetingLink';
+
+  return null;
 }
 
 module.exports = {
