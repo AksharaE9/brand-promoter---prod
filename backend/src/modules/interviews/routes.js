@@ -783,104 +783,115 @@ router.post(
     const offerLetterDocumentUrl = data.offerLetterDocument ? (typeof data.offerLetterDocument === 'string' ? data.offerLetterDocument : JSON.stringify(data.offerLetterDocument)) : null;
     const offerLetterEmailAttachmentUrl = data.offerLetterEmailAttachment ? (typeof data.offerLetterEmailAttachment === 'string' ? data.offerLetterEmailAttachment : JSON.stringify(data.offerLetterEmailAttachment)) : null;
 
-    // Upsert feedback on (candidateId, round)
-    const feedbackRecord = await prisma.interviewFeedback.upsert({
-      where: {
-        candidateId_round: {
+    // Perform transactional database updates
+    const feedbackRecord = await prisma.$transaction(async (tx) => {
+      // 1. Upsert feedback on (candidateId, round)
+      const fb = await tx.interviewFeedback.upsert({
+        where: {
+          candidateId_round: {
+            candidateId,
+            round,
+          },
+        },
+        create: {
           candidateId,
           round,
+          submittedById: req.user.id,
+          templateVersion,
+          feedbackData: data,
+          selectionStatus,
+          overallRating,
+          offerLetterDocumentUrl,
+          offerLetterEmailAttachmentUrl,
         },
-      },
-      create: {
-        candidateId,
-        round,
-        submittedById: req.user.id,
-        templateVersion,
-        feedbackData: data,
-        selectionStatus,
-        overallRating,
-        offerLetterDocumentUrl,
-        offerLetterEmailAttachmentUrl,
-      },
-      update: {
-        submittedById: req.user.id,
-        templateVersion,
-        feedbackData: data,
-        selectionStatus,
-        overallRating,
-        offerLetterDocumentUrl,
-        offerLetterEmailAttachmentUrl,
-        updatedAt: new Date(),
-        deletedAt: null,
-      },
-    });
+        update: {
+          submittedById: req.user.id,
+          templateVersion,
+          feedbackData: data,
+          selectionStatus,
+          overallRating,
+          offerLetterDocumentUrl,
+          offerLetterEmailAttachmentUrl,
+          updatedAt: new Date(),
+          deletedAt: null,
+        },
+      });
 
-    // Update candidate status if REJECTED
-    if (selectionStatus === 'REJECTED') {
-      await prisma.candidate.update({
-        where: { id: candidateId },
-        data: { status: 'REJECTED' },
-      }).catch(() => {});
-    }
-
-    // Automatically complete or update matching Interview round in scheduling system
-    const roundNoList = round === 'ROUND_1' ? [1]
-                      : round === 'ROUND_2' ? [2]
-                      : [3, 99];
-    const matchedInterviews = await prisma.interview.findMany({
-      where: {
-        candidateId,
-        roundNo: { in: roundNoList },
-      },
-    });
-
-    const srv = require('../../services/schedulingCacheService');
-    for (const activeInterview of matchedInterviews) {
-      let feedbackList = [];
-      try {
-        feedbackList = typeof activeInterview.feedback === 'string' ? JSON.parse(activeInterview.feedback) : activeInterview.feedback;
-      } catch (_) {}
-      if (!Array.isArray(feedbackList)) feedbackList = [];
-
-      const newFbItem = {
-        id: feedbackRecord.id,
-        submittedById: feedbackRecord.submittedById,
-        feedbackData: data,
-        templateVersion: templateVersion,
-        selectionStatus: selectionStatus,
-        overallRating: overallRating,
-        createdAt: feedbackRecord.createdAt,
-        updatedAt: feedbackRecord.updatedAt,
-      };
-
-      let updatedList = [];
-      const existingIdx = feedbackList.findIndex(f => f.id === feedbackRecord.id || (!f.id && f.submittedById === req.user.id));
-      if (existingIdx >= 0) {
-        updatedList = [...feedbackList];
-        updatedList[existingIdx] = { ...feedbackList[existingIdx], ...newFbItem };
-      } else {
-        updatedList = [...feedbackList, newFbItem];
+      // 2. Update candidate status if REJECTED
+      if (selectionStatus === 'REJECTED') {
+        await tx.candidate.update({
+          where: { id: candidateId },
+          data: { status: 'REJECTED' },
+        });
       }
 
-      const updatePayload = {
-        feedback: updatedList,
-      };
+      // 3. Automatically complete or update matching Interview round in scheduling system
+      const roundNoList = round === 'ROUND_1' ? [1]
+                        : round === 'ROUND_2' ? [2]
+                        : [3, 99];
+      const matchedInterviews = await tx.interview.findMany({
+        where: {
+          candidateId,
+          roundNo: { in: roundNoList },
+        },
+      });
 
-      if (activeInterview.status === 'SCHEDULED' || activeInterview.status === 'PENDING') {
-        updatePayload.status = 'COMPLETED';
-        updatePayload.result = selectionStatus;
-        updatePayload.outcome = selectionStatus;
-        updatePayload.outcomeSetAt = new Date().toISOString();
+      const srv = require('../../services/schedulingCacheService');
+      for (const activeInterview of matchedInterviews) {
+        let feedbackList = [];
+        try {
+          feedbackList = typeof activeInterview.feedback === 'string' ? JSON.parse(activeInterview.feedback) : activeInterview.feedback;
+        } catch (_) {}
+        if (!Array.isArray(feedbackList)) feedbackList = [];
+
+        const newFbItem = {
+          id: fb.id,
+          submittedById: fb.submittedById,
+          feedbackData: data,
+          templateVersion: templateVersion,
+          selectionStatus: selectionStatus,
+          overallRating: overallRating,
+          createdAt: fb.createdAt,
+          updatedAt: fb.updatedAt,
+          previousStatus: activeInterview.status,
+        };
+
+        let updatedList = [];
+        const existingIdx = feedbackList.findIndex(f => f.id === fb.id || (!f.id && f.submittedById === req.user.id));
+        if (existingIdx >= 0) {
+          updatedList = [...feedbackList];
+          const origPrevStatus = feedbackList[existingIdx].previousStatus || activeInterview.status;
+          updatedList[existingIdx] = { ...feedbackList[existingIdx], ...newFbItem, previousStatus: origPrevStatus };
+        } else {
+          updatedList = [...feedbackList, newFbItem];
+        }
+
+        const updatePayload = {
+          feedback: updatedList,
+        };
+
+        if (activeInterview.status === 'SCHEDULED' || activeInterview.status === 'PENDING' || activeInterview.status === 'RESCHEDULED') {
+          updatePayload.status = 'COMPLETED';
+          updatePayload.result = selectionStatus;
+          updatePayload.outcome = selectionStatus;
+          updatePayload.outcomeSetAt = new Date().toISOString();
+        } else if (activeInterview.status === 'COMPLETED') {
+          updatePayload.result = selectionStatus;
+          updatePayload.outcome = selectionStatus;
+        }
+
+        await srv.writeRound(
+          activeInterview.id,
+          updatePayload,
+          req.user.id,
+          req.user.organizationId || "defaultOrg",
+          activeInterview,
+          tx
+        );
       }
 
-      await srv.writeRound(
-        activeInterview.id,
-        updatePayload,
-        req.user.id,
-        req.user.organizationId || "defaultOrg",
-        activeInterview
-      );
-    }
+      return fb;
+    });
 
     // Emit interview-feedback:updated SSE event
     const sse = require('../../utils/sse');
@@ -970,80 +981,98 @@ router.delete(
     let previousStatus = 'UNKNOWN';
     let feedbackId = 'N/A';
 
-    if (existingFeedback) {
-      feedbackId = existingFeedback.id;
-      previousStatus = existingFeedback.selectionStatus;
-      
-      await prisma.interviewFeedback.update({
-        where: { id: existingFeedback.id },
-        data: { deletedAt: new Date() },
-      });
-    }
-
-    // 2. Also check and soft delete in interviews table feedback JSON column
-    const roundNo = round === 'ROUND_1' ? 1
-                  : round === 'ROUND_2' ? 2
-                  : 99; // Final Round is 99 or similar
-    
-    const interviews = await prisma.interview.findMany({
-      where: {
-        candidateId,
-        roundNo,
-      },
-    });
-
-    for (const interview of interviews) {
-      let feedbackList = [];
-      try {
-        feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
-      } catch (_) {}
-      if (!Array.isArray(feedbackList)) feedbackList = [];
-
-      let updated = false;
-      const updatedFeedbackList = feedbackList.map(f => {
-        if (!f.deletedAt && !f.deleted_at) {
-          f.deletedAt = new Date().toISOString();
-          updated = true;
-        }
-        return f;
-      });
-
-      if (updated) {
-        const updatePayload = {
-          status: 'SCHEDULED',
-          result: null,
-          outcome: null,
-          outcomeSetAt: null,
-          feedback: updatedFeedbackList,
-        };
-
-        await cache.writeRound(
-          interview.id,
-          updatePayload,
-          req.user.id,
-          req.user.organizationId || "defaultOrg",
-          interview
-        );
-      }
-    }
-
-    // Revert candidate status to ACTIVE if the deleted feedback was REJECTED
-    // and no other active feedbacks are REJECTED for this candidate
-    if (previousStatus === 'REJECTED') {
-      const otherRejected = await prisma.interviewFeedback.findFirst({
+    await prisma.$transaction(async (tx) => {
+      // 1. Soft-delete in interview_feedbacks table if exists
+      const existingFeedback = await tx.interviewFeedback.findFirst({
         where: {
           candidateId,
-          selectionStatus: 'REJECTED',
-          deletedAt: null,
+          round,
         },
       });
-      if (!otherRejected) {
-        await prisma.candidate.update({
-          where: { id: candidateId },
-          data: { status: 'ACTIVE' },
-        }).catch(() => {});
+
+      if (existingFeedback) {
+        feedbackId = existingFeedback.id;
+        previousStatus = existingFeedback.selectionStatus;
+        
+        await tx.interviewFeedback.update({
+          where: { id: existingFeedback.id },
+          data: { deletedAt: new Date() },
+        });
       }
-    }
+
+      // 2. Also check and soft delete in interviews table feedback JSON column
+      const roundNo = round === 'ROUND_1' ? 1
+                    : round === 'ROUND_2' ? 2
+                    : 99; // Final Round is 99 or similar
+      
+      const interviews = await tx.interview.findMany({
+        where: {
+          candidateId,
+          roundNo,
+        },
+      });
+
+      const srv = require('../../services/schedulingCacheService');
+      for (const interview of interviews) {
+        let feedbackList = [];
+        try {
+          feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
+        } catch (_) {}
+        if (!Array.isArray(feedbackList)) feedbackList = [];
+
+        let targetStatus = 'SCHEDULED';
+        let updated = false;
+        const updatedFeedbackList = feedbackList.map(f => {
+          const isMatch = (existingFeedback && f.id === existingFeedback.id) || 
+                          (!f.id && existingFeedback && f.submittedById === existingFeedback.submittedById);
+          if (isMatch && !f.deletedAt && !f.deleted_at) {
+            f.deletedAt = new Date().toISOString();
+            updated = true;
+            if (f.previousStatus) {
+              targetStatus = f.previousStatus;
+            }
+          }
+          return f;
+        });
+
+        if (updated) {
+          const updatePayload = {
+            status: targetStatus,
+            result: null,
+            outcome: null,
+            outcomeSetAt: null,
+            feedback: updatedFeedbackList,
+          };
+
+          await srv.writeRound(
+            interview.id,
+            updatePayload,
+            req.user.id,
+            req.user.organizationId || "defaultOrg",
+            interview,
+            tx
+          );
+        }
+      }
+
+      // Revert candidate status to ACTIVE if the deleted feedback was REJECTED
+      // and no other active feedbacks are REJECTED for this candidate
+      if (previousStatus === 'REJECTED') {
+        const otherRejected = await tx.interviewFeedback.findFirst({
+          where: {
+            candidateId,
+            selectionStatus: 'REJECTED',
+            deletedAt: null,
+          },
+        });
+        if (!otherRejected) {
+          await tx.candidate.update({
+            where: { id: candidateId },
+            data: { status: 'ACTIVE' },
+          });
+        }
+      }
+    });
 
     // 3. Write audit log
     logAudit({

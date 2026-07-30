@@ -10,6 +10,9 @@ describe('Sequential Round Gating Unit Tests', () => {
         findUnique: jest.fn(),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      interview: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
   });
 
@@ -46,7 +49,7 @@ describe('Sequential Round Gating Unit Tests', () => {
     ).resolves.not.toThrow();
 
     expect(mockPrisma.interviewFeedback.findMany).toHaveBeenCalledWith({
-      where: { candidateId: 'cand-123' },
+      where: { candidateId: 'cand-123', deletedAt: null },
     });
   });
 

@@ -415,7 +415,7 @@ function cleanDatabasePayload(payload) {
 // WRITE OPERATIONS
 // ─────────────────────────────────────────────
 
-async function writeRound(roundId, updatePayload, performedBy, orgId, currentData = null) {
+async function writeRound(roundId, updatePayload, performedBy, orgId, currentData = null, txClient = null) {
   try {
     const current = currentData || (await getRound(roundId)).data;
     if (!current) throw new Error(`Round ${roundId} not found`);
@@ -430,7 +430,8 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
     
     const cleanUpdate = cleanDatabasePayload(updated);
     
-    await prisma.interview.update({
+    const dbClient = txClient || prisma;
+    await dbClient.interview.update({
       where: { id: roundId },
       data: cleanUpdate
     });
