@@ -16,7 +16,7 @@ const { getCache, setCache, TTL } = require("../../utils/cache");
 const { buildInterviewListQuery } = require("./queryBuilder");
 const { populateInterviewRelations } = require("./relationPopulator");
 const { mergeDirtyQueue } = require("./dirtyQueueMerger");
-const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, assertCanScheduleRound } = require("../../lib/interviewTemplates");
+const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, assertCanScheduleRound, computeInterviewStatusUpdate, computeInterviewStatusRevert } = require("../../lib/interviewTemplates");
 
 const crypto = require("crypto");
 
@@ -866,19 +866,7 @@ router.post(
           updatedList = [...feedbackList, newFbItem];
         }
 
-        const updatePayload = {
-          feedback: updatedList,
-        };
-
-        if (activeInterview.status === 'SCHEDULED' || activeInterview.status === 'PENDING' || activeInterview.status === 'RESCHEDULED') {
-          updatePayload.status = 'COMPLETED';
-          updatePayload.result = selectionStatus;
-          updatePayload.outcome = selectionStatus;
-          updatePayload.outcomeSetAt = new Date().toISOString();
-        } else if (activeInterview.status === 'COMPLETED') {
-          updatePayload.result = selectionStatus;
-          updatePayload.outcome = selectionStatus;
-        }
+        const updatePayload = computeInterviewStatusUpdate(activeInterview, selectionStatus, updatedList);
 
         await srv.writeRound(
           activeInterview.id,
@@ -1020,20 +1008,7 @@ router.delete(
         } catch (_) {}
         if (!Array.isArray(feedbackList)) feedbackList = [];
 
-        let targetStatus = 'SCHEDULED';
-        let updated = false;
-        const updatedFeedbackList = feedbackList.map(f => {
-          const isMatch = (existingFeedback && f.id === existingFeedback.id) || 
-                          (!f.id && existingFeedback && f.submittedById === existingFeedback.submittedById);
-          if (isMatch && !f.deletedAt && !f.deleted_at) {
-            f.deletedAt = new Date().toISOString();
-            updated = true;
-            if (f.previousStatus) {
-              targetStatus = f.previousStatus;
-            }
-          }
-          return f;
-        });
+        const { updatedFeedbackList, targetStatus, updated } = computeInterviewStatusRevert(feedbackList, existingFeedback);
 
         if (updated) {
           const updatePayload = {

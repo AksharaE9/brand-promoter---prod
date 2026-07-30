@@ -448,6 +448,42 @@ function verifyBufferSignature(buffer, format) {
   }
 }
 
+function computeInterviewStatusUpdate(activeInterview, selectionStatus, updatedFeedbackList) {
+  const updatePayload = {
+    feedback: updatedFeedbackList,
+  };
+
+  if (activeInterview.status === 'SCHEDULED' || activeInterview.status === 'PENDING' || activeInterview.status === 'RESCHEDULED') {
+    updatePayload.status = 'COMPLETED';
+    updatePayload.result = selectionStatus;
+    updatePayload.outcome = selectionStatus;
+    updatePayload.outcomeSetAt = new Date().toISOString();
+  } else if (activeInterview.status === 'COMPLETED') {
+    updatePayload.result = selectionStatus;
+    updatePayload.outcome = selectionStatus;
+  }
+
+  return updatePayload;
+}
+
+function computeInterviewStatusRevert(feedbackList, existingFeedback) {
+  let targetStatus = 'SCHEDULED';
+  let updated = false;
+  const updatedFeedbackList = feedbackList.map(f => {
+    const isMatch = (existingFeedback && f.id === existingFeedback.id) || 
+                    (!f.id && existingFeedback && f.submittedById === existingFeedback.submittedById);
+    if (isMatch && !f.deletedAt && !f.deleted_at) {
+      f.deletedAt = new Date().toISOString();
+      updated = true;
+      if (f.previousStatus) {
+        targetStatus = f.previousStatus;
+      }
+    }
+    return f;
+  });
+  return { updatedFeedbackList, targetStatus, updated };
+}
+
 module.exports = {
   InterviewRound,
   ROUND_SEQUENCE,
@@ -470,6 +506,8 @@ module.exports = {
   COMBINED_FEEDBACK_TEMPLATE,
   generateTemplate,
   verifyBufferSignature,
+  computeInterviewStatusUpdate,
+  computeInterviewStatusRevert,
 };
 
 /**
