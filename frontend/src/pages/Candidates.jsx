@@ -814,8 +814,29 @@ const Candidates = () => {
           </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center os-card">
-            <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>
-            <button className="os-btn-outline" onClick={() => { setSearch(''); setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('status'); next.delete('search'); return next; }); }}>Clear Filters</button>
+            {statusFilter === 'JOINED' ? (
+              <>
+                <div className="text-slate-500 mb-2 font-semibold">No joined candidates yet.</div>
+                <p className="text-sm text-slate-400 max-w-md mx-auto mb-5">
+                  Candidates appear here after you mark them as Joined from Offer Sent, or when you add them with + Add Candidate on this page.
+                </p>
+                {canManageCandidates && (
+                  <button className="os-btn-primary" type="button" onClick={() => setShowCreateModal(true)}>
+                    + Add Joined Candidate
+                  </button>
+                )}
+              </>
+            ) : statusFilter === 'OFFER_SENT' ? (
+              <>
+                <div className="text-slate-400 mb-2">No offer-sent candidates found.</div>
+                <button className="os-btn-outline" onClick={() => { setSearch(''); setRoleFilter('All'); setLocationFilter('All'); setCompanyFilter('All'); }}>Clear Filters</button>
+              </>
+            ) : (
+              <>
+                <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>
+                <button className="os-btn-outline" onClick={() => { setSearch(''); setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('status'); next.delete('search'); return next; }); }}>Clear Filters</button>
+              </>
+            )}
           </div>
         ) : viewMode === 'grid' && statusFilter === 'JOINED' ? (
           <>
@@ -992,6 +1013,12 @@ const Candidates = () => {
                 e.preventDefault();
                 if (isAdding) return;
 
+                if (!createForm.resume) {
+                  setError('Resume is required. Upload a PDF or Word document to create the candidate.');
+                  setTimeout(() => setError(''), 4000);
+                  return;
+                }
+
                 const formData = new FormData();
                 formData.append('fullName', createForm.fullName);
                 formData.append('email', createForm.email);
@@ -1004,9 +1031,7 @@ const Candidates = () => {
                 if (statusFilter && statusFilter !== 'All') {
                   formData.append('status', statusFilter);
                 }
-                if (createForm.resume) {
-                  formData.append('resume', createForm.resume);
-                }
+                formData.append('resume', createForm.resume);
 
                 // Close modal and clear form INSTANTLY (optimistic UX)
                 setShowCreateModal(false);
@@ -1112,17 +1137,22 @@ const Candidates = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Resume / Profile Document</label>
+                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">
+                    Resume / Profile Document <span className="text-red-500">*</span>
+                  </label>
                   <div className="relative group">
                     <input 
                       type="file"
                       className="hidden"
                       id="resume-upload"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      required
                       onChange={e => {
                         const file = e.target.files?.[0];
                         if (file && file.size > MAX_UPLOAD_BYTES) {
                           alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
                           e.target.value = '';
+                          setCreateForm(prev => ({...prev, resume: null}));
                           return;
                         }
                         setCreateForm(prev => ({...prev, resume: file || null}));
@@ -1130,19 +1160,33 @@ const Candidates = () => {
                     />
                     <label 
                       htmlFor="resume-upload"
-                      className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-200 rounded-[24px] cursor-pointer hover:border-[#1f52cc] hover:bg-blue-50/30 transition-all"
+                      className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-[24px] cursor-pointer transition-all ${
+                        createForm.resume
+                          ? 'border-[#1f52cc] bg-blue-50/40'
+                          : 'border-slate-200 hover:border-[#1f52cc] hover:bg-blue-50/30'
+                      }`}
                     >
-                      <span className="material-symbols-outlined text-slate-400 text-3xl group-hover:text-[#1f52cc] group-hover:scale-110 transition-all">upload_file</span>
-                      <span className="text-xs text-slate-500 mt-2 font-medium">
-                        {createForm.resume ? createForm.resume.name : 'Click to upload PDF or Word document'}
+                      <span className={`material-symbols-outlined text-3xl transition-all ${createForm.resume ? 'text-[#1f52cc]' : 'text-slate-400 group-hover:text-[#1f52cc] group-hover:scale-110'}`}>
+                        {createForm.resume ? 'description' : 'upload_file'}
+                      </span>
+                      <span className="text-xs text-slate-500 mt-2 font-medium px-4 text-center">
+                        {createForm.resume ? createForm.resume.name : 'Click to upload PDF or Word document (required)'}
                       </span>
                     </label>
                   </div>
+                  {!createForm.resume && (
+                    <p className="text-[11px] text-slate-400 ml-1">A resume is required before HR can create the candidate.</p>
+                  )}
                 </div>
 
                 <div className="flex gap-4 pt-4">
                   <button type="button" className="flex-1 h-12 rounded-2xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-all" onClick={() => setShowCreateModal(false)}>Cancel</button>
-                  <button type="submit" className="flex-1 h-12 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={isAdding}>
+                  <button
+                    type="submit"
+                    className="flex-1 h-12 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isAdding || !createForm.resume}
+                    title={!createForm.resume ? 'Upload a resume to create the candidate' : undefined}
+                  >
                     {isAdding ? 'Creating...' : 'Create Candidate'}
                   </button>
                 </div>

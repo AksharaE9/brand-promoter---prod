@@ -40,8 +40,10 @@ const NavItem = React.memo(({ item, className, onMouseEnter }) => {
   };
 
   const iconEl = item.icon ? (
-    <span className="material-symbols-outlined os-nav-icon">{item.icon}</span>
+    <span className="material-symbols-outlined os-nav-icon" aria-hidden="true">{item.icon}</span>
   ) : null;
+
+  const labelEl = <span className="os-nav-label">{item.label}</span>;
 
   if (item.href && item.href.startsWith('/')) {
     // Extract base path for prefetch lookup (strip query string)
@@ -51,19 +53,27 @@ const NavItem = React.memo(({ item, className, onMouseEnter }) => {
       <Link
         className={className}
         to={item.href}
+        title={item.label}
+        aria-label={item.label}
         onClick={handleClick}
         onMouseEnter={hasPrefetch ? () => onMouseEnter(basePath) : undefined}
       >
         {iconEl}
-        {item.label}
+        {labelEl}
       </Link>
     );
   }
 
   return (
-    <a className={className} href={item.href || '#'} onClick={handleClick}>
+    <a
+      className={className}
+      href={item.href || '#'}
+      title={item.label}
+      aria-label={item.label}
+      onClick={handleClick}
+    >
       {iconEl}
-      {item.label}
+      {labelEl}
     </a>
   );
 });
@@ -161,12 +171,14 @@ export const EnterpriseSidebar = React.memo(({
         {role !== 'INTERVIEWER' && !hideHub && (
           <Link
             to="/schedule"
-            className="os-btn-primary w-full text-center h-11 mb-3 flex items-center justify-center gap-2 no-underline text-white"
+            className="os-btn-primary os-hub-btn w-full text-center h-11 mb-3 flex items-center justify-center gap-2 no-underline text-white"
+            title="Interview Hub"
+            aria-label="Interview Hub"
             onMouseEnter={() => handleNavMouseEnter('/schedule')}
             onMouseLeave={() => handleNavMouseLeave('/schedule')}
           >
             <span className="material-symbols-outlined text-xl">hub</span>
-            Interview Hub
+            <span className="os-nav-label">Interview Hub</span>
           </Link>
         )}
         {footerButton}

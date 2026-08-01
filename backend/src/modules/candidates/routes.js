@@ -481,6 +481,12 @@ router.post(
     const data = req.body;
     if (!data.fullName) throw new ApiError(400, "fullName is required");
     if (!data.phone) throw new ApiError(400, "Phone number is required");
+    if (!data.resumeFileId && !data.resumeLinkOriginal && !data.resumeLinkDownload) {
+      throw new ApiError(
+        400,
+        "Resume is required. Use /api/candidates/with-resume-upload and attach a resume file."
+      );
+    }
 
     const orgId = req.user.organizationId || "defaultOrg";
 
@@ -575,6 +581,9 @@ router.post(
 
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!phone) throw new ApiError(400, "Phone number is required");
+    if (!req.file) {
+      throw new ApiError(400, "Resume is required. Upload a PDF or Word document to create the candidate.");
+    }
 
     const orgId = req.user.organizationId || "defaultOrg";
 
@@ -583,26 +592,23 @@ router.post(
     });
     if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
 
-    let resumeFileId = null;
-    if (req.file) {
-      const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-      const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
-      
-      if (!storageKey) {
-        throw new ApiError(500, "Failed to upload resume to storage");
-      }
+    const dest = `resumes/${Date.now()}_${req.file.originalname}`;
+    const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
 
-      const fileMeta = await prisma.fileMeta.create({
-        data: {
-          storageKey,
-          originalName: req.file.originalname,
-          mimeType: req.file.mimetype,
-          sizeBytes: req.file.size,
-          uploadedById: req.user.id,
-        }
-      });
-      resumeFileId = fileMeta.id;
+    if (!storageKey) {
+      throw new ApiError(500, "Failed to upload resume to storage");
     }
+
+    const fileMeta = await prisma.fileMeta.create({
+      data: {
+        storageKey,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        uploadedById: req.user.id,
+      }
+    });
+    const resumeFileId = fileMeta.id;
 
     const resolvedCompanyResume = (req.body.company || '').trim() || DEFAULT_COMPANY;
     const allowedCreateStatuses = new Set(["ACTIVE", "OFFER_SENT", "JOINED", "REJECTED"]);

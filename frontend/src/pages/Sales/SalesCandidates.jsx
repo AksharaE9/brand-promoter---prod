@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiDelete } from '../../lib/api';
+import { apiGet, apiDelete, buildApiUrl, getStoredToken } from '../../lib/api';
 import { PageEnter } from '../../components/PageMotion';
 import BulkImportModal from '../../components/BulkImportModal';
+import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
 
 const SalesCandidates = () => {
     const [candidates, setCandidates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', skills: '', source: 'Sales Workspace' });
+    const [creating, setCreating] = useState(false);
+    const [formData, setFormData] = useState({ fullName: '', email: '', phone: '', skills: '', source: 'Sales Workspace', resume: null });
 
     useEffect(() => {
         loadCandidates();
@@ -28,13 +30,38 @@ const SalesCandidates = () => {
 
     const handleAddCandidate = async (e) => {
         e.preventDefault();
+        if (!formData.resume) {
+            alert('Resume is required. Upload a PDF or Word document to create the candidate.');
+            return;
+        }
+        setCreating(true);
         try {
-            await apiPost('/candidates', { ...formData, status: 'JOINED' });
+            const body = new FormData();
+            body.append('fullName', formData.fullName);
+            body.append('email', formData.email);
+            body.append('phone', formData.phone);
+            body.append('source', formData.source || 'Sales Workspace');
+            body.append('status', 'JOINED');
+            body.append('resume', formData.resume);
+
+            const token = getStoredToken();
+            const res = await fetch(buildApiUrl('/candidates/with-resume-upload'), {
+                method: 'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body,
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json.success) {
+                throw new Error(json.message || json.error || 'Failed to add candidate');
+            }
+
             setIsModalOpen(false);
-            setFormData({ fullName: '', email: '', phone: '', skills: '', source: 'Sales Workspace' });
+            setFormData({ fullName: '', email: '', phone: '', skills: '', source: 'Sales Workspace', resume: null });
             await loadCandidates();
         } catch (error) {
-            alert('Failed to add candidate');
+            alert(error.message || 'Failed to add candidate');
+        } finally {
+            setCreating(false);
         }
     };
 
@@ -179,6 +206,28 @@ const SalesCandidates = () => {
                                         onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
                                     />
                                 </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-bold text-[#10193f] uppercase tracking-wider px-1">
+                                        Resume / Profile Document <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="file"
+                                        required
+                                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-[#eef3ff] file:text-[#1f52cc] file:font-bold"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file && file.size > MAX_UPLOAD_BYTES) {
+                                                alert('File exceeds the 10 MB limit.');
+                                                e.target.value = '';
+                                                setFormData({ ...formData, resume: null });
+                                                return;
+                                            }
+                                            setFormData({ ...formData, resume: file || null });
+                                        }}
+                                    />
+                                    <p className="text-[11px] text-[#8b95ad] px-1">Resume is required to create the candidate.</p>
+                                </div>
                             </div>
 
                             <div className="mt-8 flex gap-4">
@@ -191,9 +240,10 @@ const SalesCandidates = () => {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:shadow-xl hover:bg-[#1a47b0] transition-all"
+                                    disabled={creating || !formData.resume}
+                                    className="flex-1 h-12 bg-[#1f52cc] text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:shadow-xl hover:bg-[#1a47b0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Create Record
+                                    {creating ? 'Creating...' : 'Create Record'}
                                 </button>
                             </div>
                         </form>
