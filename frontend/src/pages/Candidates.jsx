@@ -23,6 +23,7 @@ import { companyApi } from '../services/companyApi';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import './OfferDecision.css';
 import TruncatedText from '../components/TruncatedText';
+import { PLACE_OPTIONS, matchesPlaceFilter } from '../lib/places';
 
 const initialForm = {
   fullName: '',
@@ -617,16 +618,10 @@ const Candidates = () => {
     return [...new Set([...rolesFromCandidates, ...rolesFromJobs])].sort();
   }, [allMapped, globalJobs]);
 
-  const uniqueLocations = useMemo(() => {
-    const locsFromCandidates = allMapped.map(c => c.location).filter(Boolean);
-    const locsFromJobs = globalJobs.map(j => j.location).filter(Boolean);
-    return [...new Set([...locsFromCandidates, ...locsFromJobs])].sort();
-  }, [allMapped, globalJobs]);
-
   const visibleCandidates = useMemo(() => {
     let list = allMapped;
     if (roleFilter !== 'All') list = list.filter(c => c.role === roleFilter);
-    if (locationFilter !== 'All') list = list.filter(c => c.location === locationFilter);
+    if (locationFilter !== 'All') list = list.filter(c => matchesPlaceFilter(c.location, locationFilter));
     return list;
   }, [allMapped, roleFilter, locationFilter]);
 
@@ -741,7 +736,7 @@ const Candidates = () => {
         {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 border-red-100 text-sm animate-in fade-in slide-in-from-top-2">{error}</div>}
 
         {/* Role & Location filters (available across all candidate registries) */}
-        {(uniqueRoles.length > 0 || uniqueLocations.length > 0) && (
+        {(uniqueRoles.length > 0 || PLACE_OPTIONS.length > 0) && (
           <div className="flex flex-wrap items-center gap-3 mb-5 p-3.5 bg-white border border-[#e9eef4] rounded-2xl shadow-sm">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter by</span>
 
@@ -761,21 +756,19 @@ const Candidates = () => {
               </div>
             )}
 
-            {/* Location filter */}
-            {uniqueLocations.length > 0 && (
-              <div className="relative flex items-center">
-                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">location_on</span>
-                <select
-                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
-                  value={locationFilter}
-                  onChange={e => { setLocationFilter(e.target.value); }}
-                >
-                  <option value="All">All Places</option>
-                  {uniqueLocations.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
-              </div>
-            )}
+            {/* Location filter — fixed canonical places only */}
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">location_on</span>
+              <select
+                className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                value={locationFilter}
+                onChange={e => { setLocationFilter(e.target.value); }}
+              >
+                <option value="All">All Places</option>
+                {PLACE_OPTIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+              <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+            </div>
 
             {/* Company filter */}
             {companyOptions.length > 0 && (
@@ -1008,6 +1001,9 @@ const Candidates = () => {
                 formData.append('preferredRole', createForm.preferredRole);
                 formData.append('company', createForm.company?.trim() || 'Akshara Enterprises'); // ── NEW ──
                 formData.append('source', createForm.source || 'Manual Entry');
+                if (statusFilter && statusFilter !== 'All') {
+                  formData.append('status', statusFilter);
+                }
                 if (createForm.resume) {
                   formData.append('resume', createForm.resume);
                 }
@@ -1026,6 +1022,7 @@ const Candidates = () => {
                   preferredRole: createForm.preferredRole,
                   company: createForm.company?.trim() || 'Akshara Enterprises', // ── NEW ──
                   source: createForm.source || 'Manual Entry',
+                  status: statusFilter && statusFilter !== 'All' ? statusFilter : 'ACTIVE',
                 });
               }}>
                 <div className="grid grid-cols-2 gap-5">

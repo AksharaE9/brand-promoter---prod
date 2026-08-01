@@ -41,24 +41,27 @@ router.get(
     });
 
     const productIds = products.map(p => p.id);
-    const tracking = await prisma.salesTracking.findMany({
-      where: {
-        productId: { in: productIds }
-      }
-    });
+    const tracking = productIds.length
+      ? await prisma.salesTracking.findMany({
+          where: { productId: { in: productIds } },
+        })
+      : [];
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString();
+    const now = new Date();
 
     const conversions = tracking.filter(t => t.status === "CONVERTED").length;
-    const pendingFollowups = tracking.filter(t => 
-      t.status !== "CONVERTED" && 
-      t.status !== "REJECTED" && 
-      t.followUpDate && t.followUpDate <= new Date().toISOString()
-    ).length;
+    const pendingFollowups = tracking.filter(t => {
+      if (t.status === "CONVERTED" || t.status === "REJECTED" || !t.followUpDate) return false;
+      const followUp = t.followUpDate instanceof Date ? t.followUpDate : new Date(t.followUpDate);
+      return !Number.isNaN(followUp.getTime()) && followUp <= now;
+    }).length;
 
-    const addedToday = products.filter(p => p.createdAt >= today).length;
+    const addedToday = products.filter(p => {
+      const createdAt = p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt);
+      return !Number.isNaN(createdAt.getTime()) && createdAt >= today;
+    }).length;
 
     const statusCounts = {};
     tracking.forEach(t => {
@@ -69,13 +72,13 @@ router.get(
       _count: { _all: statusCounts[status] }
     }));
 
-    const recentActivity = await prisma.salesActivity.findMany({
-      where: {
-        productId: { in: productIds }
-      },
-      orderBy: { createdAt: "desc" },
-      limit: 10
-    });
+    const recentActivity = productIds.length
+      ? await prisma.salesActivity.findMany({
+          where: { productId: { in: productIds } },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+      : [];
 
     const totalTracked = tracking.length;
     const conversionRate = totalTracked > 0 ? ((conversions / totalTracked) * 100).toFixed(1) : 0;

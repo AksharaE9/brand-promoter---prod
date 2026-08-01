@@ -519,8 +519,8 @@ const CandidateProfile = () => {
         {banner && <div className="os-card p-4 text-[#2454cf] text-sm mb-4 border-blue-100 bg-blue-50">{banner}</div>}
 
         {candidate && (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <div className="xl:col-span-2 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-6">
               <Reveal>
                 <div className="os-card p-6 flex flex-wrap items-start gap-6 relative overflow-hidden bg-gradient-to-br from-white to-[#f8fafc]">
                   <div className="absolute top-0 right-0 p-4 opacity-40 pointer-events-none">
@@ -535,9 +535,9 @@ const CandidateProfile = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex-1 min-w-0">
                         {isEditing ? (
                           <div className="space-y-3 max-w-lg">
                             <div className="flex items-center gap-2">
@@ -571,7 +571,7 @@ const CandidateProfile = () => {
                           </div>
                         ) : (
                           <>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
                               <h1 className="os-h1 !mb-0 !text-3xl">{candidate.fullName}</h1>
                               <div className="os-tag bg-[#eef3ff] text-[#1f4bc6] uppercase font-bold tracking-wider">{candidate.category || 'Company'}</div>
                             </div>
@@ -595,13 +595,49 @@ const CandidateProfile = () => {
                       {!isEditing && canManageCandidate && (
                         <button 
                           onClick={() => setIsEditing(true)} 
-                          className="ml-4 p-2 text-[#1f52cc] border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl transition-all flex items-center justify-center relative z-10 cursor-pointer"
+                          className="ml-4 p-2 text-[#1f52cc] border border-blue-200 bg-blue-50/50 hover:bg-blue-50 rounded-xl transition-all flex items-center justify-center relative z-10 cursor-pointer shrink-0"
                           aria-label="Edit Profile"
                         >
                           <span className="material-symbols-outlined text-xl">edit_square</span>
                         </button>
                       )}
                     </div>
+
+                    {!isEditing && canManageCandidate && (
+                      <div className="mt-5 pt-4 border-t border-slate-100">
+                        <div className="text-[10px] uppercase tracking-[.14em] font-bold text-[#76839f] mb-2">Resume</div>
+                        {candidate.resumeLinkDownload || candidate.resumeLinkOriginal || candidate.resumeFile?.storageKey ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <a
+                              href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? buildApiUrl(`/candidates/${candidate.id}/resume-download`) : buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`)}
+                              download={candidate.resumeFile?.originalName || `${candidate.fullName}-resume`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs"
+                            >
+                              <span className="material-symbols-outlined text-base">download</span>
+                              Download Resume
+                            </a>
+                            <label className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
+                              <span className="material-symbols-outlined text-sm">upload</span>
+                              {uploadingResume ? 'Uploading...' : 'Replace Resume'}
+                              <input type="file" className="hidden" accept=".pdf,.doc,.docx" disabled={uploadingResume} onChange={e => e.target.files?.[0] && handleUploadResume(e.target.files[0])} />
+                            </label>
+                          </div>
+                        ) : (
+                          <label className="flex items-center justify-center gap-3 w-full min-h-[72px] px-4 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-[#1f52cc] hover:bg-blue-50/30 transition-all group">
+                            <span className="material-symbols-outlined text-2xl text-slate-300 group-hover:text-[#1f52cc] transition-colors">upload_file</span>
+                            <span className="text-left">
+                              <span className="block text-sm font-semibold text-slate-600 group-hover:text-[#1f52cc]">
+                                {uploadingResume ? 'Uploading...' : 'Upload Resume'}
+                              </span>
+                              <span className="block text-[11px] text-slate-400">PDF, DOC, DOCX</span>
+                            </span>
+                            <input type="file" className="hidden" accept=".pdf,.doc,.docx" disabled={uploadingResume} onChange={e => e.target.files?.[0] && handleUploadResume(e.target.files[0])} />
+                          </label>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </Reveal>
@@ -636,7 +672,7 @@ const CandidateProfile = () => {
               </Reveal>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-6 lg:sticky lg:top-4 self-start">
                <Reveal delay={0.1}>
                  <div className="os-card p-5 bg-[#1f52cc] text-white">
                    <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 opacity-80">Quick Actions</h3>

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearAuth, getStoredUser, apiGet } from '../lib/api';
 import { RouteTransition } from './PageMotion';
+import VisibleScrollArea from './VisibleScrollArea';
+import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
 
 // ── Prefetch map: href → { queryKey, queryFn }
 // When user hovers a nav link for 150ms, we start fetching data for the destination.
@@ -133,20 +135,27 @@ export const EnterpriseSidebar = React.memo(({
         <div className="os-brand-sub">{subtitle}</div>
       </div>
 
-      <nav className="os-nav">
-        {visibleItems.map((item) => {
-          const basePath = item.href?.split('?')[0];
-          return (
-            <NavItem
-              key={item.key}
-              item={item}
-              className={`os-nav-item ${active === item.key ? 'active' : ''}`}
-              onMouseEnter={handleNavMouseEnter}
-              onMouseLeave={basePath ? () => handleNavMouseLeave(basePath) : undefined}
-            />
-          );
-        })}
-      </nav>
+      <VisibleScrollArea
+        className="os-nav-scroll"
+        scrollClassName="os-nav"
+        railTone="dark"
+        as="div"
+      >
+        <nav className="os-nav-list">
+          {visibleItems.map((item) => {
+            const basePath = item.href?.split('?')[0];
+            return (
+              <NavItem
+                key={item.key}
+                item={item}
+                className={`os-nav-item ${active === item.key ? 'active' : ''}`}
+                onMouseEnter={handleNavMouseEnter}
+                onMouseLeave={basePath ? () => handleNavMouseLeave(basePath) : undefined}
+              />
+            );
+          })}
+        </nav>
+      </VisibleScrollArea>
 
       <div className="os-sidebar-footer">
         {role !== 'INTERVIEWER' && !hideHub && (
@@ -205,8 +214,6 @@ export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', s
 });
 EnterpriseTopbar.displayName = 'EnterpriseTopbar';
 
-import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
-
 export default React.memo(function EnterpriseLayout({ sidebar, topbar, children, contentClassName = '' }) {
   useRealtimeUpdates();
 
@@ -215,11 +222,16 @@ export default React.memo(function EnterpriseLayout({ sidebar, topbar, children,
       {sidebar}
       <div className="main-content os-main">
         {topbar}
-        <main className={`os-content ${contentClassName}`}>
+        <VisibleScrollArea
+          className="os-content-frame"
+          scrollClassName={`os-content ${contentClassName}`.trim()}
+          railTone="light"
+          as="main"
+        >
           <RouteTransition>
             {children}
           </RouteTransition>
-        </main>
+        </VisibleScrollArea>
       </div>
     </div>
   );

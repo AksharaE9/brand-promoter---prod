@@ -117,7 +117,7 @@ export function useAddCandidate({ onOptimisticAdd, onReplace, onRollback, onSucc
       course: localPreview.course || '',
       location: localPreview.location || '',
       preferredRole: localPreview.preferredRole || '',
-      status: 'ACTIVE',
+      status: localPreview.status || 'ACTIVE',
       source: localPreview.source || '',
       _optimistic: true,
       createdAt: new Date().toISOString(),

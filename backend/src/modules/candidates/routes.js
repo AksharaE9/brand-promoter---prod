@@ -61,7 +61,17 @@ const candidateSearchHandler = async (req, res) => {
   ];
 
   if (filters.status && filters.status !== 'All') {
-    andConditions.push({ status: filters.status });
+    const appSyncedStatuses = new Set(["JOINED", "OFFER_SENT", "REJECTED"]);
+    if (appSyncedStatuses.has(filters.status)) {
+      andConditions.push({
+        OR: [
+          { status: filters.status },
+          { applications: { some: { status: filters.status, isDeleted: false } } },
+        ],
+      });
+    } else {
+      andConditions.push({ status: filters.status });
+    }
   }
   if (filters.category && filters.category !== 'All') {
     andConditions.push({ category: filters.category });
@@ -484,6 +494,10 @@ router.post(
     const resolvedCompany = (data.company || '').trim() || DEFAULT_COMPANY;
 
     const phoneNormalized = data.phone ? normalizePhoneNumber(data.phone) : null;
+    const allowedCreateStatuses = new Set(["ACTIVE", "OFFER_SENT", "JOINED", "REJECTED"]);
+    const createStatus = allowedCreateStatuses.has(String(data.status || "").toUpperCase())
+      ? String(data.status).toUpperCase()
+      : "ACTIVE";
 
     const candidateData = {
       fullName: data.fullName,
@@ -503,7 +517,7 @@ router.post(
       customFields: data.customFields || null,
       company: resolvedCompany,           // ── NEW field ──
       createdById: req.user.id,
-      status: "ACTIVE",
+      status: createStatus,
       organizationId: orgId,
       isDeleted: false
     };
@@ -591,6 +605,10 @@ router.post(
     }
 
     const resolvedCompanyResume = (req.body.company || '').trim() || DEFAULT_COMPANY;
+    const allowedCreateStatuses = new Set(["ACTIVE", "OFFER_SENT", "JOINED", "REJECTED"]);
+    const createStatus = allowedCreateStatuses.has(String(req.body.status || "").toUpperCase())
+      ? String(req.body.status).toUpperCase()
+      : "ACTIVE";
 
     const candidateData = {
       fullName,
@@ -610,7 +628,7 @@ router.post(
       customFields: req.body.customFields ? JSON.parse(req.body.customFields) : null,
       company: resolvedCompanyResume,     // ── NEW field ──
       createdById: req.user.id,
-      status: "ACTIVE",
+      status: createStatus,
       organizationId: orgId,
       isDeleted: false
     };
@@ -682,7 +700,21 @@ router.get(
         { isDeleted: false }
       ];
 
-      if (status) andConditions.push({ status });
+      if (status) {
+        // Sidebar views (JOINED / OFFER_SENT / REJECTED) may be set on the
+        // candidate record OR only on a related application — match either.
+        const appSyncedStatuses = new Set(["JOINED", "OFFER_SENT", "REJECTED"]);
+        if (appSyncedStatuses.has(status)) {
+          andConditions.push({
+            OR: [
+              { status },
+              { applications: { some: { status, isDeleted: false } } },
+            ],
+          });
+        } else {
+          andConditions.push({ status });
+        }
+      }
       if (category) andConditions.push({ category });
       if (company) andConditions.push({ company });
       if (assignedToMe) andConditions.push({ mentorId: req.user.id });

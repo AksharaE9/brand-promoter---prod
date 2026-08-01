@@ -27,12 +27,13 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 40;
 }
 
 .os-brand {
   height: 84px;
+  flex-shrink: 0;
   padding: 0 24px;
   display: flex;
   flex-direction: column;
@@ -58,10 +59,28 @@
   font-weight: 700;
 }
 
-.os-nav {
+.os-nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.os-nav,
+.os-nav-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
+}
+
+.os-scroll-viewport.os-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .os-nav-item,
@@ -97,7 +116,8 @@
 }
 
 .os-sidebar-footer {
-  margin-top: auto;
+  flex-shrink: 0;
+  margin-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 12px;
   display: flex;
@@ -308,10 +328,109 @@
   color: #6f7d98;
 }
 
+.os-content-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .os-content {
   flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 24px;
+}
+
+/* Custom always-visible scrollbar (overrides OS auto-hide overlay scrollbars) */
+.os-scroll-frame {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.os-scroll-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.os-scroll-viewport::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.os-scroll-rail {
+  flex: 0 0 16px;
+  width: 16px;
+  position: relative;
+  align-self: stretch;
+  border-left: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  z-index: 2;
+}
+
+.os-scroll-frame--light .os-scroll-rail {
+  flex-basis: 18px;
+  width: 18px;
+  background: #b7c4d8;
+  border-left-color: #8fa0b8;
+}
+
+.os-scroll-frame--dark .os-scroll-rail {
+  flex-basis: 10px;
+  width: 10px;
+  background: rgba(255, 255, 255, 0.16);
+  border-left-color: rgba(255, 255, 255, 0.22);
+}
+
+.os-scroll-rail.is-idle {
+  opacity: 0.75;
+}
+
+.os-scroll-thumb {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  right: 2px;
+  border-radius: 999px;
+  cursor: grab;
+  touch-action: none;
+  min-height: 36px;
+}
+
+.os-scroll-thumb:active {
+  cursor: grabbing;
+}
+
+.os-scroll-frame--light .os-scroll-thumb {
+  background: #16356a;
+  box-shadow: 0 1px 3px rgba(15, 27, 61, 0.35);
+}
+
+.os-scroll-frame--light .os-scroll-thumb:hover,
+.os-scroll-frame--light .os-scroll-thumb:active {
+  background: #0b1b3d;
+}
+
+.os-scroll-frame--dark .os-scroll-thumb {
+  left: 1px;
+  right: 1px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.os-scroll-frame--dark .os-scroll-thumb:hover {
+  background: #ffffff;
 }
 
 .os-content button,
@@ -1036,4 +1155,4 @@
   min-width: 0;
   max-width: 100%;
 }
-
+

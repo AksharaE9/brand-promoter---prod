@@ -32,3 +32,6 @@ backend/scratch/
 # Uploaded files, reports, and temp assets
 backend/uploads/
 frontend/stats.html
+
+# Local DB backups (may contain production data)
+backup/
