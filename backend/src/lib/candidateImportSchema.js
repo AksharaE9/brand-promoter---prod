@@ -4,6 +4,7 @@
  * Definition of the All Candidates Bulk Import Schema columns, types, and validation rules.
  */
 const CANDIDATE_IMPORT_SCHEMA = [
+  { key: 'candidateId', label: 'candidate id', required: false },
   { key: 'name',       label: 'Name',         required: true },
   { key: 'role',       label: 'Role',         required: true },
   { key: 'email',      label: 'e-mail',       required: true },

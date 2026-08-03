@@ -53,6 +53,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const headers = CANDIDATE_IMPORT_SCHEMA.map(f => f.required ? `${f.label} *` : f.label);
     const sampleRow = [
+      'EXT-1001',
       'Jane Smith',
       'Senior Developer',
       'jane.smith@example.com',

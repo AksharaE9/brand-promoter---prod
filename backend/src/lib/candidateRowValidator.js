@@ -58,11 +58,13 @@ function validateCandidateRow(rawRow, rowNumber) {
   const course = String(rawRow.course ?? '').trim() || null;
   const source = String(rawRow.source ?? '').trim() || null;
   const company = String(rawRow.company ?? '').trim() || null;
+  const candidateId = String(rawRow.candidateId ?? rawRow.candidate_id ?? '').trim() || null;
 
   if (errors.length > 0) {
     return {
       valid: false,
       data: {
+        candidateId,
         name,
         role,
         email: isEmailValid ? email : null,
@@ -83,6 +85,7 @@ function validateCandidateRow(rawRow, rowNumber) {
   return {
     valid: true,
     data: {
+      candidateId,
       name,
       role,
       email,

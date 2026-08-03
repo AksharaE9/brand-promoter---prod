@@ -48,6 +48,15 @@ const HEADER_ALIASES = {
   'current company': 'company',
   'employer': 'company',
 
+  // External / sheet candidate id (uniqueness key — NOT the same as name)
+  'candidate id': 'candidateId',
+  'candidateid': 'candidateId',
+  'candidate_id': 'candidateId',
+  'external id': 'candidateId',
+  'externalid': 'candidateId',
+  'applicant id': 'candidateId',
+  'application id': 'candidateId',
+
   // Round / Round Number Aliases
   'round': 'round',
   'round number': 'round',
@@ -104,15 +113,17 @@ function resolveHeader(rawHeader) {
 
   // Robust prefix-based fallback matching for common truncations (e.g. "Phone Nu", "Meeting Mod", "Interviewe")
   if (key.startsWith('phone') || key.startsWith('mobile') || key.startsWith('contact')) return 'phone';
-  if (key.startsWith('meeting mod') || key.startsWith('interview mod') || key.startsWith('mode') || key.startsWith('mod')) return 'mode';
+  if (key.startsWith('meeting mod') || key.startsWith('interview mod') || key === 'mode' || key.startsWith('mod')) return 'mode';
   if (key.startsWith('interviewer') || key.startsWith('interviewe') || key.startsWith('panelist')) return 'interviewers';
-  if (key.startsWith('job role') || key.startsWith('role') || key.startsWith('position')) return 'role';
-  if (key.startsWith('name') || key.startsWith('candidate')) return 'name';
+  if (key.startsWith('job role') || key === 'role' || key.startsWith('position')) return 'role';
+  // Do NOT map bare "candidate*" → name (that stole "candidate id")
+  if (key === 'name' || key.startsWith('name ') || key.startsWith('full name') || key.startsWith('candidate name')) return 'name';
+  if (key.startsWith('candidate id') || key.startsWith('external id') || key.startsWith('applicant id')) return 'candidateId';
   if (key.startsWith('email') || key.startsWith('e-mail')) return 'email';
   if (key.startsWith('resume') || key.startsWith('cv')) return 'resumeLink';
   if (key.startsWith('start date') || key.startsWith('scheduled start') || key.startsWith('start')) return 'startDateTime';
   if (key.startsWith('zoho')) return 'zohoLink';
-  if (key.startsWith('meeting link') || key.startsWith('meeting_link') || key.startsWith('link')) return 'meetingLink';
+  if (key.startsWith('meeting link') || key.startsWith('meeting_link') || key === 'link') return 'meetingLink';
 
   return null;
 }

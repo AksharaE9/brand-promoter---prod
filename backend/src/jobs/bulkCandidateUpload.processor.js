@@ -3,7 +3,10 @@
 const prisma = require('../config/db');
 const { validateCandidateRow } = require('../lib/candidateRowValidator');
 const { normalizeResumeLink } = require('../lib/resumeLinkNormalizer');
-const { normalizePhoneNumber } = require('../lib/phoneNormalization');
+const {
+  normalizePhoneNumber,
+  normalizePhoneForDedup,
+} = require('../lib/phoneNormalization');
 const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib/streamingBulkUploadPipeline');
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
@@ -28,76 +31,20 @@ async function validateCandidateRowWrapper(rawRow, rowNumber) {
 }
 
 /**
- * Performs duplicate checking by phone number (primary) and email warnings (secondary).
- */
-async function duplicateCheckCandidate(candidateData, rowNumber, context) {
-  const phoneNormalized = normalizePhoneNumber(candidateData.phone);
-  if (!phoneNormalized) return null;
-
-  if (!context.seenPhonesInFileMap) {
-    context.seenPhonesInFileMap = new Map();
-  }
-
-  // 1. In-file duplicate check
-  if (context.seenPhonesInFileMap.has(phoneNormalized)) {
-    const origRow = context.seenPhonesInFileMap.get(phoneNormalized);
-    return {
-      isDuplicate: true,
-      reason: `Duplicate phone: ${phoneNormalized} — duplicate of row ${origRow} in the file`,
-    };
-  }
-  context.seenPhonesInFileMap.set(phoneNormalized, rowNumber);
-
-  // 2. DB duplicate check by normalized phone
-  const existingPhoneMatch = await prisma.candidate.findFirst({
-    where: {
-      phoneNormalized,
-      organizationId: context.organizationId,
-      isDeleted: false,
-    },
-    select: { id: true, fullName: true },
-  });
-
-  if (existingPhoneMatch) {
-    return {
-      isDuplicate: true,
-      reason: `Duplicate phone: ${phoneNormalized} — already exists as candidate "${existingPhoneMatch.fullName}"`,
-    };
-  }
-
-  // 3. Secondary warning check by email
-  const warnings = [];
-  if (candidateData.email && candidateData.email !== 'N/A') {
-    const existingEmailMatch = await prisma.candidate.findFirst({
-      where: {
-        email: { equals: candidateData.email, mode: 'insensitive' },
-        organizationId: context.organizationId,
-        isDeleted: false,
-      },
-      select: { id: true, fullName: true, phone: true },
-    });
-
-    if (existingEmailMatch) {
-      warnings.push(`Candidate email "${candidateData.email}" already matches existing candidate "${existingEmailMatch.fullName}" (phone: ${existingEmailMatch.phone || 'N/A'}) but has a different phone number.`);
-    }
-  }
-
-  return {
-    isDuplicate: false,
-    warnings,
-  };
-}
-
-/**
  * Transforms validated candidate data to candidate DB payload.
+ * No duplicate filtering — every valid row is imported (create or update).
  */
 async function transformCandidateRow(candidateData, rowNumber, context) {
   const resumeLink = candidateData.resumeLinkRaw
     ? normalizeResumeLink(candidateData.resumeLinkRaw)
     : null;
-  const phoneNormalized = normalizePhoneNumber(candidateData.phone);
+  const phoneNormalized =
+    normalizePhoneForDedup(candidateData.phone) ||
+    normalizePhoneNumber(candidateData.phone) ||
+    null;
+  const externalId = String(candidateData.candidateId || '').trim();
 
-  return {
+  const payload = {
     rowNumber,
     fullName: candidateData.name,
     preferredRole: candidateData.role,
@@ -115,80 +62,126 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     location: candidateData.location || null,
     course: candidateData.course || null,
     company: candidateData.company || null,
-    createdAt: new Date(),
     updatedAt: new Date(),
   };
+
+  if (externalId) {
+    payload.customFields = { externalCandidateId: externalId };
+  }
+
+  return payload;
+}
+
+async function findExistingCandidate(dbData, organizationId) {
+  const phoneKey = normalizePhoneForDedup(dbData.phoneNormalized || dbData.phone);
+  const email = String(dbData.email || '').trim();
+  const orgId = organizationId || dbData.organizationId || 'defaultOrg';
+
+  if (phoneKey) {
+    const byPhone = await prisma.candidate.findFirst({
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+        OR: [
+          { phoneNormalized: phoneKey },
+          { phoneNormalized: `+91${phoneKey}` },
+          { phoneNormalized: `91${phoneKey}` },
+          { phoneNormalized: { endsWith: phoneKey } },
+          { phone: dbData.phone },
+        ],
+      },
+      select: { id: true },
+    });
+    if (byPhone) return byPhone;
+  }
+
+  if (email && email.toLowerCase() !== 'n/a') {
+    return prisma.candidate.findFirst({
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+        email: { equals: email, mode: 'insensitive' },
+      },
+      select: { id: true },
+    });
+  }
+
+  return null;
 }
 
 /**
- * Batch insert handler using Prisma createMany.
+ * Import each row: create new candidate, or update if phone/email already exists.
+ * Duplicate *skipping* is intentionally removed — CSV rows always apply.
  */
 async function batchInsertCandidates(batch, context) {
   if (batch.length === 0) return { succeeded: 0, failed: 0 };
-  const dbPayload = batch.map(({ rowNumber, ...rest }) => rest);
-  try {
-    await prisma.candidate.createMany({
-      data: dbPayload,
-      skipDuplicates: true,
-    });
 
-    const phones = dbPayload.map(b => b.phoneNormalized).filter(Boolean);
-    const matched = await prisma.candidate.findMany({
-      where: {
-        phoneNormalized: { in: phones },
-        organizationId: context.organizationId,
-        isDeleted: false,
-      },
-      select: { id: true, fullName: true }
-    });
+  let succeeded = 0;
+  let failed = 0;
+  const { logAudit } = require('../utils/audit');
+  const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
 
-    const { logAudit } = require('../utils/audit');
-    for (const cand of matched) {
-      logAudit({
-        actorUserId: context.uploadedBy,
-        action: 'candidate_created',
-        entityType: 'CANDIDATE',
-        entityId: cand.id,
-        entityName: cand.fullName,
-        subjectType: 'candidate',
-        subjectId: cand.id,
-        subjectName: cand.fullName,
-        newData: { source: 'bulk_upload', job_id: context.jobId },
-        organizationId: context.organizationId,
-      });
-    }
+  for (const row of batch) {
+    const { rowNumber, ...dbData } = row;
+    try {
+      const existing = await findExistingCandidate(dbData, context.organizationId);
+      let saved;
 
-    return { succeeded: batch.length, failed: 0 };
-  } catch (err) {
-    console.error(`[BulkCandidateProcessor] Batch insert error:`, err.message);
-    let succeeded = 0;
-    let failed = 0;
-    const { logAudit } = require('../utils/audit');
-    for (const row of batch) {
-      const { rowNumber, ...dbData } = row;
-      try {
-        const created = await prisma.candidate.create({ data: dbData });
+      if (existing) {
+        const { createdAt, createdById, organizationId, ...updateData } = dbData;
+        saved = await prisma.candidate.update({
+          where: { id: existing.id },
+          data: {
+            ...updateData,
+            phoneNormalized: dbData.phoneNormalized || null,
+            isDeleted: false,
+          },
+        });
+        logAudit({
+          actorUserId: context.uploadedBy,
+          action: 'candidate_updated',
+          entityType: 'CANDIDATE',
+          entityId: saved.id,
+          entityName: saved.fullName,
+          subjectType: 'candidate',
+          subjectId: saved.id,
+          subjectName: saved.fullName,
+          newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_update' },
+          organizationId: context.organizationId,
+        });
+      } else {
+        saved = await prisma.candidate.create({
+          data: {
+            ...dbData,
+            createdAt: new Date(),
+          },
+        });
         logAudit({
           actorUserId: context.uploadedBy,
           action: 'candidate_created',
           entityType: 'CANDIDATE',
-          entityId: created.id,
-          entityName: created.fullName,
+          entityId: saved.id,
+          entityName: saved.fullName,
           subjectType: 'candidate',
-          subjectId: created.id,
-          subjectName: created.fullName,
-          newData: { source: 'bulk_upload', job_id: context.jobId },
+          subjectId: saved.id,
+          subjectName: saved.fullName,
+          newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_create' },
           organizationId: context.organizationId,
         });
-        succeeded++;
-      } catch (rowErr) {
-        failed++;
-        const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
-        appendFailedRow(context.jobId, rowNumber || 0, `Candidate insert failed: ${rowErr.message}`, 'error');
       }
+      succeeded++;
+    } catch (rowErr) {
+      failed++;
+      appendFailedRow(
+        context.jobId,
+        rowNumber || 0,
+        `Candidate import failed: ${rowErr.message}`,
+        'error'
+      );
     }
-    return { succeeded, failed };
   }
+
+  return { succeeded, failed };
 }
 
 /**
@@ -200,12 +193,14 @@ async function enqueueJob(jobData) {
   let validCreatedById = null;
   if (uploadedBy) {
     try {
-      const userExists = await prisma.user.findUnique({ where: { id: uploadedBy }, select: { id: true } });
+      const userExists = await prisma.user.findUnique({
+        where: { id: uploadedBy },
+        select: { id: true },
+      });
       if (userExists) validCreatedById = uploadedBy;
     } catch (_) {}
   }
 
-  // Execute pipeline asynchronously in background
   setImmediate(async () => {
     try {
       await runStreamingBulkUploadPipeline({
@@ -217,13 +212,13 @@ async function enqueueJob(jobData) {
         sourceFilename,
         context: {
           validCreatedById,
-          seenPhonesInFileMap: new Map(),
         },
         validateRow: validateCandidateRowWrapper,
-        duplicateCheck: duplicateCheckCandidate,
+        // Duplicate skip logic removed — every valid CSV row is imported (create/update).
+        duplicateCheck: undefined,
         transformRow: transformCandidateRow,
         batchInsert: batchInsertCandidates,
-        onComplete: async (summary) => {
+        onComplete: async () => {
           if (organizationId) {
             await cacheInvalidation.candidateList(organizationId).catch(() => {});
           }

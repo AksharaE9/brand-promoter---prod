@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../../services/api';
 import { subscribeSSE } from '../../../lib/sse';
 
 const ACTIVE_JOB_KEY = 'ats_active_bulk_upload_job_id';
+const POLL_INTERVAL_MS = 3000;
 
 export function getActiveJobId() {
   return localStorage.getItem(ACTIVE_JOB_KEY) || null;
@@ -29,15 +30,17 @@ export function useBulkUploadJob(initialJobId = null) {
     errorReportUrl: null,
     error: null,
   });
+  const terminalRef = useRef(false);
 
   const fetchStatus = useCallback(async (idToFetch) => {
-    if (!idToFetch) return;
+    if (!idToFetch || terminalRef.current) return;
     try {
       const { data } = await api.get(`/candidates/bulk-upload/${idToFetch}`);
       if (data && data.data) {
         const d = data.data;
+        const nextState = d.state || 'active';
         setJobState({
-          state: d.state || 'active',
+          state: nextState,
           progress: d.progress || 0,
           processed: d.processed || 0,
           succeeded: d.succeeded || 0,
@@ -48,19 +51,23 @@ export function useBulkUploadJob(initialJobId = null) {
           error: d.error || null,
         });
 
-        if (d.state === 'completed' || d.state === 'failed') {
+        if (nextState === 'completed' || nextState === 'failed') {
+          terminalRef.current = true;
           setActiveJobId(null);
         }
       }
     } catch (err) {
-      if (err.response?.status === 404) {
+      if (err.response?.status === 404 || err.status === 404) {
+        terminalRef.current = true;
         setActiveJobId(null);
         setJobId(null);
       }
+      // On 429, skip this tick — next poll retries after cooldown
     }
   }, []);
 
   const startJob = useCallback((newJobId) => {
+    terminalRef.current = false;
     setActiveJobId(newJobId);
     setJobId(newJobId);
     setJobState({
@@ -77,6 +84,7 @@ export function useBulkUploadJob(initialJobId = null) {
   }, []);
 
   const resetJob = useCallback(() => {
+    terminalRef.current = true;
     setActiveJobId(null);
     setJobId(null);
     setJobState({
@@ -92,18 +100,21 @@ export function useBulkUploadJob(initialJobId = null) {
     });
   }, []);
 
-  // Poll status interval while job is active
+  // Poll only while job is active; stop once completed/failed
   useEffect(() => {
     if (!jobId) return;
+    if (jobState.state === 'completed' || jobState.state === 'failed') return;
 
+    terminalRef.current = false;
     fetchStatus(jobId);
 
     const interval = setInterval(() => {
+      if (terminalRef.current) return;
       fetchStatus(jobId);
-    }, 1500);
+    }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [jobId, fetchStatus]);
+  }, [jobId, jobState.state, fetchStatus]);
 
   // SSE subscription setup
   useEffect(() => {
@@ -119,9 +130,12 @@ export function useBulkUploadJob(initialJobId = null) {
           duplicates: payload.duplicates || 0,
           failed: payload.failed,
           totalRows: payload.totalRows || prev.totalRows,
-          progress: payload.totalRows ? Math.min(99, Math.round((payload.processed / payload.totalRows) * 100)) : prev.progress,
+          progress: payload.totalRows
+            ? Math.min(99, Math.round((payload.processed / payload.totalRows) * 100))
+            : prev.progress,
         }));
       } else if (payload.type === 'bulk-upload:completed' && payload.jobId === jobId) {
+        terminalRef.current = true;
         setJobState({
           state: 'completed',
           progress: 100,

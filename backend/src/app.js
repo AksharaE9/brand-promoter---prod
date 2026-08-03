@@ -147,10 +147,10 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────
 
-// Heavy endpoints rate limiters (applied first)
-app.use('/api/candidates/bulk-upload', heavyEndpointLimiter);
-app.use('/api/interviews/bulk-upload', heavyEndpointLimiter);
-app.use('/api/interview-feedback/bulk-upload', heavyEndpointLimiter);
+// Heavy endpoints rate limiters — POST uploads only (status/report polling must not be capped at 10/min)
+app.post('/api/candidates/bulk-upload', heavyEndpointLimiter);
+app.post('/api/interviews/bulk-upload', heavyEndpointLimiter);
+app.post('/api/interview-feedback/bulk-upload', heavyEndpointLimiter);
 app.use('/api/reports', heavyEndpointLimiter);
 
 app.use('/api/auth', authLimiter, authRoutes);

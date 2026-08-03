@@ -6,7 +6,11 @@ const BulkUploadProgress = ({ jobId, jobState, onReset, onDone }) => {
 
   const handleDownloadReport = async () => {
     try {
-      const reportUrl = errorReportUrl || `/candidates/bulk-upload/${jobId}/report`;
+      let reportUrl = errorReportUrl || `/candidates/bulk-upload/${jobId}/report`;
+      // Backend may return "/api/candidates/..." — strip prefix so buildApiUrl doesn't double /api
+      if (reportUrl.startsWith('/api/')) {
+        reportUrl = reportUrl.slice(4);
+      }
       const response = await api.get(reportUrl, { responseType: 'blob' });
       const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
       const link = document.createElement('a');
@@ -15,8 +19,10 @@ const BulkUploadProgress = ({ jobId, jobState, onReset, onDone }) => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      alert('Failed to download error report');
+      console.error('Failed to download error report:', err);
+      alert(err?.message || 'Failed to download error report');
     }
   };
 

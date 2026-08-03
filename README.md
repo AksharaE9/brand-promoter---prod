@@ -161,13 +161,20 @@ Protected:
 
 ## 8) Seed Users (Default)
 
-From `backend/prisma/seed.js`:
+From `backend/prisma/seed.js` (non-admin accounts):
 
-- `admin@ats.local` / `ChangeMe@123` (SUPER_ADMIN)
 - `recruiter@ats.local` / `ChangeMe@123` (RECRUITER)
 - `recruiter2@ats.local` / `ChangeMe@123` (RECRUITER)
 - `interviewer@ats.local` / `ChangeMe@123` (INTERVIEWER)
 - `interviewer2@ats.local` / `ChangeMe@123` (INTERVIEWER)
+
+**SUPER_ADMIN:** default `admin@ats.local` is rotated in production/local via:
+
+```bash
+node backend/scripts/rotate-admin-credentials.js
+```
+
+Credentials are written to `backend/.admin-credentials.local` (gitignored). Do not commit that file.
 
 ---
 

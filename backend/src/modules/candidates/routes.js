@@ -257,18 +257,16 @@ router.post(
     }
 
     let inserted = 0;
+    let updated = 0;
     let skipped = 0;
     const errors = [];
-    
-    const existingPhones = new Set();
-    const bulkData = [];
     const orgId = req.user.organizationId || "defaultOrg";
 
     for (let i = 0; i < allRows.length; i += 1) {
       const raw = allRows[Number(i)];
       const rawFullName = getFieldVal(raw, ['fullName', 'full name', 'name']);
       const fullName = rawFullName ? String(rawFullName).trim() : "";
-      const rawEmail = getFieldVal(raw, ['email', 'email address', 'emailid']);
+      const rawEmail = getFieldVal(raw, ['email', 'email address', 'emailid', 'e-mail']);
       const email = rawEmail ? String(rawEmail).trim().toLowerCase() : null;
       const rawPhone = getFieldVal(raw, ['phone', 'phone number', 'contact', 'mobile']);
       const phone = rawPhone ? String(rawPhone).trim() : null;
@@ -280,20 +278,8 @@ router.post(
         continue;
       }
 
-      if (existingPhones.has(phone)) {
-        skipped += 1;
-        continue;
-      }
-
-      // Check DB for existing phone number
-      const existingDb = await prisma.candidate.findFirst({
-        where: { phone, organizationId: orgId, isDeleted: false }
-      });
-      if (existingDb) {
-        skipped += 1;
-        errors.push(`${sheetInfo}: candidate with phone ${phone} already exists`);
-        continue;
-      }
+      const { normalizePhoneForDedup } = require("../../lib/phoneNormalization");
+      const phoneNormalized = normalizePhoneForDedup(phone) || phone.replace(/\D/g, "") || null;
 
       const rawCompany = getFieldVal(raw, ['currentCompany', 'current company', 'company']);
       const currentCompany = rawCompany ? String(rawCompany).trim() : null;
@@ -304,43 +290,83 @@ router.post(
       const rawSource = getFieldVal(raw, ['source', 'candidateSource', 'candidate source', 'candidate_source']);
       const source = rawSource ? String(rawSource).trim() : null;
 
-      bulkData.push({
+      const rawRole = getFieldVal(raw, ['role', 'preferredRole', 'preferred role', 'job role']);
+      const preferredRole = rawRole ? String(rawRole).trim() : null;
+
+      const payload = {
         fullName,
         email: email || "N/A",
         phone,
+        phoneNormalized,
         currentCompany,
+        company: currentCompany,
+        preferredRole,
         totalExperienceYears,
         source,
-        createdById: req.user.id,
         status: "ACTIVE",
         organizationId: orgId,
-        isDeleted: false
-      });
-      
-      if (phone) existingPhones.add(phone);
-      inserted++;
+        isDeleted: false,
+        updatedAt: new Date(),
+      };
+
+      try {
+        const existing = await prisma.candidate.findFirst({
+          where: {
+            organizationId: orgId,
+            isDeleted: false,
+            OR: [
+              ...(phoneNormalized
+                ? [
+                    { phoneNormalized },
+                    { phoneNormalized: { endsWith: phoneNormalized } },
+                    { phone },
+                  ]
+                : [{ phone }]),
+              ...(email ? [{ email: { equals: email, mode: "insensitive" } }] : []),
+            ],
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await prisma.candidate.update({
+            where: { id: existing.id },
+            data: payload,
+          });
+          updated += 1;
+        } else {
+          await prisma.candidate.create({
+            data: {
+              ...payload,
+              createdById: req.user.id,
+              createdAt: new Date(),
+            },
+          });
+          inserted += 1;
+        }
+      } catch (err) {
+        skipped += 1;
+        errors.push(`${sheetInfo}: ${err.message}`);
+      }
     }
 
-    if (bulkData.length > 0) {
-      await prisma.candidate.createMany({
-        data: bulkData
-      });
+    if (inserted + updated > 0) {
       await inv.candidateList(orgId);
-      sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', { count: inserted });
+      sse.broadcastToOrg(orgId, "CANDIDATE_CREATED", { count: inserted + updated });
     }
 
     await logAudit({
       actorUserId: req.user.id,
       action: "BULK_UPLOAD_CANDIDATES",
       entityType: "CANDIDATE",
-      newData: { totalRows: allRows.length, inserted, skipped },
+      newData: { totalRows: allRows.length, inserted, updated, skipped },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
 
     res.status(201).json({
       success: true,
-      data: { totalRows: allRows.length, inserted, skipped, errors },
+      data: { totalRows: allRows.length, inserted, updated, skipped, errors },
     });
   }),
 );
