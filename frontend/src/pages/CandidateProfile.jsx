@@ -13,6 +13,37 @@ import { ScheduleModal } from '../components/Interview/ScheduleModal';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 
+/** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
+function resolveResumeAction(candidate) {
+  if (!candidate) return null;
+  const original = (candidate.resumeLinkOriginal || '').trim();
+  const download = (candidate.resumeLinkDownload || '').trim();
+  const cloudUrl = original || download;
+  const isExternal =
+    Boolean(cloudUrl) && /^https?:\/\//i.test(cloudUrl);
+
+  if (isExternal) {
+    return {
+      href: original || download,
+      label: 'Open Resume',
+      icon: 'open_in_new',
+      downloadAttr: undefined,
+      isCloud: true,
+    };
+  }
+
+  if (candidate.resumeFile?.storageKey) {
+    return {
+      href: buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`),
+      label: 'Download Resume',
+      icon: 'download',
+      downloadAttr: candidate.resumeFile?.originalName || `${candidate.fullName || 'candidate'}-resume`,
+      isCloud: false,
+    };
+  }
+
+  return null;
+}
 
 const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, navigate, currentUser }) => {
   return (
@@ -265,6 +296,8 @@ const CandidateProfile = () => {
     if (iv) return iv.round || `Round ${iv.roundNo}`;
     return 'prior round';
   }, [isRejected, candidate, interviews]);
+
+  const resumeAction = useMemo(() => resolveResumeAction(candidate), [candidate]);
 
   const handleScheduleSubmit = async (e) => {
     e.preventDefault();
@@ -606,17 +639,17 @@ const CandidateProfile = () => {
                     {!isEditing && canManageCandidate && (
                       <div className="mt-5 pt-4 border-t border-slate-100">
                         <div className="text-[10px] uppercase tracking-[.14em] font-bold text-[#76839f] mb-2">Resume</div>
-                        {candidate.resumeLinkDownload || candidate.resumeLinkOriginal || candidate.resumeFile?.storageKey ? (
+                        {resumeAction ? (
                           <div className="flex flex-wrap items-center gap-2">
                             <a
-                              href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? buildApiUrl(`/candidates/${candidate.id}/resume-download`) : buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`)}
-                              download={candidate.resumeFile?.originalName || `${candidate.fullName}-resume`}
+                              href={resumeAction.href}
+                              {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
                               target="_blank"
                               rel="noreferrer"
                               className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs"
                             >
-                              <span className="material-symbols-outlined text-base">download</span>
-                              Download Resume
+                              <span className="material-symbols-outlined text-base">{resumeAction.icon}</span>
+                              {resumeAction.label}
                             </a>
                             <label className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
                               <span className="material-symbols-outlined text-sm">upload</span>
@@ -701,17 +734,17 @@ const CandidateProfile = () => {
                <Reveal delay={0.15}>
                  <div className="os-card p-5">
                    <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 text-[#76839f]">Documentation</h3>
-                   {candidate.resumeLinkDownload || candidate.resumeLinkOriginal || candidate.resumeFile?.storageKey ? (
+                   {resumeAction ? (
                      <div className="space-y-2">
                        <a 
-                         href={candidate.resumeLinkDownload || candidate.resumeLinkOriginal ? buildApiUrl(`/candidates/${candidate.id}/resume-download`) : buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`)} 
-                         download={candidate.resumeFile?.originalName || `${candidate.fullName}-resume`}
+                         href={resumeAction.href}
+                         {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
                          target="_blank"
                          rel="noreferrer"
                          className="os-btn-primary w-full !h-12 flex items-center justify-center gap-2 shadow-lg shadow-blue-100"
                        >
-                         <span className="material-symbols-outlined">download</span>
-                         Download Resume
+                         <span className="material-symbols-outlined">{resumeAction.icon}</span>
+                         {resumeAction.label}
                        </a>
                        <div className="text-[10px] text-slate-400 text-center truncate px-2">
                          {candidate.resumeLinkProvider ? `Cloud Link (${candidate.resumeLinkProvider})` : (candidate.resumeFile?.originalName || 'Resume document')}

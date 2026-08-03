@@ -1403,6 +1403,15 @@ router.get(
     }
 
     const isAbsolute = downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://");
+    // Google Drive (and other cloud) links cannot be proxied reliably — open the source URL.
+    const isGoogleDrive =
+      candidate.resumeLinkProvider === "google_drive" ||
+      (typeof downloadUrl === "string" && downloadUrl.includes("drive.google.com"));
+    if (isAbsolute && (isGoogleDrive || candidate.resumeLinkProvider)) {
+      const redirectTo = candidate.resumeLinkOriginal || downloadUrl;
+      return res.redirect(302, redirectTo);
+    }
+
     if (!isAbsolute) {
       const path = require("path");
       const fs = require("fs");
