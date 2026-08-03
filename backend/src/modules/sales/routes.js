@@ -270,43 +270,73 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!req.file) throw new ApiError(400, "No file uploaded");
 
-    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
-    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-    const results = { imported: 0, skipped: 0, errors: [] };
+    const { mapProductImportRow } = require("../../lib/productImport");
 
-    for (const row of rows) {
-      try {
-        const name = row.Name || row.name;
-        const category = row.Category || row.category;
+    const workbook = xlsx.read(req.file.buffer, {
+      type: "buffer",
+      codepage: 65001,
+      cellDates: true,
+    });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new ApiError(400, "Spreadsheet has no sheets");
 
-        if (!name || !category) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: false,
+      blankrows: false,
+    });
+
+    const results = {
+      totalRows: rows.length,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const excelRow = typeof row.__rowNum__ === "number" ? row.__rowNum__ + 1 : i + 2;
+      const mapped = mapProductImportRow(row);
+
+      if (!mapped.ok) {
+        if (mapped.skip) {
           results.skipped++;
           continue;
         }
+        results.failed++;
+        results.skipped++;
+        results.errors.push({
+          row: excelRow,
+          error: mapped.reason || "Invalid row",
+        });
+        continue;
+      }
 
+      try {
         const product = await prisma.product.create({
           data: {
-            name: String(name),
-            category: String(category),
-            location: row.Location || row.location || null,
-            description: row.Description || row.description || null,
-            price: row.Price || row.price ? Number(row.Price || row.price) : null,
-            tags: (row.Tags || row.tags || "").split(",").map(t => t.trim()).filter(Boolean),
-            createdById: req.user.id
-          }
+            ...mapped.data,
+            createdById: req.user.id,
+          },
         });
 
         await prisma.salesTracking.create({
           data: {
             productId: product.id,
-            status: "LEAD"
-          }
+            status: "LEAD",
+          },
         });
 
         results.imported++;
       } catch (err) {
-        results.errors.push({ row: row.Name || "Unknown", error: err.message });
+        results.failed++;
         results.skipped++;
+        results.errors.push({
+          row: excelRow,
+          error: err.message || "Failed to create product",
+        });
       }
     }
 

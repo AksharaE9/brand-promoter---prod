@@ -136,6 +136,8 @@ const candidateSearchHandler = async (req, res) => {
           id: true,
           status: true,
           joiningDate: true,
+          createdAt: true,
+          updatedAt: true,
           job: { select: { id: true, title: true } }
         }
       }
@@ -789,6 +791,8 @@ router.get(
               id: true,
               status: true,
               joiningDate: true,
+              createdAt: true,
+              updatedAt: true,
               job: {
                 select: {
                   id: true,

@@ -24,6 +24,12 @@ import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import './OfferDecision.css';
 import TruncatedText from '../components/TruncatedText';
 import { PLACE_OPTIONS, matchesPlaceFilter } from '../lib/places';
+import { ROLE_OPTIONS, matchesRoleFilter } from '../lib/roles';
+import {
+  DATE_FILTER_PRESETS,
+  matchesDateFilter,
+  dateFilterHint,
+} from '../lib/dateFilter';
 
 const initialForm = {
   fullName: '',
@@ -314,7 +320,9 @@ const Candidates = () => {
   const [locationFilter, setLocationFilter] = useState('All');
   const [companyFilter, setCompanyFilter] = useState('All');     // ── NEW ──
   const [companyOptions, setCompanyOptions] = useState([]);      // ── NEW ──
-  const [globalJobs, setGlobalJobs] = useState([]);
+  const [dateFilter, setDateFilter] = useState('All');
+  const [customDateFrom, setCustomDateFrom] = useState('');
+  const [customDateTo, setCustomDateTo] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
@@ -436,19 +444,6 @@ const Candidates = () => {
       document.querySelector('.os-content')?.scrollTo({ top: 0, behavior: 'instant' });
     }
   }, [statusFilter]);
-
-  // Load jobs once for filter dropdowns
-  useEffect(() => {
-    const loadJobs = async () => {
-      try {
-        const res = await apiGet('/jobs?limit=100');
-        if (res && res.success && res.data) setGlobalJobs(res.data);
-      } catch (err) {
-        console.error('Failed to load global jobs:', err);
-      }
-    };
-    loadJobs();
-  }, []);
 
   // Load company options for the filter dropdown
   useEffect(() => {
@@ -602,28 +597,49 @@ const Candidates = () => {
       resumeUrl: c.resumeFile?.storageKey || null,
       status: matchedApp?.status || 'POOL',
       applicationId: matchedApp?.id || null,
-      joiningDate: matchedApp?.joiningDate || matchedApp?.dateOfJoining || null,
+      joiningDate: matchedApp?.joiningDate || matchedApp?.dateOfJoining || c.doj || null,
       // Offer decision fields
-      offerDecision: matchedApp?.offerDecision || null,
+      offerDecision: matchedApp?.offerDecision || c.offerDecision || null,
       offerDecidedAt: matchedApp?.offerDecidedAt || null,
-      dateOfJoining: matchedApp?.dateOfJoining || null,
+      dateOfJoining: matchedApp?.dateOfJoining || matchedApp?.joiningDate || c.doj || null,
+      doj: c.doj || null,
       rejectionReason: matchedApp?.rejectionReason || null,
+      createdAt: c.createdAt || null,
+      updatedAt: c.updatedAt || null,
+      appCreatedAt: matchedApp?.createdAt || null,
+      appUpdatedAt: matchedApp?.updatedAt || null,
     };
   }), [items, statusFilter]);
 
   // Unique roles and locations for filter dropdowns
-  const uniqueRoles = useMemo(() => {
-    const rolesFromCandidates = allMapped.map(c => c.role).filter(r => r && r !== 'Candidate');
-    const rolesFromJobs = globalJobs.map(j => j.title).filter(Boolean);
-    return [...new Set([...rolesFromCandidates, ...rolesFromJobs])].sort();
-  }, [allMapped, globalJobs]);
-
   const visibleCandidates = useMemo(() => {
     let list = allMapped;
-    if (roleFilter !== 'All') list = list.filter(c => c.role === roleFilter);
+    if (roleFilter !== 'All') list = list.filter(c => matchesRoleFilter(c.role, roleFilter));
     if (locationFilter !== 'All') list = list.filter(c => matchesPlaceFilter(c.location, locationFilter));
+    if (dateFilter !== 'All' || customDateFrom || customDateTo) {
+      list = list.filter(c =>
+        matchesDateFilter(c, statusFilter, dateFilter, customDateFrom, customDateTo)
+      );
+    }
     return list;
-  }, [allMapped, roleFilter, locationFilter]);
+  }, [allMapped, roleFilter, locationFilter, dateFilter, customDateFrom, customDateTo, statusFilter]);
+
+  const clearAllFilters = useCallback(() => {
+    setRoleFilter('All');
+    setLocationFilter('All');
+    setCompanyFilter('All');
+    setDateFilter('All');
+    setCustomDateFrom('');
+    setCustomDateTo('');
+  }, []);
+
+  const hasActiveFilters =
+    roleFilter !== 'All' ||
+    locationFilter !== 'All' ||
+    companyFilter !== 'All' ||
+    dateFilter !== 'All' ||
+    Boolean(customDateFrom) ||
+    Boolean(customDateTo);
 
   const pageTitle = useMemo(() => {
     if (statusFilter === 'OFFER_SENT') return 'Offer Sent Registry';
@@ -736,25 +752,23 @@ const Candidates = () => {
         {error && <div className="os-card p-3 mb-4 text-red-600 bg-red-50 border-red-100 text-sm animate-in fade-in slide-in-from-top-2">{error}</div>}
 
         {/* Role & Location filters (available across all candidate registries) */}
-        {(uniqueRoles.length > 0 || PLACE_OPTIONS.length > 0) && (
+        {(ROLE_OPTIONS.length > 0 || PLACE_OPTIONS.length > 0) && (
           <div className="flex flex-wrap items-center gap-3 mb-5 p-3.5 bg-white border border-[#e9eef4] rounded-2xl shadow-sm">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">Filter by</span>
 
-            {/* Role filter */}
-            {uniqueRoles.length > 0 && (
-              <div className="relative flex items-center">
-                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">work</span>
-                <select
-                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
-                  value={roleFilter}
-                  onChange={e => { setRoleFilter(e.target.value); }}
-                >
-                  <option value="All">All Roles</option>
-                  {uniqueRoles.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
-              </div>
-            )}
+            {/* Role filter — fixed canonical roles only */}
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">work</span>
+              <select
+                className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                value={roleFilter}
+                onChange={e => { setRoleFilter(e.target.value); }}
+              >
+                <option value="All">All Roles</option>
+                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+            </div>
 
             {/* Location filter — fixed canonical places only */}
             <div className="relative flex items-center">
@@ -786,11 +800,58 @@ const Candidates = () => {
               </div>
             )}
 
+            {/* Date filter — tab-aware (joining / selection / created) */}
+            <div className="relative flex items-center gap-2">
+              <div className="relative flex items-center">
+                <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">calendar_month</span>
+                <select
+                  className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                  value={dateFilter}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setDateFilter(next);
+                    if (next !== 'Custom') {
+                      setCustomDateFrom('');
+                      setCustomDateTo('');
+                    }
+                  }}
+                  title={dateFilterHint(statusFilter)}
+                >
+                  {DATE_FILTER_PRESETS.map(p => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+                <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+              </div>
+              {dateFilter === 'Custom' && (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    className="h-9 px-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100"
+                    value={customDateFrom}
+                    onChange={e => setCustomDateFrom(e.target.value)}
+                    title="From date"
+                  />
+                  <span className="text-[10px] text-slate-400 font-bold">to</span>
+                  <input
+                    type="date"
+                    className="h-9 px-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100"
+                    value={customDateTo}
+                    onChange={e => setCustomDateTo(e.target.value)}
+                    title="To date"
+                  />
+                </div>
+              )}
+              <span className="hidden lg:inline text-[9px] text-slate-400 font-medium whitespace-nowrap">
+                {dateFilterHint(statusFilter)}
+              </span>
+            </div>
+
             {/* Clear filters */}
-            {(roleFilter !== 'All' || locationFilter !== 'All' || companyFilter !== 'All') && (
+            {hasActiveFilters && (
               <button
                 className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all flex items-center gap-1"
-                onClick={() => { setRoleFilter('All'); setLocationFilter('All'); setCompanyFilter('All'); }}
+                onClick={clearAllFilters}
               >
                 <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
                 Clear
@@ -829,7 +890,7 @@ const Candidates = () => {
             ) : statusFilter === 'OFFER_SENT' ? (
               <>
                 <div className="text-slate-400 mb-2">No offer-sent candidates found.</div>
-                <button className="os-btn-outline" onClick={() => { setSearch(''); setRoleFilter('All'); setLocationFilter('All'); setCompanyFilter('All'); }}>Clear Filters</button>
+                <button className="os-btn-outline" onClick={() => { setSearch(''); clearAllFilters(); }}>Clear Filters</button>
               </>
             ) : (
               <>
