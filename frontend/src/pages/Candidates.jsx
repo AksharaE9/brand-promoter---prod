@@ -631,7 +631,14 @@ const Candidates = () => {
     setDateFilter('All');
     setCustomDateFrom('');
     setCustomDateTo('');
-  }, []);
+    setSearch('');
+    setDebouncedSearch('');
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('search');
+      return next;
+    });
+  }, [setSearchParams]);
 
   const hasActiveFilters =
     roleFilter !== 'All' ||
@@ -639,7 +646,8 @@ const Candidates = () => {
     companyFilter !== 'All' ||
     dateFilter !== 'All' ||
     Boolean(customDateFrom) ||
-    Boolean(customDateTo);
+    Boolean(customDateTo) ||
+    Boolean(search.trim());
 
   const pageTitle = useMemo(() => {
     if (statusFilter === 'OFFER_SENT') return 'Offer Sent Registry';
@@ -698,7 +706,7 @@ const Candidates = () => {
   return (
     <EnterpriseLayout
       sidebar={<EnterpriseSidebar active={activeNavKey} items={enterpriseNavItems} footerLinks={enterpriseFooterLinks} />}
-      topbar={<EnterpriseTopbar searchPlaceholder="Search pool..." searchValue={search} onSearchChange={e => setSearch(e.target.value)} tabs={[]} right={<UserChip avatarSeed="candidates" />} />}
+      topbar={<EnterpriseTopbar searchPlaceholder="Search name, phone, email..." searchValue={search} onSearchChange={e => setSearch(e.target.value)} tabs={[]} right={<UserChip avatarSeed="candidates" />} />}
     >
       <PageEnter>
         <div className="flex justify-between items-center mb-6">
@@ -847,6 +855,37 @@ const Candidates = () => {
               </span>
             </div>
 
+            {/* Search — name, phone, or email */}
+            <div className="relative flex items-center flex-1 min-w-[220px] max-w-md">
+              <span className="material-symbols-outlined text-[14px] text-[#1f52cc] absolute left-2.5 pointer-events-none">search</span>
+              <input
+                type="search"
+                className="h-9 w-full pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 transition-all placeholder:font-medium placeholder:text-slate-400"
+                placeholder="Search name, phone, email..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                aria-label="Search candidates by name, phone, or email"
+              />
+              {search.trim() && (
+                <button
+                  type="button"
+                  className="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors"
+                  onClick={() => {
+                    setSearch('');
+                    setDebouncedSearch('');
+                    setSearchParams((prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.delete('search');
+                      return next;
+                    });
+                  }}
+                  aria-label="Clear search"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              )}
+            </div>
+
             {/* Clear filters */}
             {hasActiveFilters && (
               <button
@@ -858,7 +897,7 @@ const Candidates = () => {
               </button>
             )}
 
-            <span className="ml-auto text-[10px] text-slate-400 font-semibold">
+            <span className="ml-auto text-[10px] text-slate-400 font-semibold whitespace-nowrap">
               {visibleCandidates.length} candidate{visibleCandidates.length !== 1 ? 's' : ''}
             </span>
           </div>
