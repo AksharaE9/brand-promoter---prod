@@ -354,6 +354,9 @@ router.get(
     });
     const list = categories.map(c => c.category).filter(Boolean);
     res.json({ success: true, data: list });
+  }),
+);
+
 // --- Bulk Import Candidates ---
 router.post(
   "/import/candidates",
