@@ -1,4 +1,4 @@
-import { buildApiUrl, apiGet, apiPost, apiPatch, getStoredToken } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, apiDelete, getStoredToken } from '../lib/api';
 
 /**
  * Service API for Telecalling Scheduling Module
@@ -19,6 +19,12 @@ export const schedulingLeadApi = {
   /** Admin: Update member (name, userId, active) */
   updateMember: async (memberId, data) => {
     const res = await apiPatch(`/scheduling/members/${memberId}`, data);
+    return res.data;
+  },
+
+  /** Admin: Delete member */
+  deleteMember: async (memberId) => {
+    const res = await apiDelete(`/scheduling/members/${memberId}`);
     return res.data;
   },
 

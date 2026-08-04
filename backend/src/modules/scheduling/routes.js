@@ -333,6 +333,44 @@ router.patch(
   })
 );
 
+/**
+ * DELETE /api/scheduling/members/:memberId
+ * Admin: Delete a scheduling member. Cascaded deletes are configured in the schema.
+ */
+router.delete(
+  '/members/:memberId',
+  auth,
+  requireRoles('SUPER_ADMIN', 'RECRUITER'),
+  asyncHandler(async (req, res) => {
+    const { memberId } = req.params;
+
+    const existing = await prisma.schedulingMember.findUnique({
+      where: { id: memberId },
+    });
+    if (!existing) {
+      throw new ApiError(404, 'Scheduling member not found');
+    }
+
+    await prisma.schedulingMember.delete({
+      where: { id: memberId },
+    });
+
+    await logAudit({
+      actorUserId: req.user.id,
+      action: 'DELETE_SCHEDULING_MEMBER',
+      entityType: 'SCHEDULING_MEMBER',
+      entityId: memberId,
+      oldData: { name: existing.name, userId: existing.userId },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      success: true,
+      message: 'Scheduling member deleted successfully',
+    });
+  })
+);
+
 // ─────────────────────────────────────────────
 // Daily Lead List Import & Export Endpoints (Admin)
 // ─────────────────────────────────────────────

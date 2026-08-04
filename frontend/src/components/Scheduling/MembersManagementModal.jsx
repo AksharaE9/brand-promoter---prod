@@ -85,6 +85,22 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
     }
   };
 
+  const handleDeleteMember = async (memberId, memberName) => {
+    if (!window.confirm(`Are you sure you want to delete ${memberName}? This will also delete all associated lead lists, reports, and files.`)) {
+      return;
+    }
+    setError('');
+    setBanner('');
+    try {
+      await schedulingLeadApi.deleteMember(memberId);
+      setBanner(`Member ${memberName} deleted successfully.`);
+      await loadData();
+      if (onMembersUpdated) onMembersUpdated();
+    } catch (err) {
+      setError(err.message || 'Failed to delete member');
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -209,6 +225,15 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
                         }`}
                       >
                         {m.active ? 'Deactivate' : 'Activate'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMember(m.id, m.name)}
+                        className="h-8 w-8 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors flex items-center justify-center shrink-0"
+                        title="Delete Member"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">delete</span>
                       </button>
                     </div>
                   </div>
