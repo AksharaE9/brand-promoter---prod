@@ -62,9 +62,11 @@ async function authFetch(path, options = {}) {
 export function useDeleteCandidate({ onOptimisticRemove, onRollback, onSuccess, onError } = {}) {
   const [deletingIds, setDeletingIds] = useState(new Set());
   const snapshotRef = useRef(null);
+  const inFlightRef = useRef(new Set());
 
   const deleteCandidate = useCallback(async (id) => {
-    if (deletingIds.has(id)) return; // prevent double-click
+    if (inFlightRef.current.has(id)) return; // prevent double-click
+    inFlightRef.current.add(id);
 
     // Capture snapshot BEFORE removing
     snapshotRef.current = null;
@@ -75,15 +77,17 @@ export function useDeleteCandidate({ onOptimisticRemove, onRollback, onSuccess, 
 
     try {
       await authFetch(`/candidates/${id}`, { method: 'DELETE' });
+      inFlightRef.current.delete(id);
       setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
       onSuccess?.(id);
     } catch (err) {
+      inFlightRef.current.delete(id);
       setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
       // Roll back: caller must restore their list from their own snapshot
       onRollback?.(id);
       onError?.(err);
     }
-  }, [deletingIds, onOptimisticRemove, onRollback, onSuccess, onError]);
+  }, [onOptimisticRemove, onRollback, onSuccess, onError]);
 
   return {
     deleteCandidate,
@@ -98,6 +102,7 @@ export function useDeleteCandidate({ onOptimisticRemove, onRollback, onSuccess, 
 // ─────────────────────────────────────────────────────────────────────────
 export function useAddCandidate({ onOptimisticAdd, onReplace, onRollback, onSuccess, onError } = {}) {
   const [isAdding, setIsAdding] = useState(false);
+  const inFlightRef = useRef(false);
 
   /**
    * @param {FormData} formData - ready-to-send FormData with all candidate fields
@@ -105,7 +110,8 @@ export function useAddCandidate({ onOptimisticAdd, onReplace, onRollback, onSucc
    *   Shape: { fullName, email, phone, course, location, preferredRole, ... }
    */
   const addCandidate = useCallback(async (formData, localPreview = {}) => {
-    if (isAdding) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setIsAdding(true);
 
     const tempId = `temp_${Date.now()}`;
@@ -133,17 +139,19 @@ export function useAddCandidate({ onOptimisticAdd, onReplace, onRollback, onSucc
         body: formData, // FormData — authFetch won't JSON.stringify it
       });
       const realCandidate = data?.data ?? data;
+      inFlightRef.current = false;
       setIsAdding(false);
       // Replace the temp entry with the real server data
       onReplace?.(tempId, { ...realCandidate, _optimistic: false });
       onSuccess?.(realCandidate);
     } catch (err) {
+      inFlightRef.current = false;
       setIsAdding(false);
       // Roll back the optimistic insert
       onRollback?.(tempId);
       onError?.(err);
     }
-  }, [isAdding, onOptimisticAdd, onReplace, onRollback, onSuccess, onError]);
+  }, [onOptimisticAdd, onReplace, onRollback, onSuccess, onError]);
 
   return { addCandidate, isAdding };
 }

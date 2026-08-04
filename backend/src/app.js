@@ -59,16 +59,6 @@ app.use(compression({
   chunkSize: 16 * 1024,
 }));
 
-app.use(timingMiddleware);
-app.use(dedupMiddleware);
-app.use(pushHints);
-
-app.disable('x-powered-by');
-
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
-
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -95,6 +85,16 @@ app.use(
     optionsSuccessStatus: 204,
   }),
 );
+
+app.use(timingMiddleware);
+app.use(dedupMiddleware);
+app.use(pushHints);
+
+app.disable('x-powered-by');
+
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
 app.use(setSecurityHeaders);
 app.use(express.json({ limit: '50mb' }));

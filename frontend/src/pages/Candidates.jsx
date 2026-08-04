@@ -327,6 +327,7 @@ const Candidates = () => {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
   const [creating, setCreating] = useState(false);
+  const createSubmitInFlight = useRef(false);
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
   const [searchError, setSearchError] = useState(null);
@@ -1162,15 +1163,17 @@ const Candidates = () => {
 
               <form className="space-y-5" onSubmit={async (e) => {
                 e.preventDefault();
-                if (isAdding || creating) return;
+                if (isAdding || creating || createSubmitInFlight.current) return;
 
                 if (!createForm.resume && !hasExistingResume) {
                   setModalError('Resume is required. Upload a PDF or Word document.');
                   return;
                 }
 
+                createSubmitInFlight.current = true;
+                setCreating(true);
+
                 if (selectedCandidate) {
-                  setCreating(true);
                   setModalError('');
                   try {
                     // 1. If user uploaded a new resume, upload it first
@@ -1228,38 +1231,46 @@ const Candidates = () => {
                     setModalError(err.message || 'Failed to update candidate');
                   } finally {
                     setCreating(false);
+                    createSubmitInFlight.current = false;
                   }
                 } else {
                   // Creating completely new candidate
-                  const formData = new FormData();
-                  formData.append('fullName', createForm.fullName);
-                  formData.append('email', createForm.email);
-                  formData.append('phone', createForm.phone);
-                  formData.append('course', createForm.course);
-                  formData.append('location', createForm.location);
-                  formData.append('preferredRole', createForm.preferredRole);
-                  formData.append('company', createForm.company?.trim() || 'Akshara Enterprises');
-                  formData.append('source', createForm.source || 'Manual Entry');
-                  if (statusFilter && statusFilter !== 'All') {
-                    formData.append('status', statusFilter);
+                  try {
+                    const formData = new FormData();
+                    formData.append('fullName', createForm.fullName);
+                    formData.append('email', createForm.email);
+                    formData.append('phone', createForm.phone);
+                    formData.append('course', createForm.course);
+                    formData.append('location', createForm.location);
+                    formData.append('preferredRole', createForm.preferredRole);
+                    formData.append('company', createForm.company?.trim() || 'Akshara Enterprises');
+                    formData.append('source', createForm.source || 'Manual Entry');
+                    if (statusFilter && statusFilter !== 'All') {
+                      formData.append('status', statusFilter);
+                    }
+                    formData.append('resume', createForm.resume);
+
+                    // Close modal and clear form INSTANTLY (optimistic UX)
+                    setShowCreateModal(false);
+                    setCreateForm(emptyCreateForm);
+
+                    await addCandidate(formData, {
+                      fullName: createForm.fullName,
+                      email: createForm.email,
+                      phone: createForm.phone,
+                      course: createForm.course,
+                      location: createForm.location,
+                      preferredRole: createForm.preferredRole,
+                      company: createForm.company?.trim() || 'Akshara Enterprises',
+                      source: createForm.source || 'Manual Entry',
+                      status: statusFilter && statusFilter !== 'All' ? statusFilter : 'ACTIVE',
+                    });
+                  } catch (err) {
+                    console.error('Error adding candidate:', err);
+                  } finally {
+                    setCreating(false);
+                    createSubmitInFlight.current = false;
                   }
-                  formData.append('resume', createForm.resume);
-
-                  // Close modal and clear form INSTANTLY (optimistic UX)
-                  setShowCreateModal(false);
-                  setCreateForm(emptyCreateForm);
-
-                  await addCandidate(formData, {
-                    fullName: createForm.fullName,
-                    email: createForm.email,
-                    phone: createForm.phone,
-                    course: createForm.course,
-                    location: createForm.location,
-                    preferredRole: createForm.preferredRole,
-                    company: createForm.company?.trim() || 'Akshara Enterprises',
-                    source: createForm.source || 'Manual Entry',
-                    status: statusFilter && statusFilter !== 'All' ? statusFilter : 'ACTIVE',
-                  });
                 }
               }}>
                 {selectedCandidate && (
