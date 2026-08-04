@@ -53,6 +53,10 @@ function validateCandidateRow(rawRow, rowNumber) {
   }
 
   const resumeLinkRaw = String(rawRow.resumeLink ?? '').trim() || null;
+  if (!resumeLinkRaw) {
+    errors.push('missing required field "resume link"');
+  }
+
   const college = String(rawRow.college ?? '').trim() || null;
   const location = String(rawRow.location ?? '').trim() || null;
   const course = String(rawRow.course ?? '').trim() || null;

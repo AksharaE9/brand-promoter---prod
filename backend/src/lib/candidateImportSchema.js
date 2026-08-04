@@ -9,7 +9,7 @@ const CANDIDATE_IMPORT_SCHEMA = [
   { key: 'role',       label: 'Role',         required: true },
   { key: 'email',      label: 'e-mail',       required: true },
   { key: 'phone',      label: 'phone number', required: true },
-  { key: 'resumeLink', label: 'resume link',  required: false },
+  { key: 'resumeLink', label: 'resume link',  required: true },
   { key: 'college',    label: 'college',      required: false },
   { key: 'location',   label: 'location',     required: false },
   { key: 'course',     label: 'course',       required: false },

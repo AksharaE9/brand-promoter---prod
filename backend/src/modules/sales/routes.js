@@ -354,7 +354,93 @@ router.get(
     });
     const list = categories.map(c => c.category).filter(Boolean);
     res.json({ success: true, data: list });
-  }),
+// --- Bulk Import Candidates ---
+router.post(
+  "/import/candidates",
+  requireRoles("SUPER_ADMIN", "RECRUITER"),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new ApiError(400, "No file uploaded");
+
+    const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new ApiError(400, "Spreadsheet has no sheets");
+    const sheet = workbook.Sheets[sheetName];
+    const rows = xlsx.utils.sheet_to_json(sheet);
+
+    const { normalizeResumeLink } = require("../../lib/resumeLinkNormalizer");
+    const { normalizePhoneNumber } = require("../../lib/phoneNormalization");
+
+    const results = { totalRows: rows.length, imported: 0, skipped: 0, failed: 0, errors: [] };
+
+    await prisma.$transaction(async (tx) => {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const excelRow = typeof row.__rowNum__ === "number" ? row.__rowNum__ + 1 : i + 2;
+        try {
+          const fullName = row["Full Name"] || row.fullName || row.name;
+          const email = row.Email || row.email;
+          const phone = row.Phone || row.phone;
+          const resumeLink = row["Resume Link"] || row.resumeLink || row.resume_link || row.resume || row["Resume"];
+
+          if (!fullName) {
+            results.skipped++;
+            results.errors.push({ row: excelRow, error: "Full Name is required" });
+            continue;
+          }
+
+          if (!resumeLink) {
+            results.skipped++;
+            results.errors.push({ row: excelRow, error: "Resume link is required. Add a 'Resume Link' column." });
+            continue;
+          }
+
+          const normalizedResume = normalizeResumeLink(String(resumeLink).trim());
+          if (!normalizedResume) {
+            results.skipped++;
+            results.errors.push({ row: excelRow, error: "Invalid resume link format" });
+            continue;
+          }
+
+          // Check if candidate already exists by email
+          if (email) {
+            const existing = await tx.candidate.findFirst({
+              where: { email: { equals: String(email).trim(), mode: "insensitive" } }
+            });
+            if (existing) {
+              results.skipped++;
+              results.errors.push({ row: excelRow, error: `Candidate with email ${email} already exists.` });
+              continue;
+            }
+          }
+
+          await tx.candidate.create({
+            data: {
+              fullName: String(fullName).trim(),
+              email: email ? String(email).trim().toLowerCase() : "N/A",
+              phone: phone ? String(phone).trim() : null,
+              phoneNormalized: phone ? normalizePhoneNumber(String(phone)) : null,
+              category: row.Category || row.category || "Company",
+              source: row.Source || row.source || "Bulk Import",
+              currentCompany: row["Company"] || row.currentCompany || null,
+              company: row["Company"] || row.currentCompany || null,
+              resumeLinkOriginal: normalizedResume.originalUrl,
+              resumeLinkDownload: normalizedResume.downloadUrl,
+              resumeLinkProvider: normalizedResume.provider,
+              createdById: req.user.id,
+            }
+          });
+
+          results.imported++;
+        } catch (err) {
+          results.errors.push({ row: excelRow, error: err.message });
+          results.skipped++;
+        }
+      }
+    });
+
+    res.json({ success: true, data: results });
+  })
 );
 
 module.exports = router;

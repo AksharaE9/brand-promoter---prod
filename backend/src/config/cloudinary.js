@@ -29,7 +29,41 @@ async function uploadFileToCloudinary(buffer, destination, arg3, arg4) {
   // Sanitize filename
   filename = path.basename(filename);
 
-  console.log(`🚀 Storage: Saving file locally to ${subfolder}/${filename}...`);
+  // If Cloudinary credentials are fully configured, attempt to upload there first
+  if (process.env.CLOUDINARY_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    console.log(`🚀 Storage: Starting upload to Cloudinary in folder ${subfolder}...`);
+    try {
+      const baseName = path.basename(filename, path.extname(filename));
+      const sanitizedPublicId = baseName.replace(/[^a-zA-Z0-9-_]/g, '_');
+
+      const result = await new Promise((resolve) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: "auto",
+            folder: subfolder || "ats-resumes",
+            public_id: sanitizedPublicId
+          },
+          (error, result) => {
+            if (error) {
+              console.warn("❌ Storage: Cloudinary upload failed:", error.message);
+              resolve(null);
+            } else {
+              console.log("✅ Storage: Cloudinary upload success:", result.secure_url);
+              resolve(result.secure_url);
+            }
+          }
+        );
+        uploadStream.end(buffer);
+      });
+
+      if (result) return result;
+    } catch (err) {
+      console.warn("❌ Storage: Cloudinary upload exception:", err.message);
+    }
+  }
+
+  // Fallback to local storage (e.g., during tests or if Cloudinary is unavailable)
+  console.log(`🚀 Storage: Saving file locally to ${subfolder}/${filename} as fallback...`);
   try {
     const uploadsDir = path.join(__dirname, "..", "..", "uploads");
     const targetDir = path.join(uploadsDir, subfolder);

@@ -28,6 +28,7 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
         role: 'Tech Lead',
         email: 'john@example.com',
         phone: '+919876543210',
+        resumeLink: 'https://drive.google.com/file/d/123/view',
       };
       const result = validateCandidateRow(rawRow, 2);
 
@@ -36,25 +37,25 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
       expect(result.data.role).toBe('Tech Lead');
       expect(result.data.email).toBe('john@example.com');
       expect(result.data.phone).toBe('+919876543210');
-      expect(result.data.resumeLinkRaw).toBeNull();
+      expect(result.data.resumeLinkRaw).toBe('https://drive.google.com/file/d/123/view');
       expect(result.data.college).toBeNull();
       expect(result.warnings).toHaveLength(0);
     });
 
     test('preserves leading 0 or + in phone numbers', () => {
-      const rawRow1 = { name: 'Alice', role: 'Dev', email: 'alice@test.com', phone: '09876543210' };
+      const rawRow1 = { name: 'Alice', role: 'Dev', email: 'alice@test.com', phone: '09876543210', resumeLink: 'https://drive.google.com/file/d/123/view' };
       const res1 = validateCandidateRow(rawRow1, 2);
       expect(res1.valid).toBe(true);
       expect(res1.data.phone).toBe('09876543210');
 
-      const rawRow2 = { name: 'Bob', role: 'QA', email: 'bob@test.com', phone: '+14155552671' };
+      const rawRow2 = { name: 'Bob', role: 'QA', email: 'bob@test.com', phone: '+14155552671', resumeLink: 'https://drive.google.com/file/d/123/view' };
       const res2 = validateCandidateRow(rawRow2, 3);
       expect(res2.valid).toBe(true);
       expect(res2.data.phone).toBe('+14155552671');
     });
 
     test('hard-fails when name is missing', () => {
-      const rawRow = { name: '   ', role: 'Dev', email: 'test@test.com', phone: '9876543210' };
+      const rawRow = { name: '   ', role: 'Dev', email: 'test@test.com', phone: '9876543210', resumeLink: 'https://drive.google.com/file/d/123/view' };
       const result = validateCandidateRow(rawRow, 4);
 
       expect(result.valid).toBe(false);
@@ -62,7 +63,7 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
     });
 
     test('hard-fails when phone is missing or unnormalizable', () => {
-      const rawRow = { name: 'No Phone Candidate', role: 'Dev', email: 'test@test.com', phone: 'abc' };
+      const rawRow = { name: 'No Phone Candidate', role: 'Dev', email: 'test@test.com', phone: 'abc', resumeLink: 'https://drive.google.com/file/d/123/view' };
       const result = validateCandidateRow(rawRow, 5);
 
       expect(result.valid).toBe(false);
@@ -75,6 +76,7 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
         role: 'Dev',
         phone: '9876543210',
         email: '   ',
+        resumeLink: 'https://drive.google.com/file/d/123/view',
       };
       const res1 = validateCandidateRow(rawRow1, 6);
       expect(res1.valid).toBe(false);
@@ -85,6 +87,7 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
         role: 'Dev',
         phone: '9876543210',
         email: 'invalid-email-address',
+        resumeLink: 'https://drive.google.com/file/d/123/view',
       };
       const res2 = validateCandidateRow(rawRow2, 7);
       expect(res2.valid).toBe(false);
@@ -97,10 +100,24 @@ describe('Bulk Candidate Upload Pipeline Units', () => {
         phone: '9876543210',
         email: 'jane@test.com',
         role: '',
+        resumeLink: 'https://drive.google.com/file/d/123/view',
       };
       const result = validateCandidateRow(rawRow, 8);
       expect(result.valid).toBe(false);
       expect(result.failureReason).toContain('missing required field "role"');
+    });
+
+    test('hard-fails when resume link is missing', () => {
+      const rawRow = {
+        name: 'Jane Doe',
+        phone: '9876543210',
+        email: 'jane@test.com',
+        role: 'Dev',
+        resumeLink: '',
+      };
+      const result = validateCandidateRow(rawRow, 9);
+      expect(result.valid).toBe(false);
+      expect(result.failureReason).toContain('missing required field "resume link"');
     });
   });
 

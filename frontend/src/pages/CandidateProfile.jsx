@@ -16,6 +16,18 @@ import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 /** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
 function resolveResumeAction(candidate) {
   if (!candidate) return null;
+
+  if (candidate.customFields && typeof candidate.customFields === 'object' && candidate.customFields.resumeStatus === 'missing') {
+    return {
+      href: '#',
+      label: 'Resume Missing (Needs Re-upload)',
+      icon: 'warning',
+      downloadAttr: undefined,
+      isCloud: false,
+      disabled: true,
+    };
+  }
+
   const original = (candidate.resumeLinkOriginal || '').trim();
   const download = (candidate.resumeLinkDownload || '').trim();
   const cloudUrl = original || download;
@@ -641,16 +653,26 @@ const CandidateProfile = () => {
                         <div className="text-[10px] uppercase tracking-[.14em] font-bold text-[#76839f] mb-2">Resume</div>
                         {resumeAction ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            <a
-                              href={resumeAction.href}
-                              {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs"
-                            >
-                              <span className="material-symbols-outlined text-base">{resumeAction.icon}</span>
-                              {resumeAction.label}
-                            </a>
+                            {resumeAction.disabled ? (
+                              <button
+                                disabled
+                                className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs !bg-slate-100 !text-slate-400 !border-slate-200 !shadow-none cursor-not-allowed"
+                              >
+                                <span className="material-symbols-outlined text-base text-red-500">{resumeAction.icon}</span>
+                                {resumeAction.label}
+                              </button>
+                            ) : (
+                              <a
+                                href={resumeAction.href}
+                                {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs"
+                              >
+                                <span className="material-symbols-outlined text-base">{resumeAction.icon}</span>
+                                {resumeAction.label}
+                              </a>
+                            )}
                             <label className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500 cursor-pointer hover:border-[#1f52cc] hover:text-[#1f52cc] transition-all">
                               <span className="material-symbols-outlined text-sm">upload</span>
                               {uploadingResume ? 'Uploading...' : 'Replace Resume'}

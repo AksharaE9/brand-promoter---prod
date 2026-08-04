@@ -403,8 +403,17 @@ router.post(
           const email = rawEmail ? String(rawEmail).trim().toLowerCase() : null;
           const rawPhone = getFieldVal(raw, ['phone', 'phone number', 'contact', 'mobile']);
           const phone = rawPhone ? String(rawPhone).trim() : null;
+          const rawResume = getFieldVal(raw, ['resumeLink', 'resume link', 'resume', 'resume_link']);
+          const resumeLink = rawResume ? String(rawResume).trim() : null;
 
-          if (!fullName || !phone) {
+          if (!fullName || !phone || !resumeLink) {
+            skipped++;
+            continue;
+          }
+
+          const { normalizeResumeLink } = require("../../lib/resumeLinkNormalizer");
+          const normalizedResume = normalizeResumeLink(resumeLink);
+          if (!normalizedResume) {
             skipped++;
             continue;
           }
@@ -447,6 +456,9 @@ router.post(
               graduationYear,
               preferredRole,
               source,
+              resumeLinkOriginal: normalizedResume.originalUrl,
+              resumeLinkDownload: normalizedResume.downloadUrl,
+              resumeLinkProvider: normalizedResume.provider,
               createdById: userId,
               status: "ACTIVE",
               organizationId: orgId,
@@ -538,6 +550,10 @@ router.post(
       email: data.email || "N/A",
       phone: data.phone,
       phoneNormalized,
+      resumeFileId: data.resumeFileId || null,
+      resumeLinkOriginal: data.resumeLinkOriginal || null,
+      resumeLinkDownload: data.resumeLinkDownload || null,
+      resumeLinkProvider: data.resumeLinkProvider || null,
       currentCompany: data.currentCompany || null,
       totalExperienceYears: data.totalExperienceYears ? parseFloat(data.totalExperienceYears) : null,
       location: data.location || null,
@@ -1173,7 +1189,10 @@ router.get(
       res.send(buffer);
     } catch (err) {
       console.error("Error downloading resume from storage:", err);
-      // Fallback: redirect user directly to the storage key URL
+      if (storageKey && storageKey.startsWith("/")) {
+        throw new ApiError(404, "The local resume file could not be found. It may have been cleaned up from ephemeral storage.");
+      }
+      // Fallback: redirect user directly to the storage key URL if it is remote
       res.redirect(storageKey);
     }
   }),
@@ -1430,6 +1449,8 @@ router.get(
         res.setHeader('Content-Type', mime);
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         return res.sendFile(localFilePath);
+      } else {
+        throw new ApiError(404, 'The local resume file could not be found. It may have been cleaned up from ephemeral storage.');
       }
     }
 
