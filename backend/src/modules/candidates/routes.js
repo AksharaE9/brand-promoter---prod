@@ -1031,6 +1031,21 @@ router.patch(
       data: updateData
     });
 
+    if (updateData.status === 'JOINED') {
+      await prisma.application.updateMany({
+        where: { candidateId: id, isDeleted: false },
+        data: {
+          status: 'JOINED',
+          joiningDate: updateData.doj || updatedCandidate.doj || new Date()
+        }
+      });
+      try {
+        await inv.application(orgId, id);
+      } catch (err) {
+        console.error('[Candidates:Update] application cache invalidation failed:', err.message);
+      }
+    }
+
     await logAudit({
       actorUserId: req.user.id,
       action: "UPDATE_CANDIDATE",
