@@ -17,6 +17,7 @@ const { buildInterviewListQuery } = require("./queryBuilder");
 const { populateInterviewRelations } = require("./relationPopulator");
 const { mergeDirtyQueue } = require("./dirtyQueueMerger");
 const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, assertCanScheduleRound, computeInterviewStatusUpdate, computeInterviewStatusRevert } = require("../../lib/interviewTemplates");
+const { optimizeNotesPayload } = require("../../utils/followUpOptimizer");
 
 const crypto = require("crypto");
 
@@ -1550,6 +1551,10 @@ router.patch(
         rescheduledBy: req.user.id,
         rescheduledAt: new Date().toISOString()
       });
+    }
+
+    if (req.body.notes) {
+      mergedData.notes = await optimizeNotesPayload(req.body.notes);
     }
 
     const updateData = {

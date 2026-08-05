@@ -9,7 +9,13 @@ import {
 } from '../../lib/interviewTemplates';
 import { ContactAttemptPopover } from './ContactAttemptPopover';
 import { schedulingApi } from '../../services/schedulingApi';
-import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { 
+  MAX_UPLOAD_BYTES,
+  ALLOWED_EXTENSIONS,
+  ACCEPT_ATTRIBUTE,
+  ERROR_UNSUPPORTED,
+  ERROR_TOO_LARGE,
+} from '../../config/followUpConfig';
 
 const fileToBase64 = (file) => {
   return new Promise((resolve, reject) => {
@@ -575,11 +581,17 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             type="file"
                             id="phone-followup-upload"
                             className="hidden"
+                            accept={ACCEPT_ATTRIBUTE}
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
+                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+                                  alert(ERROR_UNSUPPORTED);
+                                  return;
+                                }
                                 if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                                  alert(ERROR_TOO_LARGE);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);
@@ -623,11 +635,17 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             type="file"
                             id="email-followup-upload"
                             className="hidden"
+                            accept={ACCEPT_ATTRIBUTE}
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
+                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+                                  alert(ERROR_UNSUPPORTED);
+                                  return;
+                                }
                                 if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                                  alert(ERROR_TOO_LARGE);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);
@@ -671,11 +689,17 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             type="file"
                             id="morning-followup-upload"
                             className="hidden"
+                            accept={ACCEPT_ATTRIBUTE}
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
+                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+                                  alert(ERROR_UNSUPPORTED);
+                                  return;
+                                }
                                 if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+                                  alert(ERROR_TOO_LARGE);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);

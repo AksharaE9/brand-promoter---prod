@@ -23,7 +23,14 @@ import InterviewMemberSkeleton from '../components/Interview/InterviewMemberSkel
 import CopyFeedbackButton from '../components/Interview/CopyFeedbackButton';
 import { CandidateNameLink } from '../components/CandidateNameLink';
 import { usePanelists } from '../hooks/usePanelists';
-import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
+import {
+  MAX_UPLOAD_BYTES,
+  ALLOWED_EXTENSIONS,
+  ALLOWED_MIME_TYPES,
+  ACCEPT_ATTRIBUTE,
+  ERROR_UNSUPPORTED,
+  ERROR_TOO_LARGE,
+} from '../config/followUpConfig';
 
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 
@@ -129,23 +136,21 @@ export const FollowUpUploadField = React.memo(({
   const validateAndProcess = async (file) => {
     if (!file) return null;
 
-    // Enforce 10MB limit
+    const validExts = allowedExtensions && allowedExtensions.length > 0 ? allowedExtensions : ALLOWED_EXTENSIONS;
+
+    // Enforce size limit
     if (file.size > MAX_UPLOAD_BYTES) {
-      const msg = 'File exceeds the 10 MB limit. Please split it into smaller files.';
-      setUploadError(msg);
-      if (onError) onError(msg);
+      setUploadError(ERROR_TOO_LARGE);
+      if (onError) onError(ERROR_TOO_LARGE);
       return null;
     }
 
-    // Enforce extension list if provided
-    if (allowedExtensions && allowedExtensions.length > 0) {
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      if (!allowedExtensions.includes(ext)) {
-        const msg = `File type not supported. Allowed: ${allowedExtensions.join(', ')}`;
-        setUploadError(msg);
-        if (onError) onError(msg);
-        return null;
-      }
+    // Enforce extension whitelist
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!ext || !validExts.includes(ext)) {
+      setUploadError(ERROR_UNSUPPORTED);
+      if (onError) onError(ERROR_UNSUPPORTED);
+      return null;
     }
 
     return await fileToBase64(file);
@@ -245,7 +250,7 @@ export const FollowUpUploadField = React.memo(({
                   type="file"
                   id={`replace-${id}`}
                   className="hidden"
-                  accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                  accept={allowedExtensions ? allowedExtensions.join(',') : ACCEPT_ATTRIBUTE}
                   onChange={handleFileChange}
                 />
                 <label
@@ -277,7 +282,7 @@ export const FollowUpUploadField = React.memo(({
                   type="file"
                   id={`upload-${id}`}
                   className="hidden"
-                  accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                  accept={allowedExtensions ? allowedExtensions.join(',') : ACCEPT_ATTRIBUTE}
                   onChange={handleFileChange}
                 />
                 <label
