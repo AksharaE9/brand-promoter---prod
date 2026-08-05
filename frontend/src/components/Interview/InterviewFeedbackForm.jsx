@@ -94,6 +94,7 @@ function FeedbackFieldInput({ def, value, onChange, readOnly }) {
               : ['.png', '.jpg', '.jpeg', '.pdf']
           }
           onUpload={(base64) => onChange(base64)}
+          onDelete={() => onChange(null)}
         />
       );
 

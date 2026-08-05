@@ -113,12 +113,14 @@ export const FollowUpUploadField = React.memo(({
   id,
   value,
   onUpload,
+  onDelete,
   isAdmin,
   allowedExtensions,
   onError,
   interviewId,
 }) => {
   const [uploading, setUploading] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
   const [uploadError, setUploadError] = React.useState(null);
   const [fetchingView, setFetchingView] = React.useState(false);
 
@@ -165,6 +167,22 @@ export const FollowUpUploadField = React.memo(({
       if (onError) onError(msg);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    if (!window.confirm(`Are you sure you want to delete the ${label} file?`)) return;
+    setUploadError(null);
+    setDeleting(true);
+    try {
+      await onDelete();
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to delete attachment';
+      setUploadError(msg);
+      if (onError) onError(msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -232,10 +250,21 @@ export const FollowUpUploadField = React.memo(({
                 />
                 <label
                   htmlFor={`replace-${id}`}
-                  className={`cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+                  className={`cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors ${uploading || deleting ? 'opacity-50 pointer-events-none' : ''}`}
                 >
                   {uploading ? 'Uploading…' : 'Replace File'}
                 </label>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={uploading || deleting}
+                    className={`cursor-pointer text-rose-600 hover:text-rose-800 text-xs font-semibold bg-rose-50 px-2 py-0.5 rounded-md hover:bg-rose-100 transition-colors ${uploading || deleting ? 'opacity-50 pointer-events-none' : ''}`}
+                    title="Delete file"
+                  >
+                    {deleting ? 'Deleting…' : 'Delete'}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -2482,6 +2511,28 @@ const InterviewSchedule = () => {
                               }
                             };
 
+                            const handleDelete = async (type) => {
+                              if (!selectedInterview) return;
+                              setError('');
+
+                              try {
+                                const currentNotes = parseNotesSafely(selectedInterview.notes);
+                                const nextNotesObj = {
+                                  ...currentNotes,
+                                  [type]: null,
+                                };
+                                const updatedNotes = JSON.stringify(nextNotesObj);
+
+                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
+                                setBanner('Follow-up attachment removed successfully.');
+                                await loadAll();
+                              } catch (err) {
+                                const msg = err?.response?.data?.error || err?.message || 'Failed to remove follow-up attachment';
+                                setError(msg);
+                                throw err;
+                              }
+                            };
+
                             return (
                               <>
                                 <FollowUpUploadField
@@ -2491,6 +2542,7 @@ const InterviewSchedule = () => {
                                   isAdmin={isAdmin}
                                   interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('phoneFollowUp', base64)}
+                                  onDelete={() => handleDelete('phoneFollowUp')}
                                 />
                                 <FollowUpUploadField
                                   label="Email Follow-up"
@@ -2499,6 +2551,7 @@ const InterviewSchedule = () => {
                                   isAdmin={isAdmin}
                                   interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('emailFollowUp', base64)}
+                                  onDelete={() => handleDelete('emailFollowUp')}
                                 />
                                 <FollowUpUploadField
                                   label="Morning Follow-up"
@@ -2507,6 +2560,7 @@ const InterviewSchedule = () => {
                                   isAdmin={isAdmin}
                                   interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('morningFollowUp', base64)}
+                                  onDelete={() => handleDelete('morningFollowUp')}
                                 />
                               </>
                             );
