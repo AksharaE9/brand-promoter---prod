@@ -26,6 +26,7 @@ module.exports = {
     '**/tests/unit/datetime.test.js',
     '**/tests/unit/sessionExpiryAndExcelViewSync.test.js',
     '**/tests/unit/interviewStatusTransition.test.js',
+    '**/tests/unit/followUpUploadPatch.test.js',
   ],
   // NO globalSetup — these tests need no DB seeding
   testTimeout: 10000,

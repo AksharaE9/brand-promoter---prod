@@ -118,6 +118,17 @@ export const schedulingApi = {
     const res = await api.put(`/interviews/${roundId}`, payload);
     return res.data;
   },
+
+  /**
+   * Patches only the `notes` field on an interview round.
+   * Uses PATCH (not PUT) so the server merges from its own DB copy —
+   * bypassing interviewerIds / mode / meetingLink validations that are
+   * only relevant when those fields are actually being changed.
+   */
+  patchNotes: async (roundId, notes) => {
+    const res = await api.patch(`/interviews/${roundId}`, { notes });
+    return res.data;
+  },
   
   deleteRound: async (roundId) => {
     const res = await api.delete(`/interviews/${roundId}`);

@@ -115,16 +115,23 @@ export const FollowUpUploadField = React.memo(({
   onUpload,
   isAdmin,
   allowedExtensions,
-  onError
+  onError,
+  interviewId,
 }) => {
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState(null);
+  const [fetchingView, setFetchingView] = React.useState(false);
+
+  const fieldKey = id ? id.split('-').slice(0, -1).join('-').replace('phone-followup', 'phoneFollowUp').replace('email-followup', 'emailFollowUp').replace('morning-followup', 'morningFollowUp') : null;
+
   const validateAndProcess = async (file) => {
     if (!file) return null;
 
     // Enforce 10MB limit
     if (file.size > MAX_UPLOAD_BYTES) {
-      const msg = 'File exceeds the 10 MB limit. Split it into smaller files if needed.';
+      const msg = 'File exceeds the 10 MB limit. Please split it into smaller files.';
+      setUploadError(msg);
       if (onError) onError(msg);
-      else alert(msg);
       return null;
     }
 
@@ -132,9 +139,9 @@ export const FollowUpUploadField = React.memo(({
     if (allowedExtensions && allowedExtensions.length > 0) {
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
       if (!allowedExtensions.includes(ext)) {
-        const msg = `Invalid file type. Allowed: ${allowedExtensions.join(', ')}`;
+        const msg = `File type not supported. Allowed: ${allowedExtensions.join(', ')}`;
+        setUploadError(msg);
         if (onError) onError(msg);
-        else alert(msg);
         return null;
       }
     }
@@ -142,79 +149,123 @@ export const FollowUpUploadField = React.memo(({
     return await fileToBase64(file);
   };
 
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadError(null);
+    const base64 = await validateAndProcess(file);
+    e.target.value = '';
+    if (!base64) return;
+    setUploading(true);
+    try {
+      await onUpload(base64);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Upload failed — please try again.';
+      setUploadError(msg);
+      if (onError) onError(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Lazily fetch full base64 data when the stored value is a stripped stub (exists:true, no data)
+  const handleView = async () => {
+    if (value?.data) {
+      downloadBase64File(value.name, value.data);
+      return;
+    }
+    if (!interviewId || fetchingView) return;
+    setFetchingView(true);
+    try {
+      const { apiGet } = await import('../lib/api');
+      const res = await apiGet(`/interviews/${interviewId}`);
+      const round = res?.data || res;
+      const notesRaw = round?.notes;
+      if (!notesRaw) throw new Error('No notes data returned from server.');
+      const parsed = typeof notesRaw === 'string' ? JSON.parse(notesRaw) : notesRaw;
+      // Derive the field key from the id prop (e.g. 'phone-followup-xyz' → 'phoneFollowUp')
+      const rawKey = id ? id.replace(/-[^-]+$/, '') : '';
+      const keyMap = { 'phone-followup': 'phoneFollowUp', 'email-followup': 'emailFollowUp', 'morning-followup': 'morningFollowUp' };
+      const resolvedKey = keyMap[rawKey] || rawKey;
+      const entry = parsed[resolvedKey];
+      if (!entry?.data) throw new Error('File data not found — it may have been removed.');
+      downloadBase64File(entry.name || value.name, entry.data);
+    } catch (err) {
+      console.error('[FollowUpUploadField] view fetch failed:', err);
+      setUploadError(err.message || 'Failed to load file for preview.');
+    } finally {
+      setFetchingView(false);
+    }
+  };
+
   return (
-    <div className="flex border-b border-slate-50 pb-2 items-center">
-      <span className="w-28 text-[#6d7893] shrink-0 font-medium">{label}:</span>
-      {value ? (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-xs text-slate-400">attachment</span>
-            <span className="truncate max-w-[120px] text-slate-700 text-xs" title={value.name}>
-              {value.name}
-            </span>
-            <button
-              type="button"
-              onClick={() => downloadBase64File(value.name, value.data)}
-              className="text-blue-600 hover:text-blue-800 p-0.5 rounded hover:bg-blue-50 transition-colors flex items-center justify-center"
-              title="Preview / Download"
-            >
-              <span className="material-symbols-outlined text-sm">visibility</span>
-            </button>
+    <div className="flex flex-col border-b border-slate-50 pb-2 gap-1">
+      <div className="flex items-center">
+        <span className="w-28 text-[#6d7893] shrink-0 font-medium">{label}:</span>
+        {value ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-xs text-slate-400">attachment</span>
+              <span className="truncate max-w-[120px] text-slate-700 text-xs" title={value.name}>
+                {value.name}
+              </span>
+              <button
+                type="button"
+                onClick={handleView}
+                disabled={fetchingView}
+                className="text-blue-600 hover:text-blue-800 p-0.5 rounded hover:bg-blue-50 transition-colors flex items-center justify-center disabled:opacity-50"
+                title={fetchingView ? 'Loading…' : 'Preview / Download'}
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {fetchingView ? 'hourglass_empty' : 'visibility'}
+                </span>
+              </button>
+            </div>
+            {isAdmin && (
+              <>
+                <input
+                  type="file"
+                  id={`replace-${id}`}
+                  className="hidden"
+                  accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                  onChange={handleFileChange}
+                />
+                <label
+                  htmlFor={`replace-${id}`}
+                  className={`cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  {uploading ? 'Uploading…' : 'Replace File'}
+                </label>
+              </>
+            )}
           </div>
-          {isAdmin && (
-            <>
-              <input
-                type="file"
-                id={`replace-${id}`}
-                className="hidden"
-                accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
-                onChange={async (e) => {
-                  const file = e.target.files[0];
-                  if (!file) return;
-                  const base64 = await validateAndProcess(file);
-                  if (base64) {
-                    onUpload(base64);
-                  }
-                  e.target.value = '';
-                }}
-              />
-              <label
-                htmlFor={`replace-${id}`}
-                className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
-              >
-                Replace File
-              </label>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5">
-          <span className="text-slate-400 italic text-xs">No file attached</span>
-          {isAdmin && (
-            <>
-              <input
-                type="file"
-                id={`upload-${id}`}
-                className="hidden"
-                accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
-                onChange={async (e) => {
-                  const file = e.target.files[0];
-                  if (!file) return;
-                  const base64 = await validateAndProcess(file);
-                  if (base64) {
-                    onUpload(base64);
-                  }
-                  e.target.value = '';
-                }}
-              />
-              <label
-                htmlFor={`upload-${id}`}
-                className="cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors"
-              >
-                Upload File
-              </label>
-            </>
-          )}
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-400 italic text-xs">No file attached</span>
+            {isAdmin && (
+              <>
+                <input
+                  type="file"
+                  id={`upload-${id}`}
+                  className="hidden"
+                  accept={allowedExtensions ? allowedExtensions.join(',') : '*'}
+                  onChange={handleFileChange}
+                />
+                <label
+                  htmlFor={`upload-${id}`}
+                  className={`cursor-pointer text-[#1f52cc] hover:text-[#163fa3] text-xs font-semibold bg-blue-50 px-2 py-0.5 rounded-md hover:bg-blue-100 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  {uploading ? 'Uploading…' : 'Upload File'}
+                </label>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {uploadError && (
+        <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium ml-28">
+          <span className="material-symbols-outlined text-xs">error</span>
+          {uploadError}
         </div>
       )}
     </div>
@@ -2407,27 +2458,41 @@ const InterviewSchedule = () => {
                           </div>
                           {/* Follow-up Upload Fields */}
                           {(() => {
-                            const { phoneFollowUp, emailFollowUp, morningFollowUp, nextSchedule } = parseNotesSafely(selectedInterview?.notes);
+                            const { phoneFollowUp, emailFollowUp, morningFollowUp } = parseNotesSafely(selectedInterview?.notes);
+
+                            /**
+                             * handleUpload — PATCH-only notes update.
+                             *
+                             * Uses PATCH /interviews/:id with { notes } only (not PUT) so the
+                             * server merges from its own current DB record. This bypasses the PUT
+                             * route's interviewerIds / meetingLink / mode validations which would
+                             * otherwise throw 422 for VIRTUAL/ONLINE interviews with an empty
+                             * meetingLink — causing a silent failure for all three follow-up types.
+                             *
+                             * The `base64` argument is the full { name, data, type } object returned
+                             * by fileToBase64(). The PATCH handler merges { [type]: base64 } into
+                             * the interview's existing notes JSON on the server side, so we do NOT
+                             * need to read-modify-write the full notes here (avoids the data
+                             * corruption risk of accidentally writing a stripped stub back over
+                             * a previously-uploaded file).
+                             */
                             const handleUpload = async (type, base64) => {
                               if (!selectedInterview) return;
+
+                              // Read the CURRENT notes from the detail panel data (may be full base64
+                              // or stripped depending on which data arrived first). We only update
+                              // the one field that changed; the server preserves everything else.
                               const currentNotes = parseNotesSafely(selectedInterview.notes);
                               const nextNotesObj = {
                                 ...currentNotes,
-                                [type]: base64
+                                [type]: base64,
                               };
                               const updatedNotes = JSON.stringify(nextNotesObj);
-                              const interviewerIds = (selectedInterview.interviewers || []).map(u => u.id);
-                              await schedulingApi.updateRound(selectedInterview.id, {
-                                applicationId: selectedInterview.applicationId,
-                                roundNo: selectedInterview.roundNo,
-                                round: selectedInterview.round,
-                                interviewerIds,
-                                scheduledStart: selectedInterview.scheduledStart,
-                                mode: selectedInterview.mode,
-                                meetingLink: selectedInterview.meetingLink,
-                                zohoLink: selectedInterview.zohoLink,
-                                notes: updatedNotes
-                              });
+
+                              // PATCH: only sends { notes } — no interviewerIds/mode/meetingLink
+                              await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
+
+                              // Refresh the detail panel so the UI reflects the saved file
                               await loadAll();
                             };
 
@@ -2438,6 +2503,7 @@ const InterviewSchedule = () => {
                                   id={`phone-followup-${selectedInterview?.id}`}
                                   value={phoneFollowUp}
                                   isAdmin={isAdmin}
+                                  interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('phoneFollowUp', base64)}
                                 />
                                 <FollowUpUploadField
@@ -2445,6 +2511,7 @@ const InterviewSchedule = () => {
                                   id={`email-followup-${selectedInterview?.id}`}
                                   value={emailFollowUp}
                                   isAdmin={isAdmin}
+                                  interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('emailFollowUp', base64)}
                                 />
                                 <FollowUpUploadField
@@ -2452,6 +2519,7 @@ const InterviewSchedule = () => {
                                   id={`morning-followup-${selectedInterview?.id}`}
                                   value={morningFollowUp}
                                   isAdmin={isAdmin}
+                                  interviewId={selectedInterview?.id}
                                   onUpload={(base64) => handleUpload('morningFollowUp', base64)}
                                 />
                               </>
