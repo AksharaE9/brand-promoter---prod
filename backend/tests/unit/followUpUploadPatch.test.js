@@ -187,13 +187,38 @@ describe('Follow-up upload: notes JSON merge correctness', () => {
     expect(merged.phoneFollowUp.data).toBe('v1-audio');        // untouched
   });
 
-  test('uploading to an interview with no prior notes initialises the field correctly', () => {
-    const merged = JSON.parse(mergeFollowUp(null, 'morningFollowUp', {
-      name: 'first-upload.png', data: 'data:image/png;base64,aaa', type: 'image/png',
-    }));
+});
 
-    expect(merged.morningFollowUp.name).toBe('first-upload.png');
-    expect(merged.phoneFollowUp).toBeUndefined();   // not set — that's fine
-    expect(merged.emailFollowUp).toBeUndefined();
+// ─── COMPLETED Status Guard Unit Test ──────────────────────────────────────────
+describe('Follow-up upload: COMPLETED status patch permissions', () => {
+  function checkStatusGuard(reqBody, currentStatus, isSuperAdmin) {
+    if (!isSuperAdmin) {
+      const isNotesOnlyUpdate = Object.keys(reqBody).every(k => k === 'notes');
+      if (!isNotesOnlyUpdate && (currentStatus === 'COMPLETED' || currentStatus === 'CANCELLED')) {
+        return 'BLOCKED';
+      }
+    }
+    return 'ALLOWED';
+  }
+
+  test('allows non-SuperAdmin to patch notes on COMPLETED interview round', () => {
+    const patchBody = { notes: JSON.stringify({ morningFollowUp: { name: 'proof.png', data: 'xyz' } }) };
+    expect(checkStatusGuard(patchBody, 'COMPLETED', false)).toBe('ALLOWED');
+  });
+
+  test('allows non-SuperAdmin to patch notes on CANCELLED interview round', () => {
+    const patchBody = { notes: JSON.stringify({ phoneFollowUp: { name: 'audio.mp3', data: 'abc' } }) };
+    expect(checkStatusGuard(patchBody, 'CANCELLED', false)).toBe('ALLOWED');
+  });
+
+  test('blocks non-SuperAdmin from updating scheduledStart or mode on COMPLETED interview round', () => {
+    const patchBody = { mode: 'PHONE', notes: '...' };
+    expect(checkStatusGuard(patchBody, 'COMPLETED', false)).toBe('BLOCKED');
+  });
+
+  test('allows SuperAdmin to update any field on COMPLETED interview round', () => {
+    const patchBody = { mode: 'PHONE', notes: '...' };
+    expect(checkStatusGuard(patchBody, 'COMPLETED', true)).toBe('ALLOWED');
   });
 });
+

@@ -2213,7 +2213,7 @@ const InterviewSchedule = () => {
         {viewMode === 'list' && (
           <>
 
-            <div key={selectedGroupId} className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full view-enter">
+            <div className="interview-detail-panel bg-[#eef3f3] flex flex-col overflow-hidden h-full view-enter">
               <div className="candidate-card-header min-h-[64px] py-3 bg-white border-b border-[#e4ebf1] px-5">
                 <div className="candidate-identity">
                   <div className="w-10 h-10 rounded-xl bg-[#b7c7f2] text-[#2f4ea8] text-sm font-semibold flex items-center justify-center shrink-0">
@@ -2380,7 +2380,7 @@ const InterviewSchedule = () => {
                         Retry Load
                       </button>
                     </div>
-                  ) : isDetailsLoading ? (
+                  ) : (isDetailsLoading && !selectedInterview) ? (
                     <div className="space-y-6 py-6 animate-pulse">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
@@ -2460,40 +2460,26 @@ const InterviewSchedule = () => {
                           {(() => {
                             const { phoneFollowUp, emailFollowUp, morningFollowUp } = parseNotesSafely(selectedInterview?.notes);
 
-                            /**
-                             * handleUpload — PATCH-only notes update.
-                             *
-                             * Uses PATCH /interviews/:id with { notes } only (not PUT) so the
-                             * server merges from its own current DB record. This bypasses the PUT
-                             * route's interviewerIds / meetingLink / mode validations which would
-                             * otherwise throw 422 for VIRTUAL/ONLINE interviews with an empty
-                             * meetingLink — causing a silent failure for all three follow-up types.
-                             *
-                             * The `base64` argument is the full { name, data, type } object returned
-                             * by fileToBase64(). The PATCH handler merges { [type]: base64 } into
-                             * the interview's existing notes JSON on the server side, so we do NOT
-                             * need to read-modify-write the full notes here (avoids the data
-                             * corruption risk of accidentally writing a stripped stub back over
-                             * a previously-uploaded file).
-                             */
                             const handleUpload = async (type, base64) => {
                               if (!selectedInterview) return;
+                              setError('');
 
-                              // Read the CURRENT notes from the detail panel data (may be full base64
-                              // or stripped depending on which data arrived first). We only update
-                              // the one field that changed; the server preserves everything else.
-                              const currentNotes = parseNotesSafely(selectedInterview.notes);
-                              const nextNotesObj = {
-                                ...currentNotes,
-                                [type]: base64,
-                              };
-                              const updatedNotes = JSON.stringify(nextNotesObj);
+                              try {
+                                const currentNotes = parseNotesSafely(selectedInterview.notes);
+                                const nextNotesObj = {
+                                  ...currentNotes,
+                                  [type]: base64,
+                                };
+                                const updatedNotes = JSON.stringify(nextNotesObj);
 
-                              // PATCH: only sends { notes } — no interviewerIds/mode/meetingLink
-                              await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
-
-                              // Refresh the detail panel so the UI reflects the saved file
-                              await loadAll();
+                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
+                                setBanner('Follow-up attachment updated successfully.');
+                                await loadAll();
+                              } catch (err) {
+                                const msg = err?.response?.data?.error || err?.message || 'Failed to upload follow-up attachment';
+                                setError(msg);
+                                throw err;
+                              }
                             };
 
                             return (

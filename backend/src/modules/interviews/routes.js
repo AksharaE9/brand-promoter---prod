@@ -1502,8 +1502,10 @@ router.patch(
       if (req.body.scheduledStart && new Date(req.body.scheduledStart) < new Date() && req.body.scheduledStart !== current.scheduledStart) {
         throw new ApiError(400, "Interview date must not be in the past");
       }
-      if (current.status === "COMPLETED" || current.status === "CANCELLED") {
-        throw new ApiError(400, `Cannot edit interview in ${current.status} status`);
+      // Allow updating notes/follow-up attachments on COMPLETED rounds; block changing scheduledStart, mode, or status on COMPLETED rounds
+      const isNotesOnlyUpdate = Object.keys(req.body).every(k => k === 'notes');
+      if (!isNotesOnlyUpdate && (current.status === "COMPLETED" || current.status === "CANCELLED")) {
+        throw new ApiError(400, `Cannot edit interview details in ${current.status} status`);
       }
     }
 
