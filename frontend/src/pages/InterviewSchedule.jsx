@@ -892,6 +892,15 @@ const InterviewSchedule = () => {
               list.map(i => i.id === roundId ? { ...i, ...round } : i)
             )
           );
+
+          // Sync the detailed view cache so the panel updates files/status in real-time
+          queryClient.setQueriesData({ queryKey: ['scheduling', 'round-details', roundId] }, (old) => {
+            if (!old) return old;
+            return {
+              ...old,
+              ...round,
+            };
+          });
         }
       }
 
