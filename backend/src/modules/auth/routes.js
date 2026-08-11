@@ -25,8 +25,6 @@ router.post(
   "/register",
   asyncHandler(async (req, res) => {
     const { firstName, lastName, fullName, email, phone = null, password, role = "RECRUITER" } = req.body;
-    const allowedRoles = ["RECRUITER", "SUPER_ADMIN"];
-
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedRole = String(role || "").trim().toUpperCase();
     const builtName = String(fullName || `${firstName || ""} ${lastName || ""}`).trim();
@@ -34,8 +32,17 @@ router.post(
     if (!builtName || !normalizedEmail || !password) {
       throw new ApiError(400, "Name, email, and password are required");
     }
+
+    // Only allow registering as RECRUITER by default.
+    // SUPER_ADMIN role can only be requested if there are no Super Admins in the DB (for initial bootstrapping).
+    const allowedRoles = ["RECRUITER"];
+    const superAdminCount = await prisma.user.count({ where: { role: "SUPER_ADMIN", isDeleted: false } });
+    if (superAdminCount === 0) {
+      allowedRoles.push("SUPER_ADMIN");
+    }
+
     if (!allowedRoles.includes(normalizedRole)) {
-      throw new ApiError(400, "role must be RECRUITER or SUPER_ADMIN");
+      throw new ApiError(400, "role must be RECRUITER" + (superAdminCount === 0 ? " or SUPER_ADMIN" : ""));
     }
     if (String(password).length < 8) {
       throw new ApiError(400, "Password must be at least 8 characters");

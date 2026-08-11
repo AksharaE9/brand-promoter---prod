@@ -154,10 +154,13 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
     }, 1000);
   };
 
-  const downloadReport = () => {
+  const downloadReport = async () => {
     if (!jobStatus?.jobId) return;
-    const token = getStoredToken();
-    window.open(buildApiUrl(`/interviews/bulk-upload/${jobStatus.jobId}/report?token=${encodeURIComponent(token || '')}`), '_blank');
+    try {
+      await downloadAuthenticatedFile(`/interviews/bulk-upload/${jobStatus.jobId}/report`, `interview-upload-report-${jobStatus.jobId}.xlsx`);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to download report');
+    }
   };
 
   return (

@@ -15,8 +15,8 @@ async function auth(req, res, next) {
     token = authHeader.substring(7).trim();
   }
 
-  // 2. Try Query Parameter (Support direct downloads)
-  if (!token && req.query.token) {
+  // 2. Try Query Parameter (Only support for Server-Sent Events / SSE endpoints)
+  if (!token && req.query.token && (req.path.startsWith("/sse") || req.path.includes("/stream"))) {
     token = req.query.token;
   }
 

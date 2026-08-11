@@ -137,7 +137,7 @@ router.get(
       interviews.forEach((item) => {
         const timeStr = item.scheduledStart ? new Date(item.scheduledStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "N/A";
         doc.fontSize(13).fillColor("#071f52").text(`${timeStr} - ${item.candidateName || "N/A"}`, { underline: true });
-        doc.fontSize(10).fillColor("#333").text(`Round: ${item.roundNo} | Role: ${item.jobTitle || "General"}`);
+        doc.fontSize(10).fillColor("#333").text(`Round: ${item.roundNo === 1 ? 'Round 1' : item.roundNo === 2 ? 'Round 2' : 'Final Round'} | Role: ${item.jobTitle || "General"}`);
         doc.text(`Interviewers: ${item.interviewerNames || "N/A"} | Mode: ${item.mode}`);
         doc.moveDown(1.5);
       });

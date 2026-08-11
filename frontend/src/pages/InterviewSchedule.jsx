@@ -1838,7 +1838,7 @@ const InterviewSchedule = () => {
                     <div className="text-xs text-[#6f7894] truncate">{group.application?.job?.title || 'Applied Role'}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-semibold inline-block">
-                        {roundCount > 0 ? `Round ${roundCount === 99 ? 'Final' : roundCount}` : 'Not Scheduled'}
+                        {roundCount > 0 ? (roundCount === 1 ? 'Round 1' : roundCount === 2 ? 'Round 2' : 'Final Round') : 'Not Scheduled'}
                       </div>
                       {latestIv && (
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
@@ -2112,7 +2112,7 @@ const InterviewSchedule = () => {
                                               {/* Round & Mode */}
                                               <div className="text-xs text-[#6f7d98] mt-0.5 flex items-center gap-1.5">
                                                 <span className="material-symbols-outlined text-[12px]">layers</span>
-                                                <span>{iv.round || `Round ${iv.roundNo}`}</span>
+                                                <span>{iv.roundNo === 1 ? 'Round 1' : iv.roundNo === 2 ? 'Round 2' : 'Final Round'}</span>
                                                 <span className="text-slate-300">•</span>
                                                 <span className="material-symbols-outlined text-[12px]">{iv.mode === 'ONLINE' ? 'videocam' : iv.mode === 'PHONE' ? 'phone' : 'location_on'}</span>
                                                 <span>{iv.mode === 'ONLINE' ? 'Online' : iv.mode === 'IN_PERSON' ? 'In Person' : iv.mode === 'PHONE' ? 'Phone' : iv.mode}</span>
@@ -2348,7 +2348,7 @@ const InterviewSchedule = () => {
                         }`}
                         onClick={() => setActiveInterviewId(iv.id)}
                       >
-                        <span>Round {iv.roundNo === 99 ? 'Final' : iv.roundNo}</span>
+                        <span>{iv.roundNo === 1 ? 'Round 1' : iv.roundNo === 2 ? 'Round 2' : 'Final Round'}</span>
                         {iv.slotNo > 0 && (
                           <span className={`text-[9px] font-semibold tracking-normal normal-case px-1.5 py-0.5 rounded-full ${
                             selectedInterview?.roundNo === iv.roundNo
@@ -2367,7 +2367,7 @@ const InterviewSchedule = () => {
                   <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <div className="font-bold text-base text-[#142651]">
-                        Interview Details ({selectedInterview ? (selectedInterview.round || `Round ${selectedInterview.roundNo}`) : 'No Selection'})
+                        Interview Details ({selectedInterview ? (selectedInterview.roundNo === 1 ? 'Round 1' : selectedInterview.roundNo === 2 ? 'Round 2' : 'Final Round') : 'No Selection'})
                       </div>
                       {selectedInterview && (
                         <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
@@ -2397,7 +2397,7 @@ const InterviewSchedule = () => {
                           Edit
                         </button>
                         <button
-                          onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.round || `Round ${selectedInterview.roundNo}`)}
+                          onClick={() => onDeleteInterview(selectedInterview.id, selectedInterview.roundNo === 1 ? 'Round 1' : selectedInterview.roundNo === 2 ? 'Round 2' : 'Final Round')}
                           className="px-2 py-1 rounded bg-red-50 text-[11px] font-semibold text-red-600 hover:bg-red-100 flex items-center gap-0.5"
                           title="Cancel/Delete Interview"
                         >
@@ -2856,7 +2856,7 @@ const InterviewSchedule = () => {
             <div className="p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#0f1b3d]">Update Assessment (Round {selectedInterview?.roundNo === 99 ? 'Final' : selectedInterview?.roundNo})</h2>
+                  <h2 className="text-2xl font-bold text-[#0f1b3d]">Update Assessment ({selectedInterview?.roundNo === 1 ? 'Round 1' : selectedInterview?.roundNo === 2 ? 'Round 2' : 'Final Round'})</h2>
                   <p className="text-xs text-slate-500 mt-1">Modify candidate performance details for this round</p>
                 </div>
                 <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowFeedbackModal(false)}>

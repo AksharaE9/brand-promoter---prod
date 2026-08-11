@@ -453,7 +453,7 @@ const Candidates = () => {
     if (!window.confirm('This will permanently remove ALL candidates from the database. Continue?')) return;
 
     try {
-      const res = await apiDelete('/candidates/all');
+      const res = await apiDelete('/candidates/all?confirm=true');
       if (res.success) {
         setBanner(`Deleted all candidates: ${res.message}`);
         loadCandidates('', 'All');

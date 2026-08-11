@@ -63,18 +63,22 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes('*') || allowedOrigins.length === 0) {
+      if (allowedOrigins.includes('*')) {
         return callback(null, true);
       }
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
       if (
-        origin.endsWith('.vercel.app') ||
         /^https:\/\/brand-promoter-prod-.*\.vercel\.app$/.test(origin) ||
         /^http:\/\/localhost:\d+$/.test(origin)
       ) {
         return callback(null, true);
+      }
+      if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') {
+        if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+          return callback(null, true);
+        }
       }
       callback(null, false);
     },
@@ -97,9 +101,9 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use(setSecurityHeaders);
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads'), { maxAge: '1d' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ limit: '2mb', extended: true }));
+app.use('/uploads', auth, express.static(path.join(__dirname, '..', 'uploads'), { maxAge: '1d' }));
 
 const { concurrencyLimiter } = require('./middleware/concurrencyLimiter');
 

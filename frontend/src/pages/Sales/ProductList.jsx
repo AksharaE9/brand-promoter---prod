@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageEnter, Reveal } from '../../components/PageMotion';
-import { buildApiUrl, apiGet, apiPost, apiPatch, apiDelete } from '../../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, apiDelete, downloadAuthenticatedFile } from '../../lib/api';
 import BulkImportModal from '../../components/BulkImportModal';
 
 const ProductList = () => {
@@ -157,9 +157,12 @@ const ProductList = () => {
         setIsModalOpen(true);
     };
 
-    const handleExport = (format = 'csv') => {
-        const token = localStorage.getItem('ats_token');
-        window.open(buildApiUrl(`/sales/export/products?token=${token}&format=${format}`), '_blank');
+    const handleExport = async (format = 'csv') => {
+        try {
+            await downloadAuthenticatedFile(`/sales/export/products?format=${format}`, `products-export.${format === 'excel' ? 'xlsx' : 'csv'}`);
+        } catch (err) {
+            console.error('Failed to export products:', err);
+        }
         setIsExportDropdownOpen(false);
     };
 

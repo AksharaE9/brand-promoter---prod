@@ -19,6 +19,8 @@ enum UserRole {
   SUPER_ADMIN
   ADMIN
   RECRUITER
+  INTERVIEWER
+  USER
 }
 
 enum UserStatus {

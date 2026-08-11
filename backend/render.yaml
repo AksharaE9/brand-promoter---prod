@@ -12,9 +12,9 @@ services:
       - key: PORT
         value: 4000
       - key: DATABASE_URL
-        value: postgresql://ats_to2n_user:ixDs4gP0kpcwDfffaYASiVjJMIK7B7k0@dpg-d9kugflaeets73a88qhg-a/ats_to2n
+        sync: false
       - key: JWT_SECRET
-        value: thuyghtssvngtfgukhju,guy655443sgsbfdbgggnfhfnhmrgv
+        sync: false
       - key: CORS_ORIGIN
         value: https://brand-promoter-prod.vercel.app
 

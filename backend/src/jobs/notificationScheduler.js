@@ -587,7 +587,7 @@ async function checkDelayedFeedbackAlerts() {
       const candidateName = interview.candidateName || interview.application?.candidate?.fullName || 'Candidate';
       const jobTitle = interview.jobTitle || interview.application?.job?.title || 'Applied Position';
       const scheduledTime = interview.scheduledStart ? new Date(interview.scheduledStart).toLocaleString() : 'N/A';
-      const roundLabel = interview.roundNo === 99 ? 'Final Round' : `Round ${interview.roundNo}`;
+      const roundLabel = interview.roundNo === 1 ? 'Round 1' : interview.roundNo === 2 ? 'Round 2' : 'Final Round';
 
       // 3. Send email to HR Admin & Subramanya
       const emailSubject = `[URGENT Alert] Missed Interview Feedback (>2 Days): ${candidateName}`;

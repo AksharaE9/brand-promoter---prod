@@ -9,16 +9,25 @@ const initSocket = (server) => {
         const allowedOrigins = process.env.CORS_ORIGIN
           ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
           : [];
+        if (!origin) {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
         if (
-          !origin ||
-          allowedOrigins.includes('*') ||
-          allowedOrigins.length === 0 ||
-          allowedOrigins.includes(origin) ||
-          origin.endsWith('.vercel.app') ||
           /^https:\/\/brand-promoter-prod-.*\.vercel\.app$/.test(origin) ||
           /^http:\/\/localhost:\d+$/.test(origin)
         ) {
           return callback(null, true);
+        }
+        if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') {
+          if (/^https?:\/\/localhost(:\d+)?$/.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) {
+            return callback(null, true);
+          }
         }
         callback(null, false);
       },

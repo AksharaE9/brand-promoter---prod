@@ -270,10 +270,10 @@ const ALL_COLUMNS = [
     filterType: 'set',
     getValue: (iv) => {
       const rn = iv.roundNo;
-      return rn === 99 ? 'Final' : rn ? `R${rn}` : (iv.round || '-');
+      return rn === 1 ? 'R1' : rn === 2 ? 'R2' : 'Final';
     },
     render: (iv) => {
-      const label = iv.roundNo === 99 ? 'Final' : iv.roundNo ? `R${iv.roundNo}` : (iv.round || '-');
+      const label = iv.roundNo === 1 ? 'R1' : iv.roundNo === 2 ? 'R2' : 'Final';
       return (
         <span style={{ background: '#eff6ff', color: '#1f52cc', fontWeight: 700, fontSize: 10, padding: '2px 8px', borderRadius: 12 }}>
           {label}

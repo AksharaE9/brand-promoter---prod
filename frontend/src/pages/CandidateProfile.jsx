@@ -5,7 +5,7 @@ import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
 import Loader from '../components/Loader';
-import { buildApiUrl, apiGet, apiPost, apiPatch, getStoredUser, getStoredToken } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiPatch, downloadAuthenticatedFile, getStoredUser, getStoredToken } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CompanyDropdownInput from '../components/CompanyDropdownInput';
 import { formatDateTime24h } from '../lib/datetime';
@@ -46,7 +46,7 @@ function resolveResumeAction(candidate) {
 
   if (candidate.resumeFile?.storageKey) {
     return {
-      href: buildApiUrl(`/candidates/${candidate.id}/resume/download?token=${getStoredToken()}`),
+      href: buildApiUrl(`/candidates/${candidate.id}/resume/download`),
       label: 'Download Resume',
       icon: 'download',
       downloadAttr: candidate.resumeFile?.originalName || `${candidate.fullName || 'candidate'}-resume`,
@@ -64,10 +64,10 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#1f52cc] flex flex-col items-center justify-center font-bold">
             <div className="text-xs">R</div>
-            <div className="text-lg leading-none">{iv.roundNo || (idx + 1)}</div>
+            <div className="text-lg leading-none">{iv.roundNo === 1 ? '1' : iv.roundNo === 2 ? '2' : 'F'}</div>
           </div>
           <div>
-            <div className="font-bold text-[#10193f] text-lg">{iv.round || `Round ${iv.roundNo || (idx + 1)}`}</div>
+            <div className="font-bold text-[#10193f] text-lg">{iv.roundNo === 1 ? 'Round 1' : iv.roundNo === 2 ? 'Round 2' : 'Final Round'}</div>
             <div className="text-xs text-[#1f52cc] font-bold mt-0.5">{iv.application?.job?.title || 'General Hiring'}</div>
             <div className="text-[10px] text-[#7a88a3] mt-1 flex items-center gap-1">
               <span className="material-symbols-outlined text-[12px]">calendar_today</span>
@@ -305,11 +305,25 @@ const CandidateProfile = () => {
       return feedback.round;
     }
     const iv = interviews.find(i => i.result === 'REJECTED' || i.result === 'FAIL');
-    if (iv) return iv.round || `Round ${iv.roundNo}`;
+    if (iv) return iv.roundNo === 1 ? 'Round 1' : iv.roundNo === 2 ? 'Round 2' : 'Final Round';
     return 'prior round';
   }, [isRejected, candidate, interviews]);
 
   const resumeAction = useMemo(() => resolveResumeAction(candidate), [candidate]);
+
+  const handleResumeClick = async (e) => {
+    if (resumeAction && !resumeAction.isCloud && !resumeAction.disabled) {
+      e.preventDefault();
+      try {
+        await downloadAuthenticatedFile(
+          `/candidates/${candidate.id}/resume/download`,
+          resumeAction.downloadAttr
+        );
+      } catch (err) {
+        console.error("Failed to download resume:", err);
+      }
+    }
+  };
 
   const handleScheduleSubmit = async (e) => {
     e.preventDefault();
@@ -665,6 +679,7 @@ const CandidateProfile = () => {
                               <a
                                 href={resumeAction.href}
                                 {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
+                                onClick={handleResumeClick}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="os-btn-primary !h-10 !px-4 flex items-center justify-center gap-2 text-xs"
@@ -761,6 +776,7 @@ const CandidateProfile = () => {
                        <a 
                          href={resumeAction.href}
                          {...(resumeAction.downloadAttr ? { download: resumeAction.downloadAttr } : {})}
+                         onClick={handleResumeClick}
                          target="_blank"
                          rel="noreferrer"
                          className="os-btn-primary w-full !h-12 flex items-center justify-center gap-2 shadow-lg shadow-blue-100"

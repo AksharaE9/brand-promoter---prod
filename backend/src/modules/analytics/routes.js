@@ -8,8 +8,11 @@ const { swrGet } = require("../../utils/swrCache");
 
 const ROUTE_CACHE_TTL = 30; // 30s per-route cache
 
+const { requireRoles } = require("../../middleware/auth");
+
 const router = express.Router();
 router.use(auth);
+router.use(requireRoles("SUPER_ADMIN"));
 
 // Stage matchers to map Firestore statuses and stages to canonical reporting stages
 const stageMatchers = {

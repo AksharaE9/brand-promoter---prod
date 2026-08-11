@@ -83,6 +83,93 @@ router.get(
     const totalTracked = tracking.length;
     const conversionRate = totalTracked > 0 ? ((conversions / totalTracked) * 100).toFixed(1) : 0;
 
+    // Calculate topSalesperson dynamically based on actual database conversions
+    const convertedTrackings = await prisma.salesTracking.findMany({
+      where: { status: "CONVERTED" }
+    });
+    const convertedProductIds = convertedTrackings.map(t => t.productId);
+    
+    const convertedProducts = convertedProductIds.length
+      ? await prisma.product.findMany({
+          where: { id: { in: convertedProductIds } },
+          select: { createdById: true }
+        })
+      : [];
+    
+    const userConversions = {};
+    convertedProducts.forEach(p => {
+      if (p.createdById) {
+        userConversions[p.createdById] = (userConversions[p.createdById] || 0) + 1;
+      }
+    });
+
+    let topUserId = null;
+    let maxConversions = 0;
+    Object.keys(userConversions).forEach(uid => {
+      if (userConversions[uid] > maxConversions) {
+        maxConversions = userConversions[uid];
+        topUserId = uid;
+      }
+    });
+
+    let topSalesperson = null;
+    if (topUserId) {
+      const topUser = await prisma.user.findUnique({
+        where: { id: topUserId },
+        select: { fullName: true }
+      });
+      if (topUser) {
+        topSalesperson = { name: topUser.fullName, count: maxConversions };
+      }
+    }
+
+    // Fetch upcomingFollowups with products populated
+    const followupsRaw = productIds.length
+      ? await prisma.salesTracking.findMany({
+          where: {
+            productId: { in: productIds },
+            status: { notIn: ["CONVERTED", "REJECTED"] },
+            followUpDate: { not: null }
+          },
+          orderBy: { followUpDate: "asc" },
+          take: 5
+        })
+      : [];
+    
+    const upcomingFollowups = [];
+    followupsRaw.forEach(track => {
+      const prod = products.find(p => p.id === track.productId);
+      if (prod) {
+        upcomingFollowups.push({
+          ...prod,
+          tracking: track
+        });
+      }
+    });
+
+    // Fetch priorityLeads (Hot Leads) with products populated
+    const priorityRaw = productIds.length
+      ? await prisma.salesTracking.findMany({
+          where: {
+            productId: { in: productIds },
+            status: { in: ["INTERESTED", "NEGOTIATION"] }
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 4
+        })
+      : [];
+    
+    const priorityLeads = [];
+    priorityRaw.forEach(track => {
+      const prod = products.find(p => p.id === track.productId);
+      if (prod) {
+        priorityLeads.push({
+          ...prod,
+          tracking: track
+        });
+      }
+    });
+
     res.json({
       success: true,
       data: {
@@ -93,8 +180,9 @@ router.get(
         addedToday,
         statusDistribution,
         recentActivity,
-        upcomingFollowups: [], // Simplified for now
-        priorityLeads: [], // Simplified for now
+        upcomingFollowups,
+        priorityLeads,
+        topSalesperson,
       },
     });
   }),

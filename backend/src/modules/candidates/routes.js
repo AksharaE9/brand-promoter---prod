@@ -1321,9 +1321,39 @@ router.delete(
   "/all",
   requireRoles("SUPER_ADMIN"),
   asyncHandler(async (req, res) => {
-    const count = await prisma.candidate.count();
-    
-    await prisma.candidate.deleteMany();
+    // 1. Double confirmation check
+    if (req.query.confirm !== "true") {
+      return res.status(400).json({
+        success: false,
+        message: "Confirmation is required to delete all candidates. Please provide confirm=true parameter."
+      });
+    }
+
+    // 2. Backup check and execution
+    // Fetch all candidates to write to backup file
+    const allCandidates = await prisma.candidate.findMany({
+      where: { isDeleted: false }
+    });
+
+    if (allCandidates.length > 0) {
+      const fs = require('fs');
+      const path = require('path');
+      const backupDir = path.join(__dirname, '../../../uploads/backups');
+      if (!fs.existsSync(backupDir)) {
+        fs.mkdirSync(backupDir, { recursive: true });
+      }
+      const backupPath = path.join(backupDir, `candidates_backup_${Date.now()}.json`);
+      fs.writeFileSync(backupPath, JSON.stringify(allCandidates, null, 2));
+    }
+
+    // 3. Soft-delete instead of hard-delete
+    const { count } = await prisma.candidate.updateMany({
+      where: { isDeleted: false },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date()
+      }
+    });
 
     await logAudit({
       actorUserId: req.user.id,
@@ -1338,7 +1368,7 @@ router.delete(
     const { invalidateAll } = require("../../utils/cache");
     invalidateAll();
 
-    res.json({ success: true, message: `Deleted ${count} candidates` });
+    res.json({ success: true, message: `Soft-deleted ${count} candidates. A backup was created successfully.` });
   }),
 );
 

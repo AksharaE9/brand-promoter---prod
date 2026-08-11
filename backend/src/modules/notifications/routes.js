@@ -48,9 +48,20 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', asyncHandler(async (req, res) => {
   const { title, message, type, recipientId } = req.body;
 
+  // Prevent IDOR spam vector: only admins can send notifications to other users.
+  // Otherwise, fallback to the current user's ID.
+  let targetUserId = req.user.id;
+  if (recipientId && recipientId !== req.user.id) {
+    if (req.user.role === 'SUPER_ADMIN' || req.user.role === 'ADMIN') {
+      targetUserId = recipientId;
+    } else {
+      throw new ApiError(403, 'Forbidden: You cannot send notifications to other users.');
+    }
+  }
+
   const notif = await prisma.notification.create({
     data: {
-      userId: recipientId || req.user.id,
+      userId: targetUserId,
       title,
       message,
       type: type || 'INFO',

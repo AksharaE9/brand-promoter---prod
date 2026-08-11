@@ -1,6 +1,7 @@
-# ATS Platform (TalentOS)
+# TalentOS Workspace (ATS + Sales CRM)
 
-Enterprise Applicant Tracking System (ATS) with role-based access, candidate management, pipeline workflows, interview management, reporting, exports, and in-app notifications.
+TalentOS is an Enterprise Applicant Tracking System (ATS) and Sales CRM workspace (deployed under the name `brand-promoter---prod`). It provides full candidate pipeline management, interview scheduling, team management, college recruitment drives, and a dedicated sales tracking module.
+
 
 ## 1) Project Status (E2E)
 

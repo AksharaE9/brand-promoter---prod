@@ -343,6 +343,40 @@ export function apiDelete(path) {
   return request(path, { method: 'DELETE' });
 }
 
+
+export async function apiViewFile(path) {
+  const newTab = window.open('about:blank', '_blank');
+  if (newTab) {
+    newTab.document.write('<p style="font-family: sans-serif; text-align: center; margin-top: 50px;">Loading document...</p>');
+  }
+  
+  try {
+    const token = getStoredToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(buildApiUrl(path), {
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch file: ${res.statusText}`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    if (newTab) {
+      newTab.location.href = url;
+    } else {
+      window.open(url, '_blank');
+    }
+  } catch (err) {
+    if (newTab) {
+      newTab.close();
+    }
+    throw err;
+  }
+}
+
 export function clearAuth() {
   localStorage.removeItem('ats_token');
   localStorage.removeItem('ats_user');

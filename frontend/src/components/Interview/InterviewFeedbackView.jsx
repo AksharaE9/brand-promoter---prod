@@ -6,7 +6,7 @@ import {
   resolveFeedbackFields,
 } from '../../lib/interviewTemplates';
 import CopyFeedbackButton from './CopyFeedbackButton';
-import { getStoredUser } from '../../lib/api';
+import { getStoredUser, apiViewFile } from '../../lib/api';
 
 const downloadBase64File = (fileName, base64Data) => {
   try {
@@ -148,15 +148,33 @@ export default function InterviewFeedbackView({
                         {raw.name || 'Download Attachment'}
                       </button>
                     ) : (
-                      <a
-                        href={raw}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[#1f52cc] hover:underline font-semibold"
-                      >
-                        <span className="material-symbols-outlined text-xs">open_in_new</span>
-                        Open Attachment
-                      </a>
+                      typeof raw === 'string' && raw.startsWith('/uploads') ? (
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await apiViewFile(raw);
+                            } catch (err) {
+                              console.error('Failed to view attachment:', err);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 text-[#1f52cc] hover:underline font-semibold bg-transparent border-none cursor-pointer p-0"
+                        >
+                          <span className="material-symbols-outlined text-xs">open_in_new</span>
+                          Open Attachment
+                        </button>
+                      ) : (
+                        <a
+                          href={raw}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[#1f52cc] hover:underline font-semibold"
+                        >
+                          <span className="material-symbols-outlined text-xs">open_in_new</span>
+                          Open Attachment
+                        </a>
+                      )
                     )
                   ) : (
                     <span>—</span>

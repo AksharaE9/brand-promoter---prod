@@ -11,7 +11,7 @@ const { validatePasswordStrength } = require("../../lib/passwordValidation");
 const router = express.Router();
 router.use(auth);
 
-const allowedRoles = ["SUPER_ADMIN", "RECRUITER"];
+const allowedRoles = ["SUPER_ADMIN", "ADMIN", "RECRUITER", "INTERVIEWER", "USER"];
 
 // GET /api/users — list all users in org
 router.get(
@@ -97,13 +97,13 @@ router.post(
   }),
 );
 
-// GET /api/users/interviewers — list recruiters/admins
+// GET /api/users/interviewers — list recruiters/admins/interviewers
 router.get(
   "/interviewers",
   asyncHandler(async (req, res) => {
     const users = await getCached("users_interviewers", async () => {
       return prisma.user.findMany({
-        where: { role: { in: ["SUPER_ADMIN", "RECRUITER"] }, isDeleted: false },
+        where: { role: { in: ["SUPER_ADMIN", "ADMIN", "RECRUITER", "INTERVIEWER"] }, isDeleted: false },
         select: { id: true, fullName: true, role: true, status: true },
       });
     }, 60000);
