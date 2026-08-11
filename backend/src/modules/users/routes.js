@@ -101,13 +101,24 @@ router.post(
 router.get(
   "/interviewers",
   asyncHandler(async (req, res) => {
-    const users = await getCached("users_interviewers", async () => {
-      return prisma.user.findMany({
-        where: { role: { in: ["SUPER_ADMIN", "ADMIN", "RECRUITER", "INTERVIEWER"] }, isDeleted: false },
-        select: { id: true, fullName: true, role: true, status: true },
-      });
-    }, 60000);
-    res.json({ success: true, data: users });
+    try {
+      const orgId = req.user?.organizationId;
+      const cacheKey = orgId ? `users_interviewers_${orgId}` : "users_interviewers";
+      const users = await getCached(cacheKey, async () => {
+        return prisma.user.findMany({
+          where: {
+            role: { in: ["SUPER_ADMIN", "ADMIN", "RECRUITER", "INTERVIEWER"] },
+            isDeleted: false,
+          },
+          select: { id: true, fullName: true, role: true, status: true },
+          orderBy: { fullName: "asc" },
+        });
+      }, 60000);
+      res.json({ success: true, data: Array.isArray(users) ? users : [] });
+    } catch (err) {
+      console.error("[GetInterviewers] Error loading interviewers:", err.message);
+      res.json({ success: true, data: [] });
+    }
   }),
 );
 

@@ -69,13 +69,23 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   };
 
   const loadUsers = async () => {
-    const res = await apiGet('/users/interviewers');
-    setUsers(res.data || []);
+    try {
+      const res = await apiGet('/users/interviewers');
+      setUsers(res.data || []);
+    } catch (err) {
+      console.warn('Failed to load interviewers for drives workspace:', err?.message);
+      setUsers([]);
+    }
   };
 
   const loadGlobalJobs = async () => {
-    const res = await apiGet('/jobs?limit=100&isActive=true');
-    setGlobalJobs(res.data || []);
+    try {
+      const res = await apiGet('/jobs?limit=100&isActive=true');
+      setGlobalJobs(res.data || []);
+    } catch (err) {
+      console.warn('Failed to load jobs for drives workspace:', err?.message);
+      setGlobalJobs([]);
+    }
   };
 
   const loadDrives = async (collegeId) => {
@@ -110,6 +120,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
         setLoading(true);
         await Promise.all([loadColleges(), loadUsers(), loadGlobalJobs()]);
       } catch (err) {
+        console.error('Error loading colleges:', err);
         onError(err.message || 'Failed to load workspace');
       } finally {
         setLoading(false);
