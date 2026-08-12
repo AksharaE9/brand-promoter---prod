@@ -122,6 +122,8 @@ model User {
   schedulingMemberFiles SchedulingMemberFile[]
   submittedReports    CandidateInternalReport[]
   recruitmentReports  RecruitmentReport[]
+  postedFiles         PostedFile[]
+
 
 
   @@index([email])
@@ -871,3 +873,27 @@ model RecruitmentReport {
   @@index([createdAt(sort: Desc)])
   @@map("recruitment_reports")
 }
+
+// ─────────────────────────────────────────────
+// Posted Files (Shared Storage)
+// ─────────────────────────────────────────────
+
+model PostedFile {
+  id             String   @id @default(cuid())
+  originalName   String   @map("original_name")
+  storageKey     String   @map("storage_key")
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  uploadedById   String   @map("uploaded_by_id")
+  uploadedByName String   @map("uploaded_by_name")
+  organizationId String   @default("defaultOrg") @map("organization_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  uploadedBy     User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([uploadedById])
+  @@index([organizationId])
+  @@index([createdAt(sort: Desc)])
+  @@map("posted_files")
+}
+

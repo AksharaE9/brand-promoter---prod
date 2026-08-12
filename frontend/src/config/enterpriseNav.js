@@ -13,6 +13,7 @@ export const enterpriseNavItems = [
   { key: 'interviews', label: 'Interviews',           href: '/schedule',                icon: 'calendar_month', roles: ALL_ROLES },
   { key: 'scheduling', label: 'Scheduling',           href: '/scheduling',              icon: 'assignment',     roles: ALL_ROLES },
   { key: 'drives',     label: 'College Drives',       href: '/drives',                  icon: 'campaign',       roles: ALL_ROLES },
+  { key: 'posted',     label: 'Posted',               href: '/posted',                  icon: 'folder',         roles: ALL_ROLES },
 
   { key: 'analytics',  label: 'Analytics',            href: '/analytics',               icon: 'bar_chart',      roles: ['SUPER_ADMIN'] },
   { key: 'reports',    label: 'Reports',              href: '/reports',                 icon: 'description',    roles: ['SUPER_ADMIN'] },

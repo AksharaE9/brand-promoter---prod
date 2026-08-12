@@ -30,6 +30,7 @@ const MemberProfilePage   = lazyWithRetry(() => import('./pages/Scheduling/Membe
 const NotFound            = lazyWithRetry(() => import('./pages/NotFound'),                       'NotFound');
 const Sourcing            = lazyWithRetry(() => import('./pages/Sourcing'),                       'Sourcing');
 const Referrals           = lazyWithRetry(() => import('./pages/Referrals'),                      'Referrals');
+const Posted              = lazyWithRetry(() => import('./pages/Posted'),                         'Posted');
 
 // Sales Module
 const SalesLayout         = lazyWithRetry(() => import('./pages/Sales/SalesLayout'),      'SalesLayout');
@@ -122,6 +123,7 @@ function AppRoutes() {
       <Route path="/scheduling"                element={protectedElement(<SchedulingPage />)} />
       <Route path="/scheduling/members/:memberId" element={protectedElement(<MemberProfilePage />)} />
       <Route path="/drives"                    element={protectedElement(<Drives />)} />
+      <Route path="/posted"                    element={protectedElement(<Posted />)} />
       <Route path="/sourcing"                  element={protectedElement(<Sourcing />)} />
       <Route path="/referrals"                 element={protectedElement(<Referrals />)} />
 

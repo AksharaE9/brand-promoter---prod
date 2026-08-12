@@ -60,6 +60,8 @@ const ALL_EVENTS = [
   'interview-feedback:updated',
   'INTERVIEW_FEEDBACK_SUBMITTED',
   'INTERVIEW_PANELISTS_UPDATED',
+  'POSTED_FILE_ADDED',
+  'POSTED_FILE_DELETED',
 ];
 
 // ── Polling fallback query keys ──
@@ -567,6 +569,17 @@ export function useRealtimeUpdates() {
           message:`Import complete: ${data.imported} added, ${data.failed} failed`,
           duration: 6000,
         });
+        break;
+
+      /* ─── POSTED FILES ─── */
+      case 'POSTED_FILE_ADDED':
+        qc.invalidateQueries({ queryKey: ['posted-files'] });
+        addToast({ type: 'success', message: `New file posted: ${data.filename}` });
+        break;
+
+      case 'POSTED_FILE_DELETED':
+        qc.invalidateQueries({ queryKey: ['posted-files'] });
+        addToast({ type: 'warning', message: `File deleted: ${data.filename}` });
         break;
 
       /* ─── NOTIFICATIONS ─── */
