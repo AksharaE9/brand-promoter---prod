@@ -98,6 +98,7 @@ router.post(
 
     const fileExt = path.extname(req.file.originalname).toLowerCase();
     const jobId = uuidv4();
+    const driveId = req.query.driveId || req.body?.driveId || null;
 
     // Enqueue job for background processing
     await enqueueJob({
@@ -107,6 +108,7 @@ router.post(
       uploadedBy: req.user?.id || null,
       organizationId: req.user?.organizationId || 'defaultOrg',
       sourceFilename: req.file.originalname,
+      driveId,
     });
 
     // Immediate 202 Accepted response

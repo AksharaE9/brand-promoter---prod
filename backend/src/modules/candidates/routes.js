@@ -565,6 +565,7 @@ router.post(
       jobTitle: data.jobTitle || null,
       category: data.category || "External",
       customFields: data.customFields || null,
+      college: data.college || null,
       company: resolvedCompany,           // ── NEW field ──
       createdById: req.user.id,
       status: createStatus,
@@ -575,6 +576,26 @@ router.post(
     const candidate = await prisma.candidate.create({
       data: candidateData
     });
+
+    const driveId = data.driveId || null;
+    if (driveId) {
+      const driveDup = await prisma.collegeDriveCandidate.findFirst({
+        where: { driveId, candidateId: candidate.id }
+      });
+      if (!driveDup) {
+        await prisma.collegeDriveCandidate.create({
+          data: {
+            driveId,
+            candidateId: candidate.id,
+            fullName: candidate.fullName,
+            email: candidate.email || null,
+            phone: candidate.phone || '',
+            status: "ADDED"
+          }
+        });
+      }
+      await inv.drive(orgId, driveId);
+    }
 
     // Invalidate cache before returning response to avoid race conditions
     await inv.candidate(orgId, candidate.id);
@@ -607,6 +628,15 @@ router.post(
         createdBy: req.user.id,
         createdByName: req.user.fullName || req.user.email,
       });
+      if (driveId) {
+        sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
+          driveId,
+          count: 1,
+          collegeName: candidate.fullName,
+          addedBy: req.user.id,
+          addedByName: req.user.fullName || req.user.email,
+        });
+      }
     });
   }),
 );
@@ -621,7 +651,7 @@ router.post(
   },
   upload.single("resume"),
   asyncHandler(async (req, res) => {
-    const { fullName, email, phone, category } = req.body;
+    const { fullName, email, phone, category, driveId, college } = req.body;
 
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!phone) throw new ApiError(400, "Phone number is required");
@@ -659,11 +689,13 @@ router.post(
     const createStatus = allowedCreateStatuses.has(String(req.body.status || "").toUpperCase())
       ? String(req.body.status).toUpperCase()
       : "ACTIVE";
+    const phoneNormalized = phone ? normalizePhoneNumber(phone) : null;
 
     const candidateData = {
       fullName,
       email: email || "N/A",
       phone,
+      phoneNormalized,
       resumeFileId,
       currentCompany: req.body.currentCompany || null,
       totalExperienceYears: req.body.totalExperienceYears ? parseFloat(req.body.totalExperienceYears) : null,
@@ -672,10 +704,11 @@ router.post(
       course: req.body.course || null,
       graduationYear: req.body.graduationYear ? String(req.body.graduationYear) : null,
       preferredRole: req.body.preferredRole || null,
+      college: college || req.body.college || null,
       source: req.body.source || null,
       jobTitle: req.body.jobTitle || null,
       category: category || "External",
-      customFields: req.body.customFields ? JSON.parse(req.body.customFields) : null,
+      customFields: req.body.customFields ? (typeof req.body.customFields === 'string' ? JSON.parse(req.body.customFields) : req.body.customFields) : null,
       company: resolvedCompanyResume,     // ── NEW field ──
       createdById: req.user.id,
       status: createStatus,
@@ -689,6 +722,25 @@ router.post(
         resumeFile: true
       }
     });
+
+    if (driveId) {
+      const driveDup = await prisma.collegeDriveCandidate.findFirst({
+        where: { driveId, candidateId: candidate.id }
+      });
+      if (!driveDup) {
+        await prisma.collegeDriveCandidate.create({
+          data: {
+            driveId,
+            candidateId: candidate.id,
+            fullName: candidate.fullName,
+            email: candidate.email || null,
+            phone: candidate.phone || '',
+            status: "ADDED"
+          }
+        });
+      }
+      await inv.drive(orgId, driveId);
+    }
 
     // Invalidate cache before returning response to avoid race conditions
     await inv.candidate(orgId, candidate.id);
@@ -724,6 +776,15 @@ router.post(
         createdBy: req.user.id,
         createdByName: req.user.fullName || req.user.email,
       });
+      if (driveId) {
+        sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
+          driveId,
+          count: 1,
+          collegeName: candidate.fullName,
+          addedBy: req.user.id,
+          addedByName: req.user.fullName || req.user.email,
+        });
+      }
     });
   })
 );

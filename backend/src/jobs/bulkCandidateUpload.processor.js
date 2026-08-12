@@ -169,6 +169,25 @@ async function batchInsertCandidates(batch, context) {
           organizationId: context.organizationId,
         });
       }
+
+      if (context.driveId) {
+        const driveDup = await prisma.collegeDriveCandidate.findFirst({
+          where: { driveId: context.driveId, candidateId: saved.id },
+        });
+        if (!driveDup) {
+          await prisma.collegeDriveCandidate.create({
+            data: {
+              driveId: context.driveId,
+              candidateId: saved.id,
+              fullName: saved.fullName,
+              email: saved.email || null,
+              phone: saved.phone || '',
+              status: 'ADDED',
+            },
+          });
+        }
+      }
+
       succeeded++;
     } catch (rowErr) {
       failed++;
@@ -188,7 +207,7 @@ async function batchInsertCandidates(batch, context) {
  * Enqueues job for background candidate bulk processing.
  */
 async function enqueueJob(jobData) {
-  const { jobId, filePath, fileType, uploadedBy, organizationId, sourceFilename } = jobData;
+  const { jobId, filePath, fileType, uploadedBy, organizationId, sourceFilename, driveId } = jobData;
 
   let validCreatedById = null;
   if (uploadedBy) {
@@ -212,15 +231,29 @@ async function enqueueJob(jobData) {
         sourceFilename,
         context: {
           validCreatedById,
+          driveId: driveId || null,
         },
         validateRow: validateCandidateRowWrapper,
         // Duplicate skip logic removed — every valid CSV row is imported (create/update).
         duplicateCheck: undefined,
         transformRow: transformCandidateRow,
         batchInsert: batchInsertCandidates,
-        onComplete: async () => {
+        onComplete: async (summary) => {
           if (organizationId) {
             await cacheInvalidation.candidateList(organizationId).catch(() => {});
+            if (driveId) {
+              await cacheInvalidation.drive(organizationId, driveId).catch(() => {});
+              try {
+                const sse = require('../utils/sse');
+                sse.broadcastToOrg(organizationId, 'DRIVE_CANDIDATES_ADDED', {
+                  driveId,
+                  count: summary?.succeeded || 0,
+                  collegeName: 'Bulk Upload',
+                  addedBy: uploadedBy,
+                  addedByName: 'Bulk Import',
+                });
+              } catch (_) {}
+            }
           }
         },
         emitProgress: emitBulkUploadProgress,

@@ -28,6 +28,7 @@ module.exports = {
     '**/tests/unit/interviewStatusTransition.test.js',
     '**/tests/unit/followUpUploadPatch.test.js',
     '**/tests/unit/followUpOptimizer.test.js',
+    '**/tests/unit/collegeDrivesUnifiedCandidate.test.js',
   ],
   // NO globalSetup — these tests need no DB seeding
   testTimeout: 10000,

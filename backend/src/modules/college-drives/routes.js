@@ -151,25 +151,55 @@ router.post(
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
     const driveId = req.params.id;
-    const { fullName, email, phone } = req.body;
+    const { fullName, email, phone, course, location, preferredRole, company, source, college, resumeFileId, resumeLinkOriginal, resumeLinkDownload, resumeLinkProvider } = req.body;
     if (!fullName || !phone) throw new ApiError(400, "fullName and phone are required");
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    const { normalizePhoneNumber } = require("../../lib/phoneNormalization");
+    const phoneNormalized = normalizePhoneNumber(phone);
 
     // Check duplicate candidate by phone
     const existingCandidate = await prisma.candidate.findFirst({
-      where: { phone, isDeleted: false }
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+        OR: [
+          ...(phoneNormalized ? [{ phoneNormalized }, { phone: phone.trim() }] : [{ phone: phone.trim() }]),
+        ]
+      }
     });
     
     let candidateId;
     if (existingCandidate) {
       candidateId = existingCandidate.id;
+      await prisma.candidate.update({
+        where: { id: candidateId },
+        data: {
+          course: course || existingCandidate.course,
+          location: location || existingCandidate.location,
+          preferredRole: preferredRole || existingCandidate.preferredRole,
+          company: company || existingCandidate.company,
+          college: college || existingCandidate.college,
+        }
+      });
     } else {
       const candidate = await prisma.candidate.create({
         data: {
           fullName,
           email: email || "N/A",
-          phone,
-          source: "College Drive",
-          organizationId: req.user.organizationId || "defaultOrg"
+          phone: phone.trim(),
+          phoneNormalized,
+          course: course || null,
+          location: location || null,
+          preferredRole: preferredRole || null,
+          company: company || "Akshara Enterprises",
+          college: college || null,
+          source: source || "College Drive",
+          resumeFileId: resumeFileId || null,
+          resumeLinkOriginal: resumeLinkOriginal || null,
+          resumeLinkDownload: resumeLinkDownload || null,
+          resumeLinkProvider: resumeLinkProvider || null,
+          organizationId: orgId
         }
       });
       candidateId = candidate.id;
@@ -191,9 +221,9 @@ router.post(
       }
     });
 
-    const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.drive(orgId, driveId);
+    await inv.candidateList(orgId);
 
     const sse = require("../../utils/sse");
     sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
@@ -202,6 +232,10 @@ router.post(
       collegeName: fullName,
       addedBy: req.user.id,
       addedByName: req.user.fullName || req.user.email,
+    });
+    sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
+      candidateId,
+      count: 1,
     });
 
     res.json({ success: true });

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { buildApiUrl, API_ROOT_URL, apiGet, apiPost } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import Reveal from './PageMotion';
 import { subscribeSSE } from '../lib/sse';
-import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
-
+import CreateCandidateModal from './CreateCandidateModal';
+import BulkUploadModal from './BulkUpload/BulkUploadModal';
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
 const DRIVE_STATUS_OPTIONS = ['PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
@@ -26,12 +26,6 @@ const emptyDriveForm = {
   notes: '',
 };
 
-const emptyStudentForm = {
-  fullName: '',
-  email: '',
-  phone: '',
-};
-
 function CollegeDriveWorkspace({ onBanner, onError }) {
   const navigate = useNavigate();
   const [colleges, setColleges] = useState([]);
@@ -44,15 +38,12 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   const [selectedDriveId, setSelectedDriveId] = useState('');
 
   const [showCollegeModal, setShowCollegeModal] = useState(false);
-  const [showStudentModal, setShowStudentModal] = useState(false);
-  const [showBulkModal, setShowBulkModal] = useState(false);
   const [showDriveModal, setShowDriveModal] = useState(false);
+  const [showCandidateModal, setShowCandidateModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   const [collegeForm, setCollegeForm] = useState(emptyCollegeForm);
   const [driveForm, setDriveForm] = useState(emptyDriveForm);
-  const [studentForm, setStudentForm] = useState(emptyStudentForm);
-  const [bulkFile, setBulkFile] = useState(null);
-  const [bulkResults, setBulkResults] = useState(null);
 
   const [selectedRecruiterIds, setSelectedRecruiterIds] = useState([]);
   const [selectedJobToLink, setSelectedJobToLink] = useState('');
@@ -141,7 +132,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   useEffect(() => {
     const unsub = subscribeSSE((d) => {
       // Refresh drive candidates if any relevant candidate or drive event occurs
-      if (['CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED', 'APPLICATION_STATUS_UPDATED'].includes(d.type)) {
+      if (['CANDIDATE_CREATED', 'CANDIDATE_UPDATED', 'DRIVE_CANDIDATE_ADDED', 'DRIVE_CANDIDATES_ADDED', 'APPLICATION_STATUS_UPDATED'].includes(d.type)) {
         if (selectedDriveId) {
           loadDriveDetails(selectedDriveId);
         }
@@ -167,24 +158,6 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
     }
   };
 
-  const downloadTemplate = () => {
-    const headers = ["NAME", "CONTACT", "email"];
-    const rows = [
-      ["Sample Student", "9988776655", "sample@college.edu"],
-      ["Example Name", "9123456789", "example@student.com"]
-    ];
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", "ats_drive_template.csv");
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const handleAddDrive = async (e) => {
     e.preventDefault();
     try {
@@ -194,46 +167,6 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       setShowDriveModal(false);
       await loadDrives(selectedCollegeId);
       onBanner('Drive created successfully');
-    } catch (err) {
-      onError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAddStudent = async (e) => {
-    e.preventDefault();
-    try {
-      setSaving(true);
-      await apiPost(`/college-drives/drives/${selectedDriveId}/candidates`, studentForm);
-      setStudentForm(emptyStudentForm);
-      setShowStudentModal(false);
-      await loadDriveDetails(selectedDriveId);
-      onBanner('Student added successfully');
-    } catch (err) {
-      onError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleBulkUpload = async (e) => {
-    e.preventDefault();
-    if (!bulkFile) return;
-    try {
-      setSaving(true);
-      const formData = new FormData();
-      formData.append('file', bulkFile);
-      const res = await fetch(buildApiUrl(`/college-drives/drives/${selectedDriveId}/bulk-upload`), {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${localStorage.getItem('ats_token')}` },
-        body: formData,
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) throw new Error(json.message || 'Upload failed');
-      setBulkResults(json.data);
-      await loadDriveDetails(selectedDriveId);
-      onBanner(`Bulk upload complete: ${json.data.inserted} inserted`);
     } catch (err) {
       onError(err.message);
     } finally {
@@ -283,25 +216,22 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
           )}
         </div>
 
+        {/* TWO BUTTONS MATCHING ALL CANDIDATES */}
         <div className="flex items-center gap-2">
-          {selectedDriveId && (
-            <>
-              <button 
-                className="h-11 px-6 rounded-2xl bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center gap-2"
-                onClick={() => setShowStudentModal(true)}
-              >
-                <span className="material-symbols-outlined text-xl">person_add</span>
-                Add Student
-              </button>
-              <button 
-                className="h-11 px-6 rounded-2xl bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition-all flex items-center gap-2"
-                onClick={() => setShowBulkModal(true)}
-              >
-                <span className="material-symbols-outlined text-xl">upload_file</span>
-                Bulk Upload
-              </button>
-            </>
-          )}
+          <button 
+            className="os-btn-outline flex items-center gap-2 !h-11 bg-white border-[#e4ebf1] text-[#142651] hover:bg-slate-50 shadow-sm"
+            onClick={() => setShowBulkModal(true)}
+          >
+            <span className="material-symbols-outlined text-base">upload_file</span>
+            Bulk Upload
+          </button>
+          <button 
+            className="os-btn-primary flex items-center gap-2 !h-11 shadow-lg shadow-blue-100"
+            onClick={() => setShowCandidateModal(true)}
+          >
+            <span className="material-symbols-outlined text-base">person_add</span>
+            Add Candidate
+          </button>
         </div>
       </div>
 
@@ -430,7 +360,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     ))}
                     {driveCandidates.length === 0 && (
                       <tr>
-                        <td colSpan="4" className="py-20 text-center text-slate-400 italic text-sm">No students added to this drive yet.</td>
+                        <td colSpan="5" className="py-20 text-center text-slate-400 italic text-sm">No students added to this drive yet.</td>
                       </tr>
                     )}
                   </tbody>
@@ -450,6 +380,30 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       </div>
 
       {/* MODALS */}
+      <CreateCandidateModal
+        isOpen={showCandidateModal}
+        onClose={() => setShowCandidateModal(false)}
+        onSuccess={() => {
+          if (selectedDriveId) loadDriveDetails(selectedDriveId);
+          onBanner('Candidate added successfully');
+        }}
+        driveId={selectedDriveId || null}
+        defaultCollege={selectedCollege?.name || ''}
+        defaultSource={selectedDrive?.title || selectedCollege?.name || 'College Drive'}
+      />
+
+      <React.Suspense fallback={null}>
+        <BulkUploadModal
+          isOpen={showBulkModal}
+          onClose={() => setShowBulkModal(false)}
+          onImportComplete={() => {
+            if (selectedDriveId) loadDriveDetails(selectedDriveId);
+            onBanner('Bulk upload complete');
+          }}
+          driveId={selectedDriveId || null}
+        />
+      </React.Suspense>
+
       {showCollegeModal && (
         <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowCollegeModal(false)} />
@@ -488,126 +442,6 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                 </div>
                 <button className="col-span-2 h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Adding...' : 'Create College Entry'}</button>
               </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showStudentModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowStudentModal(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">Add Student</h2>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">{selectedDrive?.title}</p>
-                </div>
-                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowStudentModal(false)}>
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-              <form className="space-y-4" onSubmit={handleAddStudent}>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Full Name</label>
-                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.fullName} onChange={e => setStudentForm({...studentForm, fullName: e.target.value})} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Email Address</label>
-                  <input type="email" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Phone Number (Required)</label>
-                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-medium" required value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} />
-                </div>
-                <button className="w-full h-14 rounded-2xl bg-emerald-600 text-white font-bold text-lg mt-4 shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Saving...' : 'Add to Drive'}</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showBulkModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowBulkModal(false)} />
-          <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
-            <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900">Bulk Upload Students</h2>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">Excel / CSV Supported</p>
-                </div>
-                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
-
-              {!bulkResults ? (
-                <form onSubmit={handleBulkUpload} className="space-y-6">
-                  <div className="p-10 border-2 border-dashed border-slate-200 rounded-[28px] bg-slate-50/50 flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 rounded-full bg-white shadow-sm flex items-center justify-center text-slate-400 mb-4">
-                      <span className="material-symbols-outlined text-3xl">cloud_upload</span>
-                    </div>
-                    <h4 className="font-bold text-slate-800 mb-1">Select Excel Template</h4>
-                    <p className="text-xs text-slate-500 mb-2 max-w-xs">Template columns: <b>NAME, CONTACT, email</b>.</p>
-                    <button 
-                      type="button" 
-                      onClick={downloadTemplate}
-                      className="text-[#1f52cc] text-[10px] font-bold uppercase tracking-wider hover:underline mb-6 flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-sm">download</span>
-                      Download Sample Template
-                    </button>
-                    <input 
-                      type="file" 
-                      accept=".xlsx, .csv" 
-                      className="hidden" 
-                      id="bulk-file-input" 
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file && file.size > MAX_UPLOAD_BYTES) {
-                          alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
-                          e.target.value = '';
-                          return;
-                        }
-                        setBulkFile(file);
-                      }}
-                    />
-                    <label htmlFor="bulk-file-input" className="h-11 px-6 rounded-xl border border-slate-200 bg-white font-bold text-slate-600 hover:bg-slate-100 cursor-pointer transition-all flex items-center gap-2">
-                      {bulkFile ? bulkFile.name : 'Choose File'}
-                    </label>
-                  </div>
-                  <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={!bulkFile || saving}>{saving ? 'Processing...' : 'Upload & Sync'}</button>
-                </form>
-              ) : (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 text-center">
-                      <div className="text-2xl font-black text-emerald-600">{bulkResults.inserted}</div>
-                      <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Inserted</div>
-                    </div>
-                    <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-center">
-                      <div className="text-2xl font-black text-amber-600">{bulkResults.skipped}</div>
-                      <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Skipped / Failed</div>
-                    </div>
-                  </div>
-
-                  {bulkResults.errors?.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-1">Detailed Error Report</div>
-                      <div className="max-h-48 overflow-y-auto bg-red-50/30 rounded-2xl border border-red-100 p-4 divide-y divide-red-100">
-                        {bulkResults.errors.map((err, i) => (
-                          <div key={i} className="py-2 text-[11px] text-red-700 font-medium flex items-start gap-2">
-                            <span className="material-symbols-outlined text-sm mt-0.5">error</span>
-                            {err}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <button className="w-full h-12 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-all" onClick={() => { setShowBulkModal(false); setBulkResults(null); }}>Done</button>
-                </div>
-              )}
             </div>
           </div>
         </div>

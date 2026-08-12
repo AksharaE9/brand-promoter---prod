@@ -5,7 +5,7 @@ import BulkUploadProgress from '../../features/candidates/bulk-upload/BulkUpload
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
-const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
+const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) => {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
@@ -66,10 +66,14 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete }) => {
 
     const formData = new FormData();
     formData.append('file', targetFile);
+    if (driveId) {
+      formData.append('driveId', driveId);
+    }
 
     try {
       // POST returns 202 Accepted in under 1 sec
-      const { data } = await api.post('/candidates/bulk-upload', formData, {
+      const uploadUrl = driveId ? `/candidates/bulk-upload?driveId=${encodeURIComponent(driveId)}` : '/candidates/bulk-upload';
+      const { data } = await api.post(uploadUrl, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
