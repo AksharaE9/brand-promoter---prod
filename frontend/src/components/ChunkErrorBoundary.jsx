@@ -10,6 +10,7 @@ class ChunkErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
+    this.handleReload = this.handleReload.bind(this);
   }
 
   static getDerivedStateFromError(error) {
@@ -33,9 +34,9 @@ class ChunkErrorBoundary extends React.Component {
     console.error('[ChunkErrorBoundary] Caught chunk loading error:', error, errorInfo);
   }
 
-  handleReload = () => {
+  handleReload() {
     window.location.reload();
-  };
+  }
 
   render() {
     if (this.state.hasError) {

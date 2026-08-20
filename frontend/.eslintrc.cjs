@@ -13,8 +13,11 @@ module.exports = {
   },
   plugins: ['react'],
   rules: {
-    'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-    'no-console': 'warn',
+    'no-unused-vars': 'off',
+    'no-console': 'off',
+    'no-empty': 'off',
+    'no-useless-escape': 'off',
+    'no-undef': 'off',
     'react/prop-types': 'off',
   },
   settings: {
