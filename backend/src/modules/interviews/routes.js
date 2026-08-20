@@ -6,7 +6,8 @@ const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, offerLetterUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
-const { logAudit } = require("../../utils/audit");
+const { logAudit } = require('../../utils/audit');
+const { makeStorageKey } = require('../../utils/dbStorage');
 const { sendNotification } = require("../../utils/notifications");
 const { broadcast } = require("../../utils/sse");
 const cache = require("../../services/schedulingCacheService");
@@ -1234,18 +1235,25 @@ router.post(
     const folder = "interview-recordings";
     const fileName = `interview_${id}_${Date.now()}_${req.file.originalname}`;
     
-    const fileUrl = await uploadFileToCloudinary(req.file.buffer, folder, fileName, req.file.mimetype);
-
-    // Write fileMeta to CockroachDB using Prisma
-    const fileMeta = await prisma.fileMeta.create({
+    // Store recording directly in DB — no Cloudinary, no local disk
+    const tempMeta = await prisma.fileMeta.create({
       data: {
-        storageKey: fileUrl,
+        storageKey: 'db://pending',
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
+        fileData: req.file.buffer,
         uploadedById: req.user.id,
       }
     });
+    await prisma.fileMeta.update({
+      where: { id: tempMeta.id },
+      data: { storageKey: makeStorageKey(tempMeta.id) }
+    });
+    const fileUrl = makeStorageKey(tempMeta.id);
+
+    // Write fileMeta is already done above; keep backward-compatible reference
+    const fileMeta = tempMeta;
 
     await cache.writeRound(
       id,

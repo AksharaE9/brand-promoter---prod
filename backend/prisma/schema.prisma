@@ -506,6 +506,7 @@ model FileMeta {
   mimeType     String?
   sizeBytes    Int?
   uploadedById String?
+  fileData     Bytes?   @map("file_data")
   createdAt    DateTime @default(now())
 
   candidateResumes Candidate[] @relation("CandidateResume")
@@ -821,6 +822,9 @@ model SchedulingMemberFile {
   member       SchedulingMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
   forDate      DateTime         @map("for_date") @db.Date
   fileUrl      String           @map("file_url")
+  originalName String?          @map("original_name")
+  mimeType     String?          @map("mime_type")
+  fileData     Bytes?           @map("file_data")
   note         String?
   uploadedById String           @map("uploaded_by")
   uploadedBy   User             @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
@@ -861,6 +865,7 @@ model RecruitmentReport {
   fileName     String    @map("file_name")
   fileSize     Int?      @map("file_size")
   mimeType     String?   @map("mime_type")
+  fileData     Bytes?    @map("file_data")
   uploadedById String    @map("uploaded_by")
   uploadedBy   User      @relation(fields: [uploadedById], references: [id])
   isDeleted    Boolean   @default(false) @map("is_deleted")
@@ -884,6 +889,7 @@ model PostedFile {
   storageKey     String   @map("storage_key")
   mimeType       String   @map("mime_type")
   sizeBytes      Int      @map("size_bytes")
+  fileData       Bytes?   @map("file_data")
   uploadedById   String   @map("uploaded_by_id")
   uploadedByName String   @map("uploaded_by_name")
   organizationId String   @default("defaultOrg") @map("organization_id")

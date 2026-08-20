@@ -2,14 +2,13 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const prisma = require('../../config/db');
 const { auth, requireRoles } = require('../../middleware/auth');
-const { uploadFileToCloudinary } = require('../../config/cloudinary');
 const { asyncHandler, ApiError } = require('../../utils/errors');
 const sse = require('../../utils/sse');
 const { uploadLimiter } = require('../../middleware/rateLimiter');
 const { streamUrlWithRedirects } = require('../../utils/downloadStream');
+const { isDbStorageKey, getIdFromStorageKey, makeStorageKey, streamDbFile } = require('../../utils/dbStorage');
 
 const router = express.Router();
 router.use(auth);
@@ -28,20 +27,6 @@ function startsWith(buf, prefix) {
     if (buf[i] !== prefix[i]) return false;
   }
   return true;
-}
-
-// Helper to parse Cloudinary URL for deletion
-function parseCloudinaryUrl(url) {
-  const match = url.match(/\/res\.cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+)$/);
-  if (match) {
-    const resourceType = match[1];
-    let publicId = match[2];
-    if (resourceType !== 'raw') {
-      publicId = publicId.replace(/\.[^/.]+$/, "");
-    }
-    return { resourceType, publicId };
-  }
-  return null;
 }
 
 // GET /api/posted-files — paginated list
@@ -65,6 +50,7 @@ router.get('/', asyncHandler(async (req, res) => {
       uploadedById: true,
       uploadedByName: true,
       createdAt: true
+      // NOTE: fileData is intentionally excluded from list queries (would be huge)
     }
   };
 
@@ -98,7 +84,7 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
-// POST /api/posted-files — upload file
+// POST /api/posted-files — upload file (stored directly in DB)
 router.post(
   '/',
   uploadLimiter,
@@ -172,41 +158,52 @@ router.post(
       throw new ApiError(400, `File content does not match its extension. Expected ${expectedFormat} header.`);
     }
 
-    // 4. Save to persistent storage
-    const dest = `posted-files/${Date.now()}_${originalName}`;
-    const storageKey = await uploadFileToCloudinary(buffer, dest, req.file.mimetype);
-    if (!storageKey) {
-      throw new ApiError(500, 'Failed to upload file to storage');
-    }
-
-    // 5. Create database record
+    // 4. Save directly to DB (fileData = binary, storageKey = "db://<id>" set after creation)
+    //    We create with a placeholder storageKey first, then update with the real ID.
     const postedFile = await prisma.postedFile.create({
       data: {
         originalName,
-        storageKey,
+        storageKey: 'db://pending',  // will be updated below
         mimeType: req.file.mimetype || 'application/octet-stream',
         sizeBytes: size,
+        fileData: buffer,
         uploadedById: req.user.id,
         uploadedByName: req.user.fullName || req.user.email,
         organizationId: orgId
       }
     });
 
-    // 6. Broadcast SSE
+    // Update storageKey to reference the record ID
+    const updated = await prisma.postedFile.update({
+      where: { id: postedFile.id },
+      data: { storageKey: makeStorageKey(postedFile.id) },
+      select: {
+        id: true,
+        originalName: true,
+        storageKey: true,
+        mimeType: true,
+        sizeBytes: true,
+        uploadedById: true,
+        uploadedByName: true,
+        createdAt: true
+      }
+    });
+
+    // 5. Broadcast SSE
     sse.broadcastToOrg(orgId, 'POSTED_FILE_ADDED', {
-      id: postedFile.id,
+      id: updated.id,
       filename: originalName,
-      uploadedByName: postedFile.uploadedByName
+      uploadedByName: updated.uploadedByName
     });
 
     res.status(201).json({
       success: true,
-      data: postedFile
+      data: updated
     });
   })
 );
 
-// DELETE /api/posted-files/:id — delete file (restricted to Admin only)
+// DELETE /api/posted-files/:id — delete file record (Admin only)
 router.delete(
   '/:id',
   requireRoles('SUPER_ADMIN', 'ADMIN'),
@@ -215,7 +212,8 @@ router.delete(
     const orgId = req.user.organizationId || 'defaultOrg';
 
     const file = await prisma.postedFile.findUnique({
-      where: { id }
+      where: { id },
+      select: { id: true, organizationId: true, originalName: true, storageKey: true }
     });
 
     if (!file) {
@@ -226,38 +224,30 @@ router.delete(
       throw new ApiError(403, 'You do not have access to delete this file');
     }
 
-    // 1. Delete physical storage file
+    // For Cloudinary-hosted legacy files, attempt deletion from Cloudinary
     const storageKey = file.storageKey;
-    if (storageKey.startsWith('/uploads/')) {
-      // Local file
-      const relativeKey = storageKey.replace(/^\//, '');
-      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
-      try {
-        if (fs.existsSync(localPath)) {
-          fs.unlinkSync(localPath);
-        }
-      } catch (err) {
-        console.warn(`[PostedFiles] Failed to delete local file ${localPath}:`, err.message);
-      }
-    } else if (storageKey.startsWith('http')) {
-      // Cloudinary file
-      const parsed = parseCloudinaryUrl(storageKey);
-      if (parsed) {
+    if (storageKey && storageKey.startsWith('http')) {
+      const cloudinaryUrlMatch = storageKey.match(/\/res\.cloudinary\.com\/[^/]+\/(image|raw|video)\/upload\/(?:v\d+\/)?(.+)$/);
+      if (cloudinaryUrlMatch) {
         try {
           const cloudinary = require('../../config/cloudinary');
-          await cloudinary.uploader.destroy(parsed.publicId, { resource_type: parsed.resourceType });
+          const resourceType = cloudinaryUrlMatch[1];
+          let publicId = cloudinaryUrlMatch[2];
+          if (resourceType !== 'raw') {
+            publicId = publicId.replace(/\.[^/.]+$/, '');
+          }
+          await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
         } catch (err) {
           console.warn(`[PostedFiles] Failed to delete from Cloudinary:`, err.message);
         }
       }
     }
+    // DB-stored and local files: just delete the DB record (fileData column is deleted with it)
 
-    // 2. Delete database record
-    await prisma.postedFile.delete({
-      where: { id }
-    });
+    // Delete database record
+    await prisma.postedFile.delete({ where: { id } });
 
-    // 3. Broadcast SSE
+    // Broadcast SSE
     sse.broadcastToOrg(orgId, 'POSTED_FILE_DELETED', {
       id,
       filename: file.originalName
@@ -289,25 +279,39 @@ router.get(
       throw new ApiError(403, 'You do not have access to download this file');
     }
 
-    const { storageKey, originalName, mimeType } = file;
+    const { storageKey, originalName, mimeType, fileData } = file;
 
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(originalName)}"`);
     res.setHeader('Content-Type', mimeType || 'application/octet-stream');
 
-    if (storageKey.startsWith('/uploads/')) {
-      // Local file
+    // --- Priority 1: DB-stored binary (new uploads) ---
+    if (isDbStorageKey(storageKey) || fileData) {
+      if (!fileData || fileData.length === 0) {
+        throw new ApiError(404, 'File data not found in database. The file may have been stored externally and is no longer available.');
+      }
+      streamDbFile(fileData, res);
+      return;
+    }
+
+    // --- Priority 2: Legacy Cloudinary URL ---
+    if (storageKey && storageKey.startsWith('http')) {
+      streamUrlWithRedirects(storageKey, res);
+      return;
+    }
+
+    // --- Priority 3: Legacy local file (dev-only, not available on Render) ---
+    if (storageKey && storageKey.startsWith('/uploads/')) {
+      const fs = require('fs');
       const relativeKey = storageKey.replace(/^\//, '');
-      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      const localPath = require('path').join(__dirname, '..', '..', '..', relativeKey);
       if (!fs.existsSync(localPath)) {
-        throw new ApiError(404, 'File not found on local storage');
+        throw new ApiError(404, 'File not found. It was stored locally and is no longer available on this server.');
       }
       fs.createReadStream(localPath).pipe(res);
-    } else if (storageKey.startsWith('http')) {
-      // Cloudinary URL - stream it following redirects
-      streamUrlWithRedirects(storageKey, res);
-    } else {
-      throw new ApiError(400, 'Invalid storage key');
+      return;
     }
+
+    throw new ApiError(400, 'Invalid or unsupported storage key format.');
   })
 );
 

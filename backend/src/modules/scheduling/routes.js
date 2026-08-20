@@ -8,6 +8,8 @@ const prisma = require('../../config/db');
 const { auth, requireRoles } = require('../../middleware/auth');
 const { ApiError, asyncHandler } = require('../../utils/errors');
 const { streamUrlWithRedirects } = require('../../utils/downloadStream');
+const { isDbStorageKey, makeStorageKey, streamDbFile } = require('../../utils/dbStorage');
+
 const { logAudit } = require('../../utils/audit');
 const sse = require('../../utils/sse');
 const { getCached, invalidate } = require('../../utils/cache');
@@ -846,24 +848,34 @@ router.post(
       throw new ApiError(403, 'Forbidden: You cannot upload files for this telecaller');
     }
 
-    const { uploadFileToCloudinary } = require('../../config/cloudinary');
-    const dest = `scheduling-files/${Date.now()}_${req.file.originalname}`;
-    const fileUrl = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
-    if (!fileUrl) {
-      throw new ApiError(500, 'Failed to upload file to storage');
-    }
+    const fileBuffer = req.file.buffer;
+    const originalName = req.file.originalname;
+    const mimeType = req.file.mimetype;
 
     const targetDateStr = date || req.query.date || getTodayString();
     const forDate = new Date(`${targetDateStr}T00:00:00.000Z`);
 
-    const attachedFile = await prisma.schedulingMemberFile.create({
+    // Create record with DB binary storage — no Cloudinary, no local disk
+    const tempFile = await prisma.schedulingMemberFile.create({
       data: {
         memberId,
         forDate,
-        fileUrl,
+        fileUrl: 'db://pending', // placeholder, updated below
+        originalName,
+        mimeType,
+        fileData: fileBuffer,
         note: note || null,
         uploadedById: req.user.id,
       },
+      include: {
+        uploadedBy: { select: { id: true, fullName: true } },
+      },
+    });
+
+    // Update fileUrl to reference the record ID
+    const attachedFile = await prisma.schedulingMemberFile.update({
+      where: { id: tempFile.id },
+      data: { fileUrl: makeStorageKey(tempFile.id) },
       include: {
         uploadedBy: { select: { id: true, fullName: true } },
       },
@@ -877,12 +889,15 @@ router.post(
     const orgId = req.user.organizationId || 'defaultOrg';
     sse.broadcastToOrg(orgId, 'SCHEDULING_MEMBER_FILE_ADDED', { memberId, forDate: targetDateStr });
 
+    // Return without fileData in response (too large)
+    const { fileData: _fd, ...safeFile } = attachedFile;
     res.status(201).json({
       success: true,
-      data: attachedFile,
+      data: safeFile,
     });
   })
 );
+
 
 // ─────────────────────────────────────────────
 // Admin Overview Dashboard Endpoint
@@ -1374,28 +1389,40 @@ router.get(
       throw new ApiError(404, 'File attachment not found');
     }
 
-    const { fileUrl } = file;
-    const fileName = fileUrl.split('/').pop() || 'attachment';
+    const { fileUrl, originalName, mimeType, fileData } = file;
+    const fileName = originalName || fileUrl.split('/').pop() || 'attachment';
 
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Type', mimeType || 'application/octet-stream');
 
-    const path = require('path');
-    const fs = require('fs');
+    // --- Priority 1: DB-stored binary (new uploads) ---
+    if (isDbStorageKey(fileUrl) || fileData) {
+      if (!fileData || fileData.length === 0) {
+        throw new ApiError(404, 'File data not found in database. The file may have been stored externally and is no longer available.');
+      }
+      streamDbFile(fileData, res);
+      return;
+    }
 
-    if (fileUrl.startsWith('/uploads/')) {
+    // --- Priority 2: Legacy Cloudinary URL ---
+    if (fileUrl && fileUrl.startsWith('http')) {
+      streamUrlWithRedirects(fileUrl, res);
+      return;
+    }
+
+    // --- Priority 3: Legacy local file (dev-only) ---
+    if (fileUrl && fileUrl.startsWith('/uploads/')) {
+      const fs = require('fs');
       const relativeKey = fileUrl.replace(/^\//, '');
-      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      const localPath = require('path').join(__dirname, '..', '..', '..', relativeKey);
       if (!fs.existsSync(localPath)) {
-        throw new ApiError(404, 'File not found on local storage');
+        throw new ApiError(404, 'File not found. It was stored locally and is no longer available on this server.');
       }
       fs.createReadStream(localPath).pipe(res);
-    } else if (fileUrl.startsWith('http')) {
-      // Cloudinary URL - stream it following redirects
-      streamUrlWithRedirects(fileUrl, res);
-    } else {
-      throw new ApiError(400, 'Invalid file URL');
+      return;
     }
+
+    throw new ApiError(400, 'Invalid file URL format.');
   })
 );
 

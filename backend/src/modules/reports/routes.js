@@ -574,6 +574,8 @@ router.get("/pipeline-insights", requireRoles("SUPER_ADMIN", "RECRUITER"), async
 const multer = require('multer');
 const { uploadFileToCloudinary } = require('../../config/cloudinary');
 const { logAudit } = require('../../utils/audit');
+const { isDbStorageKey, makeStorageKey, streamDbFile } = require('../../utils/dbStorage');
+
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -631,27 +633,28 @@ router.post(
       throw new ApiError(400, 'Report title is required.');
     }
 
-    // Upload to Cloudinary under ats-recruitment-reports folder
-    const dest = `recruitment-reports/${Date.now()}_${req.file.originalname}`;
-    const fileUrl = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
-    if (!fileUrl) {
-      throw new ApiError(500, 'File upload to storage failed. Please try again.');
-    }
-
-    const report = await prisma.recruitmentReport.create({
+    // Store file directly in DB — no Cloudinary, no local disk
+    const tempReport = await prisma.recruitmentReport.create({
       data: {
         title: title.trim(),
         description: description?.trim() || null,
-        fileUrl,
+        fileUrl: 'db://pending',  // placeholder, updated below
         fileName: req.file.originalname,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
+        fileData: req.file.buffer,
         uploadedById: req.user.id,
       },
+    });
+
+    const report = await prisma.recruitmentReport.update({
+      where: { id: tempReport.id },
+      data: { fileUrl: makeStorageKey(tempReport.id) },
       include: {
         uploadedBy: { select: { id: true, fullName: true, email: true } },
       },
     });
+
 
     logAudit({
       actorUserId: req.user.id,
@@ -719,27 +722,39 @@ router.get(
       throw new ApiError(404, 'Report not found');
     }
 
-    const { fileUrl, fileName, mimeType } = report;
+    const { fileUrl, fileName, mimeType, fileData } = report;
 
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     res.setHeader('Content-Type', mimeType || 'application/octet-stream');
 
-    const path = require('path');
-    const fs = require('fs');
+    // --- Priority 1: DB-stored binary (new uploads) ---
+    if (isDbStorageKey(fileUrl) || fileData) {
+      if (!fileData || fileData.length === 0) {
+        throw new ApiError(404, 'File data not found in database. The file may have been stored externally and is no longer available.');
+      }
+      streamDbFile(fileData, res);
+      return;
+    }
 
-    if (fileUrl.startsWith('/uploads/')) {
+    // --- Priority 2: Legacy Cloudinary URL ---
+    if (fileUrl && fileUrl.startsWith('http')) {
+      streamUrlWithRedirects(fileUrl, res);
+      return;
+    }
+
+    // --- Priority 3: Legacy local file (dev-only) ---
+    if (fileUrl && fileUrl.startsWith('/uploads/')) {
+      const fs = require('fs');
       const relativeKey = fileUrl.replace(/^\//, '');
-      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      const localPath = require('path').join(__dirname, '..', '..', '..', relativeKey);
       if (!fs.existsSync(localPath)) {
-        throw new ApiError(404, 'File not found on local storage');
+        throw new ApiError(404, 'File not found. It was stored locally and is no longer available on this server.');
       }
       fs.createReadStream(localPath).pipe(res);
-    } else if (fileUrl.startsWith('http')) {
-      // Cloudinary URL - stream it following redirects
-      streamUrlWithRedirects(fileUrl, res);
-    } else {
-      throw new ApiError(400, 'Invalid file URL');
+      return;
     }
+
+    throw new ApiError(400, 'Invalid file URL format.');
   })
 );
 

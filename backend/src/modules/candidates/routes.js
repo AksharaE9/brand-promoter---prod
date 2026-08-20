@@ -4,6 +4,8 @@ const path = require("path");
 const XLSX = require("xlsx");
 const prisma = require("../../config/db");
 const { uploadFileToCloudinary } = require("../../config/cloudinary");
+const { isDbStorageKey, makeStorageKey, streamDbFile } = require("../../utils/dbStorage");
+
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
@@ -666,23 +668,22 @@ router.post(
     });
     if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
 
-    const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-    const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
-
-    if (!storageKey) {
-      throw new ApiError(500, "Failed to upload resume to storage");
-    }
-
-    const fileMeta = await prisma.fileMeta.create({
+    // Store resume directly in DB — no Cloudinary, no local disk
+    const tempFileMeta = await prisma.fileMeta.create({
       data: {
-        storageKey,
+        storageKey: 'db://pending',
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
+        fileData: req.file.buffer,
         uploadedById: req.user.id,
       }
     });
-    const resumeFileId = fileMeta.id;
+    await prisma.fileMeta.update({
+      where: { id: tempFileMeta.id },
+      data: { storageKey: makeStorageKey(tempFileMeta.id) }
+    });
+    const resumeFileId = tempFileMeta.id;
 
     const resolvedCompanyResume = (req.body.company || '').trim() || DEFAULT_COMPANY;
     const allowedCreateStatuses = new Set(["ACTIVE", "OFFER_SENT", "JOINED", "REJECTED"]);
@@ -1211,68 +1212,70 @@ router.get(
       throw new ApiError(404, "Resume file not found for this candidate");
     }
 
-    const { storageKey, originalName, mimeType } = candidate.resumeFile;
+    const { storageKey, originalName, mimeType, fileData } = candidate.resumeFile;
+    const safeFileName = originalName || 'resume.pdf';
 
-    const isAbsolute = storageKey.startsWith("http://") || storageKey.startsWith("https://");
-    if (!isAbsolute) {
-      const path = require("path");
-      const fs = require("fs");
-      const relativePath = storageKey.startsWith("/") ? storageKey.slice(1) : storageKey;
-      const localFilePath = path.join(__dirname, "..", "..", relativePath);
-      if (fs.existsSync(localFilePath)) {
-        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(originalName || 'resume.pdf')}"`);
-        res.setHeader("Content-Type", mimeType || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+    res.setHeader("Content-Type", mimeType || "application/octet-stream");
+
+    // --- Priority 1: DB-stored binary (new uploads) ---
+    if (isDbStorageKey(storageKey) || fileData) {
+      if (!fileData || fileData.length === 0) {
+        throw new ApiError(404, "Resume not found in database. It may have been stored externally and is no longer available.");
+      }
+      streamDbFile(fileData, res);
+      return;
+    }
+
+    // --- Priority 2: Cloudinary or other remote URL (legacy records) ---
+    if (storageKey && (storageKey.startsWith('http://') || storageKey.startsWith('https://'))) {
+      try {
+        let downloadUrl = storageKey;
+        if (storageKey.includes("res.cloudinary.com")) {
+          const cloudinary = require("../../config/cloudinary");
+          const decoded = decodeURIComponent(storageKey);
+          const match = decoded.match(/res\.cloudinary\.com\/[^/]+\/([^/]+)\/([^/]+)\/(?:v\d+\/)?(.+)$/);
+          if (match) {
+            const resourceType = match[1];
+            const type = match[2];
+            const remaining = match[3];
+            const extMatch = remaining.match(/\.([a-zA-Z0-9]+)$/);
+            const format = extMatch ? extMatch[1] : null;
+            const publicId = format ? remaining.slice(0, -(format.length + 1)) : remaining;
+            downloadUrl = cloudinary.utils.private_download_url(publicId, format || 'pdf', {
+              resource_type: resourceType,
+              type,
+              expires_at: Math.floor(Date.now() / 1000) + 300,
+              attachment: true
+            });
+          }
+        }
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
+        const buf = Buffer.from(await response.arrayBuffer());
+        res.send(buf);
+      } catch (err) {
+        console.error("[CandidateResume] Error fetching from remote URL:", err.message);
+        res.redirect(storageKey);
+      }
+      return;
+    }
+
+    // --- Priority 3: Legacy local file (dev-only) ---
+    if (storageKey && (storageKey.startsWith('/') || storageKey.startsWith('uploads/'))) {
+      const fsModule = require('fs');
+      const relativePath = storageKey.startsWith('/') ? storageKey.slice(1) : storageKey;
+      const localFilePath = require('path').join(__dirname, '..', '..', relativePath);
+      if (fsModule.existsSync(localFilePath)) {
         return res.sendFile(localFilePath);
       }
+      throw new ApiError(404, "The local resume file could not be found. It may have been cleaned up from ephemeral storage.");
     }
 
-    try {
-      let downloadUrl = storageKey;
-
-      // Check if it's a Cloudinary URL and generate a signed private download URL if so
-      if (storageKey.includes("res.cloudinary.com")) {
-        const cloudinary = require("../../config/cloudinary");
-        const decoded = decodeURIComponent(storageKey);
-        const match = decoded.match(/res\.cloudinary\.com\/[^/]+\/([^/]+)\/([^/]+)\/(?:v\d+\/)?(.+)$/);
-        if (match) {
-          const resourceType = match[1]; // 'image' or 'raw'
-          const type = match[2]; // 'upload', 'private', 'authenticated'
-          const remaining = match[3];
-          
-          const extMatch = remaining.match(/\.([a-zA-Z0-9]+)$/);
-          const format = extMatch ? extMatch[1] : null;
-          const publicId = format ? remaining.slice(0, -(format.length + 1)) : remaining;
-
-          downloadUrl = cloudinary.utils.private_download_url(publicId, format || 'pdf', {
-            resource_type: resourceType,
-            type: type,
-            expires_at: Math.floor(Date.now() / 1000) + 300, // Expires in 5 minutes
-            attachment: true
-          });
-        }
-      }
-
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch file from storage: ${response.statusText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(originalName || 'resume.pdf')}"`);
-      res.setHeader("Content-Type", mimeType || "application/octet-stream");
-      res.send(buffer);
-    } catch (err) {
-      console.error("Error downloading resume from storage:", err);
-      if (storageKey && storageKey.startsWith("/")) {
-        throw new ApiError(404, "The local resume file could not be found. It may have been cleaned up from ephemeral storage.");
-      }
-      // Fallback: redirect user directly to the storage key URL if it is remote
-      res.redirect(storageKey);
-    }
+    throw new ApiError(400, "Invalid or unsupported storage key format.");
   }),
 );
+
 
 
 // POST Upload candidate resume after creation
@@ -1293,35 +1296,35 @@ router.post(
       throw new ApiError(403, "You do not have access to this candidate's data");
     }
 
-    const dest = `resumes/${Date.now()}_${req.file.originalname}`;
-    const storageKey = await uploadFileToCloudinary(req.file.buffer, dest, req.file.mimetype);
-    
-    if (!storageKey) {
-      throw new ApiError(500, "Failed to upload resume to storage");
-    }
-
-    const fileMeta = await prisma.fileMeta.create({
+    // Store resume directly in DB — no Cloudinary, no local disk
+    const tempFileMeta = await prisma.fileMeta.create({
       data: {
-        storageKey,
+        storageKey: 'db://pending',
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
+        fileData: req.file.buffer,
         uploadedById: req.user.id
       }
+    });
+    await prisma.fileMeta.update({
+      where: { id: tempFileMeta.id },
+      data: { storageKey: makeStorageKey(tempFileMeta.id) }
     });
     
     await prisma.candidate.update({
       where: { id },
       data: {
-        resumeFileId: fileMeta.id
+        resumeFileId: tempFileMeta.id
       }
     });
 
     await inv.candidate(orgId, id);
 
-    res.json({ success: true, data: { resumeFileId: fileMeta.id, storageKey } });
+    res.json({ success: true, data: { resumeFileId: tempFileMeta.id, storageKey: makeStorageKey(tempFileMeta.id) } });
   }),
 );
+
 
 // DELETE Soft delete candidate
 router.delete(
