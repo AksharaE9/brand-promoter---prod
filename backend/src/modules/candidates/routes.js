@@ -3,8 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const prisma = require("../../config/db");
-const { uploadFileToCloudinary } = require("../../config/cloudinary");
+const { uploadFileToCloudinary } = require("../../config/cloudinary"); // legacy stub — kept for backward compat with old http:// records
 const { isDbStorageKey, makeStorageKey, streamDbFile } = require("../../utils/dbStorage");
+
 
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
@@ -1227,30 +1228,11 @@ router.get(
       return;
     }
 
-    // --- Priority 2: Cloudinary or other remote URL (legacy records) ---
+    // --- Priority 2: Legacy remote URL (old Cloudinary or other http records) ---
+    // Cloudinary is fully removed — attempt a plain fetch; redirect as last resort
     if (storageKey && (storageKey.startsWith('http://') || storageKey.startsWith('https://'))) {
       try {
-        let downloadUrl = storageKey;
-        if (storageKey.includes("res.cloudinary.com")) {
-          const cloudinary = require("../../config/cloudinary");
-          const decoded = decodeURIComponent(storageKey);
-          const match = decoded.match(/res\.cloudinary\.com\/[^/]+\/([^/]+)\/([^/]+)\/(?:v\d+\/)?(.+)$/);
-          if (match) {
-            const resourceType = match[1];
-            const type = match[2];
-            const remaining = match[3];
-            const extMatch = remaining.match(/\.([a-zA-Z0-9]+)$/);
-            const format = extMatch ? extMatch[1] : null;
-            const publicId = format ? remaining.slice(0, -(format.length + 1)) : remaining;
-            downloadUrl = cloudinary.utils.private_download_url(publicId, format || 'pdf', {
-              resource_type: resourceType,
-              type,
-              expires_at: Math.floor(Date.now() / 1000) + 300,
-              attachment: true
-            });
-          }
-        }
-        const response = await fetch(downloadUrl);
+        const response = await fetch(storageKey);
         if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
         const buf = Buffer.from(await response.arrayBuffer());
         res.send(buf);

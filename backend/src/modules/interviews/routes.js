@@ -1119,8 +1119,23 @@ router.post(
       notes: overallComments || "",
     };
 
+    // Store offer letter file in DB if uploaded
     if (req.file) {
-      feedbackEntry.offerFileUrl = req.file.path;
+      const tempOfferMeta = await prisma.fileMeta.create({
+        data: {
+          storageKey: 'db://pending',
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype || 'application/octet-stream',
+          sizeBytes: req.file.size || 0,
+          fileData: req.file.buffer,
+          uploadedById: req.user.id,
+        }
+      });
+      await prisma.fileMeta.update({
+        where: { id: tempOfferMeta.id },
+        data: { storageKey: makeStorageKey(tempOfferMeta.id) }
+      });
+      feedbackEntry.offerFileUrl = makeStorageKey(tempOfferMeta.id);
       feedbackEntry.offerFileName = req.file.originalname;
     }
 
@@ -1153,7 +1168,7 @@ router.post(
         updatedAt: new Date().toISOString(),
       };
       if (req.file) {
-        savedFeedbackEntry.offerFileUrl = req.file.path;
+        savedFeedbackEntry.offerFileUrl = feedbackEntry.offerFileUrl; // already set to db:// key above
         savedFeedbackEntry.offerFileName = req.file.originalname;
       }
       currentFeedbacks[targetIndex] = savedFeedbackEntry;
@@ -1172,7 +1187,7 @@ router.post(
     };
 
     if (req.file) {
-      updatePayload.offerLetterUrl = req.file.path;
+      updatePayload.offerLetterUrl = feedbackEntry.offerFileUrl; // already set to db:// key
     }
 
     const result = await cache.writeRound(
@@ -1231,8 +1246,7 @@ router.post(
     const { data: current } = await cache.getRound(id);
     if (!current) throw new ApiError(404, "Interview not found");
 
-    const { uploadFileToCloudinary } = require("../../config/cloudinary");
-    const folder = "interview-recordings";
+    const folder = "interview-recordings"; // kept for logging context only
     const fileName = `interview_${id}_${Date.now()}_${req.file.originalname}`;
     
     // Store recording directly in DB — no Cloudinary, no local disk

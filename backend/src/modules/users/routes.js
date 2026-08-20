@@ -7,6 +7,8 @@ const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const { getCached } = require("../../utils/cache");
 const { validatePasswordStrength } = require("../../lib/passwordValidation");
+const { makeStorageKey, streamDbFile, isDbStorageKey } = require("../../utils/dbStorage");
+
 
 const router = express.Router();
 router.use(auth);
@@ -235,32 +237,35 @@ router.patch(
   }),
 );
 
-// POST /api/users/me/photo — upload profile photo
+// POST /api/users/me/photo — upload profile photo, stored in DB
 router.post(
   "/me/photo",
-  (req, res, next) => {
-    req.uploadFolder = "user-photos";
-    next();
-  },
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) throw new ApiError(400, "Photo file is required");
 
-    const cloudinaryUrl = req.file.path;
-
-    const fileMeta = await prisma.fileMeta.create({
+    // Store file binary directly in DB — no Cloudinary, no local disk
+    const tempMeta = await prisma.fileMeta.create({
       data: {
-        storageKey: cloudinaryUrl,
+        storageKey: 'db://pending',
         originalName: req.file.originalname,
-        mimeType: req.file.mimetype || "image/jpeg",
+        mimeType: req.file.mimetype || 'image/jpeg',
         sizeBytes: req.file.size || 0,
+        fileData: req.file.buffer,
         uploadedById: req.user.id,
       },
     });
 
+    await prisma.fileMeta.update({
+      where: { id: tempMeta.id },
+      data: { storageKey: makeStorageKey(tempMeta.id) }
+    });
+
+    const storageKey = makeStorageKey(tempMeta.id);
+
     await prisma.user.update({
       where: { id: req.user.id },
-      data: { profilePhotoUrl: cloudinaryUrl },
+      data: { profilePhotoUrl: storageKey },
     });
 
     logAudit({
@@ -268,7 +273,7 @@ router.post(
       action: "UPLOAD_USER_PHOTO",
       entityType: "USER",
       entityId: req.user.id,
-      newData: { fileId: fileMeta.id, url: cloudinaryUrl },
+      newData: { fileId: tempMeta.id, url: storageKey },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -281,12 +286,13 @@ router.post(
     const sse = require("../../utils/sse");
     sse.sendToUser(req.user.id, "PROFILE_UPDATED", {
       userId: req.user.id,
-      changes: { profilePhotoUrl: cloudinaryUrl },
+      changes: { profilePhotoUrl: storageKey },
     });
 
-    res.status(201).json({ success: true, data: { fileId: fileMeta.id, url: cloudinaryUrl } });
+    res.status(201).json({ success: true, data: { fileId: tempMeta.id, url: storageKey } });
   }),
 );
+
 
 // POST /api/users/me/change-password — self-service change password
 router.post(
