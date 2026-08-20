@@ -52,6 +52,7 @@ test('Test 5: Creating a new candidate persists all required fields to Postgres'
     preferredRole: 'Software Engineer',
     source:        'LinkedIn',
     organizationId: FIXTURE.ORG_ID,
+    resumeLinkOriginal: 'https://example.com/resume.pdf',
   };
 
   const res = await request(app)
