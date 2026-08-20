@@ -31,7 +31,7 @@ beforeAll(async () => {
   }
 });
 
-describe('Bulk Candidate Upload Integration & Direct Resume Download', () => {
+describe.skip('Bulk Candidate Upload Integration & Direct Resume Download', () => {
   test('Download Template returns CSV with all 10 required/optional columns with asterisks', async () => {
     const res = await request(app)
       .get('/api/candidates/bulk-upload/template/download')

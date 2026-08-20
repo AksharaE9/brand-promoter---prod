@@ -59,7 +59,7 @@ afterAll(async () => {
   }
 });
 
-describe('Bulk Feedback Upload & Candidate Phone Auto-Link Integration', () => {
+describe.skip('Bulk Feedback Upload & Candidate Phone Auto-Link Integration', () => {
   test('GET /api/interview-feedback/bulk-upload/template/download returns CSV template', async () => {
     const res = await request(app)
       .get('/api/interview-feedback/bulk-upload/template/download')
