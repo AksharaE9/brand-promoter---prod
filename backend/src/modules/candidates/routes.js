@@ -1216,14 +1216,13 @@ router.get(
     const { storageKey, originalName, mimeType, fileData } = candidate.resumeFile;
     const safeFileName = originalName || 'resume.pdf';
 
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
-    res.setHeader("Content-Type", mimeType || "application/octet-stream");
-
     // --- Priority 1: DB-stored binary (new uploads) ---
     if (isDbStorageKey(storageKey) || fileData) {
       if (!fileData || fileData.length === 0) {
         throw new ApiError(404, "Resume not found in database. It may have been stored externally and is no longer available.");
       }
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+      res.setHeader("Content-Type", mimeType || "application/octet-stream");
       streamDbFile(fileData, res);
       return;
     }
@@ -1235,6 +1234,8 @@ router.get(
         const response = await fetch(storageKey);
         if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
         const buf = Buffer.from(await response.arrayBuffer());
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+        res.setHeader("Content-Type", mimeType || "application/octet-stream");
         res.send(buf);
       } catch (err) {
         console.error("[CandidateResume] Error fetching from remote URL:", err.message);
@@ -1249,6 +1250,8 @@ router.get(
       const relativePath = storageKey.startsWith('/') ? storageKey.slice(1) : storageKey;
       const localFilePath = require('path').join(__dirname, '..', '..', relativePath);
       if (fsModule.existsSync(localFilePath)) {
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+        res.setHeader("Content-Type", mimeType || "application/octet-stream");
         return res.sendFile(localFilePath);
       }
       throw new ApiError(404, "The local resume file could not be found. It may have been cleaned up from ephemeral storage.");

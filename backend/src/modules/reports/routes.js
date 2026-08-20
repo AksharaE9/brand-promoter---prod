@@ -724,20 +724,21 @@ router.get(
 
     const { fileUrl, fileName, mimeType, fileData } = report;
 
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-    res.setHeader('Content-Type', mimeType || 'application/octet-stream');
-
     // --- Priority 1: DB-stored binary (new uploads) ---
     if (isDbStorageKey(fileUrl) || fileData) {
       if (!fileData || fileData.length === 0) {
         throw new ApiError(404, 'File data not found in database. The file may have been stored externally and is no longer available.');
       }
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.setHeader('Content-Type', mimeType || 'application/octet-stream');
       streamDbFile(fileData, res);
       return;
     }
 
     // --- Priority 2: Legacy Cloudinary URL ---
     if (fileUrl && fileUrl.startsWith('http')) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.setHeader('Content-Type', mimeType || 'application/octet-stream');
       streamUrlWithRedirects(fileUrl, res);
       return;
     }
@@ -750,6 +751,8 @@ router.get(
       if (!fs.existsSync(localPath)) {
         throw new ApiError(404, 'File not found. It was stored locally and is no longer available on this server.');
       }
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.setHeader('Content-Type', mimeType || 'application/octet-stream');
       fs.createReadStream(localPath).pipe(res);
       return;
     }
