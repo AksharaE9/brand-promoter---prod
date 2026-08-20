@@ -15,8 +15,14 @@ async function auth(req, res, next) {
     token = authHeader.substring(7).trim();
   }
 
-  // 2. Try Query Parameter (Only support for Server-Sent Events / SSE endpoints)
-  if (!token && req.query.token && (req.path.startsWith("/sse") || req.path.includes("/stream"))) {
+  // 2. Try Query Parameter (Support for SSE, exports, and downloads)
+  const urlToCheck = req.originalUrl || req.url || "";
+  if (!token && req.query.token && (
+    urlToCheck.includes("/sse") || 
+    urlToCheck.includes("/stream") || 
+    urlToCheck.includes("/export") || 
+    urlToCheck.includes("/download")
+  )) {
     token = req.query.token;
   }
 

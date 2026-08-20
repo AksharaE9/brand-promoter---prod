@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { buildApiUrl } from '../../lib/api';
 
 export default function MemberFileAttachmentModal({ memberId, memberName, initialFiles = [], selectedDate: propSelectedDate, onClose, onRefresh }) {
   const [selectedDate, setSelectedDate] = useState(propSelectedDate);
@@ -162,7 +163,7 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
                 {normalizedFiles.map((f) => (
                   <div key={f.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="min-w-0 flex-1 pr-3">
-                      <a href={f.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline truncate block">
+                      <a href={buildApiUrl(`/scheduling/members/${memberId}/files/${f.id}/download?token=${localStorage.getItem('ats_token')}`)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline truncate block">
                         {f.filename}
                       </a>
                       {f.note && <p className="text-[11px] text-slate-500 mt-1 italic">"{f.note}"</p>}
@@ -170,7 +171,7 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
                         Uploaded by {f.uploadedBy} at {f.createdAt ? new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'unknown'}
                       </div>
                     </div>
-                    <a href={f.fileUrl} download target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
+                    <a href={buildApiUrl(`/scheduling/members/${memberId}/files/${f.id}/download?token=${localStorage.getItem('ats_token')}`)} download target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
                       <span className="material-symbols-outlined text-sm">download</span>
                     </a>
                   </div>

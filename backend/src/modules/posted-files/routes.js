@@ -269,4 +269,54 @@ router.delete(
   })
 );
 
+// GET /api/posted-files/:id/download — download the file
+router.get(
+  '/:id/download',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const orgId = req.user.organizationId || 'defaultOrg';
+
+    const file = await prisma.postedFile.findUnique({
+      where: { id }
+    });
+
+    if (!file) {
+      throw new ApiError(404, 'File not found');
+    }
+
+    if (file.organizationId !== orgId) {
+      throw new ApiError(403, 'You do not have access to download this file');
+    }
+
+    const { storageKey, originalName, mimeType } = file;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(originalName)}"`);
+    res.setHeader('Content-Type', mimeType || 'application/octet-stream');
+
+    if (storageKey.startsWith('/uploads/')) {
+      // Local file
+      const relativeKey = storageKey.replace(/^\//, '');
+      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      if (!fs.existsSync(localPath)) {
+        throw new ApiError(404, 'File not found on local storage');
+      }
+      fs.createReadStream(localPath).pipe(res);
+    } else if (storageKey.startsWith('http')) {
+      // Cloudinary URL - stream it
+      const https = require('https');
+      https.get(storageKey, (cloudinaryRes) => {
+        if (cloudinaryRes.statusCode >= 400) {
+          return res.status(cloudinaryRes.statusCode).json({ success: false, message: 'Failed to download from storage' });
+        }
+        cloudinaryRes.pipe(res);
+      }).on('error', (err) => {
+        console.error('[PostedFiles] Cloudinary stream error:', err.message);
+        res.status(500).json({ success: false, message: 'Error streaming file' });
+      });
+    } else {
+      throw new ApiError(400, 'Invalid storage key');
+    }
+  })
+);
+
 module.exports = router;

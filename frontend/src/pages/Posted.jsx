@@ -9,7 +9,7 @@ import { usePaginatedList } from '../hooks/usePaginatedList';
 import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
-import { getStoredUser } from '../lib/api';
+import { getStoredUser, buildApiUrl } from '../lib/api';
 import {
   FileText,
   FileSpreadsheet,
@@ -290,7 +290,7 @@ const Posted = () => {
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <a
-                              href={file.storageKey}
+                              href={buildApiUrl(`/posted-files/${file.id}/download?token=${localStorage.getItem('ats_token')}`)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"

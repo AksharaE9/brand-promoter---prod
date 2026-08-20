@@ -210,7 +210,7 @@ function AddedReportsTab({ currentUser, searchQuery }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-                  <a href={report.fileUrl} target="_blank" rel="noopener noreferrer" download={report.fileName}
+                  <a href={buildApiUrl(`/reports/added-reports/${report.id}/download?token=${localStorage.getItem('ats_token')}`)} target="_blank" rel="noopener noreferrer" download={report.fileName}
                     className="flex-1 os-btn-primary !h-7 text-xs font-bold flex items-center justify-center gap-1">
                     <span className="material-symbols-outlined text-sm">download</span> Download
                   </a>

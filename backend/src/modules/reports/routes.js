@@ -704,4 +704,50 @@ router.delete('/added-reports/:id', requireRoles('SUPER_ADMIN'), asyncHandler(as
   res.json({ success: true, message: 'Report deleted.' });
 }));
 
+// GET /api/reports/added-reports/:id/download — download the recruitment report
+router.get(
+  '/added-reports/:id/download',
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const report = await prisma.recruitmentReport.findUnique({
+      where: { id }
+    });
+
+    if (!report || report.isDeleted) {
+      throw new ApiError(404, 'Report not found');
+    }
+
+    const { fileUrl, fileName, mimeType } = report;
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Type', mimeType || 'application/octet-stream');
+
+    const path = require('path');
+    const fs = require('fs');
+
+    if (fileUrl.startsWith('/uploads/')) {
+      const relativeKey = fileUrl.replace(/^\//, '');
+      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      if (!fs.existsSync(localPath)) {
+        throw new ApiError(404, 'File not found on local storage');
+      }
+      fs.createReadStream(localPath).pipe(res);
+    } else if (fileUrl.startsWith('http')) {
+      const https = require('https');
+      https.get(fileUrl, (cloudinaryRes) => {
+        if (cloudinaryRes.statusCode >= 400) {
+          return res.status(cloudinaryRes.statusCode).json({ success: false, message: 'Failed to download from storage' });
+        }
+        cloudinaryRes.pipe(res);
+      }).on('error', (err) => {
+        console.error('[Reports] Cloudinary stream error:', err.message);
+        res.status(500).json({ success: false, message: 'Error streaming file' });
+      });
+    } else {
+      throw new ApiError(400, 'Invalid file URL');
+    }
+  })
+);
+
 module.exports = router;

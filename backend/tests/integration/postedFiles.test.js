@@ -219,4 +219,32 @@ describe('Posted Files Integration Tests', () => {
     const dbRecord = await prisma.postedFile.findUnique({ where: { id: fileId } });
     expect(dbRecord).toBeNull();
   });
+
+  test('Download a posted file with valid token - should succeed', async () => {
+    // 1. Upload a file first
+    const buffer = Buffer.from([0x50, 0x4B, 0x03, 0x04, 0x00, 0x00]);
+    const uploadRes = await request(app)
+      .post('/api/posted-files')
+      .set('Authorization', `Bearer ${nonAdminToken}`)
+      .attach('file', buffer, 'download_test.xlsx');
+
+    expect(uploadRes.status).toBe(201);
+    const fileId = uploadRes.body.data.id;
+    testFilesToCleanup.push(fileId);
+
+    // 2. Download via download route with token query parameter
+    const downloadRes = await request(app)
+      .get(`/api/posted-files/${fileId}/download?token=${nonAdminToken}`);
+
+    expect(downloadRes.status).toBe(200);
+    expect(downloadRes.headers['content-disposition']).toContain('attachment; filename="download_test.xlsx"');
+    expect(downloadRes.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  });
+
+  test('Reject download with invalid token - should return 401', async () => {
+    const res = await request(app)
+      .get(`/api/posted-files/some-id/download?token=invalid_token`);
+
+    expect(res.status).toBe(401);
+  });
 });

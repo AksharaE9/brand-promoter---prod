@@ -1354,5 +1354,57 @@ router.get(
   })
 );
 
+/**
+ * GET /api/scheduling/members/:memberId/files/:fileId/download
+ * Download a member file attachment.
+ */
+router.get(
+  '/members/:memberId/files/:fileId/download',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { memberId, fileId } = req.params;
+    await getAndAuthorizeMember(memberId, req.user);
+
+    const file = await prisma.schedulingMemberFile.findUnique({
+      where: { id: fileId }
+    });
+
+    if (!file || file.memberId !== memberId) {
+      throw new ApiError(404, 'File attachment not found');
+    }
+
+    const { fileUrl } = file;
+    const fileName = fileUrl.split('/').pop() || 'attachment';
+
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    const path = require('path');
+    const fs = require('fs');
+
+    if (fileUrl.startsWith('/uploads/')) {
+      const relativeKey = fileUrl.replace(/^\//, '');
+      const localPath = path.join(__dirname, '..', '..', '..', relativeKey);
+      if (!fs.existsSync(localPath)) {
+        throw new ApiError(404, 'File not found on local storage');
+      }
+      fs.createReadStream(localPath).pipe(res);
+    } else if (fileUrl.startsWith('http')) {
+      const https = require('https');
+      https.get(fileUrl, (cloudinaryRes) => {
+        if (cloudinaryRes.statusCode >= 400) {
+          return res.status(cloudinaryRes.statusCode).json({ success: false, message: 'Failed to download from storage' });
+        }
+        cloudinaryRes.pipe(res);
+      }).on('error', (err) => {
+        console.error('[Scheduling] Cloudinary stream error:', err.message);
+        res.status(500).json({ success: false, message: 'Error streaming file' });
+      });
+    } else {
+      throw new ApiError(400, 'Invalid file URL');
+    }
+  })
+);
+
 module.exports = router;
 
