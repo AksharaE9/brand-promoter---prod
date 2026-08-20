@@ -9,6 +9,7 @@ const { uploadFileToCloudinary } = require('../../config/cloudinary');
 const { asyncHandler, ApiError } = require('../../utils/errors');
 const sse = require('../../utils/sse');
 const { uploadLimiter } = require('../../middleware/rateLimiter');
+const { streamUrlWithRedirects } = require('../../utils/downloadStream');
 
 const router = express.Router();
 router.use(auth);
@@ -302,17 +303,8 @@ router.get(
       }
       fs.createReadStream(localPath).pipe(res);
     } else if (storageKey.startsWith('http')) {
-      // Cloudinary URL - stream it
-      const https = require('https');
-      https.get(storageKey, (cloudinaryRes) => {
-        if (cloudinaryRes.statusCode >= 400) {
-          return res.status(cloudinaryRes.statusCode).json({ success: false, message: 'Failed to download from storage' });
-        }
-        cloudinaryRes.pipe(res);
-      }).on('error', (err) => {
-        console.error('[PostedFiles] Cloudinary stream error:', err.message);
-        res.status(500).json({ success: false, message: 'Error streaming file' });
-      });
+      // Cloudinary URL - stream it following redirects
+      streamUrlWithRedirects(storageKey, res);
     } else {
       throw new ApiError(400, 'Invalid storage key');
     }

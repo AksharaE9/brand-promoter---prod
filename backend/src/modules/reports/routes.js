@@ -5,6 +5,7 @@ const { stringify } = require("csv-stringify/sync");
 const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
+const { streamUrlWithRedirects } = require("../../utils/downloadStream");
 const { getOrgAnalyticsData } = require("../analytics/dataLoader");
 const { getCached, getCache, setCache } = require("../../utils/cache");
 
@@ -734,16 +735,8 @@ router.get(
       }
       fs.createReadStream(localPath).pipe(res);
     } else if (fileUrl.startsWith('http')) {
-      const https = require('https');
-      https.get(fileUrl, (cloudinaryRes) => {
-        if (cloudinaryRes.statusCode >= 400) {
-          return res.status(cloudinaryRes.statusCode).json({ success: false, message: 'Failed to download from storage' });
-        }
-        cloudinaryRes.pipe(res);
-      }).on('error', (err) => {
-        console.error('[Reports] Cloudinary stream error:', err.message);
-        res.status(500).json({ success: false, message: 'Error streaming file' });
-      });
+      // Cloudinary URL - stream it following redirects
+      streamUrlWithRedirects(fileUrl, res);
     } else {
       throw new ApiError(400, 'Invalid file URL');
     }
