@@ -3,7 +3,7 @@ import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../compon
 import { PageEnter, Reveal } from '../components/PageMotion';
 import UserChip from '../components/UserChip';
 import NotificationBell from '../components/NotificationBell';
-import { apiGet, getStoredUser, buildApiUrl } from '../lib/api';
+import { apiGet, getStoredUser, buildApiUrl, downloadAuthenticatedFile } from '../lib/api';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import { subscribeSSE } from '../lib/sse';
 
@@ -113,6 +113,16 @@ function AddedReportsTab({ currentUser, searchQuery }) {
     finally { setDeletingId(null); }
   };
 
+  const handleDownload = async (report) => {
+    try {
+      await downloadAuthenticatedFile(`/reports/added-reports/${report.id}/download`, report.fileName);
+    } catch (err) {
+      console.error('[ReportsDownload] Download error:', err);
+      setError(`${report.fileName} — ${err.message || "File wasn't available on site"}`);
+      setTimeout(() => setError(''), 5000);
+    }
+  };
+
   if (!isSuperAdmin) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
@@ -210,10 +220,10 @@ function AddedReportsTab({ currentUser, searchQuery }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-                  <a href={buildApiUrl(`/reports/added-reports/${report.id}/download?token=${localStorage.getItem('ats_token')}`)} target="_blank" rel="noopener noreferrer" download={report.fileName}
+                  <button type="button" onClick={() => handleDownload(report)}
                     className="flex-1 os-btn-primary !h-7 text-xs font-bold flex items-center justify-center gap-1">
                     <span className="material-symbols-outlined text-sm">download</span> Download
-                  </a>
+                  </button>
                   {canUpload && (
                     <button className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-300 transition-colors"
                       title="Delete report" onClick={() => handleDelete(report)} disabled={deletingId === report.id}>

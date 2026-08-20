@@ -9,7 +9,7 @@ import { usePaginatedList } from '../hooks/usePaginatedList';
 import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
-import { getStoredUser, buildApiUrl } from '../lib/api';
+import { getStoredUser, buildApiUrl, downloadAuthenticatedFile } from '../lib/api';
 import {
   FileText,
   FileSpreadsheet,
@@ -22,6 +22,7 @@ import {
   Loader2,
   AlertCircle
 } from 'lucide-react';
+
 
 const formatBytes = (bytes, decimals = 2) => {
   if (!bytes || bytes === 0) return '0 Bytes';
@@ -129,6 +130,16 @@ const Posted = () => {
       addToast({ type: 'error', message: errMsg });
     }
   }, [addToast, queryClient]);
+
+  const handleDownloadFile = useCallback(async (fileId, fileName) => {
+    try {
+      await downloadAuthenticatedFile(`/posted-files/${fileId}/download`, fileName);
+    } catch (err) {
+      console.error('[PostedDownload] Error downloading file:', err);
+      const errMsg = err.message || "File wasn't available on site";
+      addToast({ type: 'error', message: `${fileName} — ${errMsg}` });
+    }
+  }, [addToast]);
 
   const handleDrag = useCallback((e) => {
     e.preventDefault();
@@ -289,16 +300,14 @@ const Posted = () => {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <a
-                              href={buildApiUrl(`/posted-files/${file.id}/download?token=${localStorage.getItem('ats_token')}`)}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFile(file.id, file.originalName)}
                               className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                               title="Download File"
-                              download
                             >
                               <Download className="w-4 h-4" />
-                            </a>
+                            </button>
 
                             {isAdmin && (
                               <button

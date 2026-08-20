@@ -460,18 +460,16 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
   }
 
   const contentType = response.headers.get('content-type') || '';
-  const isXlsx = suggestedFilename.endsWith('.xlsx');
-  const expectedType = isXlsx
-    ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    : 'text/csv';
-
-  if (!contentType.includes(expectedType)) {
-    throw new Error(`Unexpected Content-Type: ${contentType}`);
+  
+  // Reject text/html to prevent downloading the SPA fallback index.html shell
+  if (contentType.includes('text/html') && !suggestedFilename.toLowerCase().endsWith('.html')) {
+    throw new Error('File not found or no longer available on this server.');
   }
 
   const blob = await response.blob();
 
-  if (isXlsx) {
+  // Validate ZIP magic bytes for XLSX templates
+  if (suggestedFilename.toLowerCase().endsWith('.xlsx')) {
     const firstBytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
     const isValidZip = firstBytes[0] === 0x50 && firstBytes[1] === 0x4B
                     && firstBytes[2] === 0x03 && firstBytes[3] === 0x04;
@@ -482,7 +480,7 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
 
   const cd = response.headers.get('content-disposition');
   const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
-  const filename = filenameFromServer ?? suggestedFilename;
+  const filename = filenameFromServer ? decodeURIComponent(filenameFromServer) : suggestedFilename;
 
   const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');

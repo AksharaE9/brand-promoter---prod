@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
-import { buildApiUrl } from '../../lib/api';
+import { buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
 
 export default function MemberFileAttachmentModal({ memberId, memberName, initialFiles = [], selectedDate: propSelectedDate, onClose, onRefresh }) {
   const [selectedDate, setSelectedDate] = useState(propSelectedDate);
@@ -34,11 +34,9 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
       setLoadingFiles(false);
     }
   }, [memberId]);
-
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
-      // Skip dynamic fetching on mount if initialFiles are already provided for this date
       if (initialFiles && initialFiles.length > 0 && selectedDate === propSelectedDate) {
         return;
       }
@@ -47,6 +45,17 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
       fetchFiles(selectedDate);
     }
   }, [selectedDate, fetchFiles, initialFiles, propSelectedDate]);
+
+  const handleDownload = async (fileId, filename) => {
+    setError('');
+    setSuccess('');
+    try {
+      await downloadAuthenticatedFile(`/scheduling/members/${memberId}/files/${fileId}/download`, filename);
+    } catch (err) {
+      console.error('[SchedulingDownload] Error downloading attachment:', err);
+      setError(`${filename} — ${err.message || "File wasn't available on site"}`);
+    }
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -163,17 +172,17 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
                 {normalizedFiles.map((f) => (
                   <div key={f.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
                     <div className="min-w-0 flex-1 pr-3">
-                      <a href={buildApiUrl(`/scheduling/members/${memberId}/files/${f.id}/download?token=${localStorage.getItem('ats_token')}`)} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 hover:underline truncate block">
+                      <button type="button" onClick={() => handleDownload(f.id, f.filename)} className="text-xs font-bold text-blue-600 hover:underline text-left truncate block w-full">
                         {f.filename}
-                      </a>
+                      </button>
                       {f.note && <p className="text-[11px] text-slate-500 mt-1 italic">"{f.note}"</p>}
                       <div className="text-[9px] text-slate-400 mt-0.5">
                         Uploaded by {f.uploadedBy} at {f.createdAt ? new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'unknown'}
                       </div>
                     </div>
-                    <a href={buildApiUrl(`/scheduling/members/${memberId}/files/${f.id}/download?token=${localStorage.getItem('ats_token')}`)} download target="_blank" rel="noopener noreferrer" className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
+                    <button type="button" onClick={() => handleDownload(f.id, f.filename)} className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
                       <span className="material-symbols-outlined text-sm">download</span>
-                    </a>
+                    </button>
                   </div>
                 ))}
               </div>
