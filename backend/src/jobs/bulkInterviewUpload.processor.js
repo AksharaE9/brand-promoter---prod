@@ -65,7 +65,7 @@ function parseIndianDateTime(raw) {
   // Attempt 1 — strip the "&" separator and try DD-M-YYYY HH:MM → ISO reorder
   // Matches: "31-7-2026 & 15:00" or "1 8 2026 & 17:30" etc.
   const indianAmpMatch = str.match(
-    /^(\d{1,2})[\s\-\/](\d{1,2})[\s\-\/](\d{4})\s*(?:&)?\s*(\d{1,2}):(\d{2})\s*([APap][Mm])?$/
+    /^(\d{1,2})[\s/-](\d{1,2})[\s/-](\d{4})\s*(?:&)?\s*(\d{1,2}):(\d{2})\s*([APap][Mm])?$/
   );
   if (indianAmpMatch) {
     let [, day, month, year, hour, minute, ampm] = indianAmpMatch;
@@ -83,7 +83,7 @@ function parseIndianDateTime(raw) {
   }
 
   // Attempt 2 — date only without time: "31-7-2026" or "1/8/2026"
-  const dateOnlyMatch = str.match(/^(\d{1,2})[\-\/](\d{1,2})[\-\/](\d{4})$/);
+  const dateOnlyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dateOnlyMatch) {
     const [, day, month, year] = dateOnlyMatch;
     const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T09:00:00`;
