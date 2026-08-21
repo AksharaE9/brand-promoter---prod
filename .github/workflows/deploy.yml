@@ -70,11 +70,13 @@ jobs:
         working-directory: frontend
         run: |
           npm install -g vercel@latest
-          # Run vercel deploy and capture output
+          # Run vercel deploy and capture output (temporarily disable exit-on-error)
+          set +e
           vercel --prod --token=${{ secrets.VERCEL_TOKEN }} \
             --scope=${{ secrets.VERCEL_ORG_ID }} \
             --yes > /tmp/vercel-out.txt 2>&1
           VERCEL_EXIT=$?
+          set -e
           cat /tmp/vercel-out.txt
           if [ $VERCEL_EXIT -ne 0 ]; then
             echo "❌ Vercel deployment failed!"
