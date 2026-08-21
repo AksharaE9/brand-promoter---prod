@@ -70,11 +70,20 @@ jobs:
         working-directory: frontend
         run: |
           npm install -g vercel@latest
-          DEPLOY_URL=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} \
+          # Run vercel deploy and capture output
+          vercel --prod --token=${{ secrets.VERCEL_TOKEN }} \
             --scope=${{ secrets.VERCEL_ORG_ID }} \
-            --yes 2>&1 | grep -oP 'https://[^\s]+' | tail -1)
+            --yes > /tmp/vercel-out.txt 2>&1
+          VERCEL_EXIT=$?
+          cat /tmp/vercel-out.txt
+          if [ $VERCEL_EXIT -ne 0 ]; then
+            echo "❌ Vercel deployment failed!"
+            exit $VERCEL_EXIT
+          fi
+          # Extract the actual deployed production URL
+          DEPLOY_URL=$(grep -oP 'Production:\s+\Khttps://[^\s]+' /tmp/vercel-out.txt || grep -oP 'https://[^\s]+' /tmp/vercel-out.txt | tail -1)
           echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "Deployed to: $DEPLOY_URL"
+          echo "✅ Vercel deployed to: $DEPLOY_URL"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
