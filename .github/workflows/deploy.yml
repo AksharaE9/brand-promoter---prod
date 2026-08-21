@@ -88,14 +88,38 @@ jobs:
     steps:
       - name: Trigger Render deploy hook
         run: |
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
-          echo "Render deploy hook HTTP status: $RESPONSE"
-          if [ "$RESPONSE" != "200" ] && [ "$RESPONSE" != "201" ] && [ "$RESPONSE" != "204" ]; then
-            echo "❌ Render deploy hook failed with status $RESPONSE"
-            exit 1
-          fi
-          echo "✅ Render deploy triggered successfully"
+          node -e "
+            const url = \`${{ secrets.RENDER_DEPLOY_HOOK_URL }}\`.trim().replace(/^['\"]|['\"]$/g, '');
+            if (!url) {
+              console.error('❌ Render deploy hook URL is empty');
+              process.exit(1);
+            }
+            console.log('Triggering Render deploy...');
+            const parsedUrl = new URL(url);
+            const https = require('https');
+            const req = https.request({
+              hostname: parsedUrl.hostname,
+              path: parsedUrl.pathname + parsedUrl.search,
+              method: 'POST',
+              headers: {
+                'User-Agent': 'GitHubActions'
+              }
+            }, (res) => {
+              console.log('Render deploy hook HTTP status:', res.statusCode);
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                console.log('✅ Render deploy triggered successfully');
+                process.exit(0);
+              } else {
+                console.error('❌ Render deploy hook failed with status:', res.statusCode);
+                process.exit(1);
+              }
+            });
+            req.on('error', (err) => {
+              console.error('❌ Render request error:', err.message);
+              process.exit(1);
+            });
+            req.end();
+          "
 
       - name: Wait for Render to become healthy
         run: |
