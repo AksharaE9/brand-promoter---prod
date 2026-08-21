@@ -1244,17 +1244,17 @@ router.get(
       return;
     }
 
-    // --- Priority 3: Legacy local file (dev-only) ---
+    // --- Priority 3: Legacy local file (ephemeral disk — NOT available in production) ---
+    // Files stored on local disk before the Aug 2026 storage migration are permanently lost.
+    // Render wipes the ephemeral filesystem on every redeploy.
+    // The DB record has been cleared by fix-broken-resume-records.js, so this branch
+    // should only be reached in local dev. In production, route ends at Priority 1 or 2.
     if (storageKey && (storageKey.startsWith('/') || storageKey.startsWith('uploads/'))) {
-      const fsModule = require('fs');
-      const relativePath = storageKey.startsWith('/') ? storageKey.slice(1) : storageKey;
-      const localFilePath = require('path').join(__dirname, '..', '..', relativePath);
-      if (fsModule.existsSync(localFilePath)) {
-        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
-        res.setHeader("Content-Type", mimeType || "application/octet-stream");
-        return res.sendFile(localFilePath);
-      }
-      throw new ApiError(404, "The local resume file could not be found. It may have been cleaned up from ephemeral storage.");
+      throw new ApiError(404,
+        "Resume not available — this file was stored on the server's local disk before the " +
+        "Aug 2026 storage migration and has since been permanently deleted by a server redeploy. " +
+        "Please re-upload the resume for this candidate."
+      );
     }
 
     throw new ApiError(400, "Invalid or unsupported storage key format.");
@@ -1526,26 +1526,14 @@ router.get(
     }
 
     if (!isAbsolute) {
-      const path = require("path");
-      const fs = require("fs");
-      const relativePath = downloadUrl.startsWith("/") ? downloadUrl.slice(1) : downloadUrl;
-      const localFilePath = path.join(__dirname, "..", "..", relativePath);
-      if (fs.existsSync(localFilePath)) {
-        const ext = path.extname(localFilePath).toLowerCase();
-        let mime = 'application/octet-stream';
-        if (ext === '.pdf') mime = 'application/pdf';
-        else if (ext === '.docx') mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        else if (ext === '.doc') mime = 'application/msword';
-
-        const rawFilename = candidate.fullName ? candidate.fullName.trim() : 'candidate';
-        const filename = `${rawFilename.replace(/[^\w-]/g, '_')}_resume${ext || '.pdf'}`;
-
-        res.setHeader('Content-Type', mime);
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        return res.sendFile(localFilePath);
-      } else {
-        throw new ApiError(404, 'The local resume file could not be found. It may have been cleaned up from ephemeral storage.');
-      }
+      // Local-disk paths are not available in production — Render wipes the ephemeral
+      // filesystem on every redeploy. All pre-migration records have been cleared by
+      // fix-broken-resume-records.js. Fail loudly with a user-facing message.
+      throw new ApiError(404,
+        "Resume link not available — this file was stored on the server's local disk before the " +
+        "Aug 2026 storage migration and has since been permanently deleted by a server redeploy. " +
+        "Please re-upload the resume for this candidate."
+      );
     }
 
     let upstream;
