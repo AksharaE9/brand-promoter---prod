@@ -80,6 +80,48 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+      - name: Query Vercel deployments status
+        run: |
+          node -e "
+            const https = require('https');
+            const token = \`${{ secrets.VERCEL_TOKEN }}\`;
+            const projectId = \`${{ secrets.VERCEL_PROJECT_ID }}\`;
+            const orgId = \`${{ secrets.VERCEL_ORG_ID }}\`;
+            
+            const options = {
+              hostname: 'api.vercel.com',
+              path: '/v6/deployments?projectId=' + projectId + '&limit=5',
+              headers: {
+                'Authorization': 'Bearer ' + token
+              }
+            };
+            
+            https.get(options, (res) => {
+              let body = '';
+              res.on('data', chunk => body += chunk);
+              res.on('end', () => {
+                try {
+                  const data = JSON.parse(body);
+                  console.log('=== VERCEL DEPLOYMENTS LIST ===');
+                  if (data.deployments) {
+                    data.deployments.forEach(d => {
+                      console.log('Deployment:', d.uid);
+                      console.log('  URL:', d.url);
+                      console.log('  Name:', d.name);
+                      console.log('  State:', d.state);
+                      console.log('  Created:', new Date(d.createdAt).toISOString());
+                      console.log('  Creator:', d.creator?.username);
+                    });
+                  } else {
+                    console.log('No deployments found or error:', body);
+                  }
+                } catch (e) {
+                  console.error('Parse error:', e.message, body);
+                }
+              });
+            });
+          "
+
   # ── Deploy Backend → Render (via deploy hook) ─────────────────────────────
   deploy-backend:
     name: Deploy Backend → Render
