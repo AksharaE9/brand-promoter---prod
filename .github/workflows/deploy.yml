@@ -87,9 +87,11 @@ jobs:
     needs: check-ci
     steps:
       - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           node -e "
-            const url = \`${{ secrets.RENDER_DEPLOY_HOOK_URL }}\`.trim().replace(/^['\"]|['\"]$/g, '');
+            const url = (process.env.RENDER_DEPLOY_HOOK_URL || '').trim().replace(/^['\"]|['\"]$/g, '');
             if (!url) {
               console.error('❌ Render deploy hook URL is empty');
               process.exit(1);
