@@ -4,9 +4,9 @@
   "description": "ATS backend",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/scripts/addIndexes.js && node src/index.js",
-    "dev": "node src/scripts/addIndexes.js && node src/index.js",
-    "build": "npm install && npx prisma generate",
+    "start": "node scripts/generate-version.js && node src/scripts/addIndexes.js && node src/index.js",
+    "dev": "node scripts/generate-version.js && node src/scripts/addIndexes.js && node src/index.js",
+    "build": "npm install && npx prisma generate && node scripts/generate-version.js",
     "test": "jest --testTimeout=30000 --runInBand",
     "test:ci": "jest --testTimeout=30000 --runInBand --forceExit --ci --json --outputFile=jest-results.json",
     "test:unit": "jest --config jest.unit.config.js",

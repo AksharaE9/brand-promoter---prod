@@ -185,6 +185,14 @@ export const EnterpriseSidebar = React.memo(({
         {visibleLinks.map((link) => (
           <NavItem key={link.key} item={link} className="os-footer-link" onMouseEnter={handleNavMouseEnter} />
         ))}
+        <div className="text-[10px] text-slate-500 opacity-60 mt-3 px-4 flex flex-col gap-0.5 pointer-events-none select-none border-t border-slate-700/30 pt-3">
+          <div>Build: {import.meta.env.VITE_BUILD_HASH || 'unknown'}</div>
+          {import.meta.env.VITE_BUILD_TIME && (
+            <div className="truncate" title={new Date(import.meta.env.VITE_BUILD_TIME).toLocaleString()}>
+              Date: {new Date(import.meta.env.VITE_BUILD_TIME).toLocaleString()}
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );

@@ -18,12 +18,16 @@ const stripAttributesPlugin = () => ({
   }
 });
 
-let gitHash = 'default';
-try {
-  gitHash = execSync('git rev-parse --short HEAD').toString().trim();
-} catch (e) {
-  // Graceful fallback if git is not available
+let gitHash = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || 'default';
+if (gitHash === 'default') {
+  try {
+    gitHash = execSync('git rev-parse --short HEAD').toString().trim();
+  } catch (e) {
+    // Graceful fallback if git is not available
+  }
 }
+const shortHash = gitHash.substring(0, 7);
+const buildTime = new Date().toISOString();
 
 export default defineConfig(({ command }) => {
   const isDev = command === 'serve';
@@ -31,7 +35,8 @@ export default defineConfig(({ command }) => {
     define: {
       'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
       __DEV__: isDev,
-      'import.meta.env.VITE_BUILD_HASH': JSON.stringify(gitHash),
+      'import.meta.env.VITE_BUILD_HASH': JSON.stringify(shortHash),
+      'import.meta.env.VITE_BUILD_TIME': JSON.stringify(buildTime),
     },
   plugins: [
     react(),

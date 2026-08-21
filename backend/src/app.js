@@ -115,6 +115,14 @@ app.use('/api', concurrencyLimiter);
 // ── Health endpoints ──────────────────────────────────────────────────────
 const prisma = require('./config/db');
 
+// Load build version info dynamically
+let versionInfo = { commit: 'unknown', deployedAt: 'unknown' };
+try {
+  versionInfo = require('./version.json');
+} catch (err) {
+  // Fallback if not generated yet
+}
+
 // Start background database keep-alive ping to prevent Neon Postgres autosuspend (runs every 4 minutes)
 setInterval(async () => {
   try {
@@ -123,6 +131,13 @@ setInterval(async () => {
     console.warn('[DBKeepAlive] Database ping failed:', err.message);
   }
 }, 4 * 60 * 1000);
+
+app.get('/api/version', (req, res) => {
+  res.json({
+    success: true,
+    ...versionInfo
+  });
+});
 
 app.get('/api/health', async (req, res) => {
   let dbStatus = 'healthy';
@@ -136,6 +151,7 @@ app.get('/api/health', async (req, res) => {
     success: true,
     message: 'ATS Backend is running',
     timestamp: new Date().toISOString(),
+    version: versionInfo,
     services: {
       database: dbStatus,
       sse: sse.getStats(),
