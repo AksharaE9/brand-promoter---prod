@@ -91,13 +91,30 @@ jobs:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           node -e "
-            const url = (process.env.RENDER_DEPLOY_HOOK_URL || '').trim().replace(/^['\"]|['\"]$/g, '');
-            if (!url) {
+            const url = process.env.RENDER_DEPLOY_HOOK_URL || '';
+            console.log('URL length:', url.length);
+            console.log('Starts with https:', url.startsWith('https://'));
+            if (url.length > 0) {
+              console.log('First 10 char codes:', Array.from(url.substring(0, Math.min(10, url.length))).map(c => c.charCodeAt(0)));
+              console.log('Last 10 char codes:', Array.from(url.substring(Math.max(0, url.length - 10))).map(c => c.charCodeAt(0)));
+            }
+            const cleanUrl = url.trim().replace(/^['\"]|['\"]$/g, '').trim();
+            console.log('Cleaned URL length:', cleanUrl.length);
+            try {
+              const parsed = new URL(cleanUrl);
+              console.log('Parsed hostname:', parsed.hostname.split('').map(c => c.charCodeAt(0)));
+              console.log('Parsed protocol:', parsed.protocol);
+              console.log('✅ URL is valid format');
+            } catch (err) {
+              console.error('❌ URL parse failed:', err.message);
+            }
+            
+            // Try to trigger request
+            if (!cleanUrl) {
               console.error('❌ Render deploy hook URL is empty');
               process.exit(1);
             }
-            console.log('Triggering Render deploy...');
-            const parsedUrl = new URL(url);
+            const parsedUrl = new URL(cleanUrl);
             const https = require('https');
             const req = https.request({
               hostname: parsedUrl.hostname,
