@@ -203,6 +203,14 @@ router.patch(
 
     await prisma.user.update({ where: { id }, data: { status, isActive: status === "ACTIVE" } });
 
+    // Sync status change to associated scheduling member if exists
+    await prisma.schedulingMember.updateMany({
+      where: { userId: id },
+      data: { active: status === "ACTIVE" }
+    }).catch(err => {
+      console.error("[UpdateUserStatus] Failed to update associated scheduling member status:", err.message);
+    });
+
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");
     await inv.user(orgId, id);

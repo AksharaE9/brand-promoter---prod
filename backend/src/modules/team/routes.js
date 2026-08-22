@@ -15,19 +15,11 @@ router.use(auth);
 async function getActiveCandidatesCount(userId, myOrg) {
   const INACTIVE_STATUSES = ["REJECTED", "JOINED", "OFFER_DECLINED"];
 
-  const [c1, c2, c3] = await Promise.all([
+  const [c1, c3] = await Promise.all([
     prisma.candidate.count({
       where: {
         organizationId: myOrg,
         assignedRecruiterId: userId,
-        status: { notIn: INACTIVE_STATUSES },
-        isDeleted: false,
-      },
-    }),
-    prisma.candidate.count({
-      where: {
-        organizationId: myOrg,
-        createdById: userId,
         status: { notIn: INACTIVE_STATUSES },
         isDeleted: false,
       },
@@ -42,7 +34,7 @@ async function getActiveCandidatesCount(userId, myOrg) {
     }),
   ]);
 
-  return c1 + c2 + c3;
+  return c1 + c3;
 }
 
 // GET active-candidates-count for a user
@@ -300,6 +292,14 @@ router.delete(
       data: { isDeleted: true, isActive: false, deletedAt: new Date(), deletedBy: req.user.id, status: "INACTIVE" },
     });
 
+    // Deactivate associated scheduling member if exists
+    await prisma.schedulingMember.updateMany({
+      where: { userId },
+      data: { active: false }
+    }).catch(err => {
+      console.error("[DeleteMember] Failed to deactivate associated scheduling member:", err.message);
+    });
+
     // Revoke sessions asynchronously in the background to not block the HTTP response
     prisma.session.deleteMany({ where: { userId } }).catch(err => {
       console.error("[DeleteMember] Background session delete failed:", err.message);
@@ -350,6 +350,14 @@ router.patch(
     await prisma.user.update({
       where: { id: userId },
       data: { isDeleted: false, isActive: true, deletedAt: null, deletedBy: null, status: "ACTIVE" },
+    });
+
+    // Reactivate associated scheduling member if exists
+    await prisma.schedulingMember.updateMany({
+      where: { userId },
+      data: { active: true }
+    }).catch(err => {
+      console.error("[RestoreMember] Failed to reactivate associated scheduling member:", err.message);
     });
 
     // Invalidate cache before returning response to avoid race conditions
@@ -465,6 +473,17 @@ router.patch(
     }
 
     await prisma.user.update({ where: { id: userId }, data: finalUpdates });
+
+    // Update associated scheduling member status if status/isActive was changed
+    if (finalUpdates.status !== undefined || finalUpdates.isActive !== undefined) {
+      const isNowActive = finalUpdates.status !== undefined ? (finalUpdates.status === "ACTIVE") : Boolean(finalUpdates.isActive);
+      await prisma.schedulingMember.updateMany({
+        where: { userId },
+        data: { active: isNowActive }
+      }).catch(err => {
+        console.error("[UpdateMember] Failed to update associated scheduling member status:", err.message);
+      });
+    }
 
     // Invalidate cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);

@@ -5,7 +5,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const prisma = require('../../config/db');
-const { auth, requireRoles } = require('../../middleware/auth');
+const { auth, requireRoles, invalidateUserCache } = require('../../middleware/auth');
 const { ApiError, asyncHandler } = require('../../utils/errors');
 const { streamUrlWithRedirects } = require('../../utils/downloadStream');
 const { isDbStorageKey, makeStorageKey, streamDbFile } = require('../../utils/dbStorage');
@@ -315,9 +315,50 @@ router.patch(
       where: { id: memberId },
       data: updateData,
       include: {
-        user: { select: { id: true, fullName: true, email: true, role: true } },
+        user: { select: { id: true, fullName: true, email: true, role: true, status: true } },
       },
     });
+
+    const myOrg = req.user.organizationId || "defaultOrg";
+    if (active !== undefined && updated.userId) {
+      const isNowActive = Boolean(active);
+      const newStatus = isNowActive ? "ACTIVE" : "INACTIVE";
+
+      // Sync status change to linked User
+      await prisma.user.update({
+        where: { id: updated.userId },
+        data: { status: newStatus, isActive: isNowActive },
+      });
+
+      if (!isNowActive) {
+        // Revoke sessions in background
+        prisma.session.deleteMany({ where: { userId: updated.userId } }).catch(err => {
+          console.error("[UpdateSchedulingMember] Background session delete failed:", err.message);
+        });
+      }
+
+      // Invalidate cache
+      const inv = require("../../utils/cacheInvalidation");
+      await inv.user(myOrg, updated.userId);
+      await invalidateUserCache(updated.userId);
+
+      // Log Audit & send SSE
+      await logAudit({
+        actorUserId: req.user.id,
+        action: "TEAM_MEMBER_UPDATED",
+        entityType: "USER",
+        entityId: updated.userId,
+        oldData: { status: isNowActive ? "INACTIVE" : "ACTIVE", isActive: !isNowActive },
+        newData: { status: newStatus, isActive: isNowActive },
+        ipAddress: req.ip,
+      });
+
+      sse.broadcastToOrg(myOrg, "TEAM_MEMBER_UPDATED", { userId: updated.userId, changes: { status: newStatus, isActive: isNowActive }, updatedBy: req.user.id });
+
+      if (!isNowActive) {
+        sse.sendToUser(updated.userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+      }
+    }
 
     await logAudit({
       actorUserId: req.user.id,
@@ -352,6 +393,70 @@ router.delete(
     });
     if (!existing) {
       throw new ApiError(404, 'Scheduling member not found');
+    }
+
+    const myOrg = req.user.organizationId || "defaultOrg";
+
+    if (existing.userId) {
+      // Check if linked user has active candidates. If so, block the deletion.
+      const INACTIVE_STATUSES = ["REJECTED", "JOINED", "OFFER_DECLINED"];
+      const [c1, c3] = await Promise.all([
+        prisma.candidate.count({
+          where: {
+            organizationId: myOrg,
+            assignedRecruiterId: existing.userId,
+            status: { notIn: INACTIVE_STATUSES },
+            isDeleted: false,
+          },
+        }),
+        prisma.candidate.count({
+          where: {
+            organizationId: myOrg,
+            mentorId: existing.userId,
+            status: { notIn: INACTIVE_STATUSES },
+            isDeleted: false,
+          },
+        }),
+      ]);
+      const activeCount = c1 + c3;
+      if (activeCount > 0) {
+        throw new ApiError(400, `The linked user has ${activeCount} active candidates. Please reassign them first to delete this member.`);
+      }
+
+      // Soft delete the User record
+      const targetUser = await prisma.user.findUnique({ where: { id: existing.userId } });
+      if (targetUser && !targetUser.isDeleted) {
+        await prisma.user.update({
+          where: { id: existing.userId },
+          data: { isDeleted: true, isActive: false, deletedAt: new Date(), deletedBy: req.user.id, status: "INACTIVE" },
+        });
+
+        // Revoke sessions
+        prisma.session.deleteMany({ where: { userId: existing.userId } }).catch(err => {
+          console.error("[DeleteSchedulingMember] Background session delete failed:", err.message);
+        });
+
+        // Invalidate cache
+        const inv = require("../../utils/cacheInvalidation");
+        await inv.user(myOrg, existing.userId);
+        await invalidateUserCache(existing.userId);
+
+        // Audit log and SSE
+        await logAudit({
+          actorUserId: req.user.id,
+          actorName: req.user.fullName,
+          action: "TEAM_MEMBER_DELETED",
+          entityType: "USER",
+          entityId: existing.userId,
+          entityName: targetUser.fullName,
+          oldData: { isDeleted: false, status: targetUser.status },
+          newData: { isDeleted: true, status: "INACTIVE" },
+          ipAddress: req.ip,
+        });
+
+        sse.broadcastToOrg(myOrg, "TEAM_MEMBER_DELETED", { userId: existing.userId, deletedBy: req.user.id, deletedByName: req.user.fullName });
+        sse.sendToUser(existing.userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
+      }
     }
 
     await prisma.schedulingMember.delete({
