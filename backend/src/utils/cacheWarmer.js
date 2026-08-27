@@ -21,7 +21,7 @@ async function warmCaches() {
   let succeeded = 0;
   let failed = 0;
 
-  await Promise.all(warmers.map(async (warmer) => {
+  for (const warmer of warmers) {
     try {
       await warmer();
       succeeded++;
@@ -29,7 +29,7 @@ async function warmCaches() {
       failed++;
       console.error(`[CacheWarmer] ${warmer.name} failed:`, err.message);
     }
-  }));
+  }
 
   const duration = Date.now() - startTime;
   console.log(`[CacheWarmer] Completed in ${duration}ms — ${succeeded} succeeded, ${failed} failed`);
@@ -47,21 +47,21 @@ async function warmDashboard() {
   
   const orgIds = orgs.map(o => o.organizationId);
 
-  // Run orgs in parallel
-  await Promise.all(orgIds.slice(0, 10).map(async (orgId) => {
+  // Run orgs sequentially
+  for (const orgId of orgIds.slice(0, 5)) {
     try {
       const data = await fetchDashboardData(orgId);
       await setCache(`dashboard:summary:${orgId}`, data, 300); // 5 min TTL
     } catch (err) {
       console.warn(`[CacheWarmer] Dashboard warm failed for org ${orgId}:`, err.message);
     }
-  }));
+  }
 }
 
 async function warmActiveJobs() {
   const jobs = await prisma.job.findMany({
     where: { isActive: true },
-    take: 200
+    take: 50
   });
 
   const { setCache: sc } = require('./cache');

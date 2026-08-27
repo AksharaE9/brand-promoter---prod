@@ -175,11 +175,11 @@ app.use('/api/reports', heavyEndpointLimiter);
 
 app.use('/api/auth', authLimiter, authRoutes);
 
-app.use('/api/users', apiLimiter, cc(0), userRoutes);
-app.use('/api/team', apiLimiter, cc(0), require('./modules/team/routes'));
-app.use('/api/settings', apiLimiter, cc(0), require('./modules/settings/routes'));
-app.use('/api/companies', apiLimiter, cc(0), require('./modules/companies/routes'));
-app.use('/api/jobs', apiLimiter, cc(0), jobRoutes);
+app.use('/api/users', apiLimiter, cc(15), userRoutes);
+app.use('/api/team', apiLimiter, cc(15), require('./modules/team/routes'));
+app.use('/api/settings', apiLimiter, cc(15), require('./modules/settings/routes'));
+app.use('/api/companies', apiLimiter, cc(15), require('./modules/companies/routes'));
+app.use('/api/jobs', apiLimiter, cc(15), jobRoutes);
 app.post('/api/candidates/bulk-upload', uploadLimiter);
 app.use('/api/candidates/bulk-upload', require('./routes/bulkUpload'));
 app.post('/api/interview-feedback/bulk-upload', uploadLimiter);

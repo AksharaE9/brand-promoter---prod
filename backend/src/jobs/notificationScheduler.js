@@ -60,11 +60,24 @@ async function checkRound1FeedbackAlerts() {
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
       round1SMSAlertSent: false,
       scheduledStart: { lte: oneHourAgo },
-    },
-    include: {
+    take: 100,
+    select: {
+      id: true,
+      roundNo: true,
+      candidateName: true,
+      scheduledStart: true,
+      organizationId: true,
+      createdById: true,
+      interviewerIds: true,
+      feedback: true,
+      applicationId: true,
       application: {
-        include: {
-          candidate: true,
+        select: {
+          candidate: {
+            select: {
+              fullName: true,
+            },
+          },
         },
       },
     },
@@ -233,11 +246,26 @@ async function checkRound2FeedbackAlerts() {
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
       round2EmailAlertSent: false,
       scheduledStart: { lte: now },
-    },
-    include: {
+    take: 100,
+    select: {
+      id: true,
+      roundNo: true,
+      candidateName: true,
+      scheduledStart: true,
+      organizationId: true,
+      createdById: true,
+      interviewerIds: true,
+      feedback: true,
+      offerLetterUrl: true,
+      applicationId: true,
       application: {
-        include: {
-          candidate: true,
+        select: {
+          status: true,
+          candidate: {
+            select: {
+              fullName: true,
+            },
+          },
         },
       },
     },
@@ -389,10 +417,24 @@ async function checkOfferLetterAlerts() {
           }
         }
       ]
-    },
-    include: {
-      candidate: true,
-      job: true,
+    take: 100,
+    select: {
+      id: true,
+      candidateId: true,
+      organizationId: true,
+      candidate: {
+        select: {
+          fullName: true,
+          email: true,
+          assignedRecruiterId: true,
+        },
+      },
+      job: {
+        select: {
+          title: true,
+          createdById: true,
+        },
+      },
     },
   });
 
@@ -536,15 +578,30 @@ async function checkDelayedFeedbackAlerts() {
         lte: twoDaysAgo,
         lt: new Date('2026-07-07T00:00:00.000Z') // Only for meetings scheduled before July 7, 2026
       }
-    },
-    include: {
+    take: 100,
+    select: {
+      id: true,
+      roundNo: true,
+      candidateName: true,
+      jobTitle: true,
+      scheduledStart: true,
+      feedback: true,
+      notes: true,
       application: {
-        include: {
-          candidate: true,
-          job: true
-        }
-      }
-    }
+        select: {
+          candidate: {
+            select: {
+              fullName: true,
+            },
+          },
+          job: {
+            select: {
+              title: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   if (interviews.length === 0) return;
