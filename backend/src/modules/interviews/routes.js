@@ -222,14 +222,17 @@ function enforceResponseSizeLimit(payload) {
 
 function buildCacheKey(orgId, query) {
   const parts = [
-    query.status       || '',
-    query.jobId        || '',
-    query.candidateId  || '',
+    query.status        || '',
+    query.jobId         || '',
+    query.candidateId   || '',
+    query.applicationId || '',
     query.interviewerId || '',
-    query.search       || '',
-    query.cursor       || 'start',
-    query.limit        || '20',
-    query.skip         || '',
+    query.date          || '',
+    query.view          || '',
+    query.search        || '',
+    query.cursor        || 'start',
+    query.limit         || '20',
+    query.skip          || '',
   ].join(':');
   const hash = crypto.createHash('md5').update(parts).digest('hex').slice(0, 12);
   return `interviews:list:${orgId}:${hash}`;

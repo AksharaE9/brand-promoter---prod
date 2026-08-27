@@ -147,20 +147,11 @@ async function buildInterviewListQuery({
     ];
   }
 
-  const applicationWhere = {};
   if (candidateId) {
-    applicationWhere.candidateId = candidateId;
+    where.candidateId = candidateId;
   }
   if (jobId) {
-    applicationWhere.jobId = jobId;
-  }
-
-  if (Object.keys(applicationWhere).length > 0) {
-    if (where.AND) {
-      where.AND.push({ application: applicationWhere });
-    } else {
-      where.application = applicationWhere;
-    }
+    where.jobId = jobId;
   }
 
   if (interviewerId) {

@@ -50,6 +50,21 @@ async function fetchDashboardData(orgId) {
       where: { organizationId: orgId, scheduledStart: { gte: now } },
       orderBy: { scheduledStart: "asc" },
       take: 10, // Bounded for upcoming interviews feed (not used for the count metric)
+      select: {
+        id: true,
+        candidateId: true,
+        candidateName: true,
+        jobId: true,
+        jobTitle: true,
+        roundNo: true,
+        round: true,
+        scheduledStart: true,
+        mode: true,
+        status: true,
+        result: true,
+        interviewerNames: true,
+        interviewerIds: true,
+      }
     }),
     // Real COUNT(*) for today's interviews — accurate regardless of how many there are.
     // Previously computed as upcomingInterviews.filter(today).length which was capped at 10.

@@ -721,7 +721,16 @@ router.post(
     const candidate = await prisma.candidate.create({
       data: candidateData,
       include: {
-        resumeFile: true
+        resumeFile: {
+          select: {
+            id: true,
+            storageKey: true,
+            originalName: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+          }
+        }
       }
     });
 
@@ -1174,8 +1183,26 @@ router.get(
     const candidate = await prisma.candidate.findUnique({
       where: { id },
       include: {
-        resumeFile: true,
-        profilePhotoFile: true
+        resumeFile: {
+          select: {
+            id: true,
+            storageKey: true,
+            originalName: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+          }
+        },
+        profilePhotoFile: {
+          select: {
+            id: true,
+            storageKey: true,
+            originalName: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+          }
+        }
       }
     });
     

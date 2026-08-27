@@ -60,6 +60,7 @@ async function checkRound1FeedbackAlerts() {
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
       round1SMSAlertSent: false,
       scheduledStart: { lte: oneHourAgo },
+    },
     take: 100,
     select: {
       id: true,
@@ -246,6 +247,7 @@ async function checkRound2FeedbackAlerts() {
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
       round2EmailAlertSent: false,
       scheduledStart: { lte: now },
+    },
     take: 100,
     select: {
       id: true,
@@ -417,6 +419,7 @@ async function checkOfferLetterAlerts() {
           }
         }
       ]
+    },
     take: 100,
     select: {
       id: true,
@@ -578,6 +581,7 @@ async function checkDelayedFeedbackAlerts() {
         lte: twoDaysAgo,
         lt: new Date('2026-07-07T00:00:00.000Z') // Only for meetings scheduled before July 7, 2026
       }
+    },
     take: 100,
     select: {
       id: true,
