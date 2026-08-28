@@ -1017,7 +1017,14 @@ router.get(
   auth,
   requireRoles('SUPER_ADMIN', 'RECRUITER'),
   asyncHandler(async (req, res) => {
-    const targetDateStr = req.query.date || getTodayString();
+    const rawDate = req.query.date;
+    // Validate date format early — malformed dates cause Prisma to throw on the
+    // Date field query, surfacing as a 500. Return 400 instead.
+    if (rawDate !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      throw new ApiError(400, `Invalid date format "${rawDate}". Expected YYYY-MM-DD.`);
+    }
+    const targetDateStr = rawDate || getTodayString();
+    
     const skipCache = req.query._t || req.query.fresh ? true : false;
     const cacheKey = `scheduling:overview:${targetDateStr}`;
 
@@ -1056,9 +1063,18 @@ router.get(
             forDate: targetDate,
             memberId: { in: memberIds },
           },
-          include: {
-            uploadedBy: { select: { id: true, fullName: true } },
-          },
+          select: {
+            id: true,
+            memberId: true,
+            forDate: true,
+            fileUrl: true,
+            originalName: true,
+            mimeType: true,
+            note: true,
+            uploadedById: true,
+            createdAt: true,
+            uploadedBy: { select: { id: true, fullName: true } }
+          }
         })
       ]);
 
@@ -1099,12 +1115,23 @@ router.get(
       });
     }, 300000); // 5 min TTL
 
-
+    // Compute top-level summary stats so the frontend can render a zero-state
+    // header row without having to iterate the data array client-side.
+    // Use safeData guard in case the cache returns a non-array on a cold error.
+    const safeData = Array.isArray(overview) ? overview : [];
+    const summary = {
+      totalMembers:     safeData.length,
+      listsUploaded:    safeData.filter((m) => m.listUploaded).length,
+      reportsSubmitted: safeData.filter((m) => m.reportSubmitted).length,
+      totalCallsDone:   safeData.reduce((acc, m) => acc + (m.callsDone || 0), 0),
+      totalLeads:       safeData.reduce((acc, m) => acc + (m.totalLeads || 0), 0),
+    };
 
     res.json({
       success: true,
       date: targetDateStr,
-      data: overview,
+      summary,
+      data: safeData,
     });
   })
 );

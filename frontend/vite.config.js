@@ -48,13 +48,25 @@ export default defineConfig(({ command }) => {
       registerType:    'autoUpdate',
       injectRegister:  'auto',
       workbox: {
-        // Precache all static assets on install
+        // Precache versioned static assets (JS/CSS bundles have content-hash in
+        // filename so Workbox detects changes and updates them on each deploy).
         globPatterns: ['**/*.{js,css,html,ico,woff2}'],
-        
+
+        // Remove precache entries from previous deploys on activation.
+        // Without this, old caches accumulate and may serve stale assets.
+        cleanupOutdatedCaches: true,
+
+        // Exclude /api/* from SW interception entirely — API responses must
+        // always go to the network. The StaleWhileRevalidate patterns below
+        // only apply to specific non-scheduling, non-auth routes.
+        navigateFallbackDenylist: [/^\/api\//],
+
         // Runtime caching strategies
         runtimeCaching: [
           {
-            // API static data — serve stale while revalidating
+            // API static data — serve stale while revalidating.
+            // Explicitly listed paths only — /api/scheduling is intentionally
+            // excluded so the Telecaller Overview always hits the network.
             urlPattern: /\/api\/(jobs|team|org-settings|panel-members|dashboard|interviews|candidates)/,
             handler:    'StaleWhileRevalidate',
             options: {
@@ -90,8 +102,11 @@ export default defineConfig(({ command }) => {
             },
           },
         ],
-        
-        // Skip waiting — activate new service worker immediately
+
+        // skipWaiting: immediately activate the new SW without waiting for old
+        // tabs to close. clientsClaim: take control of all open tabs straight away.
+        // Together these ensure a fresh deploy is reflected on the next navigation
+        // for returning users (not just new tabs / hard refreshes).
         skipWaiting:  true,
         clientsClaim: true,
       },
