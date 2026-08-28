@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams, useSearchParams } from 'react-router-dom';
+import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../../components/PageMotion';
 import { getStoredUser, downloadAuthenticatedFile } from '../../lib/api';
@@ -42,6 +42,9 @@ export default function MemberProfilePage() {
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [reimportDate, setReimportDate] = useState(null);
+
+  // Delete confirmation: fileId waiting for confirm, or null
+  const [confirmDeleteFileId, setConfirmDeleteFileId] = useState(null);
 
   // Lead List Expansion
   const [expandedListId, setExpandedListId] = useState(null);
@@ -123,6 +126,22 @@ export default function MemberProfilePage() {
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor || undefined,
     enabled: !!memberId,
+  });
+
+  // Admin role check
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
+
+  // Delete file mutation
+  const deleteFileMutation = useMutation({
+    mutationFn: ({ fileId }) => schedulingLeadApi.deleteMemberFile(memberId, fileId),
+    onSuccess: () => {
+      setConfirmDeleteFileId(null);
+      queryClient.invalidateQueries({ queryKey: ['scheduling', 'member-files', memberId] });
+    },
+    onError: (err) => {
+      console.error('[DeleteFile] Failed:', err.message);
+      setConfirmDeleteFileId(null);
+    },
   });
 
   // Helpers to flatmap infinite query pages
@@ -404,19 +423,49 @@ export default function MemberProfilePage() {
                                     Uploaded by <span className="font-semibold text-slate-500">{file.uploaded_by}</span> at {formatTime24h(file.created_at)}
                                   </div>
                                 </div>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await downloadAuthenticatedFile(`/scheduling/members/${memberId}/files/${file.id}/download`, file.filename);
-                                    } catch (err) {
-                                      console.error('[SchedulingDownload] Error downloading attachment:', err);
-                                    }
-                                  }}
-                                  className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all flex items-center justify-center shadow-sm"
-                                  title="Download File"
-                                >
-                                  <span className="material-symbols-outlined text-sm">download</span>
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await downloadAuthenticatedFile(`/scheduling/members/${memberId}/files/${file.id}/download`, file.filename);
+                                      } catch (err) {
+                                        console.error('[SchedulingDownload] Error downloading attachment:', err);
+                                      }
+                                    }}
+                                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all flex items-center justify-center shadow-sm"
+                                    title="Download File"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">download</span>
+                                  </button>
+
+                                  {isAdmin && confirmDeleteFileId !== file.id && (
+                                    <button
+                                      onClick={() => setConfirmDeleteFileId(file.id)}
+                                      className="p-2 rounded-lg bg-white border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 transition-all flex items-center justify-center shadow-sm"
+                                      title="Delete File"
+                                    >
+                                      <span className="material-symbols-outlined text-sm">delete</span>
+                                    </button>
+                                  )}
+
+                                  {isAdmin && confirmDeleteFileId === file.id && (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        onClick={() => deleteFileMutation.mutate({ fileId: file.id })}
+                                        disabled={deleteFileMutation.isPending}
+                                        className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white font-bold text-[10px] rounded-lg transition-all disabled:opacity-50"
+                                      >
+                                        {deleteFileMutation.isPending ? '...' : 'Delete'}
+                                      </button>
+                                      <button
+                                        onClick={() => setConfirmDeleteFileId(null)}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] rounded-lg transition-all"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>

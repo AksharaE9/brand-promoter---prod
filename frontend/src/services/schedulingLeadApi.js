@@ -132,4 +132,10 @@ export const schedulingLeadApi = {
     const res = await apiGet(`/scheduling/members/${memberId}/reports${query ? `?${query}` : ''}`);
     return res;
   },
+
+  /** Admin-only: Delete a file attachment */
+  deleteMemberFile: async (memberId, fileId) => {
+    const res = await apiDelete(`/scheduling/members/${memberId}/files/${fileId}`);
+    return res;
+  },
 };

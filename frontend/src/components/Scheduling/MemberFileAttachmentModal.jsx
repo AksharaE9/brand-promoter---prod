@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
-import { buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
+import { buildApiUrl, downloadAuthenticatedFile, getStoredUser } from '../../lib/api';
 
 export default function MemberFileAttachmentModal({ memberId, memberName, initialFiles = [], selectedDate: propSelectedDate, onClose, onRefresh }) {
   const [selectedDate, setSelectedDate] = useState(propSelectedDate);
@@ -12,6 +12,11 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [confirmDeleteFileId, setConfirmDeleteFileId] = useState(null);
+  const [deletingFileId, setDeletingFileId] = useState(null);
+
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
 
   const isFirstRender = useRef(true);
 
@@ -54,6 +59,26 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
     } catch (err) {
       console.error('[SchedulingDownload] Error downloading attachment:', err);
       setError(`${filename} — ${err.message || "File wasn't available on site"}`);
+    }
+  };
+
+  const handleDelete = async (fileId) => {
+    setDeletingFileId(fileId);
+    setError('');
+    try {
+      const res = await schedulingLeadApi.deleteMemberFile(memberId, fileId);
+      if (res && res.success) {
+        setFiles(prev => prev.filter(f => f.id !== fileId));
+        setConfirmDeleteFileId(null);
+        if (onRefresh) onRefresh();
+      } else {
+        setError(res?.message || 'Failed to delete file.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to delete file.');
+    } finally {
+      setDeletingFileId(null);
+      setConfirmDeleteFileId(null);
     }
   };
 
@@ -180,9 +205,42 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
                         Uploaded by {f.uploadedBy} at {f.createdAt ? new Date(f.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'unknown'}
                       </div>
                     </div>
-                    <button type="button" onClick={() => handleDownload(f.id, f.filename)} className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
-                      <span className="material-symbols-outlined text-sm">download</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button" onClick={() => handleDownload(f.id, f.filename)} className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center">
+                        <span className="material-symbols-outlined text-sm">download</span>
+                      </button>
+
+                      {isAdmin && confirmDeleteFileId !== f.id && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteFileId(f.id)}
+                          className="p-2 rounded-lg bg-white border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors flex items-center justify-center"
+                          title="Delete File"
+                        >
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      )}
+
+                      {isAdmin && confirmDeleteFileId === f.id && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(f.id)}
+                            disabled={deletingFileId === f.id}
+                            className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white font-bold text-[10px] rounded-lg transition-all disabled:opacity-50"
+                          >
+                            {deletingFileId === f.id ? '...' : 'Delete'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteFileId(null)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-[10px] rounded-lg transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

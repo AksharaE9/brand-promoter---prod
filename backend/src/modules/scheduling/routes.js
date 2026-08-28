@@ -1003,6 +1003,52 @@ router.post(
   })
 );
 
+/**
+ * DELETE /api/scheduling/members/:memberId/files/:fileId
+ * Admin-only: Delete a file attachment record and its binary data from the database.
+ */
+router.delete(
+  '/members/:memberId/files/:fileId',
+  auth,
+  requireRoles('SUPER_ADMIN', 'RECRUITER'),
+  asyncHandler(async (req, res) => {
+    const { memberId, fileId } = req.params;
+
+    // Verify the member exists and belongs to this org
+    await getAndAuthorizeMember(memberId, req.user);
+
+    const file = await prisma.schedulingMemberFile.findUnique({
+      where: { id: fileId },
+      select: { id: true, memberId: true, originalName: true, forDate: true },
+    });
+
+    if (!file || file.memberId !== memberId) {
+      throw new ApiError(404, 'File attachment not found');
+    }
+
+    // Hard-delete the record (cascades fileData bytes too)
+    await prisma.schedulingMemberFile.delete({ where: { id: fileId } });
+
+    // Invalidate the overview cache for this date
+    const targetDateStr = file.forDate
+      ? file.forDate.toISOString().split('T')[0]
+      : null;
+    if (targetDateStr) {
+      await invalidate(`scheduling:overview:${targetDateStr}`).catch(() => {});
+    }
+
+    // Broadcast SSE so other open tabs update immediately
+    const orgId = req.user.organizationId || 'defaultOrg';
+    sse.broadcastToOrg(orgId, 'SCHEDULING_MEMBER_FILE_DELETED', {
+      memberId,
+      fileId,
+      forDate: targetDateStr,
+    });
+
+    res.json({ success: true, message: 'File deleted successfully' });
+  })
+);
+
 
 // ─────────────────────────────────────────────
 // Admin Overview Dashboard Endpoint
