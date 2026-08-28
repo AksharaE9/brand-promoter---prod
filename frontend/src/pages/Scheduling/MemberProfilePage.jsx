@@ -3,7 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../../components/PageMotion';
-import { getStoredUser } from '../../lib/api';
+import { getStoredUser, downloadAuthenticatedFile } from '../../lib/api';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { formatTime24h, formatDateTime24h, getTodayString } from '../../lib/datetime';
 import { enterpriseNavItems, enterpriseFooterLinks } from '../../config/enterpriseNav';
@@ -384,9 +384,15 @@ export default function MemberProfilePage() {
                               <div key={file.id} className="p-4 flex items-center justify-between hover:bg-slate-50/50 transition-all text-xs">
                                 <div className="min-w-0 flex-1 pr-6 space-y-1">
                                   <a
-                                    href={file.fileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href="#"
+                                    onClick={async (e) => {
+                                      e.preventDefault();
+                                      try {
+                                        await downloadAuthenticatedFile(`/scheduling/members/${memberId}/files/${file.id}/download`, file.filename);
+                                      } catch (err) {
+                                        console.error('[SchedulingDownload] Error downloading attachment:', err);
+                                      }
+                                    }}
                                     className="font-bold text-blue-600 hover:underline truncate block"
                                   >
                                     {file.filename}
@@ -398,16 +404,19 @@ export default function MemberProfilePage() {
                                     Uploaded by <span className="font-semibold text-slate-500">{file.uploaded_by}</span> at {formatTime24h(file.created_at)}
                                   </div>
                                 </div>
-                                <a
-                                  href={file.fileUrl}
-                                  download
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      await downloadAuthenticatedFile(`/scheduling/members/${memberId}/files/${file.id}/download`, file.filename);
+                                    } catch (err) {
+                                      console.error('[SchedulingDownload] Error downloading attachment:', err);
+                                    }
+                                  }}
                                   className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all flex items-center justify-center shadow-sm"
                                   title="Download File"
                                 >
                                   <span className="material-symbols-outlined text-sm">download</span>
-                                </a>
+                                </button>
                               </div>
                             ))}
                           </div>

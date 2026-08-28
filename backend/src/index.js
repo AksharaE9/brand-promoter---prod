@@ -20,8 +20,38 @@ let notificationScheduler = null;
 
 const shouldLoadWorkers = !isVercel;
 
+function validateEnv() {
+  const required = [
+    'DATABASE_URL',
+    'JWT_SECRET',
+  ];
+
+  const missing = required.filter(key => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(`\n[CRITICAL STARTUP ERROR] Missing required environment variables: ${missing.join(', ')}`);
+    console.error('The server cannot boot without these configurations. Please check your Render environment settings or local .env file.\n');
+    process.exit(1);
+  }
+
+  // Soft warnings for optional but important production variables
+  if (process.env.NODE_ENV === 'production') {
+    const warnings = [];
+    if (!process.env.CORS_ORIGIN) warnings.push('CORS_ORIGIN');
+    if (!process.env.FRONTEND_URL) warnings.push('FRONTEND_URL');
+    if (!process.env.BREVO_API_KEY) warnings.push('BREVO_API_KEY (emails/SMS notifications will fail)');
+
+    if (warnings.length > 0) {
+      console.warn(`[WARNING] The following production environment variables are missing: ${warnings.join(', ')}`);
+    }
+  }
+}
+
 async function bootstrap() {
   try {
+    // Validate required environment variables before starting any connections
+    validateEnv();
+
     // Warm up DB connection pool synchronously before listening, with retries for cold-start resilience
     const maxRetries = 5;
     let connected = false;
