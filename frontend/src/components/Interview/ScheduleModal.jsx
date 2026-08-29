@@ -60,6 +60,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
   const [contactAttemptType, setContactAttemptType] = useState(null);
   const [loggingAttempt, setLoggingAttempt] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
 
   const { data: fetchedFeedbacks = [] } = useQuery({
     queryKey: ['candidate-feedbacks', scheduleForm.candidateId],
@@ -558,156 +559,170 @@ export const ScheduleModal = React.memo(function ScheduleModal({
 
             {/* Phone, Email & Morning Follow-ups */}
             {scheduleForm.mode !== 'WALK_IN_DRIVE' && (
-              <div className="grid grid-cols-3 gap-4 border-t border-slate-100 pt-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Phone Follow-up</label>
-                  {scheduleForm.phoneFollowUp ? (
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                      <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.phoneFollowUp.name}</span>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setScheduleForm(prev => ({ ...prev, phoneFollowUp: null }))}
-                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                        >
-                          <span className="material-symbols-outlined text-sm">delete</span>
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {isAdmin ? (
-                        <>
-                          <input
-                            type="file"
-                            id="phone-followup-upload"
-                            className="hidden"
-                            accept={ACCEPT_ATTRIBUTE}
-                            onChange={async (e) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const res = await validateUploadFile(file, 'followUp');
-                                if (!res.valid) {
-                                  alert(res.error || ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                const base64 = await fileToBase64(file);
-                                setScheduleForm(prev => ({ ...prev, phoneFollowUp: base64 }));
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="phone-followup-upload"
-                            className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Phone Follow-up</label>
+                    {scheduleForm.phoneFollowUp ? (
+                      <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                        <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.phoneFollowUp.name}</span>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setScheduleForm(prev => ({ ...prev, phoneFollowUp: null }))}
+                            className="text-red-500 hover:text-red-700 flex items-center justify-center"
                           >
-                            <span className="material-symbols-outlined text-xs">add</span> Add phone
-                          </label>
-                        </>
-                      ) : null}
-                      <div className="text-[9px] text-rose-500 font-bold">Didn't upload</div>
-                    </div>
-                  )}
-                </div>
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {isAdmin ? (
+                          <>
+                            <input
+                              type="file"
+                              id="phone-followup-upload"
+                              className="hidden"
+                              accept={ACCEPT_ATTRIBUTE}
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  setUploadError(null);
+                                  const res = await validateUploadFile(file, 'followUp');
+                                  if (!res.valid) {
+                                    setUploadError(res.error || ERROR_UNSUPPORTED);
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  const base64 = await fileToBase64(file);
+                                  setScheduleForm(prev => ({ ...prev, phoneFollowUp: base64 }));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="phone-followup-upload"
+                              className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-xs">add</span> Add phone
+                            </label>
+                          </>
+                        ) : null}
+                        <div className="text-[9px] text-slate-400 italic">No file attached</div>
+                      </div>
+                    )}
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Email Follow-up</label>
-                  {scheduleForm.emailFollowUp ? (
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                      <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.emailFollowUp.name}</span>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setScheduleForm(prev => ({ ...prev, emailFollowUp: null }))}
-                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                        >
-                          <span className="material-symbols-outlined text-sm">delete</span>
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {isAdmin ? (
-                        <>
-                          <input
-                            type="file"
-                            id="email-followup-upload"
-                            className="hidden"
-                            accept={ACCEPT_ATTRIBUTE}
-                            onChange={async (e) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const res = await validateUploadFile(file, 'followUp');
-                                if (!res.valid) {
-                                  alert(res.error || ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                const base64 = await fileToBase64(file);
-                                setScheduleForm(prev => ({ ...prev, emailFollowUp: base64 }));
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="email-followup-upload"
-                            className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Email Follow-up</label>
+                    {scheduleForm.emailFollowUp ? (
+                      <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                        <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.emailFollowUp.name}</span>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setScheduleForm(prev => ({ ...prev, emailFollowUp: null }))}
+                            className="text-red-500 hover:text-red-700 flex items-center justify-center"
                           >
-                            <span className="material-symbols-outlined text-xs">add</span> Add email
-                          </label>
-                        </>
-                      ) : null}
-                      <div className="text-[9px] text-rose-500 font-bold">Didn't upload</div>
-                    </div>
-                  )}
-                </div>
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {isAdmin ? (
+                          <>
+                            <input
+                              type="file"
+                              id="email-followup-upload"
+                              className="hidden"
+                              accept={ACCEPT_ATTRIBUTE}
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  setUploadError(null);
+                                  const res = await validateUploadFile(file, 'followUp');
+                                  if (!res.valid) {
+                                    setUploadError(res.error || ERROR_UNSUPPORTED);
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  const base64 = await fileToBase64(file);
+                                  setScheduleForm(prev => ({ ...prev, emailFollowUp: base64 }));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="email-followup-upload"
+                              className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-xs">add</span> Add email
+                            </label>
+                          </>
+                        ) : null}
+                        <div className="text-[9px] text-slate-400 italic">No file attached</div>
+                      </div>
+                    )}
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Morning Follow-up</label>
-                  {scheduleForm.morningFollowUp ? (
-                    <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
-                      <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.morningFollowUp.name}</span>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setScheduleForm(prev => ({ ...prev, morningFollowUp: null }))}
-                          className="text-red-500 hover:text-red-700 flex items-center justify-center"
-                        >
-                          <span className="material-symbols-outlined text-sm">delete</span>
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {isAdmin ? (
-                        <>
-                          <input
-                            type="file"
-                            id="morning-followup-upload"
-                            className="hidden"
-                            accept={ACCEPT_ATTRIBUTE}
-                            onChange={async (e) => {
-                              const file = e.target.files[0];
-                              if (file) {
-                                const res = await validateUploadFile(file, 'followUp');
-                                if (!res.valid) {
-                                  alert(res.error || ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                const base64 = await fileToBase64(file);
-                                setScheduleForm(prev => ({ ...prev, morningFollowUp: base64 }));
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="morning-followup-upload"
-                            className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-500 ml-1 block">Morning Follow-up</label>
+                    {scheduleForm.morningFollowUp ? (
+                      <div className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                        <span className="truncate max-w-[120px] font-medium text-slate-700">{scheduleForm.morningFollowUp.name}</span>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setScheduleForm(prev => ({ ...prev, morningFollowUp: null }))}
+                            className="text-red-500 hover:text-red-700 flex items-center justify-center"
                           >
-                            <span className="material-symbols-outlined text-xs">add</span> Add morning
-                          </label>
-                        </>
-                      ) : null}
-                      <div className="text-[9px] text-rose-500 font-bold">Didn't upload</div>
-                    </div>
-                  )}
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {isAdmin ? (
+                          <>
+                            <input
+                              type="file"
+                              id="morning-followup-upload"
+                              className="hidden"
+                              accept={ACCEPT_ATTRIBUTE}
+                              onChange={async (e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  setUploadError(null);
+                                  const res = await validateUploadFile(file, 'followUp');
+                                  if (!res.valid) {
+                                    setUploadError(res.error || ERROR_UNSUPPORTED);
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  const base64 = await fileToBase64(file);
+                                  setScheduleForm(prev => ({ ...prev, morningFollowUp: base64 }));
+                                }
+                              }}
+                            />
+                            <label
+                              htmlFor="morning-followup-upload"
+                              className="cursor-pointer text-[10px] text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-xs">add</span> Add morning
+                            </label>
+                          </>
+                        ) : null}
+                        <div className="text-[9px] text-slate-400 italic">No file attached</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {uploadError && (
+                  <div className="flex items-center gap-1 text-[11px] text-red-600 font-medium bg-red-50 p-2 rounded-lg">
+                    <span className="material-symbols-outlined text-xs shrink-0">error</span>
+                    <span>{uploadError}</span>
+                  </div>
+                )}
               </div>
             )}
 

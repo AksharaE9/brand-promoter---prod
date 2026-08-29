@@ -148,21 +148,27 @@ export const FollowUpUploadField = React.memo(({
     return await fileToBase64(file);
   };
 
+  const inFlightRef = React.useRef(false);
+
   const handleFileChange = async (e) => {
+    if (uploading || inFlightRef.current) return;
     const file = e.target.files[0];
     if (!file) return;
     setUploadError(null);
     const base64 = await validateAndProcess(file);
     e.target.value = '';
     if (!base64) return;
+    inFlightRef.current = true;
     setUploading(true);
     try {
       await onUpload(base64);
+      setUploadError(null);
     } catch (err) {
-      const msg = err?.response?.data?.error || err?.message || 'Upload failed — please try again.';
+      const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Upload failed — please try again.';
       setUploadError(msg);
       if (onError) onError(msg);
     } finally {
+      inFlightRef.current = false;
       setUploading(false);
     }
   };

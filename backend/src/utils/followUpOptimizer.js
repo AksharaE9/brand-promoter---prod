@@ -3,7 +3,7 @@
 const sharp = require('sharp');
 const path = require('path');
 const { ApiError } = require('./errors');
-const { validateFile } = require('./fileValidator');
+const { validateFile, detectFormatFromBuffer } = require('./fileValidator');
 
 const MAX_RAW_BYTES = 15 * 1024 * 1024; // 15 MB cap
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
@@ -22,74 +22,19 @@ const ERROR_UNSUPPORTED = 'Unsupported file type. Please upload a JPG, PNG, WEBP
 const ERROR_TOO_LARGE = 'File size exceeds the 15 MB limit. Please select a smaller file.';
 
 /**
- * Sniffs buffer magic bytes to determine actual file format.
+ * Sniffs buffer magic bytes to determine actual file format string.
+ * Delegates to central detectFormatFromBuffer in fileValidator.js.
  */
 function detectFormatFromMagicBytes(buffer) {
-  if (!buffer || buffer.length < 2) return null;
-
-  // PDF: %PDF- (0x25 0x50 0x44 0x46)
-  if (
-    buffer.length >= 4 &&
-    buffer[0] === 0x25 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x44 &&
-    buffer[3] === 0x46
-  ) {
-    return 'pdf';
-  }
-
-  // JPEG: 0xFF 0xD8 (SOI marker)
-  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
-    return 'jpeg';
-  }
-
-  // PNG: 0x89 0x50 0x4E 0x47
-  if (
-    buffer.length >= 4 &&
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47
-  ) {
-    return 'png';
-  }
-
-  // WEBP: RIFF at [0..3] and WEBP at [8..11]
-  if (
-    buffer[0] === 0x52 &&
-    buffer[1] === 0x49 &&
-    buffer[2] === 0x46 &&
-    buffer[3] === 0x46 &&
-    buffer.length >= 12 &&
-    buffer[8] === 0x57 &&
-    buffer[9] === 0x45 &&
-    buffer[10] === 0x42 &&
-    buffer[11] === 0x50
-  ) {
-    return 'webp';
-  }
-
-  // HEIC / HEIF: ftyp at [4..7] (0x66 0x74 0x79 0x70)
-  if (
-    buffer.length >= 12 &&
-    buffer[4] === 0x66 &&
-    buffer[5] === 0x74 &&
-    buffer[6] === 0x79 &&
-    buffer[7] === 0x70
-  ) {
-    const brand = buffer.toString('ascii', 8, 12).toLowerCase();
-    if (['heic', 'heix', 'heim', 'heis', 'mif1', 'msf1', 'hevc'].some(b => brand.includes(b))) {
-      return 'heic';
-    }
-  }
-
-  // SVG check (reject explicitly)
-  const headerText = buffer.slice(0, 100).toString('utf8').toLowerCase();
-  if (headerText.includes('<svg') || headerText.includes('<?xml')) {
-    return 'svg'; // explicitly rejected
-  }
-
-  return null;
+  const mime = detectFormatFromBuffer(buffer);
+  if (!mime) return null;
+  if (mime === 'image/jpeg') return 'jpeg';
+  if (mime === 'image/png') return 'png';
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'application/pdf') return 'pdf';
+  if (mime === 'image/heic') return 'heic';
+  if (mime === 'image/svg+xml') return 'svg';
+  return mime;
 }
 
 /**
@@ -120,13 +65,28 @@ async function processFollowUpFile(fileEntry) {
 
   const buffer = Buffer.from(base64Body, 'base64');
 
-  // Validate file using central shared validator
-  validateFile({ originalname: fileName, buffer, mimetype: clientMime, size: buffer.length }, 'followUp');
+  // Validate file using central shared validator (throws diagnostic ApiError if invalid)
+  const validationRes = validateFile({ originalname: fileName, buffer, mimetype: clientMime, size: buffer.length }, 'followUp');
 
-  // Magic byte format detection
-  const detectedFormat = detectFormatFromMagicBytes(buffer);
+  // Format determination from magic bytes or validated type
+  let detectedFormat = detectFormatFromMagicBytes(buffer);
+  if (!detectedFormat) {
+    if (validationRes.detectedType === 'image/jpeg' || validationRes.ext === '.jpg' || validationRes.ext === '.jpeg') {
+      detectedFormat = 'jpeg';
+    } else if (validationRes.detectedType === 'image/png' || validationRes.ext === '.png') {
+      detectedFormat = 'png';
+    } else if (validationRes.detectedType === 'image/webp' || validationRes.ext === '.webp') {
+      detectedFormat = 'webp';
+    } else if (validationRes.detectedType === 'application/pdf' || validationRes.ext === '.pdf') {
+      detectedFormat = 'pdf';
+    } else if (validationRes.detectedType === 'image/heic' || validationRes.ext === '.heic' || validationRes.ext === '.heif') {
+      detectedFormat = 'heic';
+    }
+  }
+
   if (!detectedFormat || detectedFormat === 'svg') {
-    throw new ApiError(400, ERROR_UNSUPPORTED);
+    const displayType = clientMime || path.extname(fileName) || 'unknown format';
+    throw new ApiError(400, `Detected type: ${displayType} — please upload a JPG, PNG, WEBP, HEIC, or PDF file.`);
   }
 
   // PDF handling: pass through validated PDF
