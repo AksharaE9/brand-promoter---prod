@@ -61,19 +61,8 @@ export default defineConfig(({ command }) => {
         // only apply to specific non-scheduling, non-auth routes.
         navigateFallbackDenylist: [/^\/api\//],
 
-        // Runtime caching strategies
+        // Runtime caching strategies for static assets only (all /api/* requests bypass SW)
         runtimeCaching: [
-          {
-            // API static data — serve stale while revalidating.
-            // Explicitly listed paths only — /api/scheduling is intentionally
-            // excluded so the Telecaller Overview always hits the network.
-            urlPattern: /\/api\/(jobs|team|org-settings|panel-members|dashboard|interviews|candidates)/,
-            handler:    'StaleWhileRevalidate',
-            options: {
-              cacheName:  'api-static',
-              expiration: { maxAgeSeconds: 300, maxEntries: 100 },
-            },
-          },
           {
             // Fonts and icons — cache first, very long TTL
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com/,
