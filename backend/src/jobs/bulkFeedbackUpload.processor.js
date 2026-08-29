@@ -8,6 +8,10 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
+// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
+const MAX_ROWS_PER_UPLOAD = 5000;
+
+
 /**
  * Normalizes round string from CSV row (e.g. "Round 1", "round 2", "FINAL_ROUND")
  * to canonical InterviewRound enum key.
@@ -261,21 +265,39 @@ async function batchInsertFeedback(batchItems, context) {
 async function processBulkFeedbackUpload(jobData) {
   const { jobId, filePath, fileType, uploadedBy, organizationId, defaultRound, sourceFilename } = jobData;
 
-  return runStreamingBulkUploadPipeline({
+  // Log memory at start for instance health tracking
+  const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  console.log(`[BulkFeedbackUpload] Job ${jobId} starting. RSS: ${startMemMb}MB`);
+
+  const result = await runStreamingBulkUploadPipeline({
     jobId,
     filePath,
     fileType,
     uploadedBy,
     organizationId,
     sourceFilename,
+    batchSize: 100, // Reduced from 500 — safer on 512MB instance
     context: {
       defaultRound,
       seenRoundFeedbacksInFileMap: new Map(),
+      MAX_ROWS_EXCEEDED: false,
     },
-    validateRow: validateFeedbackRow,
+    validateRow: async (rawRow, rowNumber, pipelineContext) => {
+      // Enforce max-rows limit before invoking per-row validator
+      if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+        pipelineContext.MAX_ROWS_EXCEEDED = true;
+        return {
+          valid: false,
+          errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+        };
+      }
+      return validateFeedbackRow(rawRow, rowNumber, pipelineContext);
+    },
     duplicateCheck: duplicateCheckFeedback,
     batchInsert: batchInsertFeedback,
     onComplete: async (summary) => {
+      const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      console.log(`[BulkFeedbackUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
       if (organizationId) {
         await cacheInvalidation.candidateList(organizationId).catch(() => {});
       }
@@ -283,6 +305,8 @@ async function processBulkFeedbackUpload(jobData) {
     emitProgress: emitBulkUploadProgress,
     emitCompleted: emitBulkUploadCompleted,
   });
+
+  return result;
 }
 
 module.exports = {

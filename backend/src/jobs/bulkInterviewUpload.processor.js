@@ -8,6 +8,24 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const sse = require('../utils/sse');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
+// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
+const MAX_ROWS_PER_UPLOAD = 5000;
+
+/**
+ * Normalizes a header/key string for case-insensitive, whitespace-tolerant comparison.
+ * Strips trailing asterisks (from template "required" markers), lowercases, trims.
+ * NOTE: rows arriving from csvXlsxStreamParser are already mapped via headerAliasMap,
+ * so canonical keys like 'name', 'phone', 'startDateTime' etc. are used directly.
+ * This function is needed only for the secondary raw-key scan fallback in getValue().
+ */
+function normalizeKey(key) {
+  return String(key || '')
+    .trim()
+    .replace(/\s*\*+$/, '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+}
+
 function emitInterviewUploadProgress(organizationId, jobId, { processed, succeeded, duplicates, failed, totalRows }) {
   const data = {
     jobId,
@@ -113,18 +131,31 @@ function resolveModeFromRow(rawMode, defaultMode) {
 
 /**
  * Validates a single row for Bulk Interview Scheduling.
+ * rawRow keys are already canonicalized by csvXlsxStreamParser via headerAliasMap
+ * (e.g. 'name', 'phone', 'startDateTime', 'mode', 'round', 'interviewers', 'meetingLink', 'zohoLink').
+ * getValue() does a normalized secondary scan for robustness against any remaining alias variants.
  */
 async function validateInterviewRow(rawRow, rowNumber, context) {
+  // Row limit guard — checked once at the start of each row validation
+  if (context.MAX_ROWS_EXCEEDED) {
+    return { valid: false, errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split your file into smaller batches.`] };
+  }
+
   const errors = [];
   const extractCellString = (val) => {
     if (val === undefined || val === null) return '';
     if (typeof val === 'object') {
+      // Handle Excel hyperlink cells: l.Target is the actual URL
       const target = val.l?.Target || val.Target || val.v || val.text || val.formatted || '';
       return String(target).trim();
     }
     return String(val).trim();
   };
 
+  /**
+   * Looks up a value from the row by trying multiple alias labels.
+   * Uses normalizeKey() for case/whitespace-insensitive matching.
+   */
   const getValue = (labels) => {
     for (const label of labels) {
       const normLabel = normalizeKey(label);
@@ -307,11 +338,19 @@ async function duplicateCheckInterview(data, rowNumber, context) {
 }
 
 /**
- * Batch inserter for interview schedules
+ * Batch inserter for interview schedules.
+ *
+ * Efficiency improvements vs previous implementation:
+ * - Active jobs are fetched ONCE before the loop (was per-row)
+ * - All users are fetched ONCE before the loop (was 1-3 queries per interviewer per row)
+ * - Applications are fetched in bulk for the entire batch (was per-row findFirst)
+ * - Slot counts still per-row (unavoidable — they depend on the specific date/time)
  */
 async function batchInsertInterviews(batchItems, context) {
   let succeeded = 0;
   let failed = 0;
+
+  if (batchItems.length === 0) return { succeeded, failed };
 
   const normalizeForComparison = (str) => {
     let s = String(str || '').toLowerCase().trim();
@@ -319,80 +358,116 @@ async function batchInsertInterviews(batchItems, context) {
     s = s.replace(/\bops\b/g, 'operations');
     s = s.replace(/\bdevlopement\b/g, 'development');
     s = s.replace(/\bdev\b/g, 'development');
-    if (s.includes('business development') || s.includes('bde')) {
-      return 'bde';
-    }
+    if (s.includes('business development') || s.includes('bde')) return 'bde';
     return s.replace(/[^a-z0-9]/g, '');
   };
 
+  // ── Pre-fetch 1: All active jobs (one query for the entire batch) ──────────
   let activeJobs = [];
   try {
     activeJobs = await prisma.job.findMany({ where: { isActive: true } });
   } catch (_) {}
 
+  // ── Pre-fetch 2: All users (one query for the entire batch) ────────────────
+  // Eliminates 1-3 user lookups per interviewer name per row
+  let allUsers = [];
+  try {
+    allUsers = await prisma.user.findMany({
+      select: { id: true, fullName: true },
+    });
+  } catch (_) {}
+
+  // Build lowercase name → user map for O(1) lookup
+  const userByNameLower = new Map();
+  for (const u of allUsers) {
+    if (u.fullName) userByNameLower.set(u.fullName.toLowerCase().trim(), u);
+  }
+
+  // ── Pre-fetch 3: Existing applications for all candidates in this batch ────
+  const candidateIds = [...new Set(batchItems.map(i => i.candidate?.id).filter(Boolean))];
+  const existingApps = candidateIds.length > 0
+    ? await prisma.application.findMany({
+        where: { candidateId: { in: candidateIds } },
+        select: { id: true, candidateId: true, jobId: true },
+      }).catch(() => [])
+    : [];
+
+  // Build lookup: `candidateId:jobId` → application id
+  const appLookup = new Map();
+  for (const app of existingApps) {
+    appLookup.set(`${app.candidateId}:${app.jobId}`, app.id);
+  }
+
   for (const item of batchItems) {
     try {
+      // 1. Find matching job
       const searchNorm = normalizeForComparison(item.jobRole);
       let job = activeJobs.find(j => normalizeForComparison(j.title) === searchNorm);
       if (!job) {
         job = activeJobs.find(j => {
           const titleNorm = normalizeForComparison(j.title);
-          return titleNorm.startsWith(searchNorm) || searchNorm.startsWith(titleNorm) || titleNorm.includes(searchNorm) || searchNorm.includes(titleNorm);
+          return titleNorm.startsWith(searchNorm) || searchNorm.startsWith(titleNorm)
+              || titleNorm.includes(searchNorm) || searchNorm.includes(titleNorm);
         });
       }
-
       if (!job) {
         throw new Error(`Job role "${item.jobRole}" not found or inactive`);
       }
 
-      // 2. Resolve or create candidate application for this job
-      let app = await prisma.application.findFirst({
-        where: {
-          candidateId: item.candidate.id,
-          jobId: job.id
-        }
-      });
-
-      if (!app) {
-        app = await prisma.application.create({
+      // 2. Resolve or create candidate application (batch-pre-fetched)
+      const appKey = `${item.candidate.id}:${job.id}`;
+      let appId = appLookup.get(appKey);
+      if (!appId) {
+        const created = await prisma.application.create({
           data: {
             candidateId: item.candidate.id,
             jobId: job.id,
             status: 'APPLIED',
             organizationId: context.organizationId,
-          }
+          },
+          select: { id: true },
         });
+        appId = created.id;
+        appLookup.set(appKey, appId); // cache for subsequent rows
       }
 
-      // 3. Resolve interviewer details (skip for Walk-in Drive, fallback startsWith / contains for truncated names like "super adm")
+      // 3. Resolve interviewer details from pre-fetched user map (no per-row DB queries)
       let interviewerIds = [];
       let interviewerNamesList = [];
       if (item.canonicalMode !== 'WALK_IN_DRIVE' && item.interviewers) {
         const names = item.interviewers.split(',').map(n => n.trim()).filter(Boolean);
         for (const name of names) {
-          let matchedUser = await prisma.user.findFirst({
-            where: { fullName: { equals: name, mode: 'insensitive' } }
-          });
+          const nameLower = name.toLowerCase().trim();
+          // Exact match
+          let matchedUser = userByNameLower.get(nameLower);
+          // Prefix match (handles truncated names like "super adm")
           if (!matchedUser) {
-            matchedUser = await prisma.user.findFirst({
-              where: { fullName: { startsWith: name, mode: 'insensitive' } }
-            });
+            for (const [key, u] of userByNameLower) {
+              if (key.startsWith(nameLower) || nameLower.startsWith(key)) {
+                matchedUser = u;
+                break;
+              }
+            }
           }
+          // Contains match
           if (!matchedUser) {
-            matchedUser = await prisma.user.findFirst({
-              where: { fullName: { contains: name, mode: 'insensitive' } }
-            });
+            for (const [key, u] of userByNameLower) {
+              if (key.includes(nameLower) || nameLower.includes(key)) {
+                matchedUser = u;
+                break;
+              }
+            }
           }
           if (matchedUser) {
             interviewerIds.push(matchedUser.id);
             interviewerNamesList.push(matchedUser.fullName);
           } else {
-            interviewerNamesList.push(name);
+            interviewerNamesList.push(name); // store as-is if no user match
           }
         }
       }
 
-      // 4. Compute slot number (same date + hour bookings)
+      // 4. Compute slot number (same hour bookings — must be per-row)
       const startOfHour = new Date(item.startDateTime);
       startOfHour.setMinutes(0, 0, 0);
       const endOfHour = new Date(item.startDateTime);
@@ -401,28 +476,20 @@ async function batchInsertInterviews(batchItems, context) {
       const sameSlotInterviewsCount = await prisma.interview.count({
         where: {
           status: { not: 'CANCELLED' },
-          scheduledStart: {
-            gte: startOfHour,
-            lte: endOfHour
-          }
-        }
+          scheduledStart: { gte: startOfHour, lte: endOfHour },
+        },
       });
       const slotNo = sameSlotInterviewsCount + 1;
 
       // 5. Create Interview record
       let roundNo = 1;
       let roundLabel = 'Round 1';
-      if (item.canonicalRound === 'ROUND_2') {
-        roundNo = 2;
-        roundLabel = 'Round 2';
-      } else if (item.canonicalRound === 'FINAL_ROUND') {
-        roundNo = 99;
-        roundLabel = 'Final Round';
-      }
+      if (item.canonicalRound === 'ROUND_2') { roundNo = 2; roundLabel = 'Round 2'; }
+      else if (item.canonicalRound === 'FINAL_ROUND') { roundNo = 99; roundLabel = 'Final Round'; }
 
       await prisma.interview.create({
         data: {
-          application: { connect: { id: app.id } },
+          application: { connect: { id: appId } },
           candidateId: item.candidate.id,
           candidateName: item.candidate.fullName,
           jobId: job.id,
@@ -434,11 +501,11 @@ async function batchInsertInterviews(batchItems, context) {
           mode: item.canonicalMode,
           meetingLink: item.canonicalMode === 'WALK_IN_DRIVE' ? null : (item.meetingLink || null),
           zohoLink: item.canonicalMode === 'WALK_IN_DRIVE' ? null : (item.zohoLink || null),
-          interviewerIds: interviewerIds,
+          interviewerIds,
           interviewerNames: interviewerNamesList.join(', ') || null,
           organizationId: context.organizationId,
           createdById: context.uploadedBy || null,
-        }
+        },
       });
 
       succeeded++;
@@ -459,22 +526,40 @@ async function batchInsertInterviews(batchItems, context) {
 async function processBulkInterviewUpload(jobData) {
   const { jobId, filePath, fileType, uploadedBy, organizationId, defaultRound, defaultMode, sourceFilename } = jobData;
 
-  return runStreamingBulkUploadPipeline({
+  // Log memory at start for instance health tracking
+  const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  console.log(`[BulkInterviewUpload] Job ${jobId} starting. RSS: ${startMemMb}MB`);
+
+  const result = await runStreamingBulkUploadPipeline({
     jobId,
     filePath,
     fileType,
     uploadedBy,
     organizationId,
     sourceFilename,
+    batchSize: 100, // Reduced from 500 — safer on 512MB instance for interview rows
     context: {
       defaultRound,
       defaultMode,
       seenSchedulesInFileMap: new Map(),
+      MAX_ROWS_EXCEEDED: false,
     },
-    validateRow: validateInterviewRow,
+    validateRow: async (rawRow, rowNumber, pipelineContext) => {
+      // Enforce max-rows limit before invoking per-row validator
+      if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+        pipelineContext.MAX_ROWS_EXCEEDED = true;
+        return {
+          valid: false,
+          errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+        };
+      }
+      return validateInterviewRow(rawRow, rowNumber, pipelineContext);
+    },
     duplicateCheck: duplicateCheckInterview,
     batchInsert: batchInsertInterviews,
     onComplete: async (summary) => {
+      const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      console.log(`[BulkInterviewUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
       if (organizationId) {
         await cacheInvalidation.candidateList(organizationId).catch(() => {});
       }
@@ -482,6 +567,8 @@ async function processBulkInterviewUpload(jobData) {
     emitProgress: emitInterviewUploadProgress,
     emitCompleted: emitInterviewUploadCompleted,
   });
+
+  return result;
 }
 
 module.exports = {

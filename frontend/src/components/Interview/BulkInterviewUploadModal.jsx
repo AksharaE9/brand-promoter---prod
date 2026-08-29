@@ -315,7 +315,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
                 </div>
               </div>
 
-              {jobStatus.errorReportUrl && (
+              {(jobStatus.errorReportUrl || jobStatus.state === 'completed' || jobStatus.state === 'failed') && (
                 <div className="pt-2 flex justify-center">
                   <button
                     type="button"

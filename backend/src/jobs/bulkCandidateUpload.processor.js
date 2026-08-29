@@ -11,6 +11,10 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
+// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
+const MAX_ROWS_PER_UPLOAD = 5000;
+
+
 /**
  * Validates candidate row using shared candidateRowValidator.
  */
@@ -221,6 +225,9 @@ async function enqueueJob(jobData) {
   }
 
   setImmediate(async () => {
+    // Log memory at start for instance health tracking
+    const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    console.log(`[BulkCandidateUpload] Job ${jobId} starting. RSS: ${startMemMb}MB`);
     try {
       await runStreamingBulkUploadPipeline({
         jobId,
@@ -229,16 +236,30 @@ async function enqueueJob(jobData) {
         uploadedBy,
         organizationId,
         sourceFilename,
+        batchSize: 250, // Candidates are lighter than interviews — 250 is safe
         context: {
           validCreatedById,
           driveId: driveId || null,
+          MAX_ROWS_EXCEEDED: false,
         },
-        validateRow: validateCandidateRowWrapper,
+        validateRow: async (rawRow, rowNumber, pipelineContext) => {
+          // Enforce max-rows limit before invoking per-row validator
+          if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+            pipelineContext.MAX_ROWS_EXCEEDED = true;
+            return {
+              valid: false,
+              errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+            };
+          }
+          return validateCandidateRowWrapper(rawRow, rowNumber);
+        },
         // Duplicate skip logic removed — every valid CSV row is imported (create/update).
         duplicateCheck: undefined,
         transformRow: transformCandidateRow,
         batchInsert: batchInsertCandidates,
         onComplete: async (summary) => {
+          const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+          console.log(`[BulkCandidateUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
           if (organizationId) {
             await cacheInvalidation.candidateList(organizationId).catch(() => {});
             if (driveId) {
