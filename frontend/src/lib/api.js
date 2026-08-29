@@ -23,9 +23,9 @@ export function buildApiUrl(path) {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  if (cleanPath.startsWith('/api') && API_BASE_URL.endsWith('/api')) {
-    throw new Error(`Doubled /api in request: ${API_BASE_URL}${cleanPath}`);
+  let cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (cleanPath.startsWith('/api/') && API_BASE_URL.endsWith('/api')) {
+    cleanPath = cleanPath.slice(4); // Strip redundant /api prefix
   }
   return `${API_BASE_URL}${cleanPath}`;
 }
@@ -433,9 +433,8 @@ export function hasToken() {
 }
 
 export async function downloadAuthenticatedFile(path, suggestedFilename) {
-  const url = buildApiUrl(path);
-
   const token = getStoredToken();
+  const url = buildApiUrl(path);
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -451,8 +450,9 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
     try {
       const text = await response.text();
       const parsed = JSON.parse(text);
-      if (parsed?.error) message = parsed.error;
-      else if (parsed?.message) message = parsed.message;
+      if (typeof parsed?.error === 'string') message = parsed.error;
+      else if (typeof parsed?.error?.message === 'string') message = parsed.error.message;
+      else if (typeof parsed?.message === 'string') message = parsed.message;
     } catch {
       // not JSON
     }
@@ -471,9 +471,16 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
     const text = await response.text();
     try {
       const parsed = JSON.parse(text);
-      if (parsed?.error) throw new Error(parsed.error);
-      if (parsed?.message) throw new Error(parsed.message);
-      if (parsed?.success === false) throw new Error('Server returned an error response.');
+      if (typeof parsed?.error === 'string') throw new Error(parsed.error);
+      if (typeof parsed?.error?.message === 'string') throw new Error(parsed.error.message);
+      if (typeof parsed?.message === 'string') throw new Error(parsed.message);
+      if (parsed?.success === false) {
+        throw new Error(
+          (typeof parsed?.error === 'string' ? parsed.error : parsed?.error?.message) ||
+          parsed?.message ||
+          'Server returned an error response.'
+        );
+      }
     } catch (e) {
       if (e.message) throw e;
     }

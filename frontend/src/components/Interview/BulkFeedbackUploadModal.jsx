@@ -280,6 +280,13 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
                 />
               </div>
 
+              {jobStatus.summaryError && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-semibold flex items-start gap-2">
+                  <span className="text-sm shrink-0">⚠️</span>
+                  <span>{jobStatus.summaryError}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-4 gap-2 pt-2 text-center">
                 <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
                   <p className="text-[10px] text-slate-500 font-medium">Processed</p>

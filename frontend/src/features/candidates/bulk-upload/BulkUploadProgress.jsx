@@ -103,9 +103,10 @@ const BulkUploadProgress = ({ jobId, jobState, onReset, onDone }) => {
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm font-medium">
-          <strong>Error:</strong> {error}
+      {(error || jobState.summaryError) && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+          <span className="material-symbols-outlined text-base">warning</span>
+          <span>{jobState.summaryError || error}</span>
         </div>
       )}
 

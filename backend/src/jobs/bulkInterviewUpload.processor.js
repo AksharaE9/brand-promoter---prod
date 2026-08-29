@@ -67,25 +67,33 @@ function resolveRoundFromRow(rawRound, defaultRound) {
 }
 
 /**
- * Parses a date/time string that may use Indian date formats:
+ * Parses a date/time string that may use Indian, US, ISO, or Excel serial date formats:
  *   "31-7-2026 & 15:00"   (DD-M-YYYY & HH:MM)
  *   "1-8-2026 & 17:30"    (D-M-YYYY & HH:MM)
  *   "31/7/2026 15:00"     (DD/MM/YYYY HH:MM)
+ *   "07/31/2026 03:00 PM" (MM/DD/YYYY 12-hour AM/PM)
  *   "2026-07-31T15:00"    (ISO)
- *   Any JS-native parseable string
+ *   46235.625             (Excel date-time serial number)
  */
 function parseIndianDateTime(raw) {
-  if (!raw) return null;
+  if (raw === null || raw === undefined) return null;
+
+  // Handle Excel date serial numbers (e.g. 46235.625)
+  if (typeof raw === 'number' || (typeof raw === 'string' && !isNaN(Number(raw)) && Number(raw) > 30000 && Number(raw) < 100000)) {
+    const serial = Number(raw);
+    const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
+    if (!isNaN(date.getTime())) return date;
+  }
+
   const str = String(raw).trim();
   if (!str) return null;
 
-  // Attempt 1 — strip the "&" separator and try DD-M-YYYY HH:MM → ISO reorder
-  // Matches: "31-7-2026 & 15:00" or "1 8 2026 & 17:30" etc.
+  // Attempt 1 — strip the "&" separator and try DD-M-YYYY HH:MM / D-M-YYYY HH:MM → ISO reorder
   const indianAmpMatch = str.match(
-    /^(\d{1,2})[\s/-](\d{1,2})[\s/-](\d{4})\s*(?:&)?\s*(\d{1,2}):(\d{2})\s*([APap][Mm])?$/
+    /^(\d{1,2})[\s/-](\d{1,2})[\s/-](\d{4})\s*(?:&)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([APap][Mm])?$/
   );
   if (indianAmpMatch) {
-    let [, day, month, year, hour, minute, ampm] = indianAmpMatch;
+    let [, p1, p2, year, hour, minute, sec, ampm] = indianAmpMatch;
     let h = parseInt(hour, 10);
     const m = parseInt(minute, 10);
     if (ampm) {
@@ -93,16 +101,32 @@ function parseIndianDateTime(raw) {
       if (upper === 'PM' && h < 12) h += 12;
       if (upper === 'AM' && h === 12) h = 0;
     }
-    // Build ISO string and parse
-    const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+
+    // Determine if p1 is day or month (if > 12, p1 is day; if p2 > 12, p2 is day; default p1=day)
+    let day = parseInt(p1, 10);
+    let month = parseInt(p2, 10);
+    if (month > 12 && day <= 12) {
+      // Swapped format MM/DD/YYYY
+      const tmp = day;
+      day = month;
+      month = tmp;
+    }
+
+    const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec || '00').padStart(2, '0')}`;
     const d = new Date(isoStr);
     if (!isNaN(d.getTime())) return d;
   }
 
-  // Attempt 2 — date only without time: "31-7-2026" or "1/8/2026"
-  const dateOnlyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  // Attempt 2 — date only without time: "31-7-2026" or "1/8/2026" or "2026-07-31"
+  const dateOnlyMatch = str.match(/^(\d{1,4})[/-](\d{1,2})[/-](\d{1,4})$/);
   if (dateOnlyMatch) {
-    const [, day, month, year] = dateOnlyMatch;
+    let [, p1, p2, p3] = dateOnlyMatch;
+    let year, month, day;
+    if (p1.length === 4) {
+      year = p1; month = p2; day = p3;
+    } else {
+      year = p3; day = p1; month = p2;
+    }
     const isoStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T09:00:00`;
     const d = new Date(isoStr);
     if (!isNaN(d.getTime())) return d;
@@ -112,7 +136,7 @@ function parseIndianDateTime(raw) {
   const native = new Date(str);
   if (!isNaN(native.getTime())) return native;
 
-  return null; // Could not parse
+  return null;
 }
 
 /**
@@ -194,7 +218,39 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
           }
         });
       }
+      // Fallback: search across all orgs if organizationId filtering yielded no match
       if (!candidate) {
+        candidate = await prisma.candidate.findFirst({
+          where: {
+            OR: [
+              { phoneNormalized: normalizedPhone },
+              { phone: String(rawPhone).trim() },
+              ...(rawName ? [{ fullName: { equals: rawName.trim(), mode: 'insensitive' } }] : []),
+            ],
+            isDeleted: false,
+          }
+        });
+      }
+      // Auto-create candidate on-the-fly if candidate does not exist yet
+      if (!candidate && rawName) {
+        try {
+          candidate = await prisma.candidate.create({
+            data: {
+              fullName: rawName.trim(),
+              phone: normalizedPhone,
+              phoneNormalized: normalizedPhone,
+              preferredRole: jobRole || null,
+              organizationId: context.organizationId,
+              source: 'Bulk Interview Schedule',
+              createdById: context.uploadedBy || null,
+              status: 'ACTIVE',
+            },
+            select: { id: true, fullName: true, email: true, phone: true, preferredRole: true, organizationId: true },
+          });
+        } catch (createErr) {
+          errors.push(`Row ${rowNumber}, Column "Phone Number": Could not resolve or auto-create candidate for "${rawName}" (${createErr.message})`);
+        }
+      } else if (!candidate) {
         errors.push(`Row ${rowNumber}, Column "Phone Number": Candidate not found for phone "${rawPhone}"`);
       }
     }

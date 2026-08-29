@@ -146,6 +146,7 @@ async function runStreamingBulkUploadPipeline(options) {
   let failed = 0;
   let totalRows = 0;
   let batch = [];
+  let firstErrorReason = null;
 
   const statusObj = {
     jobId,
@@ -159,6 +160,7 @@ async function runStreamingBulkUploadPipeline(options) {
     progress: 0,
     errorReportUrl: null,
     error: null,
+    summaryError: null,
     startTime: Date.now(),
   };
   pipelineJobStatusMap.set(jobId, statusObj);
@@ -189,6 +191,7 @@ async function runStreamingBulkUploadPipeline(options) {
     } catch (err) {
       console.error(`[StreamingBulkPipeline] Batch insert error on job ${jobId}:`, err.message);
       failed += currentBatch.length;
+      if (!firstErrorReason) firstErrorReason = `Batch insert failed: ${err.message}`;
       const rowNumbers = currentBatch.map(b => b.rowNumber).filter(Boolean);
       const rowRange = rowNumbers.length > 0 ? `${rowNumbers[0]}-${rowNumbers[rowNumbers.length - 1]}` : '0';
       appendFailedRow(jobId, rowRange, `Batch insert failed: ${err.message}`, 'error');
@@ -209,6 +212,9 @@ async function runStreamingBulkUploadPipeline(options) {
         const reason = (valResult.errors && valResult.errors.length > 0)
           ? valResult.errors.join('; ')
           : (valResult.failureReason || 'Row validation failed');
+        if (!firstErrorReason) {
+          firstErrorReason = (valResult.errors && valResult.errors.length > 0) ? valResult.errors[0] : reason;
+        }
         appendFailedRow(jobId, rowNumber, `${prefix}${reason}`, 'error');
       } else {
         // Primary and secondary duplicate checks
@@ -287,6 +293,12 @@ async function runStreamingBulkUploadPipeline(options) {
 
     const errorReportUrl = finalizeErrorReport(jobId);
 
+    if (failed === processed && processed > 0 && firstErrorReason) {
+      statusObj.summaryError = `All ${processed} rows failed: ${firstErrorReason}`;
+    } else if (failed > 0 && firstErrorReason) {
+      statusObj.summaryError = `${failed} of ${processed} rows failed. First error: ${firstErrorReason}`;
+    }
+
     statusObj.state = 'completed';
     statusObj.processed = processed;
     statusObj.succeeded = succeeded;
@@ -307,6 +319,7 @@ async function runStreamingBulkUploadPipeline(options) {
         duplicates,
         failed,
         errorReportUrl,
+        summaryError: statusObj.summaryError,
       });
     }
 

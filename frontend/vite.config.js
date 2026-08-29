@@ -130,6 +130,7 @@ export default defineConfig(({ command }) => {
   },
   build: {
     target: 'es2020',
+    modulePreload: false,
     cssCodeSplit: true,
     sourcemap: false,           // disable in production
     reportCompressedSize: true,
