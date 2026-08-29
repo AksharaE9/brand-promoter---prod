@@ -25,7 +25,7 @@ export const SELECTION_STATUSES = ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT
 // Round 1 — Updated 19-field template
 export const ROUND_1_TEMPLATE = [
   { key: 'name',            label: 'Name',                                    type: 'text',     required: true },
-  { key: 'number',          label: 'Number',                                  type: 'text',     required: true },
+  { key: 'number',          label: 'Number',                                  type: 'text',     required: false },
   { key: 'roundNumber',     label: 'Round Number',                            type: 'text',     required: true },
   { key: 'panelists',       label: 'Panelists',                               type: 'text',     required: true },
   { key: 'role',            label: 'Role',                                    type: 'text',     required: true },
@@ -39,8 +39,8 @@ export const ROUND_1_TEMPLATE = [
   { key: 'area',            label: 'Area',                                    type: 'text',     required: false },
   { key: 'overallRating',   label: 'Overall Rating',                          type: 'number',   required: true,  suffix: '/10' },
   { key: 'doj',             label: 'DOJ',                                     type: 'date',     required: true },
-  { key: 'timings',         label: 'Timings',                                 type: 'text',     required: false },
-  { key: 'duration',        label: 'Duration',                                type: 'text',     required: false },
+  { key: 'timings',         label: 'Timings',                                 type: 'text',     required: true },
+  { key: 'duration',        label: 'Duration',                                type: 'text',     required: true },
   { key: 'selectionStatus', label: 'Selection Status',                        type: 'select',   required: true,  options: SELECTION_STATUSES },
   { key: 'comments',        label: 'Comments (Reason for Selection/Reject)',  type: 'textarea', required: false },
   {
@@ -62,7 +62,7 @@ export const ROUND_1_TEMPLATE = [
 // Round 2 / Final Round — Updated 13-field template
 export const ROUND_2_PLUS_TEMPLATE = [
   { key: 'name',          label: 'Name',           type: 'text',     required: true },
-  { key: 'number',        label: 'Number',         type: 'text',     required: true },
+  { key: 'number',        label: 'Number',         type: 'text',     required: false },
   { key: 'roundNumber',   label: 'Round Number',   type: 'text',     required: true },
   { key: 'panelists',     label: 'Panelists',      type: 'text',     required: true },
   { key: 'role',          label: 'Role',           type: 'text',     required: false },
@@ -70,8 +70,8 @@ export const ROUND_2_PLUS_TEMPLATE = [
   { key: 'overallRating', label: 'Overall Rating', type: 'number',   required: true,  suffix: '/10' },
   { key: 'location',      label: 'Location',       type: 'text',     required: false },
   { key: 'doj',           label: 'DOJ',            type: 'date',     required: false },
-  { key: 'timings',       label: 'Timings',        type: 'text',     required: false },
-  { key: 'duration',      label: 'Duration',       type: 'text',     required: false },
+  { key: 'timings',       label: 'Timings',        type: 'text',     required: true },
+  { key: 'duration',      label: 'Duration',       type: 'text',     required: true },
   { key: 'status',        label: 'Status',         type: 'select',   required: true,  options: SELECTION_STATUSES },
   { key: 'comments',      label: 'Comments',       type: 'textarea', required: false },
   {
