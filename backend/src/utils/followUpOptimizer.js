@@ -98,12 +98,13 @@ async function processFollowUpFile(fileEntry) {
     };
   }
 
+  // Fix filename extension if HEIC converted to JPEG
+  let finalFileName = fileName;
+  if (detectedFormat === 'heic' || detectedFormat === 'heif') {
+    finalFileName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
+  }
+
   // Image optimization (JPEG, PNG, WEBP, HEIC):
-  // 1. Auto-rotate based on EXIF tag
-  // 2. Resize longer edge to max 2000px
-  // 3. Convert HEIC -> JPEG (universal browser rendering)
-  // 4. Strip EXIF metadata for privacy
-  // 5. Apply quality compression target (~80 quality, ~300-800KB output)
   try {
     let pipeline = sharp(buffer).rotate(); // auto-rotate & strip EXIF metadata
 
@@ -115,30 +116,20 @@ async function processFollowUpFile(fileEntry) {
     });
 
     let outputMime = 'image/jpeg';
-    let outputExt = '.jpg';
 
     if (detectedFormat === 'png') {
       pipeline = pipeline.png({ quality: 80, compressionLevel: 8 });
       outputMime = 'image/png';
-      outputExt = '.png';
     } else if (detectedFormat === 'webp') {
       pipeline = pipeline.webp({ quality: 80 });
       outputMime = 'image/webp';
-      outputExt = '.webp';
     } else {
       // JPEG, HEIC, HEIF -> convert/output as JPEG
       pipeline = pipeline.jpeg({ quality: 80, progressive: true });
       outputMime = 'image/jpeg';
-      outputExt = '.jpg';
     }
 
     const optimizedBuffer = await pipeline.toBuffer();
-
-    // Fix filename extension if HEIC converted to JPEG
-    let finalFileName = fileName;
-    if (detectedFormat === 'heic' || detectedFormat === 'heif') {
-      finalFileName = fileName.replace(/\.(heic|heif)$/i, '.jpg');
-    }
 
     return {
       name: finalFileName,
@@ -147,9 +138,9 @@ async function processFollowUpFile(fileEntry) {
     };
   } catch (err) {
     console.warn('[FollowUpOptimizer] Sharp optimization failed, falling back to original validated buffer:', err.message);
-    const fallbackMime = validationRes.detectedType || clientMime || 'image/jpeg';
+    const fallbackMime = (detectedFormat === 'heic' || detectedFormat === 'heif') ? 'image/jpeg' : (validationRes.detectedType || clientMime || 'image/jpeg');
     return {
-      name: fileName,
+      name: finalFileName,
       data: `data:${fallbackMime};base64,${buffer.toString('base64')}`,
       type: fallbackMime,
     };
