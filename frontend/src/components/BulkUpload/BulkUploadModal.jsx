@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useBulkUploadJob } from '../../features/candidates/bulk-upload/useBulkUploadJob';
 import BulkUploadProgress from '../../features/candidates/bulk-upload/BulkUploadProgress';
-import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { validateUploadFile } from '../../lib/fileValidation';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
 const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) => {
@@ -24,29 +24,14 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
 
   if (!isOpen) return null;
 
-  const validateFile = (selectedFile) => {
-    if (!selectedFile) return 'No file selected';
-
-    const ext = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
-    if (!['.csv', '.xlsx', '.xls'].includes(ext)) {
-      return 'Invalid file type. Only CSV (.csv) and Excel (.xlsx, .xls) files are accepted.';
-    }
-
-    if (selectedFile.size > MAX_UPLOAD_BYTES) {
-      return 'File exceeds the 10 MB limit. Split it into smaller files if needed.';
-    }
-
-    return null;
-  };
-
-  const handleFileSelect = (e) => {
+  const handleFileSelect = async (e) => {
     if (isUploading || !isOnline) return;
     const selectedFile = e.dataTransfer?.files[0] || e.target?.files[0];
     if (!selectedFile) return;
 
-    const validationError = validateFile(selectedFile);
-    if (validationError) {
-      setError(validationError);
+    const res = await validateUploadFile(selectedFile, 'bulkData');
+    if (!res.valid) {
+      setError(res.error);
       setFile(null);
       return;
     }

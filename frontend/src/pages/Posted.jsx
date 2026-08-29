@@ -10,6 +10,7 @@ import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import { useToastStore } from '../stores/toastStore';
 import { getStoredUser, buildApiUrl, downloadAuthenticatedFile } from '../lib/api';
+import { validateUploadFile } from '../lib/fileValidation';
 import {
   FileText,
   FileSpreadsheet,
@@ -97,6 +98,14 @@ const Posted = () => {
 
   const handleUpload = useCallback(async (file) => {
     if (!file) return;
+    
+    const res = await validateUploadFile(file, 'posted');
+    if (!res.valid) {
+      setError(res.error);
+      addToast({ type: 'error', message: res.error });
+      return;
+    }
+
     setUploading(true);
     setError(null);
 

@@ -11,6 +11,7 @@ import CompanyDropdownInput from '../components/CompanyDropdownInput';
 import { formatDateTime24h } from '../lib/datetime';
 import { ScheduleModal } from '../components/Interview/ScheduleModal';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
+import { validateUploadFile } from '../lib/fileValidation';
 import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 
 /** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
@@ -438,8 +439,9 @@ const CandidateProfile = () => {
 
   const handleUploadResume = useCallback(async (file) => {
     if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+    const res = await validateUploadFile(file, 'candidate');
+    if (!res.valid) {
+      setError(res.error);
       return;
     }
     try {

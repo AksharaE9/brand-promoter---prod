@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
-import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { validateUploadFile } from '../../lib/fileValidation';
 import { buildApiUrl, downloadAuthenticatedFile, getStoredUser } from '../../lib/api';
 
 export default function MemberFileAttachmentModal({ memberId, memberName, initialFiles = [], selectedDate: propSelectedDate, onClose, onRefresh }) {
@@ -82,23 +82,13 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
     }
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Type validation
-    const name = file.name.toLowerCase();
-    const isCsv = name.endsWith('.csv');
-    const isExcel = name.endsWith('.xlsx') || name.endsWith('.xls');
-    if (!isCsv && !isExcel) {
-      setError('Only CSV and Excel files are allowed for scheduling attachments.');
-      setSelectedFile(null);
-      return;
-    }
-
-    // Size validation
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+    const res = await validateUploadFile(file, 'bulkData');
+    if (!res.valid) {
+      setError(res.error);
       setSelectedFile(null);
       return;
     }

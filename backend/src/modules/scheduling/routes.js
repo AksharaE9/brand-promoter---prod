@@ -7,6 +7,7 @@ const path = require('path');
 const prisma = require('../../config/db');
 const { auth, requireRoles, invalidateUserCache } = require('../../middleware/auth');
 const { ApiError, asyncHandler } = require('../../utils/errors');
+const { validateFile } = require('../../utils/fileValidator');
 const { streamUrlWithRedirects } = require('../../utils/downloadStream');
 const { isDbStorageKey, makeStorageKey, streamDbFile } = require('../../utils/dbStorage');
 
@@ -524,10 +525,7 @@ router.post(
       throw new ApiError(404, 'Scheduling member not found');
     }
 
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
-      throw new ApiError(415, 'Unsupported file type. Only .xlsx, .xls, and .csv files are allowed.');
-    }
+    validateFile(req.file, 'bulkData');
 
     const { rows: rawRows } = parseSheetBuffer(req.file.buffer);
     if (rawRows.length === 0) {

@@ -10,6 +10,7 @@ const { isDbStorageKey, makeStorageKey, streamDbFile } = require("../../utils/db
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, memoryUpload } = require("../../middleware/upload");
 const { asyncHandler, ApiError } = require("../../utils/errors");
+const { validateFile } = require("../../utils/fileValidator");
 const { logAudit } = require("../../utils/audit");
 const { notifyAdmins, sendNotification } = require("../../utils/notifications");
 const sse = require("../../utils/sse");
@@ -239,10 +240,7 @@ router.post(
       throw new ApiError(400, "Excel file is required (field: file)");
     }
 
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    if (!['.xlsx', '.xls', '.csv'].includes(ext)) {
-      throw new ApiError(415, "Unsupported file type. Only .xlsx, .xls, and .csv files are allowed.");
-    }
+    validateFile(req.file, 'bulkData');
 
     let allRows = [];
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -661,6 +659,8 @@ router.post(
     if (!req.file) {
       throw new ApiError(400, "Resume is required. Upload a PDF or Word document to create the candidate.");
     }
+
+    validateFile(req.file, 'candidate');
 
     const orgId = req.user.organizationId || "defaultOrg";
 

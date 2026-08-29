@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CompanyDropdownInput from './CompanyDropdownInput';
+import { validateUploadFile } from '../lib/fileValidation';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import { buildApiUrl } from '../lib/api';
 import { useAddCandidate } from '../hooks/useCandidateMutations';
@@ -428,13 +429,16 @@ export default function CreateCandidateModal({
                   id="create-modal-resume-upload"
                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   required={!hasExistingResume}
-                  onChange={e => {
+                  onChange={async e => {
                     const file = e.target.files?.[0];
-                    if (file && file.size > MAX_UPLOAD_BYTES) {
-                      alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
-                      e.target.value = '';
-                      setCreateForm(prev => ({ ...prev, resume: null }));
-                      return;
+                    if (file) {
+                      const res = await validateUploadFile(file, 'candidate');
+                      if (!res.valid) {
+                        alert(res.error);
+                        e.target.value = '';
+                        setCreateForm(prev => ({ ...prev, resume: null }));
+                        return;
+                      }
                     }
                     setCreateForm(prev => ({ ...prev, resume: file || null }));
                   }}

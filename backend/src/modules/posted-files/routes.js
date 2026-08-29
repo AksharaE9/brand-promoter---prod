@@ -5,6 +5,7 @@ const path = require('path');
 const prisma = require('../../config/db');
 const { auth, requireRoles } = require('../../middleware/auth');
 const { asyncHandler, ApiError } = require('../../utils/errors');
+const { validateFile } = require('../../utils/fileValidator');
 const sse = require('../../utils/sse');
 const { uploadLimiter } = require('../../middleware/rateLimiter');
 const { streamUrlWithRedirects } = require('../../utils/downloadStream');
@@ -108,55 +109,9 @@ router.post(
     const buffer = req.file.buffer;
     const size = req.file.size;
     const originalName = req.file.originalname;
-    const ext = path.extname(originalName).toLowerCase();
 
-    // 1. Check size limit
-    if (size > POSTED_MAX_SIZE_BYTES) {
-      throw new ApiError(413, 'File size exceeds the 50 MB limit. Please select a smaller file.');
-    }
-
-    // 2. Extension check
-    const allowedExtensions = ['.xlsx', '.xls', '.csv', '.doc', '.docx', '.pdf', '.txt', '.ppt', '.pptx', '.jpg', '.jpeg', '.png', '.webp', '.zip'];
-    if (!allowedExtensions.includes(ext)) {
-      throw new ApiError(400, `Unsupported file extension: ${ext}`);
-    }
-
-    // 3. Magic bytes check
-    let isValid = true;
-    let expectedFormat = '';
-
-    if (['.xlsx', '.docx', '.pptx', '.zip'].includes(ext)) {
-      isValid = startsWith(buffer, [0x50, 0x4B, 0x03, 0x04]);
-      expectedFormat = 'ZIP/Office XML (PK...)';
-    } else if (['.xls', '.doc', '.ppt'].includes(ext)) {
-      isValid = startsWith(buffer, [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
-      expectedFormat = 'MS Compound File Binary Format';
-    } else if (ext === '.pdf') {
-      isValid = startsWith(buffer, [0x25, 0x50, 0x44, 0x46]);
-      expectedFormat = 'PDF (%PDF)';
-    } else if (ext === '.png') {
-      isValid = startsWith(buffer, [0x89, 0x50, 0x4E, 0x47]);
-      expectedFormat = 'PNG';
-    } else if (['.jpg', '.jpeg'].includes(ext)) {
-      isValid = startsWith(buffer, [0xFF, 0xD8, 0xFF]);
-      expectedFormat = 'JPEG';
-    } else if (ext === '.webp') {
-      isValid = buffer.length >= 12 &&
-                buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
-                buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50;
-      expectedFormat = 'WEBP';
-    } else if (['.csv', '.txt'].includes(ext)) {
-      const isMz = startsWith(buffer, [0x4D, 0x5A]);
-      const hasNull = buffer.includes(0x00);
-      if (isMz || hasNull) {
-        isValid = false;
-        expectedFormat = 'Plain Text (no binary/null/MZ characters)';
-      }
-    }
-
-    if (!isValid) {
-      throw new ApiError(400, `File content does not match its extension. Expected ${expectedFormat} header.`);
-    }
+    // Use central shared validator
+    validateFile(req.file, 'posted');
 
     // 4. Save directly to DB (fileData = binary, storageKey = "db://<id>" set after creation)
     //    We create with a placeholder storageKey first, then update with the real ID.

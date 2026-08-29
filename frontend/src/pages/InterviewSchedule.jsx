@@ -30,6 +30,7 @@ import {
   ACCEPT_ATTRIBUTE,
   ERROR_UNSUPPORTED,
   ERROR_TOO_LARGE,
+  validateUploadFile,
 } from '../config/followUpConfig';
 
 import { lazyWithRetry } from '../lib/lazyWithRetry';
@@ -136,20 +137,11 @@ export const FollowUpUploadField = React.memo(({
   const validateAndProcess = async (file) => {
     if (!file) return null;
 
-    const validExts = allowedExtensions && allowedExtensions.length > 0 ? allowedExtensions : ALLOWED_EXTENSIONS;
-
-    // Enforce size limit
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadError(ERROR_TOO_LARGE);
-      if (onError) onError(ERROR_TOO_LARGE);
-      return null;
-    }
-
-    // Enforce extension whitelist
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    if (!ext || !validExts.includes(ext)) {
-      setUploadError(ERROR_UNSUPPORTED);
-      if (onError) onError(ERROR_UNSUPPORTED);
+    const res = await validateUploadFile(file, 'followUp');
+    if (!res.valid) {
+      const errMsg = res.error || ERROR_UNSUPPORTED;
+      setUploadError(errMsg);
+      if (onError) onError(errMsg);
       return null;
     }
 

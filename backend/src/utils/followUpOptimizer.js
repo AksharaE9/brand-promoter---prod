@@ -3,12 +3,14 @@
 const sharp = require('sharp');
 const path = require('path');
 const { ApiError } = require('./errors');
+const { validateFile } = require('./fileValidator');
 
 const MAX_RAW_BYTES = 15 * 1024 * 1024; // 15 MB cap
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.pdf'];
 const ALLOWED_MIMES = [
   'image/jpeg',
   'image/jpg',
+  'image/pjpeg',
   'image/png',
   'image/webp',
   'image/heic',
@@ -23,26 +25,27 @@ const ERROR_TOO_LARGE = 'File size exceeds the 15 MB limit. Please select a smal
  * Sniffs buffer magic bytes to determine actual file format.
  */
 function detectFormatFromMagicBytes(buffer) {
-  if (!buffer || buffer.length < 4) return null;
+  if (!buffer || buffer.length < 2) return null;
 
-  // PDF: %PDF- (0x25 0x50 0x44 0x46 0x2D)
+  // PDF: %PDF- (0x25 0x50 0x44 0x46)
   if (
+    buffer.length >= 4 &&
     buffer[0] === 0x25 &&
     buffer[1] === 0x50 &&
     buffer[2] === 0x44 &&
-    buffer[3] === 0x46 &&
-    buffer[4] === 0x2d
+    buffer[3] === 0x46
   ) {
     return 'pdf';
   }
 
-  // JPEG: 0xFF 0xD8 0xFF
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+  // JPEG: 0xFF 0xD8 (SOI marker)
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
     return 'jpeg';
   }
 
-  // PNG: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+  // PNG: 0x89 0x50 0x4E 0x47
   if (
+    buffer.length >= 4 &&
     buffer[0] === 0x89 &&
     buffer[1] === 0x50 &&
     buffer[2] === 0x4e &&
@@ -117,16 +120,8 @@ async function processFollowUpFile(fileEntry) {
 
   const buffer = Buffer.from(base64Body, 'base64');
 
-  // Size limit check (15 MB)
-  if (buffer.length > MAX_RAW_BYTES) {
-    throw new ApiError(400, ERROR_TOO_LARGE);
-  }
-
-  // Extension check
-  const ext = path.extname(fileName).toLowerCase();
-  if (ext && !ALLOWED_EXTENSIONS.includes(ext)) {
-    throw new ApiError(400, ERROR_UNSUPPORTED);
-  }
+  // Validate file using central shared validator
+  validateFile({ originalname: fileName, buffer, mimetype: clientMime, size: buffer.length }, 'followUp');
 
   // Magic byte format detection
   const detectedFormat = detectFormatFromMagicBytes(buffer);

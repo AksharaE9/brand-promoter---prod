@@ -82,6 +82,20 @@ describe('followUpOptimizer Unit Tests', () => {
       expect(result.data).toContain('data:image/jpeg;base64,');
     });
 
+    test('successfully processes multi-dot WhatsApp Image JPEG with timestamp filename', async () => {
+      const input = {
+        name: 'WhatsApp Image 2026-08-29 at 10.14.09 AM.jpeg',
+        data: `data:image/jpeg;base64,${sampleJpegBuffer.toString('base64')}`,
+        type: 'image/jpeg',
+      };
+
+      const result = await processFollowUpFile(input);
+      expect(result).toBeDefined();
+      expect(result.name).toBe('WhatsApp Image 2026-08-29 at 10.14.09 AM.jpeg');
+      expect(result.type).toBe('image/jpeg');
+      expect(result.data).toContain('data:image/jpeg;base64,');
+    });
+
     test('processes PNG screenshot', async () => {
       const input = {
         name: 'screenshot.png',
@@ -129,7 +143,7 @@ describe('followUpOptimizer Unit Tests', () => {
       };
 
       await expect(processFollowUpFile(input)).rejects.toThrow(ApiError);
-      await expect(processFollowUpFile(input)).rejects.toThrow(ERROR_UNSUPPORTED);
+      await expect(processFollowUpFile(input)).rejects.toThrow('Detected type: image/svg+xml');
     });
 
     test('rejects unsupported executable files (.exe) with specific error', async () => {
@@ -140,7 +154,7 @@ describe('followUpOptimizer Unit Tests', () => {
         type: 'application/x-msdownload',
       };
 
-      await expect(processFollowUpFile(input)).rejects.toThrow(ERROR_UNSUPPORTED);
+      await expect(processFollowUpFile(input)).rejects.toThrow('Detected type: application/x-msdownload');
     });
 
     test('rejects oversized files exceeding 15 MB cap', async () => {

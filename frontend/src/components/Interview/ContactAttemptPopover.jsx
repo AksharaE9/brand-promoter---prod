@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
+import { validateUploadFile } from '../../lib/fileValidation';
 
 export function ContactAttemptPopover({ attemptType, label, onSubmit, onCancel, submitting }) {
   const [note, setNote] = useState('');
@@ -9,8 +9,9 @@ export function ContactAttemptPopover({ attemptType, label, onSubmit, onCancel, 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) {
-      alert('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+    const res = await validateUploadFile(file, 'followUp');
+    if (!res.valid) {
+      alert(res.error);
       e.target.value = '';
       return;
     }

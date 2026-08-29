@@ -15,6 +15,7 @@ import {
   ACCEPT_ATTRIBUTE,
   ERROR_UNSUPPORTED,
   ERROR_TOO_LARGE,
+  validateUploadFile,
 } from '../../config/followUpConfig';
 
 const fileToBase64 = (file) => {
@@ -585,13 +586,9 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
-                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
-                                  alert(ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert(ERROR_TOO_LARGE);
+                                const res = await validateUploadFile(file, 'followUp');
+                                if (!res.valid) {
+                                  alert(res.error || ERROR_UNSUPPORTED);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);
@@ -639,13 +636,9 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
-                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
-                                  alert(ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert(ERROR_TOO_LARGE);
+                                const res = await validateUploadFile(file, 'followUp');
+                                if (!res.valid) {
+                                  alert(res.error || ERROR_UNSUPPORTED);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);
@@ -693,13 +686,9 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                             onChange={async (e) => {
                               const file = e.target.files[0];
                               if (file) {
-                                const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-                                if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
-                                  alert(ERROR_UNSUPPORTED);
-                                  return;
-                                }
-                                if (file.size > MAX_UPLOAD_BYTES) {
-                                  alert(ERROR_TOO_LARGE);
+                                const res = await validateUploadFile(file, 'followUp');
+                                if (!res.valid) {
+                                  alert(res.error || ERROR_UNSUPPORTED);
                                   return;
                                 }
                                 const base64 = await fileToBase64(file);

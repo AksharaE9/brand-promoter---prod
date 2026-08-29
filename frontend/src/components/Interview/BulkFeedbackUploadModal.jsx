@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getStoredToken, buildApiUrl, downloadAuthenticatedFile } from '../../lib/api';
+import { validateUploadFile } from '../../lib/fileValidation';
 import { MAX_UPLOAD_BYTES } from '../../lib/uploadLimits';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import api from '../../services/api';
@@ -50,12 +51,13 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
 
   if (!isOpen) return null;
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     if (uploading || !isOnline) return;
     const selected = e.target.files?.[0];
     if (selected) {
-      if (selected.size > MAX_UPLOAD_BYTES) {
-        setErrorMsg('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+      const res = await validateUploadFile(selected, 'bulkData');
+      if (!res.valid) {
+        setErrorMsg(res.error);
         setFile(null);
         return;
       }
@@ -64,13 +66,14 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
     }
   };
 
-  const handleDrop = (e) => {
+  const handleDrop = async (e) => {
     e.preventDefault();
     if (uploading || !isOnline) return;
     const dropped = e.dataTransfer.files?.[0];
     if (dropped) {
-      if (dropped.size > MAX_UPLOAD_BYTES) {
-        setErrorMsg('File exceeds the 10 MB limit. Split it into smaller files if needed.');
+      const res = await validateUploadFile(dropped, 'bulkData');
+      if (!res.valid) {
+        setErrorMsg(res.error);
         setFile(null);
         return;
       }

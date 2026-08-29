@@ -2,6 +2,7 @@ const express = require("express");
 const { upload } = require("../../middleware/upload");
 const { auth } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
+const { validateFile } = require("../../utils/fileValidator");
 const prisma = require("../../config/db");
 const { makeStorageKey, streamDbFile } = require("../../utils/dbStorage");
 
@@ -11,6 +12,8 @@ router.use(auth);
 // POST /api/files/profile-photo — Upload a profile photo, stored in DB
 router.post("/profile-photo", upload.single("file"), asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(400, "No file uploaded");
+
+  validateFile(req.file, 'profilePhoto');
 
   // Store file binary directly in DB
   const tempMeta = await prisma.fileMeta.create({

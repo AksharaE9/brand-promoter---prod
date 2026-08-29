@@ -7,6 +7,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
+const { validateFile } = require('../utils/fileValidator');
 const { enqueueJob, getJobStatus } = require('../jobs/bulkCandidateUpload.processor');
 const { getErrorReportPath } = require('../lib/bulkUploadErrorReport');
 const { pipelineJobStatusMap } = require('../lib/streamingBulkUploadPipeline');
@@ -35,11 +36,11 @@ const upload = multer({
   storage,
   limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (['.csv', '.xlsx', '.xls'].includes(ext)) {
+    try {
+      validateFile(file, 'bulkData');
       cb(null, true);
-    } else {
-      cb(new ApiError(415, 'Unsupported file type. Only CSV (.csv) and Excel (.xlsx, .xls) files are allowed.'));
+    } catch (err) {
+      cb(err);
     }
   },
 });
