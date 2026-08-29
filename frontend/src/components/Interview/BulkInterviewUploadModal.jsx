@@ -160,7 +160,7 @@ export default function BulkInterviewUploadModal({ isOpen, onClose, onSuccess })
   const downloadReport = async () => {
     if (!jobStatus?.jobId) return;
     try {
-      await downloadAuthenticatedFile(`/interviews/bulk-upload/${jobStatus.jobId}/report`, `interview-upload-report-${jobStatus.jobId}.xlsx`);
+      await downloadAuthenticatedFile(`/interviews/bulk-upload/${jobStatus.jobId}/report`, `interview-upload-report-${jobStatus.jobId}.csv`);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to download report');
     }

@@ -466,10 +466,30 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
     throw new Error('File not found or no longer available on this server.');
   }
 
+  // Handle JSON error responses returned with 200 status code
+  if (contentType.includes('application/json')) {
+    const text = await response.text();
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed?.error) throw new Error(parsed.error);
+      if (parsed?.message) throw new Error(parsed.message);
+      if (parsed?.success === false) throw new Error('Server returned an error response.');
+    } catch (e) {
+      if (e.message) throw e;
+    }
+  }
+
+  const cd = response.headers.get('content-disposition');
+  const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
+  const filename = filenameFromServer ? decodeURIComponent(filenameFromServer) : suggestedFilename;
+
   const blob = await response.blob();
 
-  // Validate ZIP magic bytes for XLSX templates
-  if (suggestedFilename.toLowerCase().endsWith('.xlsx')) {
+  // Validate ZIP magic bytes ONLY if the file is expected to be XLSX and is not a CSV/text response
+  const isXlsxRequested = filename.toLowerCase().endsWith('.xlsx');
+  const isCsvOrText = contentType.includes('text/csv') || contentType.includes('text/plain') || filename.toLowerCase().endsWith('.csv');
+
+  if (isXlsxRequested && !isCsvOrText) {
     const firstBytes = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
     const isValidZip = firstBytes[0] === 0x50 && firstBytes[1] === 0x4B
                     && firstBytes[2] === 0x03 && firstBytes[3] === 0x04;
@@ -477,10 +497,6 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
       throw new Error('Downloaded file is not a valid XLSX (server returned unexpected content).');
     }
   }
-
-  const cd = response.headers.get('content-disposition');
-  const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
-  const filename = filenameFromServer ? decodeURIComponent(filenameFromServer) : suggestedFilename;
 
   const downloadUrl = window.URL.createObjectURL(blob);
   const a = document.createElement('a');

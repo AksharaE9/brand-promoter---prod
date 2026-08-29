@@ -40,6 +40,8 @@ describe('Interview Templates & Round Capping Logic', () => {
         role: 'Senior Developer',
         overallRating: 8,
         doj: '2026-08-01',
+        timings: '10:00 AM',
+        duration: '60 mins',
         selectionStatus: 'SELECTED',
       };
       const res = validateFeedbackData(InterviewRound.ROUND_1, validData);
@@ -66,6 +68,8 @@ describe('Interview Templates & Round Capping Logic', () => {
         role: 'Developer',
         overallRating: 15, // Out of bounds
         doj: '2026-08-01',
+        timings: '10:00 AM',
+        duration: '60 mins',
         selectionStatus: 'SELECTED',
       };
       const res = validateFeedbackData(InterviewRound.ROUND_1, invalidData);
@@ -82,6 +86,8 @@ describe('Interview Templates & Round Capping Logic', () => {
         role: 'Developer',
         overallRating: 7,
         doj: '2026-08-01',
+        timings: '10:00 AM',
+        duration: '60 mins',
         selectionStatus: 'INVALID_STATUS',
       };
       const res = validateFeedbackData(InterviewRound.ROUND_1, invalidData);
@@ -96,6 +102,8 @@ describe('Interview Templates & Round Capping Logic', () => {
         roundNumber: 'Round 2',
         panelists: 'Tech Panel',
         overallRating: 9,
+        timings: '10:00 AM',
+        duration: '60 mins',
         status: 'SELECTED',
       };
       const res = validateFeedbackData(InterviewRound.ROUND_2, validData);

@@ -157,7 +157,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
   const downloadReport = async () => {
     if (!jobStatus?.jobId) return;
     try {
-      await downloadAuthenticatedFile(`/interview-feedback/bulk-upload/${jobStatus.jobId}/report`, `feedback-upload-report-${jobStatus.jobId}.xlsx`);
+      await downloadAuthenticatedFile(`/interview-feedback/bulk-upload/${jobStatus.jobId}/report`, `feedback-upload-report-${jobStatus.jobId}.csv`);
     } catch (err) {
       setErrorMsg(err.message || 'Failed to download report');
     }
