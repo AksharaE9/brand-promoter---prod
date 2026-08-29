@@ -93,7 +93,10 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
     }
   };
 
+  const submittingRef = useRef(false);
+
   const handleUpload = async () => {
+    if (submittingRef.current || uploading) return;
     if (!file) {
       setErrorMsg('Please select a CSV or Excel file to upload');
       return;
@@ -103,6 +106,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
       return;
     }
 
+    submittingRef.current = true;
     setUploading(true);
     setErrorMsg(null);
 
@@ -115,14 +119,18 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
     try {
       const { data } = await api.post('/interview-feedback/bulk-upload', formData);
       if (!data || !data.success) {
-        throw new Error(data?.error || 'Failed to submit bulk upload');
+        throw new Error(data?.error?.message || data?.message || 'Failed to submit bulk upload');
       }
 
       const { jobId } = data;
       pollJobStatus(jobId);
     } catch (err) {
-      setErrorMsg(err.message || 'An error occurred during upload');
+      const resp = err.response?.data;
+      const msg = resp?.error?.message || resp?.message || err.message || 'An error occurred during upload';
+      setErrorMsg(msg);
       setUploading(false);
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -251,8 +259,7 @@ export default function BulkFeedbackUploadModal({ isOpen, onClose, onSuccess }) 
                       <p className="text-xs font-semibold text-slate-700">
                         Drag and drop your feedback CSV/XLSX file here
                       </p>
-                      <p className="text-[11px] text-slate-400 mt-1">Supports CSV, XLSX, XLS up to 10MB</p>
-                    </div>
+                      <p className="text-[11px] text-slate-400 mt-1">Supports CSV, XLSX, XLS up to 10MB (max 500 rows per upload)</p>                    </div>
                   )}
                 </div>
               </div>

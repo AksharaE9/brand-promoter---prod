@@ -8,8 +8,7 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const sse = require('../utils/sse');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
-// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
-const MAX_ROWS_PER_UPLOAD = 5000;
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
 /**
  * Normalizes a header/key string for case-insensitive, whitespace-tolerant comparison.
@@ -524,7 +523,7 @@ async function batchInsertInterviews(batchItems, context) {
  * Enqueues and processes a background Bulk Interview Scheduling Upload job.
  */
 async function processBulkInterviewUpload(jobData) {
-  const { jobId, filePath, fileType, uploadedBy, organizationId, defaultRound, defaultMode, sourceFilename } = jobData;
+  const { jobId, filePath, fileType, uploadedBy, userRole, organizationId, defaultRound, defaultMode, sourceFilename } = jobData;
 
   // Log memory at start for instance health tracking
   const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -535,9 +534,10 @@ async function processBulkInterviewUpload(jobData) {
     filePath,
     fileType,
     uploadedBy,
+    userRole,
     organizationId,
     sourceFilename,
-    batchSize: 100, // Reduced from 500 — safer on 512MB instance for interview rows
+    batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_INTERVIEW,
     context: {
       defaultRound,
       defaultMode,
@@ -546,11 +546,11 @@ async function processBulkInterviewUpload(jobData) {
     },
     validateRow: async (rawRow, rowNumber, pipelineContext) => {
       // Enforce max-rows limit before invoking per-row validator
-      if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+      if (rowNumber > BULK_UPLOAD_LIMITS.MAX_ROWS) {
         pipelineContext.MAX_ROWS_EXCEEDED = true;
         return {
           valid: false,
-          errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+          errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
         };
       }
       return validateInterviewRow(rawRow, rowNumber, pipelineContext);

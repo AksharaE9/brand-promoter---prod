@@ -11,8 +11,7 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
-// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
-const MAX_ROWS_PER_UPLOAD = 5000;
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
 
 /**
@@ -211,7 +210,7 @@ async function batchInsertCandidates(batch, context) {
  * Enqueues job for background candidate bulk processing.
  */
 async function enqueueJob(jobData) {
-  const { jobId, filePath, fileType, uploadedBy, organizationId, sourceFilename, driveId } = jobData;
+  const { jobId, filePath, fileType, uploadedBy, userRole, organizationId, sourceFilename, driveId } = jobData;
 
   let validCreatedById = null;
   if (uploadedBy) {
@@ -234,9 +233,10 @@ async function enqueueJob(jobData) {
         filePath,
         fileType,
         uploadedBy,
+        userRole,
         organizationId,
         sourceFilename,
-        batchSize: 250, // Candidates are lighter than interviews — 250 is safe
+        batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE,
         context: {
           validCreatedById,
           driveId: driveId || null,
@@ -244,11 +244,11 @@ async function enqueueJob(jobData) {
         },
         validateRow: async (rawRow, rowNumber, pipelineContext) => {
           // Enforce max-rows limit before invoking per-row validator
-          if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+          if (rowNumber > BULK_UPLOAD_LIMITS.MAX_ROWS) {
             pipelineContext.MAX_ROWS_EXCEEDED = true;
             return {
               valid: false,
-              errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+              errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
             };
           }
           return validateCandidateRowWrapper(rawRow, rowNumber);

@@ -3,11 +3,92 @@
 const fs = require('fs');
 const { parseFileStream } = require('./csvXlsxStreamParser');
 const { initErrorReport, appendFailedRow, finalizeErrorReport } = require('./bulkUploadErrorReport');
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
-const DEFAULT_BATCH_SIZE = 500;
+const DEFAULT_BATCH_SIZE = BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE; // conservative default
 
 // Active job status store for immediate status querying across all pipeline jobs
 const pipelineJobStatusMap = new Map();
+
+/**
+ * Per-user cooldown tracking.
+ * Map of userId → { expiresAt: Date, rowsProcessed: number }
+ * Cleared automatically when cooldown expires.
+ */
+const userCooldownMap = new Map();
+
+/**
+ * Checks if an organisation already has a running bulk upload job.
+ * Must be called before starting any bulk upload.
+ *
+ * @param {string} organizationId
+ * @returns {{ blocked: boolean, jobId?: string, progress?: number, state?: string }}
+ */
+function checkOrgConcurrency(organizationId) {
+  for (const [jobId, status] of pipelineJobStatusMap) {
+    if (status.organizationId === organizationId && status.state === 'active') {
+      return {
+        blocked: true,
+        jobId,
+        progress: status.progress || 0,
+        processed: status.processed || 0,
+        total: status.totalRows || 0,
+      };
+    }
+  }
+  return { blocked: false };
+}
+
+/**
+ * Checks if a user is within the cooldown period.
+ * SUPER_ADMIN and roles listed in COOLDOWN_EXEMPT_ROLES bypass the cooldown.
+ *
+ * @param {string} userId
+ * @param {string} [role] - User's role string (e.g. 'SUPER_ADMIN')
+ * @returns {{ blocked: boolean, retryAfterSeconds?: number }}
+ */
+function checkUserCooldown(userId, role) {
+  // Exempt roles bypass cooldown (but NOT the concurrency lock)
+  if (role && BULK_UPLOAD_LIMITS.COOLDOWN_EXEMPT_ROLES.includes(role)) {
+    return { blocked: false };
+  }
+
+  const entry = userCooldownMap.get(userId);
+  if (!entry) return { blocked: false };
+
+  const now = Date.now();
+  if (now >= entry.expiresAt) {
+    userCooldownMap.delete(userId);
+    return { blocked: false };
+  }
+
+  const retryAfterSeconds = Math.ceil((entry.expiresAt - now) / 1000);
+  return { blocked: true, retryAfterSeconds };
+}
+
+/**
+ * Sets a cooldown for a user after a bulk job that consumed resources.
+ * Not called if the job failed before processing a single row (validation-only failure).
+ *
+ * @param {string} userId
+ * @param {number} rowsProcessed - actual rows touched (0 = validation failure, no cooldown)
+ * @param {string} [role]
+ */
+function applyUserCooldown(userId, rowsProcessed, role) {
+  if (!userId) return;
+  // Exempt roles get no cooldown
+  if (role && BULK_UPLOAD_LIMITS.COOLDOWN_EXEMPT_ROLES.includes(role)) return;
+  // Validation-only failure (0 rows processed) — don't penalise the user
+  if (rowsProcessed === 0) return;
+
+  const expiresAt = Date.now() + (BULK_UPLOAD_LIMITS.COOLDOWN_SECONDS * 1000);
+  userCooldownMap.set(userId, { expiresAt, rowsProcessed });
+
+  // Auto-clean after cooldown expires
+  const timer = setTimeout(() => userCooldownMap.delete(userId), BULK_UPLOAD_LIMITS.COOLDOWN_SECONDS * 1000 + 1000);
+  if (timer.unref) timer.unref();
+}
+
 
 /**
  * Gets status for a pipeline job by jobId.
@@ -86,6 +167,7 @@ async function runStreamingBulkUploadPipeline(options) {
     jobId,
     uploadedBy,
     organizationId,
+    userRole: options.userRole || null,
     ...context,
   };
 
@@ -214,6 +296,10 @@ async function runStreamingBulkUploadPipeline(options) {
     statusObj.progress = 100;
     statusObj.errorReportUrl = errorReportUrl;
 
+    // Apply cooldown after a job that did real work
+    // (processed > 0 means it consumed DB resources)
+    applyUserCooldown(uploadedBy, processed, options.userRole);
+
     if (emitCompleted) {
       emitCompleted(organizationId, jobId, {
         processed,
@@ -285,6 +371,10 @@ async function runStreamingBulkUploadPipeline(options) {
     statusObj.error = err.message;
     const errorReportUrl = finalizeErrorReport(jobId);
     statusObj.errorReportUrl = errorReportUrl;
+
+    // Apply cooldown if job did real work before failing
+    // (processed > 0 means DB was touched, cooldown applies)
+    applyUserCooldown(uploadedBy, processed, options.userRole);
 
     if (emitCompleted) {
       emitCompleted(organizationId, jobId, {
@@ -387,4 +477,8 @@ module.exports = {
   processUploadStream,
   getPipelineJobStatus,
   pipelineJobStatusMap,
+  checkOrgConcurrency,
+  checkUserCooldown,
+  applyUserCooldown,
+  userCooldownMap,
 };

@@ -8,8 +8,7 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 
-// Maximum rows per bulk upload to prevent memory exhaustion on 512MB instance
-const MAX_ROWS_PER_UPLOAD = 5000;
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
 
 /**
@@ -263,7 +262,7 @@ async function batchInsertFeedback(batchItems, context) {
  * Enqueues and processes a background Bulk Feedback Upload job.
  */
 async function processBulkFeedbackUpload(jobData) {
-  const { jobId, filePath, fileType, uploadedBy, organizationId, defaultRound, sourceFilename } = jobData;
+  const { jobId, filePath, fileType, uploadedBy, userRole, organizationId, defaultRound, sourceFilename } = jobData;
 
   // Log memory at start for instance health tracking
   const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
@@ -274,9 +273,10 @@ async function processBulkFeedbackUpload(jobData) {
     filePath,
     fileType,
     uploadedBy,
+    userRole,
     organizationId,
     sourceFilename,
-    batchSize: 100, // Reduced from 500 — safer on 512MB instance
+    batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_FEEDBACK,
     context: {
       defaultRound,
       seenRoundFeedbacksInFileMap: new Map(),
@@ -284,11 +284,11 @@ async function processBulkFeedbackUpload(jobData) {
     },
     validateRow: async (rawRow, rowNumber, pipelineContext) => {
       // Enforce max-rows limit before invoking per-row validator
-      if (rowNumber > MAX_ROWS_PER_UPLOAD) {
+      if (rowNumber > BULK_UPLOAD_LIMITS.MAX_ROWS) {
         pipelineContext.MAX_ROWS_EXCEEDED = true;
         return {
           valid: false,
-          errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split into smaller files.`],
+          errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
         };
       }
       return validateFeedbackRow(rawRow, rowNumber, pipelineContext);

@@ -74,6 +74,10 @@ router.get(
   })
 );
 
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
+const { countFileRows } = require('../lib/csvXlsxStreamParser');
+const { checkOrgConcurrency, checkUserCooldown } = require('../lib/streamingBulkUploadPipeline');
+
 // ── POST /api/candidates/bulk-upload (Main Multipart Upload Endpoint) ──────
 // Returns 202 Accepted with jobId in < 1 second. Processing happens in background worker.
 router.post(
@@ -82,15 +86,38 @@ router.post(
   upload.single('file'),
   asyncHandler(async (req, res) => {
     const userId = req.user?.id;
-    if (userId) {
-      for (const status of pipelineJobStatusMap.values()) {
-        if (status.uploadedBy === userId && status.state === 'active') {
-          return res.status(409).json({
-            success: false,
-            message: 'You already have a bulk upload in progress. Please wait for it to complete.'
-          });
-        }
+    const userRole = req.user?.role;
+    const orgId = req.user?.organizationId || 'defaultOrg';
+
+    // 1. Org Concurrency Guard (Max 1 concurrent job per org)
+    const concurrency = checkOrgConcurrency(orgId);
+    if (concurrency.blocked) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
       }
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'CONCURRENCY_LOCKED',
+          message: `A bulk upload is already in progress for your organization (${concurrency.progress}% complete). Please wait for it to finish.`,
+        },
+      });
+    }
+
+    // 2. Per-user Cooldown Guard (60s cooldown after completing a job)
+    const cooldown = checkUserCooldown(userId, userRole);
+    if (cooldown.blocked) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+      }
+      return res.status(429).json({
+        success: false,
+        error: {
+          code: 'COOLDOWN_ACTIVE',
+          message: `Please wait ${cooldown.retryAfterSeconds} seconds before starting another bulk upload.`,
+          retryAfterSeconds: cooldown.retryAfterSeconds,
+        },
+      });
     }
 
     if (!req.file) {
@@ -98,6 +125,29 @@ router.post(
     }
 
     const fileExt = path.extname(req.file.originalname).toLowerCase();
+
+    // 3. Pre-parse Row Count Check (reject oversized files before parsing full rows)
+    let rowCount = 0;
+    try {
+      rowCount = await countFileRows(req.file.path, fileExt);
+    } catch (err) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+      }
+      throw new ApiError(400, `Failed to parse spreadsheet row count: ${err.message}`);
+    }
+
+    if (rowCount > BULK_UPLOAD_LIMITS.MAX_ROWS) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+      }
+      const suggestedFiles = Math.ceil(rowCount / BULK_UPLOAD_LIMITS.MAX_ROWS);
+      throw new ApiError(
+        400,
+        `This sheet has ${rowCount.toLocaleString()} rows. The maximum limit is ${BULK_UPLOAD_LIMITS.MAX_ROWS} rows per upload. Please split it into ${suggestedFiles} smaller files.`
+      );
+    }
+
     const jobId = uuidv4();
     const driveId = req.query.driveId || req.body?.driveId || null;
 
@@ -107,7 +157,8 @@ router.post(
       filePath: req.file.path,
       fileType: fileExt,
       uploadedBy: req.user?.id || null,
-      organizationId: req.user?.organizationId || 'defaultOrg',
+      userRole,
+      organizationId: orgId,
       sourceFilename: req.file.originalname,
       driveId,
     });

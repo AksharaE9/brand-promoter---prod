@@ -69,7 +69,9 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
         throw new Error('Server did not return a valid jobId');
       }
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Upload failed');
+      const resp = err.response?.data;
+      const msg = resp?.error?.message || resp?.message || err.message || 'Upload failed';
+      setError(msg);
     } finally {
       setIsUploading(false);
     }
@@ -162,7 +164,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
                 <h3 className="text-lg font-extrabold text-slate-800">Drag your CSV or XLSX file here</h3>
                 <p className="text-xs text-slate-500 mt-1">or click to browse from your computer</p>
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-4 px-3 py-1 bg-white border rounded-full">
-                  Max file size: 10MB
+                  Max file size: 10MB (max 500 rows per upload)
                 </span>
                 <input
                   type="file"
