@@ -98,6 +98,9 @@ const HEADER_ALIASES = {
   'zoho link': 'zohoLink',
   'zoho_link': 'zohoLink',
   'zoholink': 'zohoLink',
+  'zoho meeting link': 'zohoLink',
+  'zoho meeting': 'zohoLink',
+  'zoho_meeting_link': 'zohoLink',
 };
 
 function resolveHeader(rawHeader) {

@@ -1421,13 +1421,18 @@ router.put(
       throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, ONLINE, PHONE, DRIVE");
     }
 
-    if ((data.mode === "VIRTUAL" || data.mode === "ONLINE") && !data.meetingLink) {
-      throw new ApiError(422, "Meeting link is required for virtual/online interviews");
+    const effectiveMeetingLink = data.meetingLink || data.zohoLink || "";
+    if ((data.mode === "VIRTUAL" || data.mode === "ONLINE") && !effectiveMeetingLink) {
+      throw new ApiError(422, "Meeting link or Zoho link is required for virtual/online interviews");
     }
 
-    const durationMinutes = data.durationMinutes || 60;
-    if (durationMinutes < 15 || durationMinutes > 480) {
-      throw new ApiError(400, "Duration must be between 15 and 480 minutes");
+    if (!data.scheduledStart) {
+      throw new ApiError(400, "Start Date & Time is required");
+    }
+
+    const durationMinutes = Number(data.durationMinutes || 60);
+    if (!data.durationMinutes || isNaN(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) {
+      throw new ApiError(400, "Duration is required and must be between 15 and 480 minutes");
     }
 
     let status = current.status;
@@ -1543,10 +1548,11 @@ router.patch(
       throw new ApiError(400, "Mode must be one of IN_PERSON, VIRTUAL, ONLINE, PHONE, DRIVE");
     }
 
-    // Only validate virtual meeting link if the caller is changing mode or meetingLink
-    const isUpdatingModeOrLink = ('mode' in req.body) || ('meetingLink' in req.body);
-    if (isUpdatingModeOrLink && (mergedData.mode === "VIRTUAL" || mergedData.mode === "ONLINE") && !mergedData.meetingLink) {
-      throw new ApiError(422, "Meeting link is required for virtual/online interviews");
+    // Only validate virtual meeting link if the caller is changing mode or meetingLink/zohoLink
+    const isUpdatingModeOrLink = ('mode' in req.body) || ('meetingLink' in req.body) || ('zohoLink' in req.body);
+    const effectiveLink = mergedData.meetingLink || mergedData.zohoLink || "";
+    if (isUpdatingModeOrLink && (mergedData.mode === "VIRTUAL" || mergedData.mode === "ONLINE") && !effectiveLink) {
+      throw new ApiError(422, "Meeting link or Zoho link is required for virtual/online interviews");
     }
 
     if (req.body.durationMinutes) {

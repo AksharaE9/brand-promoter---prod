@@ -27,7 +27,7 @@ const SELECTION_STATUSES = ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN',
 // Round 1 — Updated 19-field template
 const ROUND_1_TEMPLATE = [
   { key: 'name',            label: 'Name',                                    type: 'text',     required: true },
-  { key: 'number',          label: 'Number',                                  type: 'text',     required: true },
+  { key: 'number',          label: 'Number',                                  type: 'text',     required: false },
   { key: 'roundNumber',     label: 'Round Number',                            type: 'text',     required: true },
   { key: 'panelists',       label: 'Panelists',                               type: 'text',     required: true },
   { key: 'role',            label: 'Role',                                    type: 'text',     required: true },
@@ -41,8 +41,8 @@ const ROUND_1_TEMPLATE = [
   { key: 'area',            label: 'Area',                                    type: 'text',     required: false },
   { key: 'overallRating',   label: 'Overall Rating',                          type: 'number',   required: true,  suffix: '/10' },
   { key: 'doj',             label: 'DOJ',                                     type: 'date',     required: true },
-  { key: 'timings',         label: 'Timings',                                 type: 'text',     required: false },
-  { key: 'duration',        label: 'Duration',                                type: 'text',     required: false },
+  { key: 'timings',         label: 'Timings',                                 type: 'text',     required: true },
+  { key: 'duration',        label: 'Duration',                                type: 'text',     required: true },
   { key: 'selectionStatus', label: 'Selection Status',                        type: 'select',   required: true,  options: SELECTION_STATUSES },
   { key: 'comments',        label: 'Comments (Reason for Selection/Reject)',  type: 'textarea', required: false },
   {
@@ -64,7 +64,7 @@ const ROUND_1_TEMPLATE = [
 // Round 2 / Final Round — Updated 13-field template
 const ROUND_2_PLUS_TEMPLATE = [
   { key: 'name',          label: 'Name',           type: 'text',     required: true },
-  { key: 'number',        label: 'Number',         type: 'text',     required: true },
+  { key: 'number',        label: 'Number',         type: 'text',     required: false },
   { key: 'roundNumber',   label: 'Round Number',   type: 'text',     required: true },
   { key: 'panelists',     label: 'Panelists',      type: 'text',     required: true },
   { key: 'role',          label: 'Role',           type: 'text',     required: false },
@@ -72,8 +72,8 @@ const ROUND_2_PLUS_TEMPLATE = [
   { key: 'overallRating', label: 'Overall Rating', type: 'number',   required: true,  suffix: '/10' },
   { key: 'location',      label: 'Location',       type: 'text',     required: false },
   { key: 'doj',           label: 'DOJ',            type: 'date',     required: false },
-  { key: 'timings',       label: 'Timings',        type: 'text',     required: false },
-  { key: 'duration',      label: 'Duration',       type: 'text',     required: false },
+  { key: 'timings',       label: 'Timings',        type: 'text',     required: true },
+  { key: 'duration',      label: 'Duration',       type: 'text',     required: true },
   { key: 'status',        label: 'Status',         type: 'select',   required: true,  options: SELECTION_STATUSES },
   { key: 'comments',      label: 'Comments',       type: 'textarea', required: false },
   {
@@ -350,20 +350,6 @@ async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
     
     throw new ApiError(400, reasonMsg);
   }
-
-  const requestedIndex = ROUND_SEQUENCE.indexOf(requestedRound);
-  if (requestedIndex <= 0) return; // Round 1 has no prior feedback dependency
-
-  const priorRound = ROUND_SEQUENCE[requestedIndex - 1];
-  const priorFeedback = allFeedbacks.find((f) => f.round === priorRound);
-
-  if (!priorFeedback) {
-    const ApiError = require('../utils/errors').ApiError;
-    throw new ApiError(
-      400,
-      `${ROUND_DISPLAY_LABEL[priorRound]} feedback must be submitted before scheduling ${ROUND_DISPLAY_LABEL[requestedRound]}.`
-    );
-  }
 }
 
 const INTERVIEW_SCHEDULE_IMPORT_SCHEMA = [
@@ -381,7 +367,7 @@ const INTERVIEW_SCHEDULE_IMPORT_SCHEMA = [
 const COMBINED_FEEDBACK_TEMPLATE = [
   { key: 'round',           label: 'Round',                                   required: true },
   { key: 'name',            label: 'Name',                                    required: true },
-  { key: 'number',          label: 'Number',                                  required: true },
+  { key: 'number',          label: 'Number',                                  required: false },
   { key: 'panelists',       label: 'Panelists',                               required: true },
   { key: 'role',            label: 'Role',                                    required: true },
   { key: 'course',          label: 'Course',                                  required: false },
@@ -395,8 +381,8 @@ const COMBINED_FEEDBACK_TEMPLATE = [
   { key: 'mockRating',      label: 'Mock Rating',                             required: false },
   { key: 'overallRating',   label: 'Overall Rating',                          required: true },
   { key: 'doj',             label: 'DOJ',                                     required: true },
-  { key: 'timings',         label: 'Timings',                                 required: false },
-  { key: 'duration',        label: 'Duration',                                required: false },
+  { key: 'timings',         label: 'Timings',                                 required: true },
+  { key: 'duration',        label: 'Duration',                                required: true },
   { key: 'selectionStatus', label: 'Selection Status',                        required: true },
   { key: 'comments',        label: 'Comments (Reason for Selection/Reject)',  required: false }
 ];

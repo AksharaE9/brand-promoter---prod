@@ -116,8 +116,15 @@ function resolveModeFromRow(rawMode, defaultMode) {
  */
 async function validateInterviewRow(rawRow, rowNumber, context) {
   const errors = [];
-  const normalizeKey = (key) => String(key || '').trim().replace(/\*+$/, '').trim().toLowerCase();
-  
+  const extractCellString = (val) => {
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'object') {
+      const target = val.l?.Target || val.Target || val.v || val.text || val.formatted || '';
+      return String(target).trim();
+    }
+    return String(val).trim();
+  };
+
   const getValue = (labels) => {
     for (const label of labels) {
       const normLabel = normalizeKey(label);
@@ -131,21 +138,21 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
   };
 
   // 1. Candidate Name & Phone Number
-  const rawName = getValue(['candidateName', 'Name', 'Candidate Name']);
-  const rawPhone = getValue(['phone', 'Phone Number', 'phoneNumber', 'Phone']);
+  const rawName = extractCellString(getValue(['candidateName', 'Name', 'Candidate Name']));
+  const rawPhone = extractCellString(getValue(['phone', 'Phone Number', 'phoneNumber', 'Phone']));
   
   if (!rawName) {
-    errors.push('Candidate Name is required');
+    errors.push(`Row ${rowNumber}, Column "Name": Candidate Name is required`);
   }
   if (!rawPhone) {
-    errors.push('Phone Number is required');
+    errors.push(`Row ${rowNumber}, Column "Phone Number": Phone Number is required`);
   }
 
   let candidate = null;
   if (rawPhone) {
     const normalizedPhone = normalizePhoneNumber(rawPhone);
     if (!normalizedPhone) {
-      errors.push(`Invalid phone number format "${rawPhone}"`);
+      errors.push(`Row ${rowNumber}, Column "Phone Number": Invalid phone number format "${rawPhone}"`);
     } else {
       candidate = await resolveCandidateByNumber(normalizedPhone, context.organizationId);
       if (!candidate && rawName) {
@@ -158,54 +165,76 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
         });
       }
       if (!candidate) {
-        errors.push(`Candidate not found for phone "${rawPhone}"`);
+        errors.push(`Row ${rowNumber}, Column "Phone Number": Candidate not found for phone "${rawPhone}"`);
       }
     }
   }
 
   // 2. Job Role
-  const jobRole = getValue(['jobRole', 'Job Role', 'role', 'Role']);
+  const jobRole = extractCellString(getValue(['jobRole', 'Job Role', 'role', 'Role']));
   if (!jobRole) {
-    errors.push('Job Role is required');
+    errors.push(`Row ${rowNumber}, Column "Job Role": Job Role is required`);
   }
 
   // 3. Round
-  const rawRound = getValue(['round', 'Round']);
+  const rawRound = extractCellString(getValue(['round', 'Round']));
   const canonicalRound = resolveRoundFromRow(rawRound, context.defaultRound);
   if (!canonicalRound) {
-    errors.push(`Invalid or missing interview round "${rawRound || ''}". Must be Round 1, Round 2, or Final Round.`);
+    errors.push(`Row ${rowNumber}, Column "Round": Invalid or missing interview round "${rawRound || ''}". Must be Round 1, Round 2, or Final Round.`);
   }
 
   // 4. Meeting Mode
-  const rawMode = getValue(['meetingMode', 'Meeting Mode', 'mode', 'Mode']);
+  const rawMode = extractCellString(getValue(['meetingMode', 'Meeting Mode', 'mode', 'Mode']));
   const canonicalMode = resolveModeFromRow(rawMode, context.defaultMode);
   if (!canonicalMode) {
-    errors.push(`Invalid or missing meeting mode "${rawMode || ''}". Must be Online Meeting, In Person, Phone Call, Drive Meeting, or Walk-in Drive.`);
+    errors.push(`Row ${rowNumber}, Column "Meeting Mode": Invalid or missing meeting mode "${rawMode || ''}". Must be Online Meeting, In Person, Phone Call, Drive Meeting, or Walk-in Drive.`);
   }
 
   // 5. Start Date & Time
-  const rawStart = getValue(['startDateTime', 'Start Date & Time', 'scheduledStart', 'start']);
+  const rawStart = extractCellString(getValue(['startDateTime', 'Start Date & Time', 'scheduledStart', 'start']));
   let startDateTime = null;
   if (!rawStart) {
-    errors.push('Start Date & Time is required');
+    errors.push(`Row ${rowNumber}, Column "Start Date & Time": Start Date & Time is required`);
   } else {
     startDateTime = parseIndianDateTime(rawStart);
     if (!startDateTime) {
       errors.push(
-        `Invalid date-time format "${rawStart}". Expected formats: "31-7-2026 & 15:00", "31/07/2026 15:00", or "2026-07-31T15:00"`
+        `Row ${rowNumber}, Column "Start Date & Time": Invalid date-time format "${rawStart}". Expected formats: "31-7-2026 & 15:00", "31/07/2026 15:00", or "2026-07-31T15:00"`
       );
     }
   }
 
-  // 6. Sequential Gating & Rejection Blocks
-  // In bulk upload mode, gating failures are treated as WARNINGS (skip row) not hard errors,
-  // so the rest of the file continues processing cleanly.
+  // 6. Duration
+  const rawDuration = extractCellString(getValue(['duration', 'Duration', 'durationMinutes']));
+  let durationMinutes = 60;
+  if (rawDuration) {
+    const parsedDur = parseInt(rawDuration, 10);
+    if (isNaN(parsedDur) || parsedDur < 15 || parsedDur > 480) {
+      errors.push(`Row ${rowNumber}, Column "Duration": Duration must be a number between 15 and 480 minutes (got "${rawDuration}")`);
+    } else {
+      durationMinutes = parsedDur;
+    }
+  }
+
+  // 7. Links & Interviewers
+  let rawMeetingLink = extractCellString(getValue(['meetingLink', 'Meeting Link', 'link', 'Link']));
+  let rawZohoLink = extractCellString(getValue(['zohoLink', 'Zoho Link', 'Zoho Meeting Link', 'zoho_link']));
+
+  // Permissive meeting link fallback: if one link is provided, copy to both so virtual requirements pass cleanly
+  if (!rawMeetingLink && rawZohoLink) rawMeetingLink = rawZohoLink;
+  if (!rawZohoLink && rawMeetingLink) rawZohoLink = rawMeetingLink;
+
+  if ((canonicalMode === 'ONLINE' || canonicalMode === 'VIRTUAL') && !rawMeetingLink && !rawZohoLink) {
+    errors.push(`Row ${rowNumber}, Column "Meeting Link / Zoho Link": Meeting link or Zoho link is required for online/virtual interviews`);
+  }
+
+  // Blocking checks for prior rejections (REJECTED, DIDNT_JOIN, OFFER_LETTER)
   const gatingWarnings = [];
   if (candidate && canonicalRound) {
     try {
       await assertCanScheduleRound(prisma, candidate.id, canonicalRound);
     } catch (gateErr) {
-      gatingWarnings.push(gateErr.message);
+      gatingWarnings.push(`Row ${rowNumber}, Column "Round": ${gateErr.message}`);
     }
   }
 
@@ -213,7 +242,6 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
     return { valid: false, errors };
   }
 
-  // Gating warnings cause the row to be skipped with a report entry (not a hard failure)
   if (gatingWarnings.length > 0) {
     return {
       valid: false,
@@ -221,9 +249,7 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
     };
   }
 
-  const rawInterviewers = getValue(['interviewers', 'Interviewers', 'panelists', 'Panelists', 'panelist', 'Panelist', 'interviewer', 'Interviewer']) || '';
-  const rawMeetingLink = getValue(['meetingLink', 'Meeting Link', 'link', 'Link']) || '';
-  const rawZohoLink = getValue(['zohoLink', 'Zoho Link']) || '';
+  const rawInterviewers = extractCellString(getValue(['interviewers', 'Interviewers', 'panelists', 'Panelists', 'panelist', 'Panelist', 'interviewer', 'Interviewer']));
 
   return {
     valid: true,
@@ -234,6 +260,7 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
       canonicalRound,
       canonicalMode,
       startDateTime,
+      durationMinutes,
       interviewers: rawInterviewers,
       meetingLink: rawMeetingLink,
       zohoLink: rawZohoLink,
@@ -403,6 +430,7 @@ async function batchInsertInterviews(batchItems, context) {
           roundNo,
           round: roundLabel,
           scheduledStart: item.startDateTime,
+          durationMinutes: item.durationMinutes || 60,
           mode: item.canonicalMode,
           meetingLink: item.canonicalMode === 'WALK_IN_DRIVE' ? null : (item.meetingLink || null),
           zohoLink: item.canonicalMode === 'WALK_IN_DRIVE' ? null : (item.zohoLink || null),

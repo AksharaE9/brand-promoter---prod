@@ -778,23 +778,15 @@ export const ScheduleModal = React.memo(function ScheduleModal({
               <button
                 type="submit"
                 className="flex-1 h-11 rounded-xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50"
-                disabled={savingSchedule || slotInfo.slotExceeded || nextDerivedRound === null || priorRoundFeedbackMissing}
+                disabled={savingSchedule || slotInfo.slotExceeded}
                 title={
-                  nextDerivedRound === null
-                    ? 'All 4 rounds completed'
-                    : priorRoundFeedbackMissing
-                    ? `Submit ${priorRoundLabel} feedback first`
-                    : slotInfo.slotExceeded
+                  slotInfo.slotExceeded
                     ? 'Slot limit exceeded for this time'
                     : ''
                 }
               >
                 {savingSchedule
                   ? 'Scheduling...'
-                  : nextDerivedRound === null
-                  ? 'All 4 Rounds Completed'
-                  : priorRoundFeedbackMissing
-                  ? `Submit ${priorRoundLabel} Feedback First`
                   : slotInfo.slotExceeded
                   ? 'Slot Full'
                   : 'Confirm Schedule'}
