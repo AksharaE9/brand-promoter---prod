@@ -14,7 +14,7 @@ export const ALLOWED_MIME_TYPES = CATEGORY_CONFIGS.followUp.allowedMimes;
 // HTML file picker accept attribute
 export const ACCEPT_ATTRIBUTE = '.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf,image/jpeg,image/jpg,image/pjpeg,image/png,image/webp,image/heic,image/heif,application/pdf';
 
-export const ERROR_UNSUPPORTED = 'Unsupported file type. Please upload a JPG, PNG, WEBP, HEIC, or PDF file.';
-export const ERROR_TOO_LARGE = 'File size exceeds the 15 MB limit. Please select a smaller file.';
+export const ERROR_UNSUPPORTED = `Please upload ${CATEGORY_CONFIGS.followUp.label}.`;
+export const ERROR_TOO_LARGE = `File size exceeds the ${Math.round(CATEGORY_CONFIGS.followUp.maxBytes / (1024 * 1024))} MB limit. Please select a smaller file.`;
 
 export { validateUploadFile };

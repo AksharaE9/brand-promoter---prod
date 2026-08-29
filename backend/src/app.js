@@ -165,6 +165,16 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
   res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
 });
 
+app.get('/api/version', (req, res) => {
+  res.json({
+    success: true,
+    version: '1.0.0',
+    commit: process.env.RENDER_GIT_COMMIT || '5230fbe',
+    timestamp: new Date().toISOString(),
+    status: 'live',
+  });
+});
+
 // ── Routes ────────────────────────────────────────────────────────────────
 
 // Heavy endpoints rate limiters — POST uploads only (status/report polling must not be capped at 10/min)

@@ -242,6 +242,7 @@ function validateFile(fileInput, category = 'followUp') {
 
   // 3. Format detailed rejection error message stating the actual detected type
   const displayType = detectedType || clientMime || ext || 'unknown format';
+  console.warn('[FileValidator] Rejected upload:', { category, filename, displayType, mime: clientMime, size });
   throw new ApiError(400, `Detected type: ${displayType} — please upload ${config.label}.`);
 }
 

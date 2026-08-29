@@ -146,8 +146,13 @@ async function processFollowUpFile(fileEntry) {
       type: outputMime,
     };
   } catch (err) {
-    console.error('[FollowUpOptimizer] Image processing failed:', err.message);
-    throw new ApiError(400, ERROR_UNSUPPORTED);
+    console.warn('[FollowUpOptimizer] Sharp optimization failed, falling back to original validated buffer:', err.message);
+    const fallbackMime = validationRes.detectedType || clientMime || 'image/jpeg';
+    return {
+      name: fileName,
+      data: `data:${fallbackMime};base64,${buffer.toString('base64')}`,
+      type: fallbackMime,
+    };
   }
 }
 

@@ -592,6 +592,10 @@ router.post(
       status: "SCHEDULED"
     };
 
+    if (roundData.notes) {
+      roundData.notes = await optimizeNotesPayload(roundData.notes);
+    }
+
     const result = await cache.createRound(roundData, orgId, req.user.id);
 
     // ── Respond IMMEDIATELY — client never waits for audit log ──
@@ -709,6 +713,10 @@ router.post(
       interviewerIds: Array.isArray(interviewerIds) ? interviewerIds : [],
       status: "SCHEDULED",
     };
+
+    if (req.body.notes) {
+      roundData.notes = await optimizeNotesPayload(req.body.notes);
+    }
 
     const result = await cache.createRound(roundData, orgId, req.user.id);
     const newInterview = result.data;
@@ -1452,6 +1460,10 @@ router.put(
         rescheduledBy: req.user.id,
         rescheduledAt: new Date().toISOString()
       });
+    }
+
+    if (data.notes) {
+      data.notes = await optimizeNotesPayload(data.notes);
     }
 
     const updateData = {
