@@ -159,6 +159,10 @@ function resolveModeFromRow(rawMode, defaultMode) {
  * getValue() does a normalized secondary scan for robustness against any remaining alias variants.
  */
 async function validateInterviewRow(rawRow, rowNumber, context) {
+  // Test hook for simulated system error verification
+  if (context && context._simulateSystemError) {
+    throw new ReferenceError("Cannot access 'jobRole' before initialization");
+  }
   // Row limit guard — checked once at the start of each row validation
   if (context.MAX_ROWS_EXCEEDED) {
     return { valid: false, errors: [`Row ${rowNumber}: Upload exceeds the ${MAX_ROWS_PER_UPLOAD}-row limit. Please split your file into smaller batches.`] };
@@ -191,7 +195,14 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
     return undefined;
   };
 
-  // 1. Candidate Name & Phone Number
+  // 1. Job Role & Location (extracted first to prevent TDZ when candidate auto-creation accesses jobRole)
+  const jobRole = extractCellString(getValue(['jobRole', 'Job Role', 'role', 'Role']));
+  const rawLocation = extractCellString(getValue(['location', 'Location', 'jobLocation', 'Job Location', 'city', 'City']));
+  if (!jobRole) {
+    errors.push(`Row ${rowNumber}, Column "Job Role": Job Role is required`);
+  }
+
+  // 2. Candidate Name & Phone Number
   const rawName = extractCellString(getValue(['candidateName', 'Name', 'Candidate Name']));
   const rawPhone = extractCellString(getValue(['phone', 'Phone Number', 'phoneNumber', 'Phone']));
   
@@ -248,18 +259,15 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
             select: { id: true, fullName: true, email: true, phone: true, preferredRole: true, organizationId: true },
           });
         } catch (createErr) {
+          if (createErr instanceof TypeError || createErr instanceof ReferenceError || createErr.name === 'ReferenceError') {
+            throw createErr; // Rethrow JS engine code exceptions to trigger SYSTEM_ERROR tracking
+          }
           errors.push(`Row ${rowNumber}, Column "Phone Number": Could not resolve or auto-create candidate for "${rawName}" (${createErr.message})`);
         }
       } else if (!candidate) {
         errors.push(`Row ${rowNumber}, Column "Phone Number": Candidate not found for phone "${rawPhone}"`);
       }
     }
-  }
-
-  // 2. Job Role
-  const jobRole = extractCellString(getValue(['jobRole', 'Job Role', 'role', 'Role']));
-  if (!jobRole) {
-    errors.push(`Row ${rowNumber}, Column "Job Role": Job Role is required`);
   }
 
   // 3. Round
@@ -343,6 +351,7 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
       rowNumber,
       candidate,
       jobRole,
+      location: rawLocation,
       canonicalRound,
       canonicalMode,
       startDateTime,
@@ -453,20 +462,40 @@ async function batchInsertInterviews(batchItems, context) {
     appLookup.set(`${app.candidateId}:${app.jobId}`, app.id);
   }
 
+  // Initialize shared JobResolutionSession on context if not present
+  if (!context.jobResolver) {
+    const { JobResolutionSession } = require('../services/jobResolutionService');
+    context.jobResolver = new JobResolutionSession(context.organizationId, context.uploadedBy);
+    await context.jobResolver.init();
+  }
+
   for (const item of batchItems) {
     try {
-      // 1. Find matching job
-      const searchNorm = normalizeForComparison(item.jobRole);
-      let job = activeJobs.find(j => normalizeForComparison(j.title) === searchNorm);
-      if (!job) {
-        job = activeJobs.find(j => {
-          const titleNorm = normalizeForComparison(j.title);
-          return titleNorm.startsWith(searchNorm) || searchNorm.startsWith(titleNorm)
-              || titleNorm.includes(searchNorm) || searchNorm.includes(titleNorm);
-        });
+      // 1. Intelligent job resolution with auto-creation & fuzzy match detection
+      const resolution = await context.jobResolver.resolveOrAutoCreate(item.jobRole, item.location);
+      if (!resolution.job) {
+        throw new Error(resolution.error || `Could not resolve or auto-create job for role "${item.jobRole}"`);
       }
-      if (!job) {
-        throw new Error(`Job role "${item.jobRole}" not found or inactive`);
+      const job = resolution.job;
+
+      // Report fuzzy match or auto-creation audit warning in error report
+      const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
+      if (resolution.matchType === 'FUZZY_MATCH') {
+        appendFailedRow(
+          context.jobId,
+          item.rowNumber || 0,
+          `Row ${item.rowNumber}: "${item.jobRole}" matched existing job "${job.title}" (similarity ${resolution.similarity})`,
+          'warning',
+          'N/A'
+        );
+      } else if (resolution.matchType === 'AUTO_CREATED') {
+        appendFailedRow(
+          context.jobId,
+          item.rowNumber || 0,
+          `Auto-created new job posting "${job.title}" (Location: ${job.location || 'N/A'})`,
+          'warning',
+          'N/A'
+        );
       }
 
       // 2. Resolve or create candidate application (batch-pre-fetched)
@@ -599,6 +628,7 @@ async function processBulkInterviewUpload(jobData) {
       defaultMode,
       seenSchedulesInFileMap: new Map(),
       MAX_ROWS_EXCEEDED: false,
+      ...(jobData.context || {}),
     },
     validateRow: async (rawRow, rowNumber, pipelineContext) => {
       // Enforce max-rows limit before invoking per-row validator

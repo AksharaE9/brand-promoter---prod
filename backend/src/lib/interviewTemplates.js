@@ -351,20 +351,7 @@ async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
     throw new ApiError(400, reasonMsg);
   }
 
-  // Sequential round gating check
-  if (requestedRound === InterviewRound.ROUND_2) {
-    const hasRound1 = allFeedbacks.some((f) => f.round === InterviewRound.ROUND_1);
-    if (!hasRound1) {
-      const ApiError = require('../utils/errors').ApiError;
-      throw new ApiError(400, 'Round 1 feedback must be submitted before scheduling Round 2.');
-    }
-  } else if (requestedRound === InterviewRound.FINAL_ROUND) {
-    const hasRound2 = allFeedbacks.some((f) => f.round === InterviewRound.ROUND_2);
-    if (!hasRound2) {
-      const ApiError = require('../utils/errors').ApiError;
-      throw new ApiError(400, 'Round 2 feedback must be submitted before scheduling Final Round.');
-    }
-  }
+
 }
 
 const INTERVIEW_SCHEDULE_IMPORT_SCHEMA = [

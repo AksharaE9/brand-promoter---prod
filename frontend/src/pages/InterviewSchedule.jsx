@@ -2367,6 +2367,12 @@ const InterviewSchedule = () => {
                       <div className="font-bold text-base text-[#142651]">
                         Interview Details ({selectedInterview ? (selectedInterview.roundNo === 1 ? 'Round 1' : selectedInterview.roundNo === 2 ? 'Round 2' : 'Final Round') : 'No Selection'})
                       </div>
+                      {selectedInterview && (!selectedInterview.feedback || (Array.isArray(selectedInterview.feedback) && selectedInterview.feedback.length === 0)) && (
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">pending_actions</span>
+                          Feedback Pending
+                        </span>
+                      )}
                       {selectedInterview && (
                         <SyncIndicator isPending={selectedInterview._pendingSync || selectedInterview._optimistic} />
                       )}

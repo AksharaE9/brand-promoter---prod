@@ -45,12 +45,23 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     normalizePhoneForDedup(candidateData.phone) ||
     normalizePhoneNumber(candidateData.phone) ||
     null;
-  const externalId = String(candidateData.candidateId || '').trim();
+  let preferredRole = candidateData.role;
+  if (candidateData.role) {
+    if (!context.jobResolver) {
+      const { JobResolutionSession } = require('../services/jobResolutionService');
+      context.jobResolver = new JobResolutionSession(context.organizationId || 'defaultOrg', context.validCreatedById);
+      await context.jobResolver.init();
+    }
+    const resolution = await context.jobResolver.resolveOrAutoCreate(candidateData.role, candidateData.location);
+    if (resolution.job) {
+      preferredRole = resolution.job.title;
+    }
+  }
 
   const payload = {
     rowNumber,
     fullName: candidateData.name,
-    preferredRole: candidateData.role,
+    preferredRole: preferredRole || null,
     email: candidateData.email || 'N/A',
     phone: candidateData.phone,
     phoneNormalized,

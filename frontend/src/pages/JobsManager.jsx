@@ -327,10 +327,17 @@ const JobsManager = () => {
                 onMouseEnter={() => prefetchJobDetails(row.id)}
               >
                 <div>
-                  <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/schedule?jobId=${row.id}`)}>
-                    {row.title}
-                  </button>
-                  <div className="text-sm text-[#6b7690] mt-1">{row.location}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button className="text-xl font-semibold font-[Manrope] text-left" type="button" onClick={() => navigate(`/schedule?jobId=${row.id}`)}>
+                      {row.title}
+                    </button>
+                    {row.source === 'BULK_IMPORT_AUTO' && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200" title="Auto-created during bulk import">
+                        ⚡ Auto-Created
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-[#6b7690] mt-1">{row.location || 'Location Not Specified'}</div>
                 </div>
                 <div className="text-xs uppercase tracking-[.1em] text-[#8f98ad]">{row.status}</div>
                 <div>

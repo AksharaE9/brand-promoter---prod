@@ -298,6 +298,28 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     setScheduleForm(prev => ({ ...prev, slotNo: slotInfo.slotNo }));
   }, [slotInfo.slotNo, scheduleForm.scheduledStart]);
 
+  const [dismissedNoticeRound, setDismissedNoticeRound] = useState(null);
+
+  const currentRoundKey = scheduleForm.roundNo === 99 ? 'FINAL_ROUND' : scheduleForm.roundNo === 2 ? 'ROUND_2' : 'ROUND_1';
+
+  const missingFeedbackNotice = React.useMemo(() => {
+    if (!scheduleForm.candidateId) return null;
+    const hasRound1Fb = (candidateFeedbacks || []).some(
+      (f) => f.round === 'ROUND_1' || f.round === 'Round 1' || f.roundNo === 1
+    );
+    const hasRound2Fb = (candidateFeedbacks || []).some(
+      (f) => f.round === 'ROUND_2' || f.round === 'Round 2' || f.roundNo === 2
+    );
+
+    if (currentRoundKey === 'ROUND_2' && !hasRound1Fb) {
+      return "Round 1 feedback hasn't been submitted yet. You can still schedule Round 2.";
+    }
+    if (currentRoundKey === 'FINAL_ROUND' && (!hasRound1Fb || !hasRound2Fb)) {
+      return "Earlier round feedback hasn't been submitted yet. You can still schedule Final Round.";
+    }
+    return null;
+  }, [scheduleForm.candidateId, currentRoundKey, candidateFeedbacks]);
+
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
@@ -317,6 +339,24 @@ export const ScheduleModal = React.memo(function ScheduleModal({
             </button>
           </div>
           <form className="space-y-4" onSubmit={onSubmit}>
+            {/* Non-blocking Notice for Missing Prior Feedback */}
+            {missingFeedbackNotice && dismissedNoticeRound !== currentRoundKey && (
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium animate-in fade-in duration-150">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base text-amber-600 shrink-0">info</span>
+                  <span>{missingFeedbackNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDismissedNoticeRound(currentRoundKey)}
+                  className="text-amber-500 hover:text-amber-700 p-0.5 rounded-md hover:bg-amber-100 transition-colors"
+                  title="Dismiss notice"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               {/* Candidate */}
               <div className="space-y-1 relative">
@@ -404,12 +444,16 @@ export const ScheduleModal = React.memo(function ScheduleModal({
             {/* Round & Mode */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Next Schedulable Round (Derived)</label>
-                <div className={`h-10 w-full rounded-xl border border-slate-200 px-3 flex items-center text-sm font-semibold ${
-                  nextDerivedRound ? 'bg-slate-50 text-[#1f52cc]' : 'bg-red-50 text-red-700'
-                }`}>
-                  {nextDerivedLabel}
-                </div>
+                <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Interview Round</label>
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold text-[#1f52cc] focus:border-[#1f52cc] outline-none bg-slate-50"
+                  value={scheduleForm.roundNo === 99 ? 'Final' : String(scheduleForm.roundNo || 1)}
+                  onChange={handleRoundChange}
+                >
+                  <option value="1">Round 1</option>
+                  <option value="2">Round 2</option>
+                  <option value="Final">Final Round</option>
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">Meeting Mode</label>

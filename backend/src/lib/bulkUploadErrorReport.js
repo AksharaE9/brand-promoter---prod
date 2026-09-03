@@ -76,7 +76,7 @@ function scheduleReportPurge(jobId) {
 function initErrorReport(jobId) {
   const filePath = path.join(REPORTS_DIR, `bulk_upload_report_${jobId}.csv`);
   // Write CSV headers
-  fs.writeFileSync(filePath, 'row_number,severity,reason\n', 'utf8');
+  fs.writeFileSync(filePath, 'row_number,severity,error_type,reason\n', 'utf8');
   jobReports.set(jobId, filePath);
   return filePath;
 }
@@ -84,26 +84,37 @@ function initErrorReport(jobId) {
 /**
  * Appends a row failure, duplicate warning, or soft warning to the job's report file.
  * @param {string} jobId
- * @param {number} rowNumber
+ * @param {number|string} rowNumber
  * @param {string} reason
- * @param {string|boolean} [severity='error'] - 'error', 'duplicate', 'warning', or boolean
+ * @param {string|boolean} [severity='error'] - 'error', 'duplicate', 'warning', 'SYSTEM_ERROR', 'DATA_ERROR', or boolean
+ * @param {string} [errorType=null] - 'DATA_ERROR', 'SYSTEM_ERROR', or 'N/A'
  */
-function appendFailedRow(jobId, rowNumber, reason, severity = 'error') {
+function appendFailedRow(jobId, rowNumber, reason, severity = 'error', errorType = null) {
   let filePath = jobReports.get(jobId);
   if (!filePath || !fs.existsSync(filePath)) {
     filePath = initErrorReport(jobId);
   }
 
   let sevText = 'error';
-  if (severity === true || severity === 'warning') {
+  let typeText = errorType || 'DATA_ERROR';
+
+  if (severity === 'SYSTEM_ERROR') {
+    sevText = 'error';
+    typeText = 'SYSTEM_ERROR';
+  } else if (severity === 'DATA_ERROR') {
+    sevText = 'error';
+    typeText = 'DATA_ERROR';
+  } else if (severity === true || severity === 'warning') {
     sevText = 'warning';
+    typeText = 'N/A';
   } else if (severity === 'duplicate') {
     sevText = 'duplicate';
+    typeText = 'N/A';
   }
 
   // Escape quotes in reason
   const safeReason = String(reason || '').replace(/"/g, '""');
-  const line = `${rowNumber},"${sevText}","${safeReason}"\n`;
+  const line = `${rowNumber},"${sevText}","${typeText}","${safeReason}"\n`;
 
   fs.appendFileSync(filePath, line, 'utf8');
 }

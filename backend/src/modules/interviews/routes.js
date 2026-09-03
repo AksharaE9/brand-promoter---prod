@@ -672,19 +672,24 @@ router.post(
       return 'FINAL_ROUND';
     });
 
-    const completedRounds = Array.from(new Set([...feedbackRounds, ...scheduledRounds]));
-    const nextRound = getNextSchedulableRound(completedRounds);
-
-    if (!nextRound) {
-      throw new ApiError(409, "All 3 interview rounds are already completed for this candidate.");
+    // Determine requested round: honor explicit body param if provided, otherwise derive next round
+    let targetRound = req.body.round || req.body.requestedRound;
+    if (!targetRound && req.body.roundNo) {
+      const rNum = parseInt(req.body.roundNo, 10);
+      targetRound = rNum === 1 ? 'ROUND_1' : rNum === 2 ? 'ROUND_2' : 'FINAL_ROUND';
     }
+    if (targetRound === 'Round 1') targetRound = 'ROUND_1';
+    if (targetRound === 'Round 2') targetRound = 'ROUND_2';
+    if (targetRound === 'Final Round' || targetRound === 'Final') targetRound = 'FINAL_ROUND';
 
-    // Sequential Round Gating: Ensure prior round's feedback exists
+    const nextRound = targetRound || getNextSchedulableRound(completedRounds) || 'ROUND_1';
+
+    // Verify candidate is not blocked by terminal outcome (REJECTED / DIDNT_JOIN / OFFER_LETTER)
     await assertCanScheduleRound(prisma, candidateId, nextRound);
 
-
-
-    const roundNo = completedRounds.length + 1;
+    const roundNo = req.body.roundNo
+      ? (req.body.roundNo === 'Final' || req.body.roundNo === 99 ? 99 : parseInt(req.body.roundNo, 10))
+      : (nextRound === 'ROUND_1' ? 1 : nextRound === 'ROUND_2' ? 2 : 99);
 
     // Check if this exact round already exists (Duplicate Check)
     const existingRound = await prisma.interview.findFirst({
@@ -695,10 +700,10 @@ router.post(
       }
     });
     if (existingRound) {
-      throw new ApiError(409, `Round ${roundNo} is already scheduled or completed for this candidate (Duplicate).`);
+      throw new ApiError(409, `Round ${roundNo === 99 ? 'Final' : roundNo} is already scheduled or completed for this candidate (Duplicate).`);
     }
 
-    const roundLabel = ROUND_DISPLAY_LABEL[nextRound];
+    const roundLabel = ROUND_DISPLAY_LABEL[nextRound] || (roundNo === 99 ? 'Final Round' : `Round ${roundNo}`);
     const orgId = req.user.organizationId || "defaultOrg";
 
     const roundData = {

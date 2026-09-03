@@ -20,44 +20,36 @@ describe('Sequential Round Gating Unit Tests', () => {
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_1)
     ).resolves.not.toThrow();
-    expect(mockPrisma.interviewFeedback.findUnique).not.toHaveBeenCalled();
   });
 
-  test('throws 400 ApiError when attempting to schedule Round 2 before Round 1 feedback exists', async () => {
+  test('allows scheduling Round 2 even when Round 1 feedback is missing', async () => {
     mockPrisma.interviewFeedback.findMany.mockResolvedValue([]);
 
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_2)
-    ).rejects.toThrow(ApiError);
-
-    await expect(
-      assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_2)
-    ).rejects.toThrow('Round 1 feedback must be submitted before scheduling Round 2.');
+    ).resolves.not.toThrow();
   });
 
-  test('allows scheduling Round 2 when Round 1 feedback exists', async () => {
+  test('allows scheduling Final Round even when Round 2 feedback is missing', async () => {
+    mockPrisma.interviewFeedback.findMany.mockResolvedValue([]);
+
+    await expect(
+      assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.FINAL_ROUND)
+    ).resolves.not.toThrow();
+  });
+
+  test('blocks scheduling when prior round outcome is REJECTED', async () => {
     mockPrisma.interviewFeedback.findMany.mockResolvedValue([
       {
         id: 'fb-1',
         candidateId: 'cand-123',
         round: 'ROUND_1',
+        selectionStatus: 'REJECTED',
       }
     ]);
 
     await expect(
       assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.ROUND_2)
-    ).resolves.not.toThrow();
-
-    expect(mockPrisma.interviewFeedback.findMany).toHaveBeenCalledWith({
-      where: { candidateId: 'cand-123', deletedAt: null },
-    });
-  });
-
-  test('throws 400 ApiError when attempting to schedule Final Round before Round 2 feedback exists', async () => {
-    mockPrisma.interviewFeedback.findMany.mockResolvedValue([]);
-
-    await expect(
-      assertCanScheduleRound(mockPrisma, 'cand-123', InterviewRound.FINAL_ROUND)
-    ).rejects.toThrow('Round 2 feedback must be submitted before scheduling Final Round.');
+    ).rejects.toThrow('This candidate was rejected at Round 1; further rounds cannot be scheduled.');
   });
 });

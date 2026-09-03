@@ -261,6 +261,7 @@ model Job {
   createdBy       User?    @relation(fields: [createdById], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  source          String?  @default("MANUAL")
 
   applications    Application[]
   pipelineStages  PipelineStage[]

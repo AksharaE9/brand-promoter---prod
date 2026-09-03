@@ -144,9 +144,14 @@ async function runStreamingBulkUploadPipeline(options) {
   let succeeded = 0;
   let duplicates = 0;
   let failed = 0;
+  let systemErrorCount = 0;
+  let dataErrorCount = 0;
   let totalRows = 0;
   let batch = [];
   let firstErrorReason = null;
+
+  const generateSystemErrorId = () =>
+    `ERR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
   const statusObj = {
     jobId,
@@ -187,14 +192,18 @@ async function runStreamingBulkUploadPipeline(options) {
       }
       if (res && typeof res.failed === 'number') {
         failed += res.failed;
+        dataErrorCount += res.failed;
       }
     } catch (err) {
-      console.error(`[StreamingBulkPipeline] Batch insert error on job ${jobId}:`, err.message);
+      const errorId = generateSystemErrorId();
+      console.error(`[SYSTEM_ERROR ${errorId}] Batch insert error on job ${jobId}:`, err.stack || err);
       failed += currentBatch.length;
-      if (!firstErrorReason) firstErrorReason = `Batch insert failed: ${err.message}`;
+      systemErrorCount += currentBatch.length;
+      const sysMsg = `System error while processing this batch — please report this. (Reference: ${errorId})`;
+      if (!firstErrorReason) firstErrorReason = sysMsg;
       const rowNumbers = currentBatch.map(b => b.rowNumber).filter(Boolean);
       const rowRange = rowNumbers.length > 0 ? `${rowNumbers[0]}-${rowNumbers[rowNumbers.length - 1]}` : '0';
-      appendFailedRow(jobId, rowRange, `Batch insert failed: ${err.message}`, 'error');
+      appendFailedRow(jobId, rowRange, sysMsg, 'error', 'SYSTEM_ERROR');
     }
   };
 
@@ -203,31 +212,50 @@ async function runStreamingBulkUploadPipeline(options) {
       processed++;
       totalRows = Math.max(totalRows, rowNumber - 1);
 
-      const valResult = await validateRow(rawRow, rowNumber, pipelineContext);
+      let valResult;
+      try {
+        valResult = await validateRow(rawRow, rowNumber, pipelineContext);
+      } catch (valErr) {
+        const errorId = generateSystemErrorId();
+        const rowId = rawRow.Name || rawRow.name || rawRow['Candidate Name'] || rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || '';
+        console.error(`[SYSTEM_ERROR ${errorId}] Row ${rowNumber} validation exception:`, valErr.stack || valErr);
+        valResult = {
+          valid: false,
+          errorType: 'SYSTEM_ERROR',
+          errors: [`${rowId ? `[Row Info: ${rowId}] ` : ''}System error while processing this row — please report this. (Reference: ${errorId})`],
+        };
+      }
 
       if (!valResult.valid) {
         failed++;
+        const isSysErr = valResult.errorType === 'SYSTEM_ERROR';
+        if (isSysErr) {
+          systemErrorCount++;
+        } else {
+          dataErrorCount++;
+        }
+
         const rowId = rawRow.Name || rawRow.name || rawRow['Candidate Name'] || rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || '';
-        const prefix = rowId ? `[Row Info: ${rowId}] ` : '';
+        const prefix = (rowId && !isSysErr) ? `[Row Info: ${rowId}] ` : '';
         const reason = (valResult.errors && valResult.errors.length > 0)
           ? valResult.errors.join('; ')
           : (valResult.failureReason || 'Row validation failed');
         if (!firstErrorReason) {
           firstErrorReason = (valResult.errors && valResult.errors.length > 0) ? valResult.errors[0] : reason;
         }
-        appendFailedRow(jobId, rowNumber, `${prefix}${reason}`, 'error');
+        appendFailedRow(jobId, rowNumber, isSysErr ? reason : `${prefix}${reason}`, 'error', isSysErr ? 'SYSTEM_ERROR' : 'DATA_ERROR');
       } else {
         // Primary and secondary duplicate checks
         if (typeof duplicateCheck === 'function') {
           const dupResult = await duplicateCheck(valResult.data, rowNumber, pipelineContext);
           if (dupResult && dupResult.isDuplicate) {
             duplicates++;
-            appendFailedRow(jobId, rowNumber, dupResult.reason || 'Duplicate skipped', 'duplicate');
+            appendFailedRow(jobId, rowNumber, dupResult.reason || 'Duplicate skipped', 'duplicate', 'N/A');
             return; // Skip transforming and batching
           }
           if (dupResult && Array.isArray(dupResult.warnings)) {
             dupResult.warnings.forEach((warn) => {
-              appendFailedRow(jobId, rowNumber, warn, 'warning');
+              appendFailedRow(jobId, rowNumber, warn, 'warning', 'N/A');
             });
           }
         }
@@ -235,7 +263,7 @@ async function runStreamingBulkUploadPipeline(options) {
         // Add any validator warnings
         if (Array.isArray(valResult.warnings)) {
           valResult.warnings.forEach((warn) => {
-            appendFailedRow(jobId, rowNumber, warn, 'warning');
+            appendFailedRow(jobId, rowNumber, warn, 'warning', 'N/A');
           });
         }
 
@@ -277,7 +305,8 @@ async function runStreamingBulkUploadPipeline(options) {
         jobId,
         0,
         `Note: Workbook contained multiple sheets. Only the first sheet ("${parseResult.sheetName}") was processed. Sheets ignored: ${parseResult.extraSheetNames.join(', ')}`,
-        'warning'
+        'warning',
+        'N/A'
       );
     }
 
@@ -293,7 +322,14 @@ async function runStreamingBulkUploadPipeline(options) {
 
     const errorReportUrl = finalizeErrorReport(jobId);
 
-    if (failed === processed && processed > 0 && firstErrorReason) {
+    // Summary-level intelligence (Pattern Detection)
+    if (systemErrorCount > 0 && (systemErrorCount === processed || systemErrorCount >= failed * 0.5)) {
+      if (systemErrorCount === processed) {
+        statusObj.summaryError = `${processed} of ${processed} rows failed with the same system error. This is likely a bug, not a data problem.`;
+      } else {
+        statusObj.summaryError = `${systemErrorCount} of ${processed} rows failed with a system error. This is likely a bug, not a data problem.`;
+      }
+    } else if (failed === processed && processed > 0 && firstErrorReason) {
       statusObj.summaryError = `All ${processed} rows failed: ${firstErrorReason}`;
     } else if (failed > 0 && firstErrorReason) {
       statusObj.summaryError = `${failed} of ${processed} rows failed. First error: ${firstErrorReason}`;

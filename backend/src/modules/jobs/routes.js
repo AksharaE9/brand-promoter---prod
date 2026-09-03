@@ -79,7 +79,8 @@ const jobSearchHandler = async (req, res) => {
       experienceMax: true,
       openingsCount: true,
       isActive: true,
-      createdAt: true
+      createdAt: true,
+      source: true,
     }
   };
 
