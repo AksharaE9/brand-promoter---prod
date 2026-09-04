@@ -2273,19 +2273,36 @@ const InterviewSchedule = () => {
                   <button 
                     className="os-btn-primary !h-9 !px-4 !bg-[#1f52cc]" 
                     onClick={() => {
-                      const candidateName = selectedCandidate?.fullName || '';
+                      const candidateId = selectedCandidate?.id
+                        || selectedGroup?.candidateId
+                        || selectedInterview?.candidateId
+                        || selectedInterview?.application?.candidateId
+                        || selectedInterview?.application?.candidate?.id
+                        || '';
+                      const candidateName = selectedCandidate?.fullName
+                        || selectedInterview?.candidateName
+                        || selectedInterview?.application?.candidate?.fullName
+                        || '';
                       const resolvedJobId = selectedGroup?.application?.jobId
                         || selectedGroup?.application?.job?.id
+                        || selectedInterview?.jobId
+                        || selectedInterview?.application?.jobId
+                        || selectedInterview?.application?.job?.id
+                        || '';
+                      const resolvedJobTitle = selectedGroup?.application?.job?.title
+                        || selectedInterview?.job?.title
+                        || selectedInterview?.jobTitle
+                        || selectedInterview?.application?.job?.title
                         || '';
                       const activeCandInterviews = (selectedGroup?.interviews || []).filter(
-                        iv => !iv.isDeleted && iv.status !== 'CANCELLED'
+                        iv => !iv.isDeleted && iv.status !== 'CANCELLED' && !iv._optimistic
                       );
                       const nextRoundNo = activeCandInterviews.length === 0 ? 1 : activeCandInterviews.length === 1 ? 2 : 99;
                       const nextRoundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
 
                       setScheduleForm({
                         ...emptyScheduleForm,
-                        candidateId: selectedCandidate?.id || '',
+                        candidateId,
                         jobId: resolvedJobId,
                         roundNo: nextRoundNo,
                         round: nextRoundLabel
