@@ -168,10 +168,16 @@ async function request(path, options = {}, retries = 1) {
         try { data = await response.json(); } catch (_) { data = null; }
 
         if (!response.ok) {
-          const message = data?.message || `Request failed (${response.status})`;
-          const error = new Error(message);
+          const detailedMessage =
+            data?.message ||
+            (Array.isArray(data?.errors) && data.errors.length > 0 ? data.errors.join(', ') : null) ||
+            data?.error ||
+            `Request failed (${response.status})`;
+          const error = new Error(detailedMessage);
           error.status = response.status;
           error.payload = data;
+          error.error = data?.error;
+          error.errors = data?.errors;
           error.retryAfter = response.headers.get('Retry-After');
           // Don't retry 4xx errors (client errors)
           if (response.status >= 400 && response.status < 500) {

@@ -17,7 +17,7 @@ const { getCache, setCache, TTL } = require("../../utils/cache");
 const { buildInterviewListQuery } = require("./queryBuilder");
 const { populateInterviewRelations } = require("./relationPopulator");
 const { mergeDirtyQueue } = require("./dirtyQueueMerger");
-const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, assertCanScheduleRound, computeInterviewStatusUpdate, computeInterviewStatusRevert } = require("../../lib/interviewTemplates");
+const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, normalizeRoundNo, assertCanScheduleRound, computeInterviewStatusUpdate, computeInterviewStatusRevert } = require("../../lib/interviewTemplates");
 const { optimizeNotesPayload } = require("../../utils/followUpOptimizer");
 
 const crypto = require("crypto");
@@ -545,7 +545,8 @@ router.post(
       throw new ApiError(400, "Missing required fields");
     }
 
-    const roundNo = parseInt(req.body.roundNo) || 1;
+    const roundNo = normalizeRoundNo(req.body.roundNo, req.body.round);
+    const roundLabel = roundNo === 1 ? 'Round 1' : roundNo === 2 ? 'Round 2' : 'Final Round';
 
     // Check if this exact round already exists (Duplicate Check)
     const existingRound = await prisma.interview.findFirst({
@@ -556,7 +557,7 @@ router.post(
       }
     });
     if (existingRound) {
-      throw new ApiError(409, `Round ${roundNo} is already scheduled or completed for this candidate (Duplicate).`);
+      throw new ApiError(409, `Round ${roundNo === 99 ? 'Final' : roundNo} is already scheduled or completed for this candidate (Duplicate).`);
     }
 
     // Resolve candidate and job details from application if not fully provided
@@ -584,7 +585,7 @@ router.post(
       jobId: resolvedJobId,
       jobTitle: resolvedJobTitle,
       roundNo,
-      round: req.body.round || `Round ${roundNo}`,
+      round: roundLabel,
       meetingLink: req.body.meetingLink || "",
       zohoLink: req.body.zohoLink || "",
       createdById: req.user.id,
@@ -688,7 +689,7 @@ router.post(
     await assertCanScheduleRound(prisma, candidateId, nextRound);
 
     const roundNo = req.body.roundNo
-      ? (req.body.roundNo === 'Final' || req.body.roundNo === 99 ? 99 : parseInt(req.body.roundNo, 10))
+      ? normalizeRoundNo(req.body.roundNo, req.body.round)
       : (nextRound === 'ROUND_1' ? 1 : nextRound === 'ROUND_2' ? 2 : 99);
 
     // Check if this exact round already exists (Duplicate Check)
@@ -790,6 +791,7 @@ router.post(
     if (!validation.valid) {
       return res.status(400).json({
         success: false,
+        message: validation.errors.join(', '),
         error: "Feedback validation failed",
         errors: validation.errors,
       });

@@ -180,6 +180,27 @@ export function getEffectiveSelectionStatus(record) {
 }
 
 /**
+ * Normalizes any round number or label to the canonical set [1, 2, 99].
+ * Caps any round >= 3 or 'Final Round' to 99.
+ * @param {number|string} rawRoundNo
+ * @param {string} [roundLabel]
+ * @returns {number} 1, 2, or 99
+ */
+export function normalizeRoundNo(rawRoundNo, roundLabel) {
+  if (rawRoundNo === 'Final' || rawRoundNo === 'FINAL' || rawRoundNo === 99 || rawRoundNo === '99') {
+    return 99;
+  }
+  if (roundLabel === 'Final Round' || roundLabel === 'Final') {
+    return 99;
+  }
+  const parsed = parseInt(rawRoundNo, 10);
+  if (parsed === 1) return 1;
+  if (parsed === 2) return 2;
+  if (parsed >= 3 || parsed === 99) return 99;
+  return 1;
+}
+
+/**
  * Derives the next schedulable round enum from array of completed round enums.
  */
 export function getNextSchedulableRound(completedRounds) {

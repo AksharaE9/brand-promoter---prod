@@ -41,10 +41,17 @@ async function customRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    const message = data?.message || `Request failed (${response.status})`;
-    const error = Object.assign(new Error(message), {
+    const detailedMessage =
+      data?.message ||
+      (Array.isArray(data?.errors) && data.errors.length > 0 ? data.errors.join(', ') : null) ||
+      data?.error ||
+      `Request failed (${response.status})`;
+    const error = Object.assign(new Error(detailedMessage), {
       status: response.status,
-      response: { data }
+      response: { data },
+      payload: data,
+      error: data?.error,
+      errors: data?.errors,
     });
     // 401 = dead session (token expired/revoked) — clear auth state and redirect.
     if (response.status === 401) {

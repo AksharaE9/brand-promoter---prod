@@ -7,11 +7,39 @@ const {
   ROUND_1_TEMPLATE,
   ROUND_2_PLUS_TEMPLATE,
   getNextSchedulableRound,
+  normalizeRoundNo,
   validateFeedbackData,
   formatFeedbackForClipboard,
 } = require('../../src/lib/interviewTemplates');
 
 describe('Interview Templates & Round Capping Logic', () => {
+  describe('normalizeRoundNo', () => {
+    test('normalizes 1 and 2 directly', () => {
+      expect(normalizeRoundNo(1)).toBe(1);
+      expect(normalizeRoundNo('1')).toBe(1);
+      expect(normalizeRoundNo(2)).toBe(2);
+      expect(normalizeRoundNo('2')).toBe(2);
+    });
+
+    test('normalizes 3, 4, 14, 99, and "Final Round" to 99', () => {
+      expect(normalizeRoundNo(3)).toBe(99);
+      expect(normalizeRoundNo('3')).toBe(99);
+      expect(normalizeRoundNo(4)).toBe(99);
+      expect(normalizeRoundNo(14)).toBe(99);
+      expect(normalizeRoundNo('14')).toBe(99);
+      expect(normalizeRoundNo(99)).toBe(99);
+      expect(normalizeRoundNo('Final')).toBe(99);
+      expect(normalizeRoundNo('FINAL')).toBe(99);
+      expect(normalizeRoundNo(null, 'Final Round')).toBe(99);
+    });
+
+    test('defaults invalid or empty to 1', () => {
+      expect(normalizeRoundNo(null)).toBe(1);
+      expect(normalizeRoundNo(undefined)).toBe(1);
+      expect(normalizeRoundNo('invalid')).toBe(1);
+    });
+  });
+
   describe('getNextSchedulableRound', () => {
     test('returns ROUND_1 when 0 rounds completed', () => {
       expect(getNextSchedulableRound([])).toBe(InterviewRound.ROUND_1);

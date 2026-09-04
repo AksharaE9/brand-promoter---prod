@@ -342,11 +342,21 @@ export default function InterviewFeedbackForm({
       if (res?.success) {
         if (onSuccess) onSuccess(res.data);
       } else {
-        setErrorMsg(res?.error || 'Failed to submit feedback');
+        setErrorMsg(res?.error || res?.message || 'Failed to submit feedback');
         if (Array.isArray(res?.errors)) setFieldErrors(res.errors);
       }
     } catch (err) {
-      setErrorMsg(err.message || 'An error occurred while saving feedback');
+      const payload = err.payload || err.response?.data;
+      const backendErrors = Array.isArray(err.errors)
+        ? err.errors
+        : (Array.isArray(payload?.errors) ? payload.errors : null);
+
+      if (backendErrors && backendErrors.length > 0) {
+        setFieldErrors(backendErrors);
+        setErrorMsg(payload?.error || payload?.message || err.message || 'Please correct the validation errors below.');
+      } else {
+        setErrorMsg(payload?.error || payload?.message || err.message || 'An error occurred while saving feedback');
+      }
     } finally {
       setSubmitting(false);
     }

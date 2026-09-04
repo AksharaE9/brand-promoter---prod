@@ -1218,13 +1218,14 @@ const InterviewSchedule = () => {
       lastCandidateJobKeyRef.current = currentKey;
       const app = applications.find(a => a.candidateId === scheduleForm.candidateId && a.jobId === scheduleForm.jobId);
       if (app) {
-        // Read interviews from cache to avoid stale closure; fall back to 1
-        const appInterviewsCount = allInterviews.filter(iv => iv.applicationId === app.id && !iv._optimistic).length;
-        const nextRound = appInterviewsCount + 1;
+        // Read interviews from cache to avoid stale closure; clamp to canonical rounds [1, 2, 99]
+        const appInterviewsCount = allInterviews.filter(iv => iv.applicationId === app.id && !iv._optimistic && !iv.isDeleted && iv.status !== 'CANCELLED').length;
+        const nextRoundNo = appInterviewsCount === 0 ? 1 : appInterviewsCount === 1 ? 2 : 99;
+        const nextRoundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
         setScheduleForm(prev => ({
           ...prev,
-          roundNo: nextRound,
-          round: `Round ${nextRound}`
+          roundNo: nextRoundNo,
+          round: nextRoundLabel
         }));
       } else {
         setScheduleForm(prev => ({ ...prev, roundNo: 1, round: 'Round 1' }));
@@ -2142,11 +2143,12 @@ const InterviewSchedule = () => {
                                                       const jobId = iv.application?.jobId || iv.application?.job?.id || iv.jobId || '';
                                                       const jobTitle = iv.application?.job?.title || iv.jobTitle || '';
                                                       
-                                                      // Find all interviews for this candidate to calculate the next round number
+                                                      // Find all active interviews for this candidate to calculate the next round number
                                                       const candInterviews = allInterviews.filter(
-                                                        x => (x.application?.candidateId || x.candidateId) === candId
+                                                        x => (x.application?.candidateId || x.candidateId) === candId && !x.isDeleted && x.status !== 'CANCELLED'
                                                       );
-                                                      const nextRound = candInterviews.length + 1;
+                                                      const nextRoundNo = candInterviews.length === 0 ? 1 : candInterviews.length === 1 ? 2 : 99;
+                                                      const nextRoundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
 
                                                       // Format the selected calendar date to local ISO (YYYY-MM-DDT09:00)
                                                       let dateStr = '';
@@ -2161,8 +2163,8 @@ const InterviewSchedule = () => {
                                                         ...emptyScheduleForm,
                                                         candidateId: candId,
                                                         jobId: jobId,
-                                                        roundNo: nextRound,
-                                                        round: `Round ${nextRound}`,
+                                                        roundNo: nextRoundNo,
+                                                        round: nextRoundLabel,
                                                         scheduledStart: dateStr
                                                       });
 
@@ -2275,15 +2277,18 @@ const InterviewSchedule = () => {
                       const resolvedJobId = selectedGroup?.application?.jobId
                         || selectedGroup?.application?.job?.id
                         || '';
-                      const resolvedJobTitle = selectedGroup?.application?.job?.title || '';
-                      const nextRound = (selectedGroup?.interviews?.length || 0) + 1;
+                      const activeCandInterviews = (selectedGroup?.interviews || []).filter(
+                        iv => !iv.isDeleted && iv.status !== 'CANCELLED'
+                      );
+                      const nextRoundNo = activeCandInterviews.length === 0 ? 1 : activeCandInterviews.length === 1 ? 2 : 99;
+                      const nextRoundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
 
                       setScheduleForm({
                         ...emptyScheduleForm,
                         candidateId: selectedCandidate?.id || '',
                         jobId: resolvedJobId,
-                        roundNo: nextRound,
-                        round: `Round ${nextRound}`
+                        roundNo: nextRoundNo,
+                        round: nextRoundLabel
                       });
                       // Pre-fill display fields so the user sees what's already selected
                       setCandidateSearch(candidateName);

@@ -135,7 +135,11 @@ setInterval(async () => {
 app.get('/api/version', (req, res) => {
   res.json({
     success: true,
-    ...versionInfo
+    version: '1.0.0',
+    commit: process.env.RENDER_GIT_COMMIT || versionInfo.commit || 'live',
+    deployedAt: versionInfo.deployedAt || new Date().toISOString(),
+    timestamp: new Date().toISOString(),
+    status: 'live',
   });
 });
 
@@ -163,16 +167,6 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
   const cacheStats = getCacheMetrics();
   const sseStats = sse.getStats();
   res.json({ success: true, cache: cacheStats, sse: sseStats, uptime: process.uptime() });
-});
-
-app.get('/api/version', (req, res) => {
-  res.json({
-    success: true,
-    version: '1.0.0',
-    commit: process.env.RENDER_GIT_COMMIT || '5230fbe',
-    timestamp: new Date().toISOString(),
-    status: 'live',
-  });
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────
