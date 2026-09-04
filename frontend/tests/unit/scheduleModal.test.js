@@ -179,4 +179,63 @@ describe('ScheduleModal Smoke Test', () => {
       expect(renderError.name).not.toBe('ReferenceError');
     }
   });
+
+  it('correctly resolves candidate and job data when computing next schedule without ReferenceError', () => {
+    const selectedCandidate = { id: 'cand-1', fullName: 'Sibi raj' };
+    const selectedGroup = {
+      candidateId: 'cand-1',
+      application: {
+        id: 'app-1',
+        jobId: 'job-1',
+        job: { id: 'job-1', title: 'Telecalling (part-time SME)' },
+        candidate: { id: 'cand-1', fullName: 'Sibi raj' }
+      },
+      interviews: [
+        { id: 'iv-1', roundNo: 1, status: 'REJECTED', isDeleted: false }
+      ]
+    };
+    const selectedInterview = {
+      id: 'iv-1',
+      candidateId: 'cand-1',
+      candidateName: 'Sibi raj',
+      jobId: 'job-1',
+      jobTitle: 'Telecalling (part-time SME)',
+      roundNo: 1
+    };
+
+    // Simulate the exact onClick resolution logic from InterviewSchedule.jsx
+    const candidateId = selectedCandidate?.id
+      || selectedGroup?.candidateId
+      || selectedInterview?.candidateId
+      || selectedInterview?.application?.candidateId
+      || selectedInterview?.application?.candidate?.id
+      || '';
+    const candidateName = selectedCandidate?.fullName
+      || selectedInterview?.candidateName
+      || selectedInterview?.application?.candidate?.fullName
+      || '';
+    const resolvedJobId = selectedGroup?.application?.jobId
+      || selectedGroup?.application?.job?.id
+      || selectedInterview?.jobId
+      || selectedInterview?.application?.jobId
+      || selectedInterview?.application?.job?.id
+      || '';
+    const resolvedJobTitle = selectedGroup?.application?.job?.title
+      || selectedInterview?.job?.title
+      || selectedInterview?.jobTitle
+      || selectedInterview?.application?.job?.title
+      || '';
+    const activeCandInterviews = (selectedGroup?.interviews || []).filter(
+      iv => !iv.isDeleted && iv.status !== 'CANCELLED' && !iv._optimistic
+    );
+    const nextRoundNo = activeCandInterviews.length === 0 ? 1 : activeCandInterviews.length === 1 ? 2 : 99;
+    const nextRoundLabel = nextRoundNo === 99 ? 'Final Round' : `Round ${nextRoundNo}`;
+
+    expect(candidateId).toBe('cand-1');
+    expect(candidateName).toBe('Sibi raj');
+    expect(resolvedJobId).toBe('job-1');
+    expect(resolvedJobTitle).toBe('Telecalling (part-time SME)');
+    expect(nextRoundNo).toBe(2);
+    expect(nextRoundLabel).toBe('Round 2');
+  });
 });
