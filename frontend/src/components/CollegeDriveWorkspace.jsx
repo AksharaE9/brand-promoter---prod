@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { buildApiUrl, apiGet, apiPost } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import Reveal from './PageMotion';
@@ -570,10 +571,10 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
         />
       </React.Suspense>
 
-      {showCollegeModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowCollegeModal(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+      {showCollegeModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowCollegeModal(false)} />
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl relative z-10 modal-scale-up">
             <div className="p-8">
               <div className="flex items-center justify-between mb-8">
                 <h2 className="text-2xl font-bold text-slate-900">Add New College</h2>
@@ -621,13 +622,14 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showDriveModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowDriveModal(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+      {showDriveModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowDriveModal(false)} />
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl relative z-10 modal-scale-up">
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -641,6 +643,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
+
               <form className="space-y-4" onSubmit={handleAddDrive}>
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
@@ -706,14 +709,15 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* EDIT DRIVE MODAL */}
-      {showEditDriveModal && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowEditDriveModal(false)} />
-          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+      {showEditDriveModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowEditDriveModal(false)} />
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl relative z-10 modal-scale-up">
             <div className="p-8">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -727,6 +731,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
+
               <form className="space-y-4" onSubmit={handleUpdateDrive}>
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
@@ -792,7 +797,8 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
               </form>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

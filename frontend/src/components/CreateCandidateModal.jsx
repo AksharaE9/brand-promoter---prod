@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import CompanyDropdownInput from './CompanyDropdownInput';
 import { validateUploadFile } from '../lib/fileValidation';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
@@ -241,7 +242,7 @@ export default function CreateCandidateModal({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
       <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden relative z-10 animate-in zoom-in-95 duration-200">
@@ -502,6 +503,7 @@ export default function CreateCandidateModal({
           </form>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

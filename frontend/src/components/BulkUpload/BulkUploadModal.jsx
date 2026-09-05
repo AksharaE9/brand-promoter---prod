@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../services/api';
 import { useBulkUploadJob } from '../../features/candidates/bulk-upload/useBulkUploadJob';
 import BulkUploadProgress from '../../features/candidates/bulk-upload/BulkUploadProgress';
@@ -110,8 +111,8 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
 
   const isJobActiveOrDone = jobId && (jobState.state === 'active' || jobState.state === 'completed' || jobState.state === 'failed');
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm modal-overlay-fade" onClick={onClose} />
 
       <div className="relative bg-white rounded-2xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] modal-scale-up border border-slate-100 overflow-hidden">
@@ -201,7 +202,8 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
