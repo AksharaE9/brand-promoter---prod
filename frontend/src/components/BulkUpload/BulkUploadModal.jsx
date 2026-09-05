@@ -6,11 +6,13 @@ import BulkUploadProgress from '../../features/candidates/bulk-upload/BulkUpload
 import { validateUploadFile } from '../../lib/fileValidation';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 
-const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) => {
+const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null, isDriveContext = false }) => {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
   const isOnline = useOnlineStatus();
+
+  const isDrive = Boolean(driveId || isDriveContext);
 
   const { jobId, jobState, startJob, resetJob } = useBulkUploadJob();
 
@@ -55,10 +57,17 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
     if (driveId) {
       formData.append('driveId', driveId);
     }
+    if (isDrive) {
+      formData.append('context', 'drive');
+    }
 
     try {
       // POST returns 202 Accepted in under 1 sec
-      const uploadUrl = driveId ? `/candidates/bulk-upload?driveId=${encodeURIComponent(driveId)}` : '/candidates/bulk-upload';
+      const uploadUrl = driveId
+        ? `/candidates/bulk-upload?driveId=${encodeURIComponent(driveId)}`
+        : isDrive
+          ? '/candidates/bulk-upload?context=drive'
+          : '/candidates/bulk-upload';
       const { data } = await api.post(uploadUrl, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -82,8 +91,10 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
     try {
       const templateEndpoint = driveId
         ? `/candidates/bulk-upload/template/download?driveId=${encodeURIComponent(driveId)}`
-        : '/candidates/bulk-upload/template/download';
-      const filename = driveId
+        : isDrive
+          ? '/candidates/bulk-upload/template/download?context=drive'
+          : '/candidates/bulk-upload/template/download';
+      const filename = isDrive
         ? 'college_drive_bulk_upload_template.csv'
         : 'candidate_bulk_upload_template.csv';
 

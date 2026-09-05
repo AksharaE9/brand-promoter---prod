@@ -18,7 +18,7 @@ const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
  * Validates candidate row using shared candidateRowValidator.
  */
 async function validateCandidateRowWrapper(rawRow, rowNumber, context = {}) {
-  const isDriveContext = Boolean(context.driveId);
+  const isDriveContext = Boolean(context.driveId || context.isDriveContext);
   const result = validateCandidateRow(rawRow, rowNumber, { isDriveContext });
   if (!result.valid) {
     return {

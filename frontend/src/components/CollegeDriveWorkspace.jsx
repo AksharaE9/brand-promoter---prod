@@ -641,6 +641,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
             onBanner('Bulk upload complete');
           }}
           driveId={selectedDriveId || null}
+          isDriveContext={true}
         />
       </React.Suspense>
 

@@ -166,6 +166,7 @@ router.post(
 
     const jobId = uuidv4();
     const driveId = req.query.driveId || req.body?.driveId || null;
+    const isDriveContext = Boolean(driveId || req.query.context === 'drive' || req.body?.context === 'drive' || req.query.isDriveContext === 'true');
 
     // Enqueue job for background processing
     await enqueueJob({
@@ -177,6 +178,7 @@ router.post(
       organizationId: orgId,
       sourceFilename: req.file.originalname,
       driveId,
+      isDriveContext,
     });
 
     // Immediate 202 Accepted response
