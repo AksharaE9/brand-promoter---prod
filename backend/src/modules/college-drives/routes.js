@@ -74,6 +74,51 @@ router.patch(
   }),
 );
 
+router.delete(
+  "/colleges/:id",
+  requireRoles("SUPER_ADMIN", "ADMIN", "RECRUITER"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const college = await prisma.college.findUnique({
+      where: { id }
+    });
+    if (!college) {
+      throw new ApiError(404, "College not found");
+    }
+
+    // Find all drives associated with this college
+    const drives = await prisma.collegeDrive.findMany({
+      where: { collegeId: id },
+      select: { id: true }
+    });
+    const driveIds = drives.map(d => d.id);
+
+    await prisma.$transaction(async (tx) => {
+      if (driveIds.length > 0) {
+        await tx.collegeDriveCandidate.deleteMany({
+          where: { driveId: { in: driveIds } }
+        });
+        await tx.collegeDrive.deleteMany({
+          where: { collegeId: id }
+        });
+      }
+      await tx.college.delete({
+        where: { id }
+      });
+    });
+
+    await logAudit({
+      userId: req.user.id,
+      action: "DELETE_COLLEGE",
+      entity: "College",
+      entityId: id,
+      details: { collegeName: college.name, deletedDrivesCount: driveIds.length }
+    });
+
+    res.json({ success: true, message: `College "${college.name}" deleted successfully` });
+  }),
+);
+
 const { validateDriveDescription } = require("../../config/driveConstants");
 
 // --- DRIVES ---

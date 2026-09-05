@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { buildApiUrl, apiGet, apiPost } from '../lib/api';
+import { buildApiUrl, apiGet, apiPost, apiDelete } from '../lib/api';
+import { useAuthStore } from '../stores/authStore';
 import { useNavigate } from 'react-router-dom';
 import Reveal from './PageMotion';
 import { subscribeSSE } from '../lib/sse';
@@ -31,6 +32,9 @@ const emptyDriveForm = {
 
 function CollegeDriveWorkspace({ onBanner, onError }) {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuthStore();
+  const isAdmin = ['SUPER_ADMIN', 'ADMIN', 'RECRUITER'].includes(currentUser?.role);
+
   const [colleges, setColleges] = useState([]);
   const [drives, setDrives] = useState([]);
   const [driveCandidates, setDriveCandidates] = useState([]);
@@ -45,6 +49,9 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   const [showEditDriveModal, setShowEditDriveModal] = useState(false);
   const [showCandidateModal, setShowCandidateModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
+
+  const [collegeToDelete, setCollegeToDelete] = useState(null);
+  const [deletingCollege, setDeletingCollege] = useState(false);
 
   const [collegeForm, setCollegeForm] = useState(emptyCollegeForm);
   const [driveForm, setDriveForm] = useState(emptyDriveForm);
@@ -201,6 +208,33 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
     }
   };
 
+  const handleDeleteCollege = async () => {
+    if (!collegeToDelete) return;
+    try {
+      setDeletingCollege(true);
+      await apiDelete(`/college-drives/colleges/${collegeToDelete.id}`);
+      onBanner(`College "${collegeToDelete.name}" deleted successfully`);
+      const updatedColleges = colleges.filter(c => c.id !== collegeToDelete.id);
+      setColleges(updatedColleges);
+      if (selectedCollegeId === collegeToDelete.id) {
+        const nextCollege = updatedColleges[0];
+        setSelectedCollegeId(nextCollege ? nextCollege.id : '');
+        if (nextCollege) {
+          loadDrives(nextCollege.id);
+        } else {
+          setDrives([]);
+          setSelectedDriveId('');
+          setDriveCandidates([]);
+        }
+      }
+      setCollegeToDelete(null);
+    } catch (err) {
+      onError(err.message || 'Failed to delete college');
+    } finally {
+      setDeletingCollege(false);
+    }
+  };
+
   const handleAddDrive = async (e) => {
     e.preventDefault();
     const validation = validateDriveDescription(driveForm.description);
@@ -338,23 +372,42 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
             </h3>
             <div className="grid grid-cols-1 gap-2">
               {colleges.map(college => (
-                <button
+                <div
                   key={college.id}
-                  onClick={() => handleSelectCollege(college.id)}
-                  className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedCollegeId === college.id ? 'bg-blue-50 border-blue-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
+                  className={`group relative w-full rounded-2xl border transition-all ${selectedCollegeId === college.id ? 'bg-blue-50/70 border-blue-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
                 >
-                  <div className="font-bold text-slate-900">{college.name}</div>
-                  <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                    <span className="material-symbols-outlined text-[14px]">location_on</span>
-                    {college.location || 'No location'}
-                  </div>
-                  {college.course && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-400 uppercase">{college.course}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-400 uppercase">{college.year}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCollege(college.id)}
+                    className="w-full p-4 text-left pr-10"
+                  >
+                    <div className="font-bold text-slate-900 leading-snug">{college.name}</div>
+                    <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                      <span className="material-symbols-outlined text-[14px]">location_on</span>
+                      {college.location || 'No location'}
                     </div>
+                    {(college.course || college.year) && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {college.course && <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-500 uppercase">{college.course}</span>}
+                        {college.year && <span className="px-2 py-0.5 rounded-full bg-white border border-slate-100 text-[10px] font-bold text-slate-500 uppercase">{college.year}</span>}
+                      </div>
+                    )}
+                  </button>
+
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCollegeToDelete(college);
+                      }}
+                      className="absolute top-3.5 right-3.5 w-7 h-7 rounded-lg bg-white/90 border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 shadow-xs"
+                      title={`Delete "${college.name}"`}
+                    >
+                      <span className="material-symbols-outlined text-sm">delete</span>
+                    </button>
                   )}
-                </button>
+                </div>
               ))}
               {colleges.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">No colleges added yet.</div>}
             </div>
@@ -795,6 +848,55 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                   {saving ? 'Saving...' : 'Save Changes'}
                 </button>
               </form>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* DELETE COLLEGE CONFIRMATION MODAL */}
+      {collegeToDelete && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm modal-overlay-fade" onClick={() => !deletingCollege && setCollegeToDelete(null)} />
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl relative z-10 modal-scale-up overflow-hidden">
+            <div className="p-8">
+              <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-2xl">delete_forever</span>
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Delete College Entry?</h2>
+              <p className="text-sm text-slate-600 leading-relaxed mb-6">
+                Are you sure you want to delete <strong className="text-slate-900">"{collegeToDelete.name}"</strong>?
+                This will permanently remove this college and any hiring drives created under it.
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  className="flex-1 h-12 rounded-2xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 transition-all text-sm"
+                  onClick={() => setCollegeToDelete(null)}
+                  disabled={deletingCollege}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 h-12 rounded-2xl bg-red-600 text-white font-bold hover:bg-red-700 transition-all text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-red-200 disabled:opacity-50"
+                  onClick={handleDeleteCollege}
+                  disabled={deletingCollege}
+                >
+                  {deletingCollege ? (
+                    <>
+                      <span className="material-symbols-outlined text-base animate-spin">sync</span>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">delete</span>
+                      Delete College
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>,
