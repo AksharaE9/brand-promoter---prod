@@ -121,6 +121,14 @@ router.post(
     const { title, collegeId, dateFrom, dateTo, status, notes, description } = req.body;
     if (!title || !collegeId || !dateFrom) throw new ApiError(400, "Missing required drive fields");
 
+    // Verify college exists
+    const college = await prisma.college.findUnique({
+      where: { id: collegeId }
+    });
+    if (!college) {
+      throw new ApiError(404, "Selected college does not exist");
+    }
+
     // Server-side validation of 200-word limit
     if (description) {
       const descValidation = validateDriveDescription(description);
@@ -129,12 +137,24 @@ router.post(
       }
     }
 
+    let finalDateTo = dateTo || null;
+    const finalStatus = status || "PLANNED";
+
+    // Enforce consistency: COMPLETED drive cannot have open-ended/null end date
+    if (finalStatus === "COMPLETED" && !finalDateTo) {
+      finalDateTo = dateFrom;
+    }
+
+    if (finalDateTo && new Date(finalDateTo) < new Date(dateFrom)) {
+      throw new ApiError(400, "End date cannot be before start date");
+    }
+
     const driveData = {
-      title,
+      title: String(title).trim(),
       collegeId,
       dateFrom,
-      dateTo: dateTo || null,
-      status: status || "PLANNED",
+      dateTo: finalDateTo,
+      status: finalStatus,
       description: description ? String(description).trim() : null,
       notes: notes || null,
       ownerId: req.user.id,
@@ -152,7 +172,7 @@ router.post(
     const sse = require("../../utils/sse");
     sse.broadcastToOrg(orgId, 'DRIVE_CREATED', {
       driveId: drive.id,
-      collegeName: driveData.title,
+      collegeName: college.name,
       driveDate: driveData.dateFrom,
       city: driveData.notes || "",
       createdBy: req.user.id,
@@ -181,6 +201,20 @@ router.patch(
     if (dateTo !== undefined) updateData.dateTo = dateTo || null;
     if (status !== undefined) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes || null;
+
+    const effDateFrom = updateData.dateFrom !== undefined ? updateData.dateFrom : existing.dateFrom;
+    let effDateTo = updateData.dateTo !== undefined ? updateData.dateTo : existing.dateTo;
+    const effStatus = updateData.status !== undefined ? updateData.status : existing.status;
+
+    // Enforce consistency: COMPLETED drive cannot have open-ended/null end date
+    if (effStatus === "COMPLETED" && !effDateTo) {
+      effDateTo = effDateFrom || new Date().toISOString().split('T')[0];
+      updateData.dateTo = effDateTo;
+    }
+
+    if (effDateTo && effDateFrom && new Date(effDateTo) < new Date(effDateFrom)) {
+      throw new ApiError(400, "End date cannot be before start date");
+    }
 
     if (description !== undefined) {
       if (description) {

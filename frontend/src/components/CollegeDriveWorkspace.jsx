@@ -57,13 +57,27 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const [drivesLoading, setDrivesLoading] = useState(false);
+  const activeCollegeIdRef = React.useRef(selectedCollegeId);
+
   const selectedCollege = useMemo(() => colleges.find(c => c.id === selectedCollegeId), [colleges, selectedCollegeId]);
   const selectedDrive = useMemo(() => drives.find(d => d.id === selectedDriveId), [drives, selectedDriveId]);
 
+  const similarCollege = useMemo(() => {
+    if (!collegeForm.name || collegeForm.name.trim().length < 2) return null;
+    const norm = collegeForm.name.toLowerCase().replace(/college|institute|university|[^\w\s]/g, '').trim();
+    if (!norm) return null;
+    return colleges.find(c => {
+      const cNorm = c.name.toLowerCase().replace(/college|institute|university|[^\w\s]/g, '').trim();
+      return cNorm && (cNorm === norm || cNorm.includes(norm) || norm.includes(cNorm));
+    });
+  }, [collegeForm.name, colleges]);
+
   const loadColleges = async () => {
     const res = await apiGet('/college-drives/colleges');
-    setColleges(res.data || []);
-    if (!selectedCollegeId && res.data?.length > 0) setSelectedCollegeId(res.data[0].id);
+    const cols = res.data || [];
+    setColleges(cols);
+    if (!selectedCollegeId && cols.length > 0) setSelectedCollegeId(cols[0].id);
   };
 
   const loadUsers = async () => {
@@ -87,17 +101,29 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
   };
 
   const loadDrives = async (collegeId) => {
+    activeCollegeIdRef.current = collegeId;
     if (!collegeId) {
       setDrives([]);
       setSelectedDriveId('');
+      setDriveCandidates([]);
       return;
     }
-    const res = await apiGet(`/college-drives/drives?collegeId=${collegeId}`);
-    setDrives(res.data || []);
-    if (res.data?.length > 0 && !res.data.some(d => d.id === selectedDriveId)) {
-      setSelectedDriveId(res.data[0].id);
-    } else if (res.data?.length === 0) {
-      setSelectedDriveId('');
+    setDrivesLoading(true);
+    try {
+      const res = await apiGet(`/college-drives/drives?collegeId=${collegeId}`);
+      if (activeCollegeIdRef.current !== collegeId) return; // Discard outdated response
+      const newDrives = res.data || [];
+      setDrives(newDrives);
+      if (newDrives.length > 0) {
+        setSelectedDriveId(prev => (newDrives.some(d => d.id === prev) ? prev : newDrives[0].id));
+      } else {
+        setSelectedDriveId('');
+        setDriveCandidates([]);
+      }
+    } finally {
+      if (activeCollegeIdRef.current === collegeId) {
+        setDrivesLoading(false);
+      }
     }
   };
 
@@ -126,6 +152,15 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
     };
     run();
   }, []);
+
+  const handleSelectCollege = (collegeId) => {
+    if (collegeId === selectedCollegeId) return;
+    activeCollegeIdRef.current = collegeId;
+    setSelectedCollegeId(collegeId);
+    setDrives([]);
+    setSelectedDriveId('');
+    setDriveCandidates([]);
+  };
 
   useEffect(() => {
     loadDrives(selectedCollegeId).catch(err => onError(err.message));
@@ -304,7 +339,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
               {colleges.map(college => (
                 <button
                   key={college.id}
-                  onClick={() => setSelectedCollegeId(college.id)}
+                  onClick={() => handleSelectCollege(college.id)}
                   className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedCollegeId === college.id ? 'bg-blue-50 border-blue-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
                 >
                   <div className="font-bold text-slate-900">{college.name}</div>
@@ -326,45 +361,59 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
 
           {selectedCollegeId && (
             <Reveal className="os-card p-6">
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-lg">timeline</span>
-                Available Drives
-              </h3>
-              <div className="space-y-2">
-                {drives.map(drive => (
-                  <button
-                    key={drive.id}
-                    onClick={() => setSelectedDriveId(drive.id)}
-                    className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedDriveId === drive.id ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold text-slate-900">{drive.title}</div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${drive.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{drive.status}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">
-                      {new Date(drive.dateFrom).toLocaleDateString()} — {drive.dateTo ? new Date(drive.dateTo).toLocaleDateString() : 'Ongoing'}
-                    </div>
-                    {drive.description && (
-                      <div className="text-xs text-slate-600 mt-2 line-clamp-2 break-words leading-relaxed font-normal">
-                        {drive.description.length > 100 ? `${drive.description.slice(0, 100).trim()}...` : drive.description}
-                      </div>
-                    )}
-                  </button>
-                ))}
-                {drives.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">No drives for this college.</div>}
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <span className="material-symbols-outlined text-lg">timeline</span>
+                  Available Drives
+                </h3>
+                <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{drives.length}</span>
               </div>
+              {drivesLoading ? (
+                <div className="p-8 text-center text-slate-400 text-xs animate-pulse">Loading drives...</div>
+              ) : (
+                <div className="space-y-2">
+                  {drives.map(drive => (
+                    <button
+                      key={drive.id}
+                      onClick={() => setSelectedDriveId(drive.id)}
+                      className={`w-full p-4 rounded-2xl border text-left transition-all ${selectedDriveId === drive.id ? 'bg-emerald-50 border-emerald-200 shadow-sm' : 'border-slate-100 hover:border-slate-300'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="font-bold text-slate-900">{drive.title}</div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${drive.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{drive.status}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">
+                        {new Date(drive.dateFrom).toLocaleDateString()} — {drive.dateTo ? new Date(drive.dateTo).toLocaleDateString() : 'Ongoing'}
+                      </div>
+                      {drive.description && (
+                        <div className="text-xs text-slate-600 mt-2 line-clamp-2 break-words leading-relaxed font-normal">
+                          {drive.description.length > 100 ? `${drive.description.slice(0, 100).trim()}...` : drive.description}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                  {drives.length === 0 && (
+                    <div className="p-8 text-center text-slate-400 text-sm italic">
+                      No drives for {selectedCollege?.name || 'this college'}.
+                    </div>
+                  )}
+                </div>
+              )}
             </Reveal>
           )}
         </div>
 
         {/* DRIVE DETAILS & STUDENTS */}
         <div className="col-span-12 lg:col-span-8">
-          {selectedDriveId ? (
+          {selectedDriveId && selectedDrive ? (
             <Reveal className="os-card p-6 min-h-[600px]">
               <div className="mb-8 pb-6 border-b border-slate-100">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-widest mb-1">{selectedCollege?.name}</div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#1f52cc] uppercase tracking-wider mb-1">
+                      <span className="material-symbols-outlined text-sm">apartment</span>
+                      <span>{selectedCollege?.name}</span>
+                    </div>
                     <div className="flex items-center gap-3">
                       <h2 className="text-2xl font-bold text-slate-900">{selectedDrive?.title}</h2>
                       <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${selectedDrive?.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -450,18 +499,21 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                           </select>
                         </td>
                         <td className="py-4 px-2 text-right">
-                          <button 
-                            className="w-8 h-8 rounded-full hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center"
-                            onClick={() => navigate(`/candidate/${cand.candidateId}`)}
+                          <button
+                            onClick={() => navigate(`/candidates?search=${cand.email}`)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all"
+                            title="View in Candidate Matrix"
                           >
-                            <span className="material-symbols-outlined text-lg">visibility</span>
+                            <span className="material-symbols-outlined text-sm">open_in_new</span>
                           </button>
                         </td>
                       </tr>
                     ))}
                     {driveCandidates.length === 0 && (
                       <tr>
-                        <td colSpan="5" className="py-20 text-center text-slate-400 italic text-sm">No students added to this drive yet.</td>
+                        <td colSpan={5} className="py-12 text-center text-slate-400 text-xs italic">
+                          No students added to this drive yet. Click "Add Candidate" or "Bulk Upload" to enroll students.
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -469,12 +521,25 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
               </div>
             </Reveal>
           ) : (
-            <div className="os-card p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-              <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-200 mb-6">
-                <span className="material-symbols-outlined text-4xl">drive_file_rename_outline</span>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Drive Workspace</h3>
-              <p className="text-slate-500 text-sm max-w-xs">Select a college and then a drive from the left to manage students and recruiters.</p>
+            <div className="os-card p-12 text-center text-slate-400 min-h-[500px] flex flex-col items-center justify-center">
+              <span className="material-symbols-outlined text-5xl text-slate-300 mb-3">campaign</span>
+              <h3 className="font-bold text-slate-700 text-base mb-1">
+                {selectedCollege ? `No Drive Selected for ${selectedCollege.name}` : 'No College Selected'}
+              </h3>
+              <p className="text-xs text-slate-400 max-w-sm mb-5">
+                {selectedCollege
+                  ? (drives.length > 0 ? 'Select a drive from the list on the left to view details and enrolled students.' : 'Create a new hiring drive for this college to start tracking candidates.')
+                  : 'Select a college from the list to view its hiring drives.'}
+              </p>
+              {selectedCollegeId && (
+                <button 
+                  className="h-10 px-5 rounded-xl bg-[#1f52cc] text-white font-bold text-xs shadow-md hover:bg-[#1844b0] transition-all flex items-center gap-2"
+                  onClick={() => setShowDriveModal(true)}
+                >
+                  <span className="material-symbols-outlined text-base">add</span>
+                  Create Drive
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -516,6 +581,17 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
+
+              {similarCollege && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-800">
+                  <span className="material-symbols-outlined text-amber-600 text-base mt-0.5">warning</span>
+                  <div>
+                    <span className="font-bold">A similar college already exists: </span>
+                    <span>"{similarCollege.name}" ({similarCollege.location || 'No location'}). Please confirm if you wish to create a separate entry.</span>
+                  </div>
+                </div>
+              )}
+
               <form className="grid grid-cols-2 gap-4" onSubmit={handleAddCollege}>
                 <div className="col-span-2 space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">College Name</label>
@@ -553,8 +629,14 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowDriveModal(false)} />
           <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
             <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-slate-900">Create Hiring Drive</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Create Hiring Drive</h2>
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm text-[#1f52cc]">apartment</span>
+                    <span>For College: <strong className="text-slate-800">{selectedCollege?.name || 'Selected College'}</strong></span>
+                  </div>
+                </div>
                 <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowDriveModal(false)}>
                   <span className="material-symbols-outlined">close</span>
                 </button>
@@ -633,8 +715,14 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowEditDriveModal(false)} />
           <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
             <div className="p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-slate-900">Edit Hiring Drive</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Edit Hiring Drive</h2>
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm text-[#1f52cc]">apartment</span>
+                    <span>College: <strong className="text-slate-800">{selectedCollege?.name || 'Selected College'}</strong></span>
+                  </div>
+                </div>
                 <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowEditDriveModal(false)}>
                   <span className="material-symbols-outlined">close</span>
                 </button>

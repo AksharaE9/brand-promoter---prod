@@ -522,12 +522,6 @@ router.post(
     const data = req.body;
     if (!data.fullName) throw new ApiError(400, "fullName is required");
     if (!data.phone) throw new ApiError(400, "Phone number is required");
-    if (!data.resumeFileId && !data.resumeLinkOriginal && !data.resumeLinkDownload) {
-      throw new ApiError(
-        400,
-        "Resume is required. Use /api/candidates/with-resume-upload and attach a resume file."
-      );
-    }
 
     const orgId = req.user.organizationId || "defaultOrg";
 
@@ -656,11 +650,6 @@ router.post(
 
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!phone) throw new ApiError(400, "Phone number is required");
-    if (!req.file) {
-      throw new ApiError(400, "Resume is required. Upload a PDF or Word document to create the candidate.");
-    }
-
-    validateFile(req.file, 'candidate');
 
     const orgId = req.user.organizationId || "defaultOrg";
 
@@ -669,22 +658,26 @@ router.post(
     });
     if (existingPhone) throw new ApiError(409, "A candidate with this phone number already exists.");
 
-    // Store resume directly in DB — no Cloudinary, no local disk
-    const tempFileMeta = await prisma.fileMeta.create({
-      data: {
-        storageKey: 'db://pending',
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        sizeBytes: req.file.size,
-        fileData: req.file.buffer,
-        uploadedById: req.user.id,
-      }
-    });
-    await prisma.fileMeta.update({
-      where: { id: tempFileMeta.id },
-      data: { storageKey: makeStorageKey(tempFileMeta.id) }
-    });
-    const resumeFileId = tempFileMeta.id;
+    let resumeFileId = null;
+    if (req.file) {
+      validateFile(req.file, 'candidate');
+      // Store resume directly in DB — no Cloudinary, no local disk
+      const tempFileMeta = await prisma.fileMeta.create({
+        data: {
+          storageKey: 'db://pending',
+          originalName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          sizeBytes: req.file.size,
+          fileData: req.file.buffer,
+          uploadedById: req.user.id,
+        }
+      });
+      await prisma.fileMeta.update({
+        where: { id: tempFileMeta.id },
+        data: { storageKey: makeStorageKey(tempFileMeta.id) }
+      });
+      resumeFileId = tempFileMeta.id;
+    }
 
     const resolvedCompanyResume = (req.body.company || '').trim() || DEFAULT_COMPANY;
     const allowedCreateStatuses = new Set(["ACTIVE", "OFFER_SENT", "JOINED", "REJECTED"]);

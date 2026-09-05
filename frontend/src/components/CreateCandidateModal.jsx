@@ -95,13 +95,15 @@ export default function CreateCandidateModal({
 
   if (!isOpen) return null;
 
+  const isJoinedStatus = statusFilter === 'JOINED';
   const hasExistingResume = Boolean(selectedCandidate?.resumeFileId || selectedCandidate?.resumeLinkOriginal || selectedCandidate?.resumeLinkDownload);
+  const isResumeRequired = !isJoinedStatus && !hasExistingResume;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isAdding || creating || createSubmitInFlight.current) return;
 
-    if (!createForm.resume && !hasExistingResume) {
+    if (isResumeRequired && !createForm.resume) {
       setModalError('Resume is required. Upload a PDF or Word document.');
       return;
     }
@@ -420,7 +422,7 @@ export default function CreateCandidateModal({
 
             <div className="space-y-1">
               <label className="text-[10px] uppercase font-bold text-slate-500 ml-1">
-                Resume / Profile Document {!hasExistingResume && <span className="text-red-500">*</span>}
+                Resume / Profile Document {isResumeRequired ? <span className="text-red-500">*</span> : <span className="text-slate-400 font-normal">(Optional)</span>}
               </label>
               <div className="relative group">
                 <input
@@ -428,7 +430,7 @@ export default function CreateCandidateModal({
                   className="hidden"
                   id="create-modal-resume-upload"
                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  required={!hasExistingResume}
+                  required={isResumeRequired}
                   onChange={async e => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -469,11 +471,13 @@ export default function CreateCandidateModal({
                       ? createForm.resume.name
                       : hasExistingResume
                         ? 'Resume already uploaded (Click to replace with new document)'
-                        : 'Click to upload PDF or Word document (required)'}
+                        : isJoinedStatus
+                          ? 'Click to upload PDF or Word document (optional)'
+                          : 'Click to upload PDF or Word document (required)'}
                   </span>
                 </label>
               </div>
-              {!createForm.resume && !hasExistingResume && (
+              {isResumeRequired && !createForm.resume && (
                 <p className="text-[11px] text-slate-400 ml-1">A resume is required before HR can create the candidate.</p>
               )}
             </div>
@@ -489,8 +493,8 @@ export default function CreateCandidateModal({
               <button
                 type="submit"
                 className="flex-1 h-12 rounded-2xl bg-[#1f52cc] text-white font-bold shadow-lg shadow-blue-200 hover:bg-[#1844b0] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isAdding || creating || (!createForm.resume && !hasExistingResume)}
-                title={!createForm.resume && !hasExistingResume ? 'Upload a resume to create the candidate' : undefined}
+                disabled={isAdding || creating || (isResumeRequired && !createForm.resume)}
+                title={isResumeRequired && !createForm.resume ? 'Upload a resume to create the candidate' : undefined}
               >
                 {isAdding || creating ? 'Processing...' : selectedCandidate ? 'Save & Join' : 'Create Candidate'}
               </button>
