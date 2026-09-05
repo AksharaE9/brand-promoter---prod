@@ -45,15 +45,31 @@ const upload = multer({
   },
 });
 
-const { CANDIDATE_IMPORT_SCHEMA } = require('../lib/candidateImportSchema');
+const { ALL_CANDIDATES_IMPORT_SCHEMA, COLLEGE_DRIVE_IMPORT_SCHEMA, CANDIDATE_IMPORT_SCHEMA } = require('../lib/candidateImportSchema');
 
 // ── GET /api/candidates/bulk-upload/template/download ──────────────────────
 router.get(
   '/template/download',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
-    const headers = CANDIDATE_IMPORT_SCHEMA.map(f => f.required ? `${f.label} *` : f.label);
-    const sampleRow = [
+    const isDriveContext = Boolean(req.query.driveId || req.query.context === 'drive');
+    const activeSchema = isDriveContext ? COLLEGE_DRIVE_IMPORT_SCHEMA : ALL_CANDIDATES_IMPORT_SCHEMA;
+    const filename = isDriveContext ? 'college_drive_bulk_upload_template.csv' : 'candidate_bulk_upload_template.csv';
+
+    const headers = activeSchema.map(f => f.required ? `${f.label} *` : f.label);
+    const sampleRow = isDriveContext ? [
+      'EXT-1001',
+      'Rahul Sharma',
+      'Graduate Trainee',
+      'rahul.sharma@example.com',
+      '+919876543210',
+      'https://drive.google.com/file/d/sample-resume/view',
+      'Bangalore University',
+      'Bangalore',
+      'B.Tech CSE',
+      'Campus Drive 2026',
+      'Akshara Enterprises',
+    ] : [
       'EXT-1001',
       'Jane Smith',
       'Senior Developer',
@@ -69,7 +85,7 @@ router.get(
     const csvContent = headers.join(',') + '\n' + sampleRow.map(v => `"${v}"`).join(',') + '\n';
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="candidate_bulk_upload_template.csv"');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvContent);
   })
 );

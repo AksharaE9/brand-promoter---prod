@@ -17,8 +17,9 @@ const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 /**
  * Validates candidate row using shared candidateRowValidator.
  */
-async function validateCandidateRowWrapper(rawRow, rowNumber) {
-  const result = validateCandidateRow(rawRow, rowNumber);
+async function validateCandidateRowWrapper(rawRow, rowNumber, context = {}) {
+  const isDriveContext = Boolean(context.driveId);
+  const result = validateCandidateRow(rawRow, rowNumber, { isDriveContext });
   if (!result.valid) {
     return {
       valid: false,
@@ -45,8 +46,8 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     normalizePhoneForDedup(candidateData.phone) ||
     normalizePhoneNumber(candidateData.phone) ||
     null;
-  let preferredRole = candidateData.role;
-  if (candidateData.role) {
+  let preferredRole = candidateData.role || null;
+  if (candidateData.role && String(candidateData.role).trim()) {
     if (!context.jobResolver) {
       const { JobResolutionSession } = require('../services/jobResolutionService');
       context.jobResolver = new JobResolutionSession(context.organizationId || 'defaultOrg', context.validCreatedById);
@@ -299,7 +300,7 @@ async function processCandidateUpload(jobData) {
           errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
         };
       }
-      return validateCandidateRowWrapper(rawRow, rowNumber);
+      return validateCandidateRowWrapper(rawRow, rowNumber, { driveId: pipelineContext?.driveId || driveId });
     },
     duplicateCheck: duplicateCheckCandidate,
     transformRow: transformCandidateRow,

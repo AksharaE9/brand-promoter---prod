@@ -532,15 +532,15 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                           <div className="font-bold text-slate-800">{cand.fullName}</div>
                         </td>
                         <td className="py-4 px-2">
-                          <div className="text-xs text-slate-600">{cand.email}</div>
-                          <div className="text-[10px] text-slate-400 font-medium">{cand.phone}</div>
+                          <div className="text-xs text-slate-600">{cand.email && cand.email !== 'N/A' ? cand.email : '—'}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{cand.phone || '—'}</div>
                         </td>
                         <td className="py-4 px-2">
                           <div className="text-xs text-slate-600">
-                            {cand.createdAt ? new Date(cand.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '---'}
+                            {cand.createdAt ? new Date(cand.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}
                           </div>
                           <div className="text-[9px] text-slate-400 uppercase font-bold">
-                            {cand.email?.includes('bulk') ? 'Bulk Sync' : 'Direct'}
+                            {cand.email && String(cand.email).includes('bulk') ? 'Bulk Sync' : 'Direct'}
                           </div>
                         </td>
                         <td className="py-4 px-2">
@@ -554,7 +554,10 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                         </td>
                         <td className="py-4 px-2 text-right">
                           <button
-                            onClick={() => navigate(`/candidates?search=${cand.email}`)}
+                            onClick={() => {
+                              const searchTerm = cand.phone || (cand.email && cand.email !== 'N/A' ? cand.email : '') || cand.fullName;
+                              navigate(`/candidates?search=${encodeURIComponent(searchTerm)}`);
+                            }}
                             className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-200 transition-all"
                             title="View in Candidate Matrix"
                           >

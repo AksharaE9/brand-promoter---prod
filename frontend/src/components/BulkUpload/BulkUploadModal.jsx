@@ -80,13 +80,20 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null }) 
 
   const handleDownloadTemplate = async () => {
     try {
-      const response = await api.get('/candidates/bulk-upload/template/download', {
+      const templateEndpoint = driveId
+        ? `/candidates/bulk-upload/template/download?driveId=${encodeURIComponent(driveId)}`
+        : '/candidates/bulk-upload/template/download';
+      const filename = driveId
+        ? 'college_drive_bulk_upload_template.csv'
+        : 'candidate_bulk_upload_template.csv';
+
+      const response = await api.get(templateEndpoint, {
         responseType: 'blob',
       });
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'candidate_bulk_upload_template.csv';
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

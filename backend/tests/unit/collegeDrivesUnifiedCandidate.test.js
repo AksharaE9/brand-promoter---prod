@@ -1,15 +1,15 @@
 'use strict';
 
-const { CANDIDATE_IMPORT_SCHEMA } = require('../../src/lib/candidateImportSchema');
+const { ALL_CANDIDATES_IMPORT_SCHEMA, COLLEGE_DRIVE_IMPORT_SCHEMA, CANDIDATE_IMPORT_SCHEMA } = require('../../src/lib/candidateImportSchema');
 const { validateCandidateRow } = require('../../src/lib/candidateRowValidator');
 const { normalizeResumeLink } = require('../../src/lib/resumeLinkNormalizer');
 const { normalizePhoneNumber, normalizePhoneForDedup } = require('../../src/lib/phoneNormalization');
 
-describe('College Drives Unified Candidate Intake Units', () => {
-  describe('Image 2 Bulk Upload Template Schema & Columns', () => {
-    test('matches exact 11 columns in order: candidate id, Name, Role, e-mail, phone number, resume link, college, location, course, source, company', () => {
-      const keys = CANDIDATE_IMPORT_SCHEMA.map(f => f.key);
-      const labels = CANDIDATE_IMPORT_SCHEMA.map(f => f.label);
+describe('College Drives & All Candidates Bulk Upload Schemas', () => {
+  describe('Schema Columns and Required Fields', () => {
+    test('matches exact 11 columns in order', () => {
+      const keys = ALL_CANDIDATES_IMPORT_SCHEMA.map(f => f.key);
+      const labels = ALL_CANDIDATES_IMPORT_SCHEMA.map(f => f.label);
 
       expect(keys).toEqual([
         'candidateId',
@@ -40,15 +40,32 @@ describe('College Drives Unified Candidate Intake Units', () => {
       ]);
     });
 
-    test('enforces required columns strictly on Name, Role, e-mail, phone number, resume link', () => {
-      const requiredMap = Object.fromEntries(CANDIDATE_IMPORT_SCHEMA.map(f => [f.key, f.required]));
+    test('All Candidates schema enforces Name, Role, e-mail, phone number, resume link', () => {
+      const requiredMap = Object.fromEntries(ALL_CANDIDATES_IMPORT_SCHEMA.map(f => [f.key, f.required]));
       expect(requiredMap.name).toBe(true);
       expect(requiredMap.role).toBe(true);
       expect(requiredMap.email).toBe(true);
       expect(requiredMap.phone).toBe(true);
       expect(requiredMap.resumeLink).toBe(true);
 
-      // Optional college drive context fields
+      expect(requiredMap.candidateId).toBe(false);
+      expect(requiredMap.college).toBe(false);
+      expect(requiredMap.location).toBe(false);
+      expect(requiredMap.course).toBe(false);
+      expect(requiredMap.source).toBe(false);
+      expect(requiredMap.company).toBe(false);
+    });
+
+    test('College Drive schema relaxes Role, e-mail, and resume link (only Name and phone number required)', () => {
+      const requiredMap = Object.fromEntries(COLLEGE_DRIVE_IMPORT_SCHEMA.map(f => [f.key, f.required]));
+      expect(requiredMap.name).toBe(true);
+      expect(requiredMap.phone).toBe(true);
+
+      // Relaxed fields for College Drives
+      expect(requiredMap.role).toBe(false);
+      expect(requiredMap.email).toBe(false);
+      expect(requiredMap.resumeLink).toBe(false);
+
       expect(requiredMap.candidateId).toBe(false);
       expect(requiredMap.college).toBe(false);
       expect(requiredMap.location).toBe(false);
@@ -58,52 +75,74 @@ describe('College Drives Unified Candidate Intake Units', () => {
     });
   });
 
-  describe('College Drive Candidate Validation and Resume Normalization', () => {
-    test('validates complete college drive candidate row successfully', () => {
-      const rawRow = {
-        candidateId: 'EXT-1001',
+  describe('Row Validation: All Candidates vs College Drive Contexts', () => {
+    test('All Candidates path rejects row if resume link, role, or email is missing', () => {
+      const rowNoResume = {
         name: 'Jane Smith',
-        role: 'Graduate Trainee',
-        email: 'jane.smith@mit.edu',
+        role: 'Developer',
+        email: 'jane@example.com',
+        phone: '9876543210',
+      };
+      const res1 = validateCandidateRow(rowNoResume, 2);
+      expect(res1.valid).toBe(false);
+      expect(res1.failureReason).toContain('missing required field "resume link"');
+
+      const rowNoRole = {
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        phone: '9876543210',
+        resumeLink: 'https://drive.google.com/file/d/123/view',
+      };
+      const res2 = validateCandidateRow(rowNoRole, 3);
+      expect(res2.valid).toBe(false);
+      expect(res2.failureReason).toContain('missing required field "role"');
+    });
+
+    test('College Drive context accepts candidate with ONLY Name and Phone (Role, Email, Resume omitted)', () => {
+      const driveRow = {
+        name: 'Arjun Kumar',
         phone: '+91 98765 43210',
-        resumeLink: 'https://drive.google.com/file/d/1B2xYZ-sample-link/view?usp=sharing',
-        college: 'MIT Campus',
-        location: 'Bangalore',
-        course: 'B.Tech CSE',
-        source: 'Campus Placement 2026',
-        company: 'Akshara Enterprises',
+        college: 'Bangalore University',
       };
 
-      const result = validateCandidateRow(rawRow, 2);
+      const result = validateCandidateRow(driveRow, 2, { isDriveContext: true });
       expect(result.valid).toBe(true);
-      expect(result.data.candidateId).toBe('EXT-1001');
-      expect(result.data.name).toBe('Jane Smith');
-      expect(result.data.role).toBe('Graduate Trainee');
-      expect(result.data.college).toBe('MIT Campus');
-      expect(result.data.course).toBe('B.Tech CSE');
-      expect(result.data.location).toBe('Bangalore');
-      expect(result.data.company).toBe('Akshara Enterprises');
-      expect(result.data.source).toBe('Campus Placement 2026');
+      expect(result.data.name).toBe('Arjun Kumar');
+      expect(result.data.phone).toBe('9876543210');
+      expect(result.data.role).toBeNull();
+      expect(result.data.email).toBeNull();
+      expect(result.data.resumeLinkRaw).toBeNull();
+      expect(result.data.college).toBe('Bangalore University');
+    });
 
-      // Normalize resume link
+    test('College Drive context rejects row missing both Name and Phone or missing Phone', () => {
+      const noPhoneRow = {
+        name: 'Arjun Kumar',
+        college: 'Bangalore University',
+      };
+      const res1 = validateCandidateRow(noPhoneRow, 2, { isDriveContext: true });
+      expect(res1.valid).toBe(false);
+      expect(res1.failureReason).toContain('missing required field "phone number"');
+
+      const emptyRow = {};
+      const res2 = validateCandidateRow(emptyRow, 3, { isDriveContext: true });
+      expect(res2.valid).toBe(false);
+      expect(res2.failureReason).toContain('missing required field "name"');
+      expect(res2.failureReason).toContain('missing required field "phone number"');
+    });
+
+    test('College Drive context normalizes optional resume link when provided', () => {
+      const driveRowWithResume = {
+        name: 'Priya Verma',
+        phone: '9876543211',
+        resumeLink: 'https://drive.google.com/file/d/1B2xYZ-sample-link/view?usp=sharing',
+      };
+
+      const result = validateCandidateRow(driveRowWithResume, 2, { isDriveContext: true });
+      expect(result.valid).toBe(true);
       const normResume = normalizeResumeLink(result.data.resumeLinkRaw);
       expect(normResume).not.toBeNull();
       expect(normResume.provider).toBe('google_drive');
-      expect(normResume.downloadUrl).toContain('uc?export=download&id=1B2xYZ-sample-link');
-    });
-
-    test('rejects candidate row if resume link is missing', () => {
-      const rawRow = {
-        name: 'Jane Smith',
-        role: 'Graduate Trainee',
-        email: 'jane.smith@mit.edu',
-        phone: '9876543210',
-        college: 'MIT Campus',
-      };
-
-      const result = validateCandidateRow(rawRow, 2);
-      expect(result.valid).toBe(false);
-      expect(result.failureReason).toContain('missing required field "resume link"');
     });
   });
 
