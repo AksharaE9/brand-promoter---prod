@@ -296,7 +296,37 @@ router.get(
       where: { driveId: req.params.id },
       orderBy: { createdAt: "desc" }
     });
-    res.json({ success: true, data: candidates });
+
+    const candidateIds = candidates.map(c => c.candidateId).filter(Boolean);
+    const candidateMeta = await prisma.candidate.findMany({
+      where: { id: { in: candidateIds } },
+      select: {
+        id: true,
+        resumeFileId: true,
+        resumeLinkOriginal: true,
+        resumeLinkDownload: true,
+        preferredRole: true,
+        course: true,
+        location: true,
+        resumeFile: { select: { id: true, originalName: true } }
+      }
+    });
+    const metaMap = new Map(candidateMeta.map(m => [m.id, m]));
+
+    const enriched = candidates.map(c => {
+      const meta = metaMap.get(c.candidateId);
+      const hasResume = Boolean(meta?.resumeFileId || meta?.resumeLinkOriginal || meta?.resumeLinkDownload);
+      return {
+        ...c,
+        preferredRole: meta?.preferredRole || null,
+        course: meta?.course || null,
+        location: meta?.location || null,
+        hasResume,
+        resumeLink: meta?.resumeLinkOriginal || meta?.resumeLinkDownload || null,
+      };
+    });
+
+    res.json({ success: true, data: enriched });
   }),
 );
 

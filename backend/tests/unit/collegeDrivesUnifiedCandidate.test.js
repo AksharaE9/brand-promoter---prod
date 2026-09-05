@@ -56,14 +56,14 @@ describe('College Drives & All Candidates Bulk Upload Schemas', () => {
       expect(requiredMap.company).toBe(false);
     });
 
-    test('College Drive schema relaxes Role, e-mail, and resume link (only Name and phone number required)', () => {
+    test('College Drive schema relaxes resume link only (Name, Role, e-mail, phone number required)', () => {
       const requiredMap = Object.fromEntries(COLLEGE_DRIVE_IMPORT_SCHEMA.map(f => [f.key, f.required]));
       expect(requiredMap.name).toBe(true);
+      expect(requiredMap.role).toBe(true);
+      expect(requiredMap.email).toBe(true);
       expect(requiredMap.phone).toBe(true);
 
-      // Relaxed fields for College Drives
-      expect(requiredMap.role).toBe(false);
-      expect(requiredMap.email).toBe(false);
+      // Only resume link is relaxed to false
       expect(requiredMap.resumeLink).toBe(false);
 
       expect(requiredMap.candidateId).toBe(false);
@@ -98,9 +98,11 @@ describe('College Drives & All Candidates Bulk Upload Schemas', () => {
       expect(res2.failureReason).toContain('missing required field "role"');
     });
 
-    test('College Drive context accepts candidate with ONLY Name and Phone (Role, Email, Resume omitted)', () => {
+    test('College Drive context accepts candidate with Name, Role, Email, Phone when resume link is BLANK', () => {
       const driveRow = {
         name: 'Arjun Kumar',
+        role: 'Trainee',
+        email: 'arjun@college.edu',
         phone: '+91 98765 43210',
         college: 'Bangalore University',
       };
@@ -108,32 +110,51 @@ describe('College Drives & All Candidates Bulk Upload Schemas', () => {
       const result = validateCandidateRow(driveRow, 2, { isDriveContext: true });
       expect(result.valid).toBe(true);
       expect(result.data.name).toBe('Arjun Kumar');
+      expect(result.data.role).toBe('Trainee');
+      expect(result.data.email).toBe('arjun@college.edu');
       expect(result.data.phone).toBe('9876543210');
-      expect(result.data.role).toBeNull();
-      expect(result.data.email).toBeNull();
       expect(result.data.resumeLinkRaw).toBeNull();
       expect(result.data.college).toBe('Bangalore University');
     });
 
-    test('College Drive context rejects row missing both Name and Phone or missing Phone', () => {
+    test('College Drive context rejects row with malformed resume URL', () => {
+      const malformedRow = {
+        name: 'Arjun Kumar',
+        role: 'Trainee',
+        email: 'arjun@college.edu',
+        phone: '+91 98765 43210',
+        resumeLink: 'not-a-valid-url',
+      };
+      const res = validateCandidateRow(malformedRow, 2, { isDriveContext: true });
+      expect(res.valid).toBe(false);
+      expect(res.failureReason).toContain('is not a valid URL');
+    });
+
+    test('College Drive context rejects row missing still-required fields (e.g. phone or email)', () => {
       const noPhoneRow = {
         name: 'Arjun Kumar',
-        college: 'Bangalore University',
+        role: 'Trainee',
+        email: 'arjun@college.edu',
       };
       const res1 = validateCandidateRow(noPhoneRow, 2, { isDriveContext: true });
       expect(res1.valid).toBe(false);
       expect(res1.failureReason).toContain('missing required field "phone number"');
 
-      const emptyRow = {};
-      const res2 = validateCandidateRow(emptyRow, 3, { isDriveContext: true });
+      const noEmailRow = {
+        name: 'Arjun Kumar',
+        role: 'Trainee',
+        phone: '9876543210',
+      };
+      const res2 = validateCandidateRow(noEmailRow, 3, { isDriveContext: true });
       expect(res2.valid).toBe(false);
-      expect(res2.failureReason).toContain('missing required field "name"');
-      expect(res2.failureReason).toContain('missing required field "phone number"');
+      expect(res2.failureReason).toContain('missing required field "e-mail"');
     });
 
-    test('College Drive context normalizes optional resume link when provided', () => {
+    test('College Drive context normalizes optional resume link when valid URL is provided', () => {
       const driveRowWithResume = {
         name: 'Priya Verma',
+        role: 'Associate',
+        email: 'priya@college.edu',
         phone: '9876543211',
         resumeLink: 'https://drive.google.com/file/d/1B2xYZ-sample-link/view?usp=sharing',
       };

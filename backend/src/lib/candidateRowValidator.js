@@ -39,24 +39,17 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
   }
 
   const role = String(rawRow.role ?? '').trim() || null;
-  if (!isDriveContext && !role) {
+  if (!role) {
     errors.push('missing required field "role"');
   }
 
   const emailRaw = String(rawRow.email ?? '').trim();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
   let email = emailRaw || null;
-  if (!isDriveContext) {
-    if (!emailRaw) {
-      errors.push('missing required field "e-mail"');
-    } else if (!isEmailValid) {
-      errors.push(`invalid required field "e-mail": "${emailRaw}" is not a valid email address`);
-    }
-  } else {
-    // In drive context, email is optional, but if present must be a valid email
-    if (emailRaw && !isEmailValid) {
-      errors.push(`invalid field "e-mail": "${emailRaw}" is not a valid email address`);
-    }
+  if (!emailRaw) {
+    errors.push('missing required field "e-mail"');
+  } else if (!isEmailValid) {
+    errors.push(`invalid required field "e-mail": "${emailRaw}" is not a valid email address`);
   }
 
   const phoneRaw = String(rawRow.phone ?? '').trim();
@@ -69,8 +62,31 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
   }
 
   const resumeLinkRaw = String(rawRow.resumeLink ?? '').trim() || null;
-  if (!isDriveContext && !resumeLinkRaw) {
-    errors.push('missing required field "resume link"');
+  if (!isDriveContext) {
+    if (!resumeLinkRaw) {
+      errors.push('missing required field "resume link"');
+    } else {
+      try {
+        const parsedUrl = new URL(resumeLinkRaw);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          errors.push(`invalid required field "resume link": "${resumeLinkRaw}" must be an HTTP or HTTPS URL`);
+        }
+      } catch (_) {
+        errors.push(`invalid required field "resume link": "${resumeLinkRaw}" is not a valid URL`);
+      }
+    }
+  } else {
+    // In drive context, resumeLink is optional, but if provided must be a valid URL
+    if (resumeLinkRaw) {
+      try {
+        const parsedUrl = new URL(resumeLinkRaw);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          errors.push(`invalid field "resume link": "${resumeLinkRaw}" must be an HTTP or HTTPS URL`);
+        }
+      } catch (_) {
+        errors.push(`invalid field "resume link": "${resumeLinkRaw}" is not a valid URL`);
+      }
+    }
   }
 
   const college = String(rawRow.college ?? '').trim() || null;

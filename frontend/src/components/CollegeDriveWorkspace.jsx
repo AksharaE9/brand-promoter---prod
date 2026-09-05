@@ -520,6 +520,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     <tr className="border-b border-slate-100">
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Student Name</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Contact Details</th>
+                      <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Resume Status</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Date Added</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2">Current Status</th>
                       <th className="pb-4 text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2 text-right">Actions</th>
@@ -530,10 +531,26 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                       <tr key={cand.id} className="group hover:bg-slate-50/50 transition-colors">
                         <td className="py-4 px-2">
                           <div className="font-bold text-slate-800">{cand.fullName}</div>
+                          {cand.preferredRole && (
+                            <div className="text-[10px] text-slate-400 font-medium">{cand.preferredRole}</div>
+                          )}
                         </td>
                         <td className="py-4 px-2">
                           <div className="text-xs text-slate-600">{cand.email && cand.email !== 'N/A' ? cand.email : '—'}</div>
                           <div className="text-[10px] text-slate-400 font-medium">{cand.phone || '—'}</div>
+                        </td>
+                        <td className="py-4 px-2">
+                          {cand.hasResume ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              <span className="material-symbols-outlined text-[12px]">description</span>
+                              Resume on File
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full" title="No resume uploaded yet">
+                              <span className="material-symbols-outlined text-[12px]">warning</span>
+                              No Resume
+                            </span>
+                          )}
                         </td>
                         <td className="py-4 px-2">
                           <div className="text-xs text-slate-600">
@@ -568,7 +585,7 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     ))}
                     {driveCandidates.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="py-12 text-center text-slate-400 text-xs italic">
+                        <td colSpan={6} className="py-12 text-center text-slate-400 text-xs italic">
                           No students added to this drive yet. Click "Add Candidate" or "Bulk Upload" to enroll students.
                         </td>
                       </tr>
