@@ -123,15 +123,23 @@ function appendFailedRow(jobId, rowNumber, reason, severity = 'error', errorType
  * Finalizes report file and returns public download URL or path.
  * Also schedules the report for deletion after REPORT_TTL_MS.
  * @param {string} jobId
+ * @param {string} [flowType='candidates']
  * @returns {string|null} Relative URL for download
  */
-function finalizeErrorReport(jobId) {
+function finalizeErrorReport(jobId, flowType = 'candidates') {
   const filePath = jobReports.get(jobId);
   if (!filePath || !fs.existsSync(filePath)) {
     return null;
   }
   // Schedule 24h purge so reports don't accumulate indefinitely on disk
   scheduleReportPurge(jobId);
+
+  const cleanFlow = String(flowType || '').toLowerCase();
+  if (cleanFlow.includes('feedback')) {
+    return `/api/interview-feedback/bulk-upload/${jobId}/report`;
+  } else if (cleanFlow.includes('interview')) {
+    return `/api/interviews/bulk-upload/${jobId}/report`;
+  }
   return `/api/candidates/bulk-upload/${jobId}/report`;
 }
 

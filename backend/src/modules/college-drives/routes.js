@@ -74,15 +74,25 @@ router.patch(
   }),
 );
 
+const { validateDriveDescription } = require("../../config/driveConstants");
+
 // --- DRIVES ---
 
 router.get(
   "/drives",
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
-    const { collegeId } = req.query;
+    const { collegeId, search } = req.query;
     const where = { isDeleted: false };
     if (collegeId) where.collegeId = collegeId;
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
+      where.OR = [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { notes: { contains: q, mode: "insensitive" } },
+      ];
+    }
 
     const drives = await prisma.collegeDrive.findMany({
       where,
@@ -92,12 +102,32 @@ router.get(
   }),
 );
 
+router.get(
+  "/drives/:id",
+  requireRoles(...CAN_ACCESS),
+  asyncHandler(async (req, res) => {
+    const drive = await prisma.collegeDrive.findFirst({
+      where: { id: req.params.id, isDeleted: false }
+    });
+    if (!drive) throw new ApiError(404, "Drive not found");
+    res.json({ success: true, data: drive });
+  }),
+);
+
 router.post(
   "/drives",
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
-    const { title, collegeId, dateFrom, dateTo, status, notes } = req.body;
+    const { title, collegeId, dateFrom, dateTo, status, notes, description } = req.body;
     if (!title || !collegeId || !dateFrom) throw new ApiError(400, "Missing required drive fields");
+
+    // Server-side validation of 200-word limit
+    if (description) {
+      const descValidation = validateDriveDescription(description);
+      if (!descValidation.valid) {
+        throw new ApiError(400, descValidation.error);
+      }
+    }
 
     const driveData = {
       title,
@@ -105,6 +135,7 @@ router.post(
       dateFrom,
       dateTo: dateTo || null,
       status: status || "PLANNED",
+      description: description ? String(description).trim() : null,
       notes: notes || null,
       ownerId: req.user.id,
       organizationId: req.user.organizationId || "defaultOrg"
@@ -129,6 +160,50 @@ router.post(
     });
 
     res.status(201).json({ success: true, data: drive });
+  }),
+);
+
+router.patch(
+  "/drives/:id",
+  requireRoles(...CAN_ACCESS),
+  asyncHandler(async (req, res) => {
+    const driveId = req.params.id;
+    const existing = await prisma.collegeDrive.findUnique({
+      where: { id: driveId }
+    });
+    if (!existing || existing.isDeleted) throw new ApiError(404, "Drive not found");
+
+    const { title, dateFrom, dateTo, status, notes, description } = req.body;
+    const updateData = {};
+
+    if (title !== undefined) updateData.title = String(title).trim();
+    if (dateFrom !== undefined) updateData.dateFrom = dateFrom;
+    if (dateTo !== undefined) updateData.dateTo = dateTo || null;
+    if (status !== undefined) updateData.status = status;
+    if (notes !== undefined) updateData.notes = notes || null;
+
+    if (description !== undefined) {
+      if (description) {
+        const descValidation = validateDriveDescription(description);
+        if (!descValidation.valid) {
+          throw new ApiError(400, descValidation.error);
+        }
+        updateData.description = String(description).trim();
+      } else {
+        updateData.description = null;
+      }
+    }
+
+    const updated = await prisma.collegeDrive.update({
+      where: { id: driveId },
+      data: updateData
+    });
+
+    const orgId = req.user.organizationId || "defaultOrg";
+    const inv = require("../../utils/cacheInvalidation");
+    await inv.drive(orgId, driveId);
+
+    res.json({ success: true, data: updated });
   }),
 );
 

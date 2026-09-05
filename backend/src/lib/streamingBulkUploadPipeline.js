@@ -138,10 +138,18 @@ async function runStreamingBulkUploadPipeline(options) {
     context = {},
   } = options;
 
+  const flowType = options.flowType || (
+    (options.validateRow?.name && options.validateRow.name.toLowerCase().includes('candidate')) ? 'candidates' :
+    (options.validateRow?.name && options.validateRow.name.toLowerCase().includes('feedback')) ? 'interview-feedback' :
+    (options.validateRow?.name && options.validateRow.name.toLowerCase().includes('interview')) ? 'interviews' :
+    (options.validateRow?.name && options.validateRow.name.toLowerCase().includes('lead')) ? 'lead_list' : 'candidates'
+  );
+
   initErrorReport(jobId);
 
   let processed = 0;
-  let succeeded = 0;
+  let created = 0;
+  let updated = 0;
   let duplicates = 0;
   let failed = 0;
   let systemErrorCount = 0;
@@ -159,6 +167,8 @@ async function runStreamingBulkUploadPipeline(options) {
     uploadedBy,
     processed: 0,
     succeeded: 0,
+    created: 0,
+    updated: 0,
     duplicates: 0,
     failed: 0,
     totalRows: 0,
@@ -175,6 +185,7 @@ async function runStreamingBulkUploadPipeline(options) {
     uploadedBy,
     organizationId,
     userRole: options.userRole || null,
+    flowType,
     ...context,
   };
 
@@ -185,14 +196,27 @@ async function runStreamingBulkUploadPipeline(options) {
 
     try {
       const res = await batchInsert(currentBatch, pipelineContext);
-      if (res && typeof res.succeeded === 'number') {
-        succeeded += res.succeeded;
+      if (res) {
+        if (typeof res.created === 'number') {
+          created += res.created;
+        } else if (typeof res.succeeded === 'number') {
+          created += res.succeeded;
+        } else {
+          created += currentBatch.length;
+        }
+
+        if (typeof res.updated === 'number') {
+          updated += res.updated;
+        }
+        if (typeof res.duplicates === 'number') {
+          duplicates += res.duplicates;
+        }
+        if (typeof res.failed === 'number') {
+          failed += res.failed;
+          dataErrorCount += res.failed;
+        }
       } else {
-        succeeded += currentBatch.length;
-      }
-      if (res && typeof res.failed === 'number') {
-        failed += res.failed;
-        dataErrorCount += res.failed;
+        created += currentBatch.length;
       }
     } catch (err) {
       const errorId = generateSystemErrorId();
@@ -226,9 +250,9 @@ async function runStreamingBulkUploadPipeline(options) {
         };
       }
 
-      if (!valResult.valid) {
+      if (!valResult || !valResult.valid) {
         failed++;
-        const isSysErr = valResult.errorType === 'SYSTEM_ERROR';
+        const isSysErr = valResult?.errorType === 'SYSTEM_ERROR';
         if (isSysErr) {
           systemErrorCount++;
         } else {
@@ -237,17 +261,23 @@ async function runStreamingBulkUploadPipeline(options) {
 
         const rowId = rawRow.Name || rawRow.name || rawRow['Candidate Name'] || rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || '';
         const prefix = (rowId && !isSysErr) ? `[Row Info: ${rowId}] ` : '';
-        const reason = (valResult.errors && valResult.errors.length > 0)
+        const reason = (valResult?.errors && valResult.errors.length > 0)
           ? valResult.errors.join('; ')
-          : (valResult.failureReason || 'Row validation failed');
+          : (valResult?.failureReason || 'Row validation failed');
         if (!firstErrorReason) {
-          firstErrorReason = (valResult.errors && valResult.errors.length > 0) ? valResult.errors[0] : reason;
+          firstErrorReason = (valResult?.errors && valResult.errors.length > 0) ? valResult.errors[0] : reason;
         }
         appendFailedRow(jobId, rowNumber, isSysErr ? reason : `${prefix}${reason}`, 'error', isSysErr ? 'SYSTEM_ERROR' : 'DATA_ERROR');
       } else {
         // Primary and secondary duplicate checks
         if (typeof duplicateCheck === 'function') {
-          const dupResult = await duplicateCheck(valResult.data, rowNumber, pipelineContext);
+          let dupResult = null;
+          try {
+            dupResult = await duplicateCheck(valResult.data, rowNumber, pipelineContext);
+          } catch (dupErr) {
+            console.error(`[DuplicateCheck] Row ${rowNumber} check exception:`, dupErr.message);
+          }
+
           if (dupResult && dupResult.isDuplicate) {
             duplicates++;
             appendFailedRow(jobId, rowNumber, dupResult.reason || 'Duplicate skipped', 'duplicate', 'N/A');
@@ -267,15 +297,28 @@ async function runStreamingBulkUploadPipeline(options) {
           });
         }
 
-        const item = transformRow
-          ? await transformRow(valResult.data, rowNumber, pipelineContext)
-          : valResult.data;
+        let item = null;
+        try {
+          item = transformRow
+            ? await transformRow(valResult.data, rowNumber, pipelineContext)
+            : valResult.data;
+        } catch (transErr) {
+          const errorId = generateSystemErrorId();
+          console.error(`[SYSTEM_ERROR ${errorId}] Row ${rowNumber} transform exception:`, transErr.stack || transErr);
+          failed++;
+          systemErrorCount++;
+          const transReason = `System error while transforming row — please report this. (Reference: ${errorId})`;
+          if (!firstErrorReason) firstErrorReason = transReason;
+          appendFailedRow(jobId, rowNumber, transReason, 'error', 'SYSTEM_ERROR');
+          return;
+        }
 
         if (item) {
           batch.push(item);
         } else {
-          // If transform explicitly returns null (e.g. skipped or warning-only row already counted)
-          succeeded++;
+          // If transform explicitly returned null without error, treat as a duplicate or skipped item
+          duplicates++;
+          appendFailedRow(jobId, rowNumber, 'Row skipped (no data to insert)', 'duplicate', 'N/A');
         }
 
         if (batch.length >= batchSize) {
@@ -286,14 +329,24 @@ async function runStreamingBulkUploadPipeline(options) {
       if (processed % 100 === 0 || processed === 1) {
         const percent = totalRows ? Math.min(99, Math.round((processed / totalRows) * 100)) : 50;
         statusObj.processed = processed;
-        statusObj.succeeded = succeeded;
+        statusObj.succeeded = created + updated;
+        statusObj.created = created;
+        statusObj.updated = updated;
         statusObj.duplicates = duplicates;
         statusObj.failed = failed;
         statusObj.totalRows = totalRows;
         statusObj.progress = percent;
 
         if (emitProgress) {
-          emitProgress(organizationId, jobId, { processed, succeeded, duplicates, failed, totalRows });
+          emitProgress(organizationId, jobId, {
+            processed,
+            succeeded: created + updated,
+            created,
+            updated,
+            duplicates,
+            failed,
+            totalRows,
+          });
         }
       }
     });
@@ -310,17 +363,26 @@ async function runStreamingBulkUploadPipeline(options) {
       );
     }
 
-    // Enforce Accounting Invariant
+    // Enforce Strict Accounting Invariant
+    const succeeded = created + updated;
     const expectedTotal = succeeded + duplicates + failed;
     if (processed !== expectedTotal) {
-      throw new Error(`Row accounting invariant violated: total processed rows (${processed}) does not equal created/succeeded (${succeeded}) + duplicates (${duplicates}) + errors/failed (${failed})`);
+      throw new Error(`Row accounting invariant violated: total processed rows (${processed}) does not equal created/updated (${succeeded}) [created: ${created}, updated: ${updated}] + duplicates (${duplicates}) + errors/failed (${failed})`);
     }
 
     if (onComplete) {
-      await onComplete({ processed, succeeded, duplicates, failed, totalRows: processed }, pipelineContext);
+      await onComplete({
+        processed,
+        succeeded,
+        created,
+        updated,
+        duplicates,
+        failed,
+        totalRows: processed,
+      }, pipelineContext);
     }
 
-    const errorReportUrl = finalizeErrorReport(jobId);
+    const errorReportUrl = finalizeErrorReport(jobId, flowType);
 
     // Summary-level intelligence (Pattern Detection)
     if (systemErrorCount > 0 && (systemErrorCount === processed || systemErrorCount >= failed * 0.5)) {
@@ -338,6 +400,8 @@ async function runStreamingBulkUploadPipeline(options) {
     statusObj.state = 'completed';
     statusObj.processed = processed;
     statusObj.succeeded = succeeded;
+    statusObj.created = created;
+    statusObj.updated = updated;
     statusObj.duplicates = duplicates;
     statusObj.failed = failed;
     statusObj.totalRows = processed;
@@ -345,13 +409,14 @@ async function runStreamingBulkUploadPipeline(options) {
     statusObj.errorReportUrl = errorReportUrl;
 
     // Apply cooldown after a job that did real work
-    // (processed > 0 means it consumed DB resources)
     applyUserCooldown(uploadedBy, processed, options.userRole);
 
     if (emitCompleted) {
       emitCompleted(organizationId, jobId, {
         processed,
         succeeded,
+        created,
+        updated,
         duplicates,
         failed,
         errorReportUrl,
@@ -368,12 +433,6 @@ async function runStreamingBulkUploadPipeline(options) {
     } catch (_) {}
 
     const path = require('path');
-    const flowType = options.flowType || (
-      options.validateRow?.name?.toLowerCase().includes('candidate') ? 'candidate' :
-      options.validateRow?.name?.toLowerCase().includes('feedback') ? 'feedback' :
-      options.validateRow?.name?.toLowerCase().includes('interview') ? 'interview_schedule' :
-      options.validateRow?.name?.toLowerCase().includes('lead') ? 'lead_list' : 'unknown'
-    );
     const sourceFilename = options.sourceFilename || (filePath ? path.basename(filePath) : 'uploaded_file');
     
     const { logAudit } = require('../utils/audit');
@@ -391,8 +450,9 @@ async function runStreamingBulkUploadPipeline(options) {
         source_filename: sourceFilename,
         file_size_bytes: fileSize,
         total_rows: processed,
-        created: succeeded,
-        duplicates: duplicates,
+        created,
+        updated,
+        duplicates,
         errors: failed,
         warnings: 0,
         duration_ms: statusObj.startTime ? (Date.now() - statusObj.startTime) : 0,
@@ -409,6 +469,8 @@ async function runStreamingBulkUploadPipeline(options) {
       jobId,
       processed,
       succeeded,
+      created,
+      updated,
       duplicates,
       failed,
       totalRows: processed,
@@ -418,17 +480,18 @@ async function runStreamingBulkUploadPipeline(options) {
     console.error(`[StreamingBulkPipeline] Job ${jobId} failed with error:`, err);
     statusObj.state = 'failed';
     statusObj.error = err.message;
-    const errorReportUrl = finalizeErrorReport(jobId);
+    const errorReportUrl = finalizeErrorReport(jobId, flowType);
     statusObj.errorReportUrl = errorReportUrl;
 
     // Apply cooldown if job did real work before failing
-    // (processed > 0 means DB was touched, cooldown applies)
     applyUserCooldown(uploadedBy, processed, options.userRole);
 
     if (emitCompleted) {
       emitCompleted(organizationId, jobId, {
         processed,
-        succeeded,
+        succeeded: created + updated,
+        created,
+        updated,
         duplicates,
         failed,
         errorReportUrl,

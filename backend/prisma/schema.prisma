@@ -597,6 +597,7 @@ model CollegeDrive {
   dateFrom       String
   dateTo         String?
   status         String   @default("PLANNED")
+  description    String?
   notes          String?
   ownerId        String?
   organizationId String   @default("defaultOrg")

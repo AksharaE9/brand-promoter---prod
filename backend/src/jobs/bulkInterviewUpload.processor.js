@@ -242,28 +242,15 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
           }
         });
       }
-      // Auto-create candidate on-the-fly if candidate does not exist yet
+      // If candidate does not exist in DB yet, mark as pending creation during batch insert
       if (!candidate && rawName) {
-        try {
-          candidate = await prisma.candidate.create({
-            data: {
-              fullName: rawName.trim(),
-              phone: normalizedPhone,
-              phoneNormalized: normalizedPhone,
-              preferredRole: jobRole || null,
-              organizationId: context.organizationId,
-              source: 'Bulk Interview Schedule',
-              createdById: context.uploadedBy || null,
-              status: 'ACTIVE',
-            },
-            select: { id: true, fullName: true, email: true, phone: true, preferredRole: true, organizationId: true },
-          });
-        } catch (createErr) {
-          if (createErr instanceof TypeError || createErr instanceof ReferenceError || createErr.name === 'ReferenceError') {
-            throw createErr; // Rethrow JS engine code exceptions to trigger SYSTEM_ERROR tracking
-          }
-          errors.push(`Row ${rowNumber}, Column "Phone Number": Could not resolve or auto-create candidate for "${rawName}" (${createErr.message})`);
-        }
+        candidate = {
+          fullName: rawName.trim(),
+          phone: normalizedPhone,
+          phoneNormalized: normalizedPhone,
+          preferredRole: jobRole || null,
+          isNew: true,
+        };
       } else if (!candidate) {
         errors.push(`Row ${rowNumber}, Column "Phone Number": Candidate not found for phone "${rawPhone}"`);
       }
@@ -498,6 +485,29 @@ async function batchInsertInterviews(batchItems, context) {
         );
       }
 
+      // 1b. Ensure candidate exists in DB
+      let cand = item.candidate;
+      if (cand.isNew || !cand.id) {
+        let existingCand = await resolveCandidateByNumber(cand.phone, context.organizationId);
+        if (!existingCand) {
+          existingCand = await prisma.candidate.create({
+            data: {
+              fullName: cand.fullName,
+              phone: cand.phone,
+              phoneNormalized: cand.phone,
+              preferredRole: item.jobRole || null,
+              organizationId: context.organizationId,
+              source: 'Bulk Interview Schedule',
+              createdById: context.uploadedBy || null,
+              status: 'ACTIVE',
+            },
+            select: { id: true, fullName: true, phone: true, email: true, preferredRole: true, organizationId: true },
+          });
+        }
+        cand = existingCand;
+        item.candidate = existingCand;
+      }
+
       // 2. Resolve or create candidate application (batch-pre-fetched)
       const appKey = `${item.candidate.id}:${job.id}`;
       let appId = appLookup.get(appKey);
@@ -601,7 +611,7 @@ async function batchInsertInterviews(batchItems, context) {
     }
   }
 
-  return { succeeded, failed };
+  return { created: succeeded, updated: 0, duplicates: 0, failed, succeeded };
 }
 
 /**
@@ -622,6 +632,7 @@ async function processBulkInterviewUpload(jobData) {
     userRole,
     organizationId,
     sourceFilename,
+    flowType: 'interviews',
     batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_INTERVIEW,
     context: {
       defaultRound,
@@ -647,6 +658,7 @@ async function processBulkInterviewUpload(jobData) {
       const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
       console.log(`[BulkInterviewUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
       if (organizationId) {
+        await cacheInvalidation.interview(organizationId).catch(() => {});
         await cacheInvalidation.candidateList(organizationId).catch(() => {});
       }
     },

@@ -136,6 +136,24 @@ async function buildInterviewListQuery({
       },
       {
         application: {
+          candidate: {
+            phone: {
+              contains: q
+            }
+          }
+        }
+      },
+      {
+        application: {
+          candidate: {
+            phoneNormalized: {
+              contains: q
+            }
+          }
+        }
+      },
+      {
+        application: {
           job: {
             title: {
               contains: q,

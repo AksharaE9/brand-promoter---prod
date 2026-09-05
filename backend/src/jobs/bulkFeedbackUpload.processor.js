@@ -62,22 +62,51 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
     });
   });
 
+  // Handle panelists / interviewers key alias
+  let panelistsVal = dataPayload.panelists || rawRow.panelists || rawRow.interviewers || rawRow.interviewer;
+  if (!panelistsVal) {
+    Object.keys(rawRow).forEach((rawKey) => {
+      const norm = normalizeKey(rawKey);
+      if (norm === 'panelists' || norm === 'interviewers' || norm === 'interviewer' || norm === 'panelist') {
+        panelistsVal = rawRow[rawKey];
+      }
+    });
+  }
+  if (panelistsVal) {
+    dataPayload.panelists = String(panelistsVal).trim();
+  }
+
   // Handle phone / number key alias
-  let rawNumber = dataPayload.number || dataPayload.phone;
+  let rawNumber = dataPayload.number || dataPayload.phone || rawRow.phone || rawRow.number;
   if (!rawNumber) {
     Object.keys(rawRow).forEach((rawKey) => {
       const norm = normalizeKey(rawKey);
-      if (norm === 'number' || norm === 'phone' || norm === 'phone number') {
+      if (norm === 'number' || norm === 'phone' || norm === 'phone number' || norm === 'mobile') {
         rawNumber = rawRow[rawKey];
       }
     });
   }
   if (rawNumber) {
     dataPayload.number = String(rawNumber).trim();
+    dataPayload.phone = String(rawNumber).trim();
+  }
+
+  // Handle role / jobRole alias
+  let roleVal = dataPayload.role || rawRow.role || rawRow.jobRole;
+  if (!roleVal) {
+    Object.keys(rawRow).forEach((rawKey) => {
+      const norm = normalizeKey(rawKey);
+      if (norm === 'role' || norm === 'job role' || norm === 'position') {
+        roleVal = rawRow[rawKey];
+      }
+    });
+  }
+  if (roleVal) {
+    dataPayload.role = String(roleVal).trim();
   }
 
   // Handle status / selectionStatus alias seamlessly across rounds
-  let statusVal = dataPayload.status || dataPayload.selectionStatus;
+  let statusVal = dataPayload.status || dataPayload.selectionStatus || rawRow.status || rawRow.selectionStatus;
   if (!statusVal) {
     Object.keys(rawRow).forEach((rawKey) => {
       const norm = normalizeKey(rawKey);
@@ -89,6 +118,20 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
   if (statusVal) {
     dataPayload.status = String(statusVal).trim();
     dataPayload.selectionStatus = String(statusVal).trim();
+  }
+
+  // Handle comments alias
+  let commentsVal = dataPayload.comments || rawRow.comments || rawRow.notes;
+  if (!commentsVal) {
+    Object.keys(rawRow).forEach((rawKey) => {
+      const norm = normalizeKey(rawKey);
+      if (norm.includes('comment') || norm === 'notes' || norm === 'reason') {
+        commentsVal = rawRow[rawKey];
+      }
+    });
+  }
+  if (commentsVal) {
+    dataPayload.comments = String(commentsVal).trim();
   }
 
   const validation = validateFeedbackData(canonicalRound, dataPayload, { isBulkUpload: true });
@@ -168,8 +211,9 @@ async function duplicateCheckFeedback(feedbackData, rowNumber, context) {
 
 /**
  * Batch inserter for feedback records.
- * Auto-links to candidate if matched; otherwise sets candidateId = null & pendingLink = true.
+ * Auto-links to candidate if matched; auto-creates candidate if not yet present so feedback is never orphaned.
  * Resubmitting candidate's feedback updates existing record rather than duplicating it.
+ * Also synchronizes matching Interview records (status: COMPLETED, result: selectionStatus).
  */
 async function batchInsertFeedback(batchItems, context) {
   let succeeded = 0;
@@ -177,17 +221,40 @@ async function batchInsertFeedback(batchItems, context) {
 
   for (const item of batchItems) {
     try {
-      const { canonicalRound, dataPayload, candidateMatch } = item;
-      const candidateId = candidateMatch ? candidateMatch.id : null;
+      const { canonicalRound, dataPayload, candidateMatch, rawNumber } = item;
+      let candidateId = candidateMatch ? candidateMatch.id : null;
       const selectionStatus = dataPayload.selectionStatus || dataPayload.status || 'HOLD';
       const overallRating = dataPayload.overallRating !== undefined && dataPayload.overallRating !== null
         ? Number(dataPayload.overallRating)
         : null;
 
-      if (candidateId) {
-        const docUrl = dataPayload.offerLetterDocument ? (typeof dataPayload.offerLetterDocument === 'string' ? dataPayload.offerLetterDocument : JSON.stringify(dataPayload.offerLetterDocument)) : null;
-        const attUrl = dataPayload.offerLetterEmailAttachment ? (typeof dataPayload.offerLetterEmailAttachment === 'string' ? dataPayload.offerLetterEmailAttachment : JSON.stringify(dataPayload.offerLetterEmailAttachment)) : null;
+      // Auto-create candidate if not found so feedback is never orphaned / invisible
+      if (!candidateId && rawNumber) {
+        const normalizedPhone = normalizePhoneNumber(rawNumber);
+        try {
+          const newCand = await prisma.candidate.create({
+            data: {
+              fullName: dataPayload.name ? String(dataPayload.name).trim() : 'Bulk Feedback Candidate',
+              phone: normalizedPhone || String(rawNumber).trim(),
+              phoneNormalized: normalizedPhone || String(rawNumber).trim(),
+              preferredRole: dataPayload.role ? String(dataPayload.role).trim() : null,
+              organizationId: context.organizationId || 'defaultOrg',
+              source: 'Bulk Feedback Upload',
+              createdById: context.uploadedBy || null,
+              status: selectionStatus === 'REJECTED' ? 'REJECTED' : 'ACTIVE',
+            },
+            select: { id: true },
+          });
+          candidateId = newCand.id;
+        } catch (candErr) {
+          console.warn('[BulkFeedback] Candidate auto-creation error:', candErr.message);
+        }
+      }
 
+      const docUrl = dataPayload.offerLetterDocument ? (typeof dataPayload.offerLetterDocument === 'string' ? dataPayload.offerLetterDocument : JSON.stringify(dataPayload.offerLetterDocument)) : null;
+      const attUrl = dataPayload.offerLetterEmailAttachment ? (typeof dataPayload.offerLetterEmailAttachment === 'string' ? dataPayload.offerLetterEmailAttachment : JSON.stringify(dataPayload.offerLetterEmailAttachment)) : null;
+
+      if (candidateId) {
         await prisma.interviewFeedback.upsert({
           where: {
             candidateId_round: {
@@ -226,11 +293,45 @@ async function batchInsertFeedback(batchItems, context) {
             data: { status: 'REJECTED' },
           }).catch(() => {});
         }
-      } else {
-        const docUrl = dataPayload.offerLetterDocument ? (typeof dataPayload.offerLetterDocument === 'string' ? dataPayload.offerLetterDocument : JSON.stringify(dataPayload.offerLetterDocument)) : null;
-        const attUrl = dataPayload.offerLetterEmailAttachment ? (typeof dataPayload.offerLetterEmailAttachment === 'string' ? dataPayload.offerLetterEmailAttachment : JSON.stringify(dataPayload.offerLetterEmailAttachment)) : null;
 
-        // Unlinked feedback row (stored with candidateId = null & pendingLink = true)
+        // Two-way sync: Synchronize matching Interview record(s)
+        const roundLabel = canonicalRound === 'ROUND_1' ? 'Round 1' : canonicalRound === 'ROUND_2' ? 'Round 2' : 'Final Round';
+        const activeInterviews = await prisma.interview.findMany({
+          where: {
+            candidateId,
+            round: roundLabel,
+            status: { not: 'CANCELLED' },
+          },
+        });
+
+        for (const iv of activeInterviews) {
+          let fbList = [];
+          try {
+            fbList = typeof iv.feedback === 'string' ? JSON.parse(iv.feedback) : iv.feedback;
+          } catch (_) {}
+          if (!Array.isArray(fbList)) fbList = [];
+
+          const newFbEntry = {
+            submittedById: context.uploadedBy || null,
+            feedbackData: dataPayload,
+            selectionStatus,
+            overallRating,
+            updatedAt: new Date(),
+          };
+          fbList.push(newFbEntry);
+
+          await prisma.interview.update({
+            where: { id: iv.id },
+            data: {
+              status: 'COMPLETED',
+              result: selectionStatus,
+              feedback: fbList,
+              updatedAt: new Date(),
+            },
+          }).catch(() => {});
+        }
+      } else {
+        // Fallback unlinked feedback row (stored with candidateId = null & pendingLink = true)
         await prisma.interviewFeedback.create({
           data: {
             candidateId: null,
@@ -255,7 +356,7 @@ async function batchInsertFeedback(batchItems, context) {
     }
   }
 
-  return { succeeded, failed };
+  return { created: succeeded, updated: 0, duplicates: 0, failed, succeeded };
 }
 
 /**
@@ -276,6 +377,7 @@ async function processBulkFeedbackUpload(jobData) {
     userRole,
     organizationId,
     sourceFilename,
+    flowType: 'interview-feedback',
     batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_FEEDBACK,
     context: {
       defaultRound,
@@ -299,6 +401,7 @@ async function processBulkFeedbackUpload(jobData) {
       const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
       console.log(`[BulkFeedbackUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
       if (organizationId) {
+        await cacheInvalidation.interview(organizationId).catch(() => {});
         await cacheInvalidation.candidateList(organizationId).catch(() => {});
       }
     },

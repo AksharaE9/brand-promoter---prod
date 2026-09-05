@@ -5,6 +5,7 @@ import Reveal from './PageMotion';
 import { subscribeSSE } from '../lib/sse';
 import CreateCandidateModal from './CreateCandidateModal';
 import BulkUploadModal from './BulkUpload/BulkUploadModal';
+import { DRIVE_DESCRIPTION_MAX_WORDS, countWords, validateDriveDescription } from '../config/driveConstants';
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
 const DRIVE_STATUS_OPTIONS = ['PLANNED', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
@@ -23,6 +24,7 @@ const emptyDriveForm = {
   dateFrom: '',
   dateTo: '',
   status: 'PLANNED',
+  description: '',
   notes: '',
 };
 
@@ -39,11 +41,16 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
 
   const [showCollegeModal, setShowCollegeModal] = useState(false);
   const [showDriveModal, setShowDriveModal] = useState(false);
+  const [showEditDriveModal, setShowEditDriveModal] = useState(false);
   const [showCandidateModal, setShowCandidateModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
 
   const [collegeForm, setCollegeForm] = useState(emptyCollegeForm);
   const [driveForm, setDriveForm] = useState(emptyDriveForm);
+  const [editDriveForm, setEditDriveForm] = useState(emptyDriveForm);
+
+  const driveDescWordCount = useMemo(() => countWords(driveForm.description), [driveForm.description]);
+  const editDriveDescWordCount = useMemo(() => countWords(editDriveForm.description), [editDriveForm.description]);
 
   const [selectedRecruiterIds, setSelectedRecruiterIds] = useState([]);
   const [selectedJobToLink, setSelectedJobToLink] = useState('');
@@ -160,6 +167,11 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
 
   const handleAddDrive = async (e) => {
     e.preventDefault();
+    const validation = validateDriveDescription(driveForm.description);
+    if (!validation.valid) {
+      onError(validation.error);
+      return;
+    }
     try {
       setSaving(true);
       await apiPost('/college-drives/drives', { ...driveForm, collegeId: selectedCollegeId });
@@ -167,6 +179,51 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
       setShowDriveModal(false);
       await loadDrives(selectedCollegeId);
       onBanner('Drive created successfully');
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openEditDriveModal = (drive) => {
+    if (!drive) return;
+    setEditDriveForm({
+      id: drive.id,
+      title: drive.title || '',
+      dateFrom: drive.dateFrom || '',
+      dateTo: drive.dateTo || '',
+      status: drive.status || 'PLANNED',
+      description: drive.description || '',
+      notes: drive.notes || '',
+    });
+    setShowEditDriveModal(true);
+  };
+
+  const handleUpdateDrive = async (e) => {
+    e.preventDefault();
+    const validation = validateDriveDescription(editDriveForm.description);
+    if (!validation.valid) {
+      onError(validation.error);
+      return;
+    }
+    try {
+      setSaving(true);
+      const res = await fetch(buildApiUrl(`/college-drives/drives/${editDriveForm.id}`), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('ats_token')}`,
+        },
+        body: JSON.stringify(editDriveForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to update drive');
+      }
+      setShowEditDriveModal(false);
+      await loadDrives(selectedCollegeId);
+      onBanner('Drive updated successfully');
     } catch (err) {
       onError(err.message);
     } finally {
@@ -287,6 +344,11 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     <div className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-tight">
                       {new Date(drive.dateFrom).toLocaleDateString()} — {drive.dateTo ? new Date(drive.dateTo).toLocaleDateString() : 'Ongoing'}
                     </div>
+                    {drive.description && (
+                      <div className="text-xs text-slate-600 mt-2 line-clamp-2 break-words leading-relaxed font-normal">
+                        {drive.description.length > 100 ? `${drive.description.slice(0, 100).trim()}...` : drive.description}
+                      </div>
+                    )}
                   </button>
                 ))}
                 {drives.length === 0 && <div className="p-8 text-center text-slate-400 text-sm italic">No drives for this college.</div>}
@@ -299,14 +361,53 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
         <div className="col-span-12 lg:col-span-8">
           {selectedDriveId ? (
             <Reveal className="os-card p-6 min-h-[600px]">
-              <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
-                <div>
-                  <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-widest mb-1">{selectedCollege?.name}</div>
-                  <h2 className="text-2xl font-bold text-slate-900">{selectedDrive?.title}</h2>
+              <div className="mb-8 pb-6 border-b border-slate-100">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-[10px] font-bold text-[#1f52cc] uppercase tracking-widest mb-1">{selectedCollege?.name}</div>
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-2xl font-bold text-slate-900">{selectedDrive?.title}</h2>
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${selectedDrive?.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {selectedDrive?.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1 font-medium">
+                      <span className="font-semibold text-slate-600">Dates: </span>
+                      {selectedDrive?.dateFrom ? new Date(selectedDrive.dateFrom).toLocaleDateString() : ''}
+                      {selectedDrive?.dateTo ? ` — ${new Date(selectedDrive.dateTo).toLocaleDateString()}` : ' — Ongoing'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => openEditDriveModal(selectedDrive)}
+                      className="h-9 px-3.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                      title="Edit Drive"
+                    >
+                      <span className="material-symbols-outlined text-base">edit</span>
+                      Edit Drive
+                    </button>
+                    <div className="text-right pl-3 border-l border-slate-100">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Students Enrolled</div>
+                      <div className="text-3xl font-black text-slate-900 leading-none">{driveCandidates.length}</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Students Enrolled</div>
-                  <div className="text-3xl font-black text-slate-900 leading-none">{driveCandidates.length}</div>
+
+                {/* FULL DESCRIPTION DISPLAY (Preserving Line Breaks) */}
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1.5 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-slate-400">description</span>
+                    Description
+                  </div>
+                  {selectedDrive?.description ? (
+                    <div className="text-sm text-slate-700 whitespace-pre-wrap break-words leading-relaxed bg-slate-50/70 p-4 rounded-2xl border border-slate-100">
+                      {selectedDrive.description}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400 italic py-1">
+                      — No description added —
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -473,13 +574,133 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                     <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={driveForm.dateTo} onChange={e => setDriveForm({...driveForm, dateTo: e.target.value})} />
                   </div>
                 </div>
+
+                {/* DESCRIPTION FIELD DIRECTLY ABOVE STATUS */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Description (Optional)</label>
+                    <span className={`text-[11px] font-medium transition-colors ${
+                      driveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS
+                        ? 'text-red-600 font-bold'
+                        : driveDescWordCount >= 180
+                        ? 'text-amber-600 font-semibold'
+                        : 'text-slate-400'
+                    }`}>
+                      {driveDescWordCount} / {DRIVE_DESCRIPTION_MAX_WORDS} words
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    className={`w-full rounded-xl border px-4 py-3 focus:outline-none transition-all resize-y text-sm font-normal ${
+                      driveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS
+                        ? 'border-red-400 focus:border-red-500 bg-red-50/30 text-slate-900'
+                        : 'border-slate-200 focus:border-blue-500 bg-white text-slate-800'
+                    }`}
+                    placeholder="Brief summary of this drive — colleges, roles, or notes for the team"
+                    value={driveForm.description || ''}
+                    onChange={e => setDriveForm({ ...driveForm, description: e.target.value })}
+                  />
+                  {driveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS && (
+                    <div className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">error</span>
+                      Description is {driveDescWordCount} words — please shorten to {DRIVE_DESCRIPTION_MAX_WORDS} or fewer
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Status</label>
                   <select className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-bold" value={driveForm.status} onChange={e => setDriveForm({...driveForm, status: e.target.value})}>
                     {DRIVE_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                 </div>
-                <button className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50" disabled={saving}>{saving ? 'Creating...' : 'Launch Drive'}</button>
+                <button
+                  type="submit"
+                  className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50"
+                  disabled={saving || driveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS}
+                >
+                  {saving ? 'Creating...' : 'Launch Drive'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DRIVE MODAL */}
+      {showEditDriveModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm modal-overlay-fade" onClick={() => setShowEditDriveModal(false)} />
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl overflow-hidden relative z-10 modal-scale-up">
+            <div className="p-8">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-slate-900">Edit Hiring Drive</h2>
+                <button className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors" onClick={() => setShowEditDriveModal(false)}>
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+              <form className="space-y-4" onSubmit={handleUpdateDrive}>
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Drive Title</label>
+                  <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-semibold" required value={editDriveForm.title} onChange={e => setEditDriveForm({...editDriveForm, title: e.target.value})} placeholder="e.g. Campus Recruitment 2026" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Start Date</label>
+                    <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" required value={editDriveForm.dateFrom} onChange={e => setEditDriveForm({...editDriveForm, dateFrom: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">End Date (Optional)</label>
+                    <input type="date" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none" value={editDriveForm.dateTo} onChange={e => setEditDriveForm({...editDriveForm, dateTo: e.target.value})} />
+                  </div>
+                </div>
+
+                {/* DESCRIPTION FIELD DIRECTLY ABOVE STATUS */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Description (Optional)</label>
+                    <span className={`text-[11px] font-medium transition-colors ${
+                      editDriveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS
+                        ? 'text-red-600 font-bold'
+                        : editDriveDescWordCount >= 180
+                        ? 'text-amber-600 font-semibold'
+                        : 'text-slate-400'
+                    }`}>
+                      {editDriveDescWordCount} / {DRIVE_DESCRIPTION_MAX_WORDS} words
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    className={`w-full rounded-xl border px-4 py-3 focus:outline-none transition-all resize-y text-sm font-normal ${
+                      editDriveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS
+                        ? 'border-red-400 focus:border-red-500 bg-red-50/30 text-slate-900'
+                        : 'border-slate-200 focus:border-blue-500 bg-white text-slate-800'
+                    }`}
+                    placeholder="Brief summary of this drive — colleges, roles, or notes for the team"
+                    value={editDriveForm.description || ''}
+                    onChange={e => setEditDriveForm({ ...editDriveForm, description: e.target.value })}
+                  />
+                  {editDriveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS && (
+                    <div className="text-xs text-red-600 font-medium mt-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">error</span>
+                      Description is {editDriveDescWordCount} words — please shorten to {DRIVE_DESCRIPTION_MAX_WORDS} or fewer
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 ml-1">Status</label>
+                  <select className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:border-blue-500 outline-none font-bold" value={editDriveForm.status} onChange={e => setEditDriveForm({...editDriveForm, status: e.target.value})}>
+                    {DRIVE_STATUS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full h-14 rounded-2xl bg-[#1f52cc] text-white font-bold text-lg mt-4 shadow-xl shadow-blue-100 hover:bg-[#1844b0] transition-all disabled:opacity-50"
+                  disabled={saving || editDriveDescWordCount > DRIVE_DESCRIPTION_MAX_WORDS}
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
               </form>
             </div>
           </div>

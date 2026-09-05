@@ -79,11 +79,47 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     updatedAt: new Date(),
   };
 
-  if (externalId) {
-    payload.customFields = { externalCandidateId: externalId };
+  if (candidateData.candidateId) {
+    payload.customFields = { externalCandidateId: candidateData.candidateId };
   }
 
   return payload;
+}
+
+/**
+ * Checks for in-file duplicate candidates.
+ */
+async function duplicateCheckCandidate(candidateData, rowNumber, context) {
+  if (!context.seenCandidatesInFileMap) {
+    context.seenCandidatesInFileMap = new Map();
+  }
+
+  const phoneKey = normalizePhoneForDedup(candidateData.phone);
+  const emailKey = String(candidateData.email || '').trim().toLowerCase();
+
+  if (phoneKey && phoneKey !== 'n/a') {
+    if (context.seenCandidatesInFileMap.has(`phone:${phoneKey}`)) {
+      const origRow = context.seenCandidatesInFileMap.get(`phone:${phoneKey}`);
+      return {
+        isDuplicate: true,
+        reason: `Duplicate phone: ${candidateData.phone} — duplicate of row ${origRow} in the file`,
+      };
+    }
+    context.seenCandidatesInFileMap.set(`phone:${phoneKey}`, rowNumber);
+  }
+
+  if (emailKey && emailKey !== 'n/a' && emailKey !== '') {
+    if (context.seenCandidatesInFileMap.has(`email:${emailKey}`)) {
+      const origRow = context.seenCandidatesInFileMap.get(`email:${emailKey}`);
+      return {
+        isDuplicate: true,
+        reason: `Duplicate email: ${candidateData.email} — duplicate of row ${origRow} in the file`,
+      };
+    }
+    context.seenCandidatesInFileMap.set(`email:${emailKey}`, rowNumber);
+  }
+
+  return { isDuplicate: false };
 }
 
 async function findExistingCandidate(dbData, organizationId) {
@@ -125,12 +161,12 @@ async function findExistingCandidate(dbData, organizationId) {
 
 /**
  * Import each row: create new candidate, or update if phone/email already exists.
- * Duplicate *skipping* is intentionally removed — CSV rows always apply.
  */
 async function batchInsertCandidates(batch, context) {
-  if (batch.length === 0) return { succeeded: 0, failed: 0 };
+  if (batch.length === 0) return { created: 0, updated: 0, duplicates: 0, failed: 0, succeeded: 0 };
 
-  let succeeded = 0;
+  let created = 0;
+  let updated = 0;
   let failed = 0;
   const { logAudit } = require('../utils/audit');
   const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
@@ -163,6 +199,7 @@ async function batchInsertCandidates(batch, context) {
           newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_update' },
           organizationId: context.organizationId,
         });
+        updated++;
       } else {
         saved = await prisma.candidate.create({
           data: {
@@ -182,6 +219,7 @@ async function batchInsertCandidates(batch, context) {
           newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_create' },
           organizationId: context.organizationId,
         });
+        created++;
       }
 
       if (context.driveId) {
@@ -201,8 +239,6 @@ async function batchInsertCandidates(batch, context) {
           });
         }
       }
-
-      succeeded++;
     } catch (rowErr) {
       failed++;
       appendFailedRow(
@@ -214,92 +250,101 @@ async function batchInsertCandidates(batch, context) {
     }
   }
 
-  return { succeeded, failed };
+  return { created, updated, duplicates: 0, failed, succeeded: created + updated };
 }
 
-/**
- * Enqueues job for background candidate bulk processing.
- */
-async function enqueueJob(jobData) {
-  const { jobId, filePath, fileType, uploadedBy, userRole, organizationId, sourceFilename, driveId } = jobData;
+async function processCandidateUpload(jobData) {
+  const { jobId, filePath, fileType, uploadedBy, userRole, organizationId, driveId, sourceFilename } = jobData;
 
-  let validCreatedById = null;
+  let validCreatedById = uploadedBy;
   if (uploadedBy) {
     try {
       const userExists = await prisma.user.findUnique({
         where: { id: uploadedBy },
-        select: { id: true },
+        select: { id: true }
       });
-      if (userExists) validCreatedById = uploadedBy;
+      if (!userExists) {
+        validCreatedById = null;
+      }
     } catch (_) {}
   }
 
+  // Log memory at start for instance health tracking
+  const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  console.log(`[BulkCandidateUpload] Job ${jobId} starting. RSS: ${startMemMb}MB`);
+
+  const result = await runStreamingBulkUploadPipeline({
+    jobId,
+    filePath,
+    fileType,
+    uploadedBy,
+    userRole,
+    organizationId,
+    sourceFilename,
+    flowType: 'candidates',
+    batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE,
+    context: {
+      validCreatedById,
+      driveId: driveId || null,
+      MAX_ROWS_EXCEEDED: false,
+      seenCandidatesInFileMap: new Map(),
+      ...(jobData.context || {}),
+    },
+    validateRow: async (rawRow, rowNumber, pipelineContext) => {
+      // Enforce max-rows limit before invoking per-row validator
+      if (rowNumber > BULK_UPLOAD_LIMITS.MAX_ROWS) {
+        pipelineContext.MAX_ROWS_EXCEEDED = true;
+        return {
+          valid: false,
+          errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
+        };
+      }
+      return validateCandidateRowWrapper(rawRow, rowNumber);
+    },
+    duplicateCheck: duplicateCheckCandidate,
+    transformRow: transformCandidateRow,
+    batchInsert: batchInsertCandidates,
+    onComplete: async (summary) => {
+      const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+      console.log(`[BulkCandidateUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
+      if (organizationId) {
+        await cacheInvalidation.candidateList(organizationId).catch(() => {});
+        if (driveId) {
+          await cacheInvalidation.drive(organizationId, driveId).catch(() => {});
+          try {
+            const sse = require('../utils/sse');
+            sse.broadcastToOrg(organizationId, 'DRIVE_CANDIDATES_ADDED', {
+              driveId,
+              count: summary?.succeeded || 0,
+              collegeName: 'Bulk Upload',
+              addedBy: uploadedBy,
+              addedByName: 'Bulk Import',
+            });
+          } catch (_) {}
+        }
+      }
+    },
+    emitProgress: emitBulkUploadProgress,
+    emitCompleted: emitBulkUploadCompleted,
+  });
+
+  return result;
+}
+
+function enqueueJob(jobData) {
   setImmediate(async () => {
-    // Log memory at start for instance health tracking
-    const startMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-    console.log(`[BulkCandidateUpload] Job ${jobId} starting. RSS: ${startMemMb}MB`);
     try {
-      await runStreamingBulkUploadPipeline({
-        jobId,
-        filePath,
-        fileType,
-        uploadedBy,
-        userRole,
-        organizationId,
-        sourceFilename,
-        batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE,
-        context: {
-          validCreatedById,
-          driveId: driveId || null,
-          MAX_ROWS_EXCEEDED: false,
-        },
-        validateRow: async (rawRow, rowNumber, pipelineContext) => {
-          // Enforce max-rows limit before invoking per-row validator
-          if (rowNumber > BULK_UPLOAD_LIMITS.MAX_ROWS) {
-            pipelineContext.MAX_ROWS_EXCEEDED = true;
-            return {
-              valid: false,
-              errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
-            };
-          }
-          return validateCandidateRowWrapper(rawRow, rowNumber);
-        },
-        // Duplicate skip logic removed — every valid CSV row is imported (create/update).
-        duplicateCheck: undefined,
-        transformRow: transformCandidateRow,
-        batchInsert: batchInsertCandidates,
-        onComplete: async (summary) => {
-          const endMemMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
-          console.log(`[BulkCandidateUpload] Job ${jobId} complete. RSS: ${endMemMb}MB (+${endMemMb - startMemMb}MB). Summary:`, summary);
-          if (organizationId) {
-            await cacheInvalidation.candidateList(organizationId).catch(() => {});
-            if (driveId) {
-              await cacheInvalidation.drive(organizationId, driveId).catch(() => {});
-              try {
-                const sse = require('../utils/sse');
-                sse.broadcastToOrg(organizationId, 'DRIVE_CANDIDATES_ADDED', {
-                  driveId,
-                  count: summary?.succeeded || 0,
-                  collegeName: 'Bulk Upload',
-                  addedBy: uploadedBy,
-                  addedByName: 'Bulk Import',
-                });
-              } catch (_) {}
-            }
-          }
-        },
-        emitProgress: emitBulkUploadProgress,
-        emitCompleted: emitBulkUploadCompleted,
-      });
+      await processCandidateUpload(jobData);
     } catch (err) {
-      console.error(`[BulkCandidateProcessor] Job ${jobId} failed:`, err.message);
+      console.error(`[BulkCandidateProcessor] Job ${jobData.jobId} failed:`, err.message);
     }
   });
 
-  return { jobId, status: 'active' };
+  return { jobId: jobData.jobId, status: 'active' };
 }
 
 module.exports = {
+  processCandidateUpload,
   enqueueJob,
   getJobStatus: getPipelineJobStatus,
 };
