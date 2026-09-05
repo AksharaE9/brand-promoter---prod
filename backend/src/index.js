@@ -36,10 +36,9 @@ function validateEnv() {
 
   // Soft warnings for optional but important production variables
   if (process.env.NODE_ENV === 'production') {
-    const warnings = [];
     if (!process.env.CORS_ORIGIN) warnings.push('CORS_ORIGIN');
-    if (!process.env.FRONTEND_URL) warnings.push('FRONTEND_URL');
-    if (!process.env.BREVO_API_KEY) warnings.push('BREVO_API_KEY (emails/SMS notifications will fail)');
+    if (!process.env.FRONTEND_URL) warnings.push('FRONTEND_URL (email action links and CORS origins will use safe fallbacks)');
+    if (!process.env.BREVO_API_KEY) warnings.push('BREVO_API_KEY (transactional email and SMS dispatches will be paused)');
 
     if (warnings.length > 0) {
       console.warn(`[WARNING] The following production environment variables are missing: ${warnings.join(', ')}`);

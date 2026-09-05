@@ -21,7 +21,13 @@ router.get('/stream', auth, async (req, res) => {
     }
   }
   if (!origin || origin === '*') {
-    origin = process.env.FRONTEND_URL || 'http://localhost:5173';
+    if (process.env.FRONTEND_URL) {
+      origin = process.env.FRONTEND_URL;
+    } else if (process.env.NODE_ENV !== 'production') {
+      origin = 'http://localhost:5173';
+    } else {
+      origin = '*';
+    }
   }
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');

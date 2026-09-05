@@ -9,16 +9,23 @@ const SMTP_PASS = process.env.SMTP_PASS;
 const SMTP_SENDER_EMAIL = process.env.SMTP_SENDER_EMAIL;
 const SMTP_SENDER_NAME = process.env.SMTP_SENDER_NAME;
 
-// Initialize Nodemailer SMTP Transporter
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_PORT === 465, // true for 465, false for other ports
-  auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
-  },
-});
+// Initialize Nodemailer SMTP Transporter only if SMTP credentials are provided
+let transporter = null;
+if (SMTP_HOST && (SMTP_USER || SMTP_PASS)) {
+  try {
+    transporter = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT || 587,
+      secure: SMTP_PORT === 465, // true for 465, false for other ports
+      auth: (SMTP_USER && SMTP_PASS) ? {
+        user: SMTP_USER,
+        pass: SMTP_PASS,
+      } : undefined,
+    });
+  } catch (tErr) {
+    console.warn('[NotificationService:Email] SMTP Transporter initialization failed:', tErr.message);
+  }
+}
 
 /**
  * Sends a transactional email using Brevo SMTP. Falls back to Brevo HTTP API on failure.
@@ -35,39 +42,42 @@ async function sendEmail({ to, subject, html, text = '', fromName = SMTP_SENDER_
     return { success: false, error: 'Recipient is required' };
   }
 
-  // 1. Primary: Try Brevo REST HTTP API
-  try {
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'api-key': BREVO_API_KEY,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        sender: { name: fromName, email: SMTP_SENDER_EMAIL },
-        to: [{ email: to }],
-        subject: subject,
-        htmlContent: html,
-      }),
-    });
+  // 1. Primary: Try Brevo REST HTTP API if BREVO_API_KEY is configured
+  if (BREVO_API_KEY) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': BREVO_API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: SMTP_SENDER_EMAIL || 'no-reply@aksharaenterprises.info' },
+          to: [{ email: to }],
+          subject: subject,
+          htmlContent: html,
+        }),
+      });
 
-    const body = await response.json();
+      const body = await response.json();
 
-    if (response.status === 201 || response.status === 200) {
-      console.log(`[NotificationService:Email] HTTP API success: ${body.messageId}`);
-      return { success: true, messageId: body.messageId, method: 'HTTP_API' };
-    } else {
-      console.warn(`[NotificationService:Email] HTTP API sending failed, falling back to SMTP. Status: ${response.status}. Error:`, body);
-      throw new Error(JSON.stringify(body));
+      if (response.status === 201 || response.status === 200) {
+        console.log(`[NotificationService:Email] HTTP API success: ${body.messageId}`);
+        return { success: true, messageId: body.messageId, method: 'HTTP_API' };
+      } else {
+        console.warn(`[NotificationService:Email] HTTP API sending failed, falling back to SMTP. Status: ${response.status}. Error:`, body);
+      }
+    } catch (httpError) {
+      console.warn(`[NotificationService:Email] HTTP API failed. Falling back to SMTP. Details: ${httpError.message}`);
     }
-  } catch (httpError) {
-    console.warn(`[NotificationService:Email] HTTP API failed. Falling back to SMTP. Details: ${httpError.message}`);
+  }
 
-    // 2. Fallback: Try Nodemailer SMTP sending
+  // 2. Fallback: Try Nodemailer SMTP sending if transporter is configured
+  if (transporter) {
     try {
       const mailOptions = {
-        from: `"${fromName}" <${SMTP_SENDER_EMAIL}>`,
+        from: `"${fromName}" <${SMTP_SENDER_EMAIL || 'no-reply@aksharaenterprises.info'}>`,
         to,
         subject,
         html,
@@ -78,10 +88,16 @@ async function sendEmail({ to, subject, html, text = '', fromName = SMTP_SENDER_
       console.log(`[NotificationService:Email] SMTP success: ${info.messageId}`);
       return { success: true, messageId: info.messageId, method: 'SMTP' };
     } catch (smtpError) {
-      console.error('[NotificationService:Email] All email delivery methods failed.', smtpError);
+      console.error('[NotificationService:Email] SMTP delivery failed:', smtpError.message);
       return { success: false, error: smtpError.message };
     }
   }
+
+  // Neither provider configured or usable
+  return { 
+    success: false, 
+    error: 'Email delivery unconfigured: BREVO_API_KEY and SMTP credentials missing or unavailable' 
+  };
 }
 
 /**
@@ -105,6 +121,10 @@ async function sendSMS({ recipient, content }) {
     } else {
       formattedRecipient = `+${formattedRecipient}`;
     }
+  }
+
+  if (!BREVO_API_KEY) {
+    return { success: false, error: 'SMS delivery unconfigured: BREVO_API_KEY is missing' };
   }
 
   try {

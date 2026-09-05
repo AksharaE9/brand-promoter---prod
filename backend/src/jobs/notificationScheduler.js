@@ -9,6 +9,74 @@ const TARGET_ALERT_EMAIL = process.env.ALERT_RECIPIENT_EMAIL || 'Subramanya@aksh
 
 let schedulerInterval = null;
 
+// Circuit Breaker & Configuration State
+const providerState = {
+  emailWarned: false,
+  smsWarned: false,
+  emailFailures: 0,
+  emailPausedUntil: 0,
+  maxConsecutiveFailures: 5,
+  pauseDurationMs: 5 * 60 * 1000, // 5 minutes
+};
+
+// Queue Depth & Non-Convergence Tracking
+const queueMetrics = {
+  round1: { lastDepth: 0, staticCycles: 0 },
+  round2: { lastDepth: 0, staticCycles: 0 },
+  offerLetter: { lastDepth: 0, staticCycles: 0 },
+  delayedFeedback: { lastDepth: 0, staticCycles: 0 },
+};
+
+function checkEmailAvailable() {
+  const hasBrevo = !!process.env.BREVO_API_KEY;
+  const hasSmtp = !!(process.env.SMTP_HOST && (process.env.SMTP_USER || process.env.SMTP_PASS));
+  if (!hasBrevo && !hasSmtp) {
+    if (!providerState.emailWarned) {
+      console.warn('[NotificationScheduler] [CONFIG] Email provider not configured (BREVO_API_KEY and SMTP missing). Email dispatches will be skipped.');
+      providerState.emailWarned = true;
+    }
+    return false;
+  }
+  if (Date.now() < providerState.emailPausedUntil) {
+    return false;
+  }
+  return true;
+}
+
+function recordEmailSuccess() {
+  providerState.emailFailures = 0;
+  providerState.emailPausedUntil = 0;
+}
+
+function recordEmailFailure(err) {
+  providerState.emailFailures++;
+  if (providerState.emailFailures >= providerState.maxConsecutiveFailures) {
+    providerState.emailPausedUntil = Date.now() + providerState.pauseDurationMs;
+    console.warn(`[NotificationScheduler] [CIRCUIT BREAKER OPEN] ${providerState.emailFailures} consecutive email dispatch failures. Pausing email deliveries for 5 minutes. Last error: ${err?.message || err}`);
+  }
+}
+
+function trackQueueConvergence(queueKey, currentDepth) {
+  const metric = queueMetrics[queueKey];
+  if (!metric) return;
+
+  if (currentDepth === 0) {
+    metric.lastDepth = 0;
+    metric.staticCycles = 0;
+    return;
+  }
+
+  if (metric.lastDepth === currentDepth) {
+    metric.staticCycles++;
+    if (metric.staticCycles >= 3) {
+      console.warn(`[NotificationScheduler] [NON-CONVERGENCE WARNING] Queue '${queueKey}' has remained stuck at ${currentDepth} items for ${metric.staticCycles} consecutive cycles.`);
+    }
+  } else {
+    metric.lastDepth = currentDepth;
+    metric.staticCycles = 1;
+  }
+}
+
 /**
  * Processes an array of async functions with a limit on concurrency.
  * @param {Array<Function>} tasks - Array of functions returning promises
@@ -84,8 +152,9 @@ async function checkRound1FeedbackAlerts() {
     },
   });
 
+  trackQueueConvergence('round1', interviews.length);
+
   if (interviews.length === 0) return;
-  console.log(`[NotificationScheduler] Found ${interviews.length} pending Round 1 feedback alerts`);
 
   // Optimization 1: Batch fetch all Round 2 interviews matching our applicationIds to avoid N+1 queries
   const appIds = [...new Set(interviews.map(i => i.applicationId).filter(Boolean))];
@@ -125,6 +194,10 @@ async function checkRound1FeedbackAlerts() {
   }) : [];
   const usersMap = new Map(usersList.map(u => [u.id, u]));
 
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
   // Map interviews to concurrent dispatch tasks
   const tasks = interviews.map(interview => async () => {
     try {
@@ -135,8 +208,8 @@ async function checkRound1FeedbackAlerts() {
       
       // A. Check if Round 2 already scheduled
       if (round2AppIds.has(interview.applicationId)) {
-        console.log(`[NotificationScheduler] Interview ${interview.id}: Round 2 is already scheduled. Skipping alert.`);
         await cache.writeRound(interview.id, { round1SMSAlertSent: true }, 'system-scheduler', orgId, interview);
+        skippedCount++;
         return;
       }
 
@@ -146,8 +219,8 @@ async function checkRound1FeedbackAlerts() {
         feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
       } catch (_) {}
       if (Array.isArray(feedbackList) && feedbackList.length > 0) {
-        console.log(`[NotificationScheduler] Interview ${interview.id}: Feedback already submitted. Skipping alert.`);
         await cache.writeRound(interview.id, { round1SMSAlertSent: true }, 'system-scheduler', orgId, interview);
+        skippedCount++;
         return;
       }
 
@@ -162,14 +235,12 @@ async function checkRound1FeedbackAlerts() {
       const users = notifierIds.map(id => usersMap.get(id)).filter(Boolean);
 
       const messageContent = `Interviewer missed feedback submission for ${candidateName} (Round 1 scheduled at ${scheduledTime}). The feedback form was missed and Round 2 was not scheduled.`;
-      
-      console.log(`[NotificationScheduler] Dispatching Round 1 alerts for Interview ID: ${interview.id}`);
 
       // D. Send SMS / Emails concurrently for this specific interview
       const dispatchPromises = users.map(async (user) => {
         let smsSent = false;
         
-        if (user.phone) {
+        if (user.phone && process.env.BREVO_API_KEY) {
           try {
             const smsResult = await sendSMS({
               recipient: user.phone,
@@ -182,7 +253,7 @@ async function checkRound1FeedbackAlerts() {
         }
 
         // Send Email if SMS was not sent or failed
-        if (!smsSent) {
+        if (!smsSent && checkEmailAvailable()) {
           try {
             const emailSubject = `[Urgent Reminder] Missed Round 1 Feedback: ${candidateName}`;
             const emailHtml = `
@@ -195,12 +266,18 @@ async function checkRound1FeedbackAlerts() {
               <p><i>Note: This notification was delivered via email because SMS delivery was bypassed or credits are depleted.</i></p>
               <p style="color: #888; font-size: 11px; margin-top: 20px;">[Original Recipient: ${user.fullName} (${user.email || 'N/A'})]</p>
             `;
-            await sendEmail({
+            const emailRes = await sendEmail({
               to: TARGET_ALERT_EMAIL,
               subject: emailSubject,
               html: emailHtml,
             });
+            if (emailRes.success) {
+              recordEmailSuccess();
+            } else {
+              recordEmailFailure(emailRes.error);
+            }
           } catch (emailErr) {
+            recordEmailFailure(emailErr);
             console.error(`[NotificationScheduler] Email dispatch failed for user ${user.id}:`, emailErr.message);
           }
         }
@@ -223,14 +300,17 @@ async function checkRound1FeedbackAlerts() {
 
       // F. Mark alert as sent
       await cache.writeRound(interview.id, { round1SMSAlertSent: true }, 'system-scheduler', orgId, interview);
+      sentCount++;
 
     } catch (err) {
       console.error(`[NotificationScheduler] Failed processing Round 1 alert for Interview ${interview.id}:`, err);
+      failedCount++;
     }
   });
 
   // Execute tasks concurrently with a limit of 5
   await limitConcurrency(tasks, 5);
+  console.log(`[NotificationScheduler] Round 1 Alerts: ${interviews.length} pending | ${sentCount} sent | ${failedCount} failed | ${skippedCount} skipped`);
 }
 
 /**
@@ -273,8 +353,9 @@ async function checkRound2FeedbackAlerts() {
     },
   });
 
+  trackQueueConvergence('round2', interviews.length);
+
   if (interviews.length === 0) return;
-  console.log(`[NotificationScheduler] Found ${interviews.length} pending Round 2 feedback alerts`);
 
   // Optimization: Batch fetch all users to notify across all interviews to avoid N+1 queries
   const allUserIds = new Set();
@@ -303,6 +384,10 @@ async function checkRound2FeedbackAlerts() {
   }) : [];
   const usersMap = new Map(usersList.map(u => [u.id, u]));
 
+  let sentCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
+
   // Map interviews to concurrent dispatch tasks
   const tasks = interviews.map(interview => async () => {
     try {
@@ -317,15 +402,15 @@ async function checkRound2FeedbackAlerts() {
         feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
       } catch (_) {}
       if (Array.isArray(feedbackList) && feedbackList.length > 0) {
-        console.log(`[NotificationScheduler] Interview ${interview.id}: Feedback submitted. Skipping alert.`);
         await cache.writeRound(interview.id, { round2EmailAlertSent: true }, 'system-scheduler', orgId, interview);
+        skippedCount++;
         return;
       }
 
       // B. Check if offer letter already posted
       if (interview.offerLetterUrl || interview.application?.status === 'OFFER_SENT') {
-        console.log(`[NotificationScheduler] Interview ${interview.id}: Offer letter already posted. Skipping alert.`);
         await cache.writeRound(interview.id, { round2EmailAlertSent: true }, 'system-scheduler', orgId, interview);
+        skippedCount++;
         return;
       }
 
@@ -339,28 +424,39 @@ async function checkRound2FeedbackAlerts() {
       const notifierIds = [...new Set([...interviewerIds, recruiterId].filter(Boolean))];
       const users = notifierIds.map(id => usersMap.get(id)).filter(Boolean);
 
-      console.log(`[NotificationScheduler] Dispatching Round 2 Email alerts for Interview ID: ${interview.id}`);
+      const frontendBaseUrl = (process.env.FRONTEND_URL || '').replace(/\/+$/, '');
+      const feedbackUrl = frontendBaseUrl
+        ? `${frontendBaseUrl}/interviews?highlight=${interview.id}&submitFeedback=true`
+        : `/interviews?highlight=${interview.id}&submitFeedback=true`;
 
       // D. Send Emails and In-app notifications concurrently
       const dispatchPromises = users.map(async (user) => {
-        try {
-          const emailSubject = `[Reminder] Submit Round 2 Feedback: ${candidateName}`;
-          const emailHtml = `
-            <h2>Round 2 Interview Feedback Required</h2>
-            <p>Hello ${user.fullName},</p>
-            <p>The Round 2 interview for <strong>${candidateName}</strong> scheduled at <strong>${scheduledTime}</strong> has passed, but feedback has not been submitted.</p>
-            <p>Please log in to the ATS portal to submit your interview assessment and select the offer decision.</p>
-            <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/interviews?highlight=${interview.id}&submitFeedback=true" style="padding: 10px 20px; background-color: #1f52cc; color: white; text-decoration: none; border-radius: 5px; display: inline-block;">Submit Feedback Now</a></p>
-            <p style="color: #888; font-size: 11px; margin-top: 20px;">[Original Recipient: ${user.fullName} (${user.email || 'N/A'})]</p>
-          `;
+        if (checkEmailAvailable()) {
+          try {
+            const emailSubject = `[Reminder] Submit Round 2 Feedback: ${candidateName}`;
+            const emailHtml = `
+              <h2>Round 2 Interview Feedback Required</h2>
+              <p>Hello ${user.fullName},</p>
+              <p>The Round 2 interview for <strong>${candidateName}</strong> scheduled at <strong>${scheduledTime}</strong> has passed, but feedback has not been submitted.</p>
+              <p>Please log in to the ATS portal to submit your interview assessment and select the offer decision.</p>
+              <p><a href="${feedbackUrl}" style="padding: 10px 20px; background-color: #1f52cc; color: white; text-decoration: none; border-radius: 5px; display: inline-block;">Submit Feedback Now</a></p>
+              <p style="color: #888; font-size: 11px; margin-top: 20px;">[Original Recipient: ${user.fullName} (${user.email || 'N/A'})]</p>
+            `;
 
-          await sendEmail({
-            to: TARGET_ALERT_EMAIL,
-            subject: emailSubject,
-            html: emailHtml,
-          });
-        } catch (emailErr) {
-          console.error(`[NotificationScheduler] Round 2 email dispatch failed for user ${user.id}:`, emailErr.message);
+            const emailRes = await sendEmail({
+              to: TARGET_ALERT_EMAIL,
+              subject: emailSubject,
+              html: emailHtml,
+            });
+            if (emailRes.success) {
+              recordEmailSuccess();
+            } else {
+              recordEmailFailure(emailRes.error);
+            }
+          } catch (emailErr) {
+            recordEmailFailure(emailErr);
+            console.error(`[NotificationScheduler] Round 2 email dispatch failed for user ${user.id}:`, emailErr.message);
+          }
         }
 
         try {
@@ -380,14 +476,17 @@ async function checkRound2FeedbackAlerts() {
 
       // E. Update tracking
       await cache.writeRound(interview.id, { round2EmailAlertSent: true }, 'system-scheduler', orgId, interview);
+      sentCount++;
 
     } catch (err) {
       console.error(`[NotificationScheduler] Failed processing Round 2 alert for Interview ${interview.id}:`, err);
+      failedCount++;
     }
   });
 
   // Execute tasks concurrently with a limit of 5
   await limitConcurrency(tasks, 5);
+  console.log(`[NotificationScheduler] Round 2 Alerts: ${interviews.length} pending | ${sentCount} sent | ${failedCount} failed | ${skippedCount} skipped`);
 }
 
 /**
@@ -441,8 +540,9 @@ async function checkOfferLetterAlerts() {
     },
   });
 
+  trackQueueConvergence('offerLetter', applications.length);
+
   if (applications.length === 0) return;
-  console.log(`[NotificationScheduler] Found ${applications.length} pending offer letter feedback alerts`);
 
   // Optimization: Batch fetch recruiters for these applications to avoid N+1 queries
   const recruiterIds = new Set();
@@ -461,6 +561,9 @@ async function checkOfferLetterAlerts() {
   }) : [];
   const usersMap = new Map(usersList.map(u => [u.id, u]));
 
+  let sentCount = 0;
+  let failedCount = 0;
+
   // Map applications to concurrent dispatch tasks
   const tasks = applications.map(app => async () => {
     try {
@@ -472,12 +575,10 @@ async function checkOfferLetterAlerts() {
       const recruiterId = app.candidate?.assignedRecruiterId || app.job?.createdById;
       const recruiterUser = recruiterId ? usersMap.get(recruiterId) : null;
 
-      console.log(`[NotificationScheduler] Dispatching Offer Letter alerts for Application ID: ${app.id}`);
-
       const dispatchPromises = [];
 
       // A. Send email reminder to candidate
-      if (candidateEmail && candidateEmail !== 'N/A') {
+      if (candidateEmail && candidateEmail !== 'N/A' && checkEmailAvailable()) {
         dispatchPromises.push((async () => {
           try {
             const candidateSubject = `Reminder: Offer Letter for ${jobTitle} - ATS Portal`;
@@ -492,19 +593,25 @@ async function checkOfferLetterAlerts() {
               <p style="color: #888; font-size: 11px; margin-top: 20px;">[Original Recipient: Candidate ${candidateName} (${candidateEmail})]</p>
             `;
 
-            await sendEmail({
+            const emailRes = await sendEmail({
               to: TARGET_ALERT_EMAIL,
               subject: candidateSubject,
               html: candidateHtml,
             });
+            if (emailRes.success) {
+              recordEmailSuccess();
+            } else {
+              recordEmailFailure(emailRes.error);
+            }
           } catch (emailErr) {
+            recordEmailFailure(emailErr);
             console.error(`[NotificationScheduler] Offer letter email to candidate failed for app ${app.id}:`, emailErr.message);
           }
         })());
       }
 
       // B. Send email reminder to recruiter
-      if (recruiterUser) {
+      if (recruiterUser && checkEmailAvailable()) {
         dispatchPromises.push((async () => {
           try {
             const recruiterSubject = `[Follow-up] Offer Response Pending: ${candidateName}`;
@@ -516,12 +623,18 @@ async function checkOfferLetterAlerts() {
               <p style="color: #888; font-size: 11px; margin-top: 20px;">[Original Recipient: Recruiter ${recruiterUser.fullName} (${recruiterUser.email || 'N/A'})]</p>
             `;
 
-            await sendEmail({
+            const emailRes = await sendEmail({
               to: TARGET_ALERT_EMAIL,
               subject: recruiterSubject,
               html: recruiterHtml,
             });
+            if (emailRes.success) {
+              recordEmailSuccess();
+            } else {
+              recordEmailFailure(emailRes.error);
+            }
           } catch (emailErr) {
+            recordEmailFailure(emailErr);
             console.error(`[NotificationScheduler] Offer letter email to recruiter failed for app ${app.id}:`, emailErr.message);
           }
         })());
@@ -551,18 +664,21 @@ async function checkOfferLetterAlerts() {
       });
 
       await inv.application(orgId, app.candidateId);
+      sentCount++;
       
     } catch (err) {
       console.error(`[NotificationScheduler] Failed processing Offer Letter alert for Application ${app.id}:`, err);
+      failedCount++;
     }
   });
 
   // Execute tasks concurrently with a limit of 5
   await limitConcurrency(tasks, 5);
+  console.log(`[NotificationScheduler] Offer Letter Alerts: ${applications.length} pending | ${sentCount} processed | ${failedCount} failed`);
 }
 
 /**
- * Delayed Feedback Alerts (Rounds >= 2)
+ * 4. Delayed Feedback Alerts (Rounds >= 2)
  * Trigger: 2 days after scheduledStart has passed.
  * Condition: roundNo >= 2 or roundNo === 99, status = SCHEDULED/RESCHEDULED, feedback is empty.
  * Action: SMTP email sent to Subramanya (TARGET_ALERT_EMAIL) and all HR Admin users.
@@ -570,17 +686,31 @@ async function checkOfferLetterAlerts() {
 async function checkDelayedFeedbackAlerts() {
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   
+  // SQL-level query filtering: only fetch interviews where notes does NOT indicate alert was sent
   const interviews = await prisma.interview.findMany({
     where: {
-      OR: [
-        { roundNo: { gte: 2 } },
-        { roundNo: 99 }
-      ],
-      status: { in: ['SCHEDULED', 'RESCHEDULED'] },
-      scheduledStart: {
-        lte: twoDaysAgo,
-        lt: new Date('2026-07-07T00:00:00.000Z') // Only for meetings scheduled before July 7, 2026
-      }
+      AND: [
+        {
+          OR: [
+            { roundNo: { gte: 2 } },
+            { roundNo: 99 }
+          ]
+        },
+        {
+          status: { in: ['SCHEDULED', 'RESCHEDULED'] }
+        },
+        {
+          scheduledStart: {
+            lte: twoDaysAgo,
+          }
+        },
+        {
+          OR: [
+            { notes: null },
+            { NOT: { notes: { contains: '"feedbackDelayedAlertSent":true' } } }
+          ]
+        }
+      ]
     },
     take: 100,
     select: {
@@ -608,8 +738,9 @@ async function checkDelayedFeedbackAlerts() {
     },
   });
 
+  trackQueueConvergence('delayedFeedback', interviews.length);
+
   if (interviews.length === 0) return;
-  console.log(`[NotificationScheduler] Found ${interviews.length} interviews pending delayed feedback alert check`);
 
   // Find all active super admins
   const hrAdmins = await prisma.user.findMany({
@@ -622,7 +753,13 @@ async function checkDelayedFeedbackAlerts() {
   });
 
   const adminEmails = hrAdmins.map(u => u.email).filter(Boolean);
-  const recipients = [...new Set([...adminEmails, 'Subramanya@aksharaenterprises.info'])];
+  const recipients = [...new Set([...adminEmails, TARGET_ALERT_EMAIL])].filter(Boolean);
+
+  const isEmailActive = checkEmailAvailable();
+
+  let sentCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
 
   for (const interview of interviews) {
     try {
@@ -632,16 +769,65 @@ async function checkDelayedFeedbackAlerts() {
         feedbackList = typeof interview.feedback === 'string' ? JSON.parse(interview.feedback) : interview.feedback;
       } catch (_) {}
       if (Array.isArray(feedbackList) && feedbackList.length > 0) {
+        // Mark as alerted so it leaves the pending queue
+        let notesObj = {};
+        try { notesObj = JSON.parse(interview.notes || '{}'); } catch (_) {}
+        notesObj.feedbackDelayedAlertSent = true;
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { notes: JSON.stringify(notesObj) }
+        });
+        skippedCount++;
         continue;
       }
 
-      // 2. Read notes to check if alert was already sent
+      // 2. Read notes to check attempts and backoff
       let notesObj = {};
       try {
         notesObj = JSON.parse(interview.notes || '{}');
       } catch (e) {}
 
       if (notesObj.feedbackDelayedAlertSent) {
+        skippedCount++;
+        continue;
+      }
+
+      // Check retry backoff (exponential: 2m, 4m, 8m... up to 30m)
+      const currentAttempts = (notesObj.delayedAlertAttempts || 0);
+      if (notesObj.lastAttemptAt && currentAttempts > 0) {
+        const backoffMs = Math.min(30 * 60 * 1000, Math.pow(2, currentAttempts) * 60 * 1000);
+        const nextAllowedTime = new Date(notesObj.lastAttemptAt).getTime() + backoffMs;
+        if (Date.now() < nextAllowedTime) {
+          skippedCount++;
+          continue;
+        }
+      }
+
+      const nextAttempt = currentAttempts + 1;
+      notesObj.delayedAlertAttempts = nextAttempt;
+      notesObj.lastAttemptAt = new Date().toISOString();
+
+      if (!isEmailActive || recipients.length === 0) {
+        // Email provider unavailable or no recipients
+        if (nextAttempt >= 3) {
+          // Dead-letter: mark as failed and remove from pending queue
+          notesObj.feedbackDelayedAlertSent = true;
+          notesObj.alertFailed = true;
+          notesObj.alertFailureReason = !isEmailActive 
+            ? 'Email provider unconfigured or circuit breaker paused' 
+            : 'No valid recipient email addresses found';
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notes: JSON.stringify(notesObj) }
+          });
+          failedCount++;
+        } else {
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notes: JSON.stringify(notesObj) }
+          });
+          skippedCount++;
+        }
         continue;
       }
 
@@ -682,31 +868,64 @@ async function checkDelayedFeedbackAlerts() {
         <p>Best regards,<br/>ATS Alert Daemon</p>
       `;
 
-      console.log(`[NotificationScheduler] Sending delayed feedback alert for candidate ${candidateName} to ${recipients.join(', ')}`);
+      let sendSuccess = false;
+      let lastSendErr = null;
 
       for (const email of recipients) {
         try {
-          await sendEmail({
+          const res = await sendEmail({
             to: email,
             subject: emailSubject,
             html: emailHtml
           });
+          if (res && res.success) {
+            sendSuccess = true;
+          } else {
+            lastSendErr = res?.error || 'Email dispatch failed';
+          }
         } catch (emailErr) {
-          console.error(`[NotificationScheduler] Failed to send email to ${email}:`, emailErr.message);
+          lastSendErr = emailErr.message;
         }
       }
 
-      // 4. Mark alert as sent inside notes JSON to prevent duplicate alerts
-      notesObj.feedbackDelayedAlertSent = true;
-      await prisma.interview.update({
-        where: { id: interview.id },
-        data: { notes: JSON.stringify(notesObj) }
-      });
+      if (sendSuccess) {
+        recordEmailSuccess();
+        notesObj.feedbackDelayedAlertSent = true;
+        notesObj.feedbackDelayedAlertSentAt = new Date().toISOString();
+        delete notesObj.alertFailed;
+        delete notesObj.alertFailureReason;
+        await prisma.interview.update({
+          where: { id: interview.id },
+          data: { notes: JSON.stringify(notesObj) }
+        });
+        sentCount++;
+      } else {
+        recordEmailFailure(lastSendErr);
+        if (nextAttempt >= 3) {
+          notesObj.feedbackDelayedAlertSent = true;
+          notesObj.alertFailed = true;
+          notesObj.alertFailureReason = typeof lastSendErr === 'string' ? lastSendErr : JSON.stringify(lastSendErr);
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notes: JSON.stringify(notesObj) }
+          });
+          failedCount++;
+        } else {
+          await prisma.interview.update({
+            where: { id: interview.id },
+            data: { notes: JSON.stringify(notesObj) }
+          });
+          skippedCount++;
+        }
+      }
 
     } catch (err) {
       console.error(`[NotificationScheduler] Error processing delayed feedback alert for interview ${interview.id}:`, err);
+      failedCount++;
     }
   }
+
+  console.log(`[NotificationScheduler] Delayed Feedback: ${interviews.length} found | ${sentCount} sent | ${failedCount} failed | ${skippedCount} skipped`);
 }
 
 /**
@@ -748,4 +967,8 @@ module.exports = {
   startScheduler,
   stopScheduler,
   processAlerts, // For testing and manual triggering
+  checkDelayedFeedbackAlerts,
+  checkRound1FeedbackAlerts,
+  checkRound2FeedbackAlerts,
+  checkOfferLetterAlerts,
 };
