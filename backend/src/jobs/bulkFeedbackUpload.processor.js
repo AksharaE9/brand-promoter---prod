@@ -403,7 +403,6 @@ async function batchInsertFeedback(batchItems, context) {
 
   return { created: succeeded - updatedCount, updated: updatedCount, duplicates: 0, failed, succeeded, createdEntityIds };
 }
-}
 
 /**
  * Enqueues and processes a background Bulk Feedback Upload job.
