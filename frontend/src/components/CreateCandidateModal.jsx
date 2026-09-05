@@ -97,8 +97,9 @@ export default function CreateCandidateModal({
   if (!isOpen) return null;
 
   const isJoinedStatus = statusFilter === 'JOINED';
+  const isDriveCandidate = Boolean(driveId || defaultCollege);
   const hasExistingResume = Boolean(selectedCandidate?.resumeFileId || selectedCandidate?.resumeLinkOriginal || selectedCandidate?.resumeLinkDownload);
-  const isResumeRequired = !isJoinedStatus && !hasExistingResume;
+  const isResumeRequired = !isJoinedStatus && !isDriveCandidate && !hasExistingResume;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -215,7 +216,9 @@ export default function CreateCandidateModal({
         if (statusFilter && statusFilter !== 'All') {
           formData.append('status', statusFilter);
         }
-        formData.append('resume', createForm.resume);
+        if (createForm.resume) {
+          formData.append('resume', createForm.resume);
+        }
 
         onClose();
         setCreateForm(emptyCreateForm);
@@ -472,7 +475,7 @@ export default function CreateCandidateModal({
                       ? createForm.resume.name
                       : hasExistingResume
                         ? 'Resume already uploaded (Click to replace with new document)'
-                        : isJoinedStatus
+                        : !isResumeRequired
                           ? 'Click to upload PDF or Word document (optional)'
                           : 'Click to upload PDF or Word document (required)'}
                   </span>
