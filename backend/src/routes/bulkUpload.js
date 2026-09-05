@@ -4,7 +4,6 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const XLSX = require('xlsx');
 const { v4: uuidv4 } = require('uuid');
 const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
@@ -48,68 +47,48 @@ const upload = multer({
 
 const { ALL_CANDIDATES_IMPORT_SCHEMA, COLLEGE_DRIVE_IMPORT_SCHEMA, CANDIDATE_IMPORT_SCHEMA } = require('../lib/candidateImportSchema');
 
-function generateTemplateBuffer({ isDriveContext = false, format = 'xlsx' } = {}) {
-  const activeSchema = isDriveContext ? COLLEGE_DRIVE_IMPORT_SCHEMA : ALL_CANDIDATES_IMPORT_SCHEMA;
-  const isXlsx = format === 'xlsx';
-
-  const headers = activeSchema.map(f => f.required ? `${f.label} *` : f.label);
-  const sampleRow = isDriveContext ? [
-    'EXT-1001',
-    'Rahul Sharma',
-    'Graduate Trainee',
-    'rahul.sharma@example.com',
-    '+919876543210',
-    'https://drive.google.com/file/d/sample-resume/view',
-    'Bangalore University',
-    'Bangalore',
-    'B.Tech CSE',
-    'Campus Drive 2026',
-    'Akshara Enterprises',
-  ] : [
-    'EXT-1001',
-    'Jane Smith',
-    'Senior Developer',
-    'jane.smith@example.com',
-    '+14155552671',
-    'https://drive.google.com/file/d/123456789/view',
-    'Stanford University',
-    'San Francisco',
-    'Computer Science',
-    'LinkedIn',
-    'Acme Corp',
-  ];
-
-  if (isXlsx) {
-    const ws = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const filename = isDriveContext ? 'college_drive_bulk_upload_template.xlsx' : 'candidate_bulk_upload_template.xlsx';
-    return { buffer, filename, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
-  }
-
-  const filename = isDriveContext ? 'college_drive_bulk_upload_template.csv' : 'candidate_bulk_upload_template.csv';
-  const csvContent = headers.join(',') + '\n' + sampleRow.map(v => `"${v}"`).join(',') + '\n';
-  return { buffer: Buffer.from(csvContent, 'utf-8'), filename, contentType: 'text/csv; charset=utf-8' };
-}
-
 // ── GET /api/candidates/bulk-upload/template/download ──────────────────────
 router.get(
   '/template/download',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
     const isDriveContext = Boolean(req.query.driveId || req.query.context === 'drive');
-    const format = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
+    const activeSchema = isDriveContext ? COLLEGE_DRIVE_IMPORT_SCHEMA : ALL_CANDIDATES_IMPORT_SCHEMA;
+    const filename = isDriveContext ? 'college_drive_bulk_upload_template.csv' : 'candidate_bulk_upload_template.csv';
 
-    const { buffer, filename, contentType } = generateTemplateBuffer({ isDriveContext, format });
+    const headers = activeSchema.map(f => f.required ? `${f.label} *` : f.label);
+    const sampleRow = isDriveContext ? [
+      'EXT-1001',
+      'Rahul Sharma',
+      'Graduate Trainee',
+      'rahul.sharma@example.com',
+      '+919876543210',
+      'https://drive.google.com/file/d/sample-resume/view',
+      'Bangalore University',
+      'Bangalore',
+      'B.Tech CSE',
+      'Campus Drive 2026',
+      'Akshara Enterprises',
+    ] : [
+      'EXT-1001',
+      'Jane Smith',
+      'Senior Developer',
+      'jane.smith@example.com',
+      '+14155552671',
+      'https://drive.google.com/file/d/123456789/view',
+      'Stanford University',
+      'San Francisco',
+      'Computer Science',
+      'LinkedIn',
+      'Acme Corp',
+    ];
+    const csvContent = headers.join(',') + '\n' + sampleRow.map(v => `"${v}"`).join(',') + '\n';
 
-    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(buffer);
+    res.send(csvContent);
   })
 );
-
-router.generateTemplateBuffer = generateTemplateBuffer;
 
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 const { countFileRows } = require('../lib/csvXlsxStreamParser');

@@ -65,27 +65,13 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
   if (!isDriveContext) {
     if (!resumeLinkRaw) {
       errors.push('missing required field "resume link"');
-    } else {
-      try {
-        const parsedUrl = new URL(resumeLinkRaw);
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-          errors.push(`invalid required field "resume link": "${resumeLinkRaw}" must be an HTTP or HTTPS URL`);
-        }
-      } catch (_) {
-        errors.push(`invalid required field "resume link": "${resumeLinkRaw}" is not a valid URL`);
-      }
+    } else if (!/^https?:\/\/\S+/i.test(resumeLinkRaw)) {
+      errors.push(`invalid field "resume link": "${resumeLinkRaw}" is not a valid URL`);
     }
   } else {
-    // In drive context, resumeLink is optional, but if provided must be a valid URL
-    if (resumeLinkRaw) {
-      try {
-        const parsedUrl = new URL(resumeLinkRaw);
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-          errors.push(`invalid field "resume link": "${resumeLinkRaw}" must be an HTTP or HTTPS URL`);
-        }
-      } catch (_) {
-        errors.push(`invalid field "resume link": "${resumeLinkRaw}" is not a valid URL`);
-      }
+    // In drive context, resume link is optional, but if present must be a valid URL
+    if (resumeLinkRaw && !/^https?:\/\/\S+/i.test(resumeLinkRaw)) {
+      errors.push(`invalid field "resume link": "${resumeLinkRaw}" is not a valid URL`);
     }
   }
 

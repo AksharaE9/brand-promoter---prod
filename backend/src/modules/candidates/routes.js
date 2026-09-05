@@ -523,6 +523,13 @@ router.post(
     if (!data.fullName) throw new ApiError(400, "fullName is required");
     if (!data.phone) throw new ApiError(400, "Phone number is required");
 
+    const isDrive = Boolean(data.driveId || data.college);
+    const isJoined = String(data.status || '').toUpperCase() === 'JOINED';
+    const hasResume = Boolean(data.resumeFileId || data.resumeLinkOriginal || data.resumeLinkDownload);
+    if (!isDrive && !isJoined && !hasResume) {
+      throw new ApiError(400, "Resume is required for candidate creation.");
+    }
+
     const orgId = req.user.organizationId || "defaultOrg";
 
     // Deduplication by phone
@@ -650,6 +657,12 @@ router.post(
 
     if (!fullName) throw new ApiError(400, "fullName is required");
     if (!phone) throw new ApiError(400, "Phone number is required");
+
+    const isDrive = Boolean(driveId || college);
+    const isJoined = String(req.body.status || '').toUpperCase() === 'JOINED';
+    if (!isDrive && !isJoined && !req.file) {
+      throw new ApiError(400, "Resume file is required for candidate creation.");
+    }
 
     const orgId = req.user.organizationId || "defaultOrg";
 

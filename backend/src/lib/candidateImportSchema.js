@@ -18,8 +18,7 @@ const ALL_CANDIDATES_IMPORT_SCHEMA = [
 ];
 
 /**
- * Definition of the College Drive Candidates Bulk Import Schema
- * Name, Role, Email, and Phone are required; Resume Link is optional.
+ * Definition of the College Drive Candidates Bulk Import Schema (Resume Link optional; Name, Role, Email, Phone required)
  */
 const COLLEGE_DRIVE_IMPORT_SCHEMA = [
   { key: 'candidateId', label: 'candidate id', required: false },

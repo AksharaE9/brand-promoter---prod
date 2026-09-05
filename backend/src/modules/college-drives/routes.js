@@ -292,41 +292,33 @@ router.get(
   "/drives/:id/candidates",
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
-    const candidates = await prisma.collegeDriveCandidate.findMany({
+    const driveCandidates = await prisma.collegeDriveCandidate.findMany({
       where: { driveId: req.params.id },
       orderBy: { createdAt: "desc" }
     });
 
-    const candidateIds = candidates.map(c => c.candidateId).filter(Boolean);
-    const candidateMeta = await prisma.candidate.findMany({
-      where: { id: { in: candidateIds } },
-      select: {
-        id: true,
-        resumeFileId: true,
-        resumeLinkOriginal: true,
-        resumeLinkDownload: true,
-        preferredRole: true,
-        course: true,
-        location: true,
-        resumeFile: { select: { id: true, originalName: true } }
-      }
-    });
-    const metaMap = new Map(candidateMeta.map(m => [m.id, m]));
+    const candidateIds = driveCandidates.map(c => c.candidateId).filter(Boolean);
+    const candidateMap = new Map();
+    if (candidateIds.length > 0) {
+      const candidates = await prisma.candidate.findMany({
+        where: { id: { in: candidateIds } },
+        select: { id: true, resumeFileId: true, resumeLinkOriginal: true, preferredRole: true, email: true, phone: true }
+      });
+      candidates.forEach(c => candidateMap.set(c.id, c));
+    }
 
-    const enriched = candidates.map(c => {
-      const meta = metaMap.get(c.candidateId);
-      const hasResume = Boolean(meta?.resumeFileId || meta?.resumeLinkOriginal || meta?.resumeLinkDownload);
+    const data = driveCandidates.map(dc => {
+      const c = candidateMap.get(dc.candidateId);
+      const hasResume = Boolean(c && (c.resumeFileId || c.resumeLinkOriginal));
       return {
-        ...c,
-        preferredRole: meta?.preferredRole || null,
-        course: meta?.course || null,
-        location: meta?.location || null,
+        ...dc,
+        preferredRole: c?.preferredRole || null,
+        email: dc.email || c?.email || null,
         hasResume,
-        resumeLink: meta?.resumeLinkOriginal || meta?.resumeLinkDownload || null,
       };
     });
 
-    res.json({ success: true, data: enriched });
+    res.json({ success: true, data });
   }),
 );
 

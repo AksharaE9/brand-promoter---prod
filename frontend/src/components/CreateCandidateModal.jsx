@@ -481,9 +481,11 @@ export default function CreateCandidateModal({
                   </span>
                 </label>
               </div>
-              {isResumeRequired && !createForm.resume && (
+              {isResumeRequired && !createForm.resume ? (
                 <p className="text-[11px] text-slate-400 ml-1">A resume is required before HR can create the candidate.</p>
-              )}
+              ) : !isResumeRequired && !createForm.resume && !hasExistingResume ? (
+                <p className="text-[11px] text-slate-400 ml-1">Resume optional — can be added later.</p>
+              ) : null}
             </div>
 
             <div className="flex gap-4 pt-4">

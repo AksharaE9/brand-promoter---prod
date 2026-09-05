@@ -56,14 +56,14 @@ describe('College Drives & All Candidates Bulk Upload Schemas', () => {
       expect(requiredMap.company).toBe(false);
     });
 
-    test('College Drive schema relaxes resume link only (Name, Role, e-mail, phone number required)', () => {
+    test('College Drive schema relaxes Role, e-mail, and resume link (only Name and phone number required)', () => {
       const requiredMap = Object.fromEntries(COLLEGE_DRIVE_IMPORT_SCHEMA.map(f => [f.key, f.required]));
       expect(requiredMap.name).toBe(true);
-      expect(requiredMap.role).toBe(true);
-      expect(requiredMap.email).toBe(true);
       expect(requiredMap.phone).toBe(true);
 
-      // Only resume link is relaxed to false
+      // Relaxed fields for College Drives
+      expect(requiredMap.role).toBe(false);
+      expect(requiredMap.email).toBe(false);
       expect(requiredMap.resumeLink).toBe(false);
 
       expect(requiredMap.candidateId).toBe(false);
@@ -135,6 +135,7 @@ describe('College Drives & All Candidates Bulk Upload Schemas', () => {
         name: 'Arjun Kumar',
         role: 'Trainee',
         email: 'arjun@college.edu',
+        college: 'Bangalore University',
       };
       const res1 = validateCandidateRow(noPhoneRow, 2, { isDriveContext: true });
       expect(res1.valid).toBe(false);
