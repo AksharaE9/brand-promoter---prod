@@ -79,6 +79,13 @@ async function bootstrap() {
       console.error('[CacheWarmer] Warm-up failed:', err.message);
     });
 
+    // Initialize Bulk Import persistence tables & Crash Resilience
+    const { initImportDb } = require("./lib/importDbInit");
+    const { startStuckJobReaper, runStartupRecoverySweep, handleGracefulShutdown } = require("./lib/importJobManager");
+    await initImportDb();
+    startStuckJobReaper();
+    runStartupRecoverySweep().catch(err => console.warn('[StartupRecovery] Sweep notice:', err.message));
+
     // Load in-process background workers
     if (shouldLoadWorkers) {
       try {
@@ -112,21 +119,22 @@ async function bootstrap() {
       notificationScheduler.startScheduler();
     }
 
-    // Handle graceful shutdown
-    const shutdown = async () => {
-      console.log('[Server] Shutting down, closing workers...');
+    // Handle graceful shutdown on Render SIGTERM / SIGINT
+    const shutdown = async (sig) => {
+      console.log(`[Server] Shutting down (${sig}), closing workers and checkpointing active import jobs...`);
       try {
+        await handleGracefulShutdown(sig);
         if (syncWorker) await syncWorker.close();
         if (importWorker) await importWorker.close();
         if (notificationScheduler) notificationScheduler.stopScheduler();
         console.log('[Server] Workers closed successfully.');
       } catch (err) {
-        console.error('[Server] Error closing workers:', err);
+        console.error('[Server] Error closing workers during shutdown:', err);
       }
       process.exit(0);
     };
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 
     // ── Performance: Keep-alive optimization ─────────────────
     server.keepAliveTimeout = 65000;   // prevents premature TCP close

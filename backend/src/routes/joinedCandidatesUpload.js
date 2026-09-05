@@ -1,5 +1,13 @@
 'use strict';
 
+/**
+ * joinedCandidatesUpload.js
+ * Route: POST /api/candidates/bulk-upload/joined
+ *        GET  /api/candidates/bulk-upload/joined/template/download
+ *        GET  /api/candidates/bulk-upload/joined/:jobId
+ *        GET  /api/candidates/bulk-upload/joined/:jobId/report
+ */
+
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -8,27 +16,26 @@ const { v4: uuidv4 } = require('uuid');
 const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
 const { validateFile } = require('../utils/fileValidator');
-const { processBulkInterviewUpload, getJobStatus } = require('../jobs/bulkInterviewUpload.processor');
+const { processJoinedCandidateUpload, getJobStatus } = require('../jobs/bulkJoinedCandidateUpload.processor');
 const { getErrorReportPath, getReportContentType } = require('../lib/bulkUploadErrorReport');
-const { pipelineJobStatusMap } = require('../lib/streamingBulkUploadPipeline');
+const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
+const { countFileRows } = require('../lib/csvXlsxStreamParser');
+const { checkOrgConcurrency, checkUserCooldown } = require('../lib/streamingBulkUploadPipeline');
+const { MAX_UPLOAD_BYTES } = require('../config/uploadLimits');
 
 const router = express.Router();
 router.use(auth);
 
-// Ensure temporary upload directory exists
 const TEMP_DIR = path.join(__dirname, '..', '..', 'uploads', 'temp');
 if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
-const { MAX_UPLOAD_BYTES } = require('../config/uploadLimits');
-
-// Multer Disk Storage for handling files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, TEMP_DIR),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `bulk_interviews_${uuidv4()}${ext}`);
+    cb(null, `bulk_joined_${uuidv4()}${ext}`);
   },
 });
 
@@ -45,39 +52,53 @@ const upload = multer({
   },
 });
 
-// ── GET /api/interviews/bulk-upload/template/download ──────────────────────
+// ── GET /template/download ──────────────────────────────────────────────────
 router.get(
   '/template/download',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
-    const { INTERVIEW_SCHEDULE_IMPORT_SCHEMA, generateTemplate, verifyBufferSignature } = require('../lib/interviewTemplates');
     const format = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
-    const filename = `interview-schedule-template.${format}`;
+    const filename = `joined_candidates_bulk_upload_template.${format}`;
 
-    try {
-      const buffer = await generateTemplate(INTERVIEW_SCHEDULE_IMPORT_SCHEMA, format);
-      verifyBufferSignature(buffer, format);
+    const schema = [
+      { key: 'name',         label: 'Name',           required: true },
+      { key: 'phone',        label: 'Phone Number',   required: true },
+      { key: 'email',        label: 'E-Mail',         required: false },
+      { key: 'role',         label: 'Role',           required: false },
+      { key: 'joiningDate',  label: 'Joining Date',   required: false },
+      { key: 'college',      label: 'College',        required: false },
+      { key: 'location',     label: 'Location',       required: false },
+      { key: 'course',       label: 'Course',         required: false },
+      { key: 'source',       label: 'Source',         required: false },
+      { key: 'company',      label: 'Company',        required: false },
+    ];
 
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('Content-Type', format === 'xlsx'
-        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        : 'text/csv; charset=utf-8');
-      res.setHeader('Content-Length', buffer.length.toString());
-
-      return res.end(buffer);
-    } catch (err) {
-      console.error('Template download failed:', err);
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(500).json({ success: false, error: 'Template generation failed' });
+    if (format === 'xlsx') {
+      try {
+        const { generateTemplate, verifyBufferSignature } = require('../lib/interviewTemplates');
+        const buffer = await generateTemplate(schema, 'xlsx');
+        verifyBufferSignature(buffer, 'xlsx');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Length', buffer.length.toString());
+        return res.end(buffer);
+      } catch (err) {
+        console.error('Joined template download failed:', err);
+        return res.status(500).json({ success: false, error: 'Template generation failed' });
+      }
     }
+
+    const headers = schema.map(f => f.required ? `${f.label} *` : f.label);
+    const sampleRow = ['Rahul Sharma', '+919876543210', 'rahul@example.com', 'Software Engineer', '2024-06-01', 'IIT Bangalore', 'Bangalore', 'B.Tech CSE', 'LinkedIn', 'Akshara Enterprises'];
+    const csvContent = headers.join(',') + '\n' + sampleRow.map(v => `"${v}"`).join(',') + '\n';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csvContent);
   })
 );
 
-const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
-const { countFileRows } = require('../lib/csvXlsxStreamParser');
-const { checkOrgConcurrency, checkUserCooldown } = require('../lib/streamingBulkUploadPipeline');
-
-// ── POST /api/interviews/bulk-upload ──────────────────────
+// ── POST / ──────────────────────────────────────────────────────────────────
 router.post(
   '/',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
@@ -87,7 +108,6 @@ router.post(
     const userRole = req.user?.role;
     const orgId = req.user?.organizationId || 'defaultOrg';
 
-    // 1. Org Concurrency Guard (Max 1 concurrent job per org)
     const concurrency = checkOrgConcurrency(orgId);
     if (concurrency.blocked) {
       if (req.file?.path && fs.existsSync(req.file.path)) {
@@ -102,7 +122,6 @@ router.post(
       });
     }
 
-    // 2. Per-user Cooldown Guard (60s cooldown after completing a job)
     const cooldown = checkUserCooldown(userId, userRole);
     if (cooldown.blocked) {
       if (req.file?.path && fs.existsSync(req.file.path)) {
@@ -123,8 +142,6 @@ router.post(
     }
 
     const fileExt = path.extname(req.file.originalname).toLowerCase();
-
-    // 3. Pre-parse Row Count Check (reject oversized files before parsing full rows)
     let rowCount = 0;
     try {
       rowCount = await countFileRows(req.file.path, fileExt);
@@ -140,31 +157,26 @@ router.post(
         try { fs.unlinkSync(req.file.path); } catch (_) {}
       }
       const suggestedFiles = Math.ceil(rowCount / BULK_UPLOAD_LIMITS.MAX_ROWS);
-      throw new ApiError(
-        400,
+      throw new ApiError(400,
         `This sheet has ${rowCount.toLocaleString()} rows. The maximum limit is ${BULK_UPLOAD_LIMITS.MAX_ROWS} rows per upload. Please split it into ${suggestedFiles} smaller files.`
       );
     }
 
     const jobId = uuidv4();
-    const defaultRound = req.body.defaultRound || null;
-    const defaultMode = req.body.defaultMode || null;
 
     setImmediate(async () => {
       try {
-        await processBulkInterviewUpload({
+        await processJoinedCandidateUpload({
           jobId,
           filePath: req.file.path,
           fileType: fileExt,
           uploadedBy: req.user?.id || null,
           userRole,
           organizationId: orgId,
-          defaultRound,
-          defaultMode,
           sourceFilename: req.file.originalname,
         });
       } catch (err) {
-        console.error(`[BulkInterviewRoute] Job ${jobId} error:`, err.message);
+        console.error(`[JoinedUploadRoute] Job ${jobId} error:`, err.message);
       }
     });
 
@@ -174,47 +186,40 @@ router.post(
       data: {
         jobId,
         status: 'active',
-        message: 'Interview schedule file accepted. Job queued for background processing.',
+        message: 'Joined candidates file accepted. Job queued for background processing.',
       },
     });
   })
 );
 
-// ── GET /api/interviews/bulk-upload/:jobId (Status Check) ─────────────────
+// ── GET /:jobId ─────────────────────────────────────────────────────────────
 router.get(
   '/:jobId',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params;
     const status = getJobStatus(jobId);
-
     if (!status) {
       throw new ApiError(404, `Job with ID "${jobId}" not found`);
     }
-
-    res.json({
-      success: true,
-      data: status,
-    });
+    res.json({ success: true, data: status });
   })
 );
 
-// ── GET /api/interviews/bulk-upload/:jobId/report (Download CSV Error/Warning Report)
+// ── GET /:jobId/report ──────────────────────────────────────────────────────
 router.get(
   '/:jobId/report',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
     const { jobId } = req.params;
     const filePath = getErrorReportPath(jobId);
-
     if (!filePath || !fs.existsSync(filePath)) {
       throw new ApiError(404, `Error report for job "${jobId}" not found`);
     }
-
     const contentType = getReportContentType(filePath);
     const ext = filePath.endsWith('.xlsx') ? 'xlsx' : 'csv';
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="bulk_interview_report_${jobId}.${ext}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="bulk_joined_report_${jobId}.${ext}"`);
     res.sendFile(filePath);
   })
 );

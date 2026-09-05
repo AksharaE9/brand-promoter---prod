@@ -2,7 +2,7 @@
 
 const prisma = require('../config/db');
 const { FEEDBACK_TEMPLATE_BY_ROUND, InterviewRound, validateFeedbackData } = require('../lib/interviewTemplates');
-const { resolveCandidateByNumber } = require('../modules/candidates/routes');
+const { resolveCandidateByNumber } = require('../lib/candidateResolver');
 const { normalizePhoneNumber } = require('../lib/phoneNormalization');
 const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib/streamingBulkUploadPipeline');
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
@@ -134,6 +134,36 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
     dataPayload.comments = String(commentsVal).trim();
   }
 
+  // Handle DOJ / joiningDate alias
+  let dojVal = dataPayload.doj || rawRow.doj || rawRow.DOJ || rawRow.joiningDate || rawRow['Joining Date'] || rawRow['Date of Joining'];
+  if (dojVal) {
+    dataPayload.doj = String(dojVal).trim();
+  }
+
+  // Handle overallRating alias
+  let ratingVal = dataPayload.overallRating || rawRow.overallRating || rawRow['Overall Rating'] || rawRow.rating || rawRow.Rating;
+  if (ratingVal !== undefined && ratingVal !== null && ratingVal !== '') {
+    dataPayload.overallRating = String(ratingVal).trim();
+  }
+
+  // Handle timings alias
+  let timingsVal = dataPayload.timings || rawRow.timings || rawRow.Timings || rawRow.time || rawRow.Time;
+  if (timingsVal) {
+    dataPayload.timings = String(timingsVal).trim();
+  }
+
+  // Handle duration alias
+  let durationVal = dataPayload.duration || rawRow.duration || rawRow.Duration;
+  if (durationVal) {
+    dataPayload.duration = String(durationVal).trim();
+  }
+
+  // Handle name alias
+  let nameVal = dataPayload.name || rawRow.name || rawRow.Name || rawRow['Candidate Name'];
+  if (nameVal) {
+    dataPayload.name = String(nameVal).trim();
+  }
+
   const validation = validateFeedbackData(canonicalRound, dataPayload, { isBulkUpload: true });
   if (!validation.valid) {
     return {
@@ -217,7 +247,9 @@ async function duplicateCheckFeedback(feedbackData, rowNumber, context) {
  */
 async function batchInsertFeedback(batchItems, context) {
   let succeeded = 0;
+  let updatedCount = 0;
   let failed = 0;
+  const createdEntityIds = [];
 
   for (const item of batchItems) {
     try {
@@ -255,7 +287,13 @@ async function batchInsertFeedback(batchItems, context) {
       const attUrl = dataPayload.offerLetterEmailAttachment ? (typeof dataPayload.offerLetterEmailAttachment === 'string' ? dataPayload.offerLetterEmailAttachment : JSON.stringify(dataPayload.offerLetterEmailAttachment)) : null;
 
       if (candidateId) {
-        await prisma.interviewFeedback.upsert({
+        // Check existence before upsert so we can track created vs updated accurately
+        const existingFb = await prisma.interviewFeedback.findFirst({
+          where: { candidateId, round: canonicalRound },
+          select: { id: true },
+        });
+
+        const savedFb = await prisma.interviewFeedback.upsert({
           where: {
             candidateId_round: {
               candidateId,
@@ -285,6 +323,12 @@ async function batchInsertFeedback(batchItems, context) {
             deletedAt: null,
           },
         });
+
+        if (existingFb) {
+          updatedCount++;
+        } else {
+          createdEntityIds.push(savedFb.id);
+        }
 
         // Update candidate status if REJECTED
         if (selectionStatus === 'REJECTED') {
@@ -332,7 +376,7 @@ async function batchInsertFeedback(batchItems, context) {
         }
       } else {
         // Fallback unlinked feedback row (stored with candidateId = null & pendingLink = true)
-        await prisma.interviewFeedback.create({
+        const savedUnlinked = await prisma.interviewFeedback.create({
           data: {
             candidateId: null,
             round: canonicalRound,
@@ -345,6 +389,7 @@ async function batchInsertFeedback(batchItems, context) {
             offerLetterEmailAttachmentUrl: attUrl,
           },
         });
+        createdEntityIds.push(savedUnlinked.id);
       }
 
       succeeded++;
@@ -356,7 +401,8 @@ async function batchInsertFeedback(batchItems, context) {
     }
   }
 
-  return { created: succeeded, updated: 0, duplicates: 0, failed, succeeded };
+  return { created: succeeded - updatedCount, updated: updatedCount, duplicates: 0, failed, succeeded, createdEntityIds };
+}
 }
 
 /**
@@ -379,6 +425,8 @@ async function processBulkFeedbackUpload(jobData) {
     sourceFilename,
     flowType: 'interview-feedback',
     batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_FEEDBACK,
+    preview: !!jobData.preview,
+    startFromRow: jobData.startFromRow || 0,
     context: {
       defaultRound,
       seenRoundFeedbacksInFileMap: new Map(),

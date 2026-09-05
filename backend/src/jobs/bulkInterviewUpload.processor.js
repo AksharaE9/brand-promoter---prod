@@ -2,7 +2,7 @@
 
 const prisma = require('../config/db');
 const { InterviewRound, assertCanScheduleRound } = require('../lib/interviewTemplates');
-const { resolveCandidateByNumber } = require('../modules/candidates/routes');
+const { resolveCandidateByNumber } = require('../lib/candidateResolver');
 const { normalizePhoneNumber } = require('../lib/phoneNormalization');
 const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib/streamingBulkUploadPipeline');
 const sse = require('../utils/sse');
@@ -144,8 +144,9 @@ function parseIndianDateTime(raw) {
  */
 function resolveModeFromRow(rawMode, defaultMode) {
   const str = String(rawMode || defaultMode || '').trim().toLowerCase();
-  if (['online meeting', 'online', 'virtual'].includes(str)) return 'ONLINE';
-  if (['in person', 'inperson', 'offline'].includes(str)) return 'IN_PERSON';
+  // NOTE: Prisma InterviewMode enum uses VIRTUAL (not ONLINE) — map all online variants to VIRTUAL
+  if (['online meeting', 'online', 'virtual', 'zoom', 'teams', 'meet'].includes(str)) return 'VIRTUAL';
+  if (['in person', 'inperson', 'offline', 'face to face'].includes(str)) return 'IN_PERSON';
   if (['phone call', 'phone'].includes(str)) return 'PHONE';
   if (['drive meeting', 'drive'].includes(str)) return 'DRIVE';
   if (['walk-in drive', 'walkin drive', 'walk-in', 'walk_in_drive'].includes(str)) return 'WALK_IN_DRIVE';
@@ -305,7 +306,7 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
   if (!rawMeetingLink && rawZohoLink) rawMeetingLink = rawZohoLink;
   if (!rawZohoLink && rawMeetingLink) rawZohoLink = rawMeetingLink;
 
-  if ((canonicalMode === 'ONLINE' || canonicalMode === 'VIRTUAL') && !rawMeetingLink && !rawZohoLink) {
+  if ((canonicalMode === 'VIRTUAL') && !rawMeetingLink && !rawZohoLink) {
     errors.push(`Row ${rowNumber}, Column "Meeting Link / Zoho Link": Meeting link or Zoho link is required for online/virtual interviews`);
   }
 
@@ -400,8 +401,9 @@ async function duplicateCheckInterview(data, rowNumber, context) {
 async function batchInsertInterviews(batchItems, context) {
   let succeeded = 0;
   let failed = 0;
+  const createdEntityIds = [];
 
-  if (batchItems.length === 0) return { succeeded, failed };
+  if (batchItems.length === 0) return { succeeded, failed, createdEntityIds: [] };
 
   const normalizeForComparison = (str) => {
     let s = String(str || '').toLowerCase().trim();
@@ -581,7 +583,7 @@ async function batchInsertInterviews(batchItems, context) {
       if (item.canonicalRound === 'ROUND_2') { roundNo = 2; roundLabel = 'Round 2'; }
       else if (item.canonicalRound === 'FINAL_ROUND') { roundNo = 99; roundLabel = 'Final Round'; }
 
-      await prisma.interview.create({
+      const createdIv = await prisma.interview.create({
         data: {
           application: { connect: { id: appId } },
           candidateId: item.candidate.id,
@@ -602,6 +604,7 @@ async function batchInsertInterviews(batchItems, context) {
         },
       });
 
+      createdEntityIds.push(createdIv.id);
       succeeded++;
     } catch (err) {
       console.error('[BulkInterviewProcessor] Item insert error:', err.message);
@@ -611,7 +614,7 @@ async function batchInsertInterviews(batchItems, context) {
     }
   }
 
-  return { created: succeeded, updated: 0, duplicates: 0, failed, succeeded };
+  return { created: succeeded, updated: 0, duplicates: 0, failed, succeeded, createdEntityIds };
 }
 
 /**
@@ -634,6 +637,8 @@ async function processBulkInterviewUpload(jobData) {
     sourceFilename,
     flowType: 'interviews',
     batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_INTERVIEW,
+    preview: !!jobData.preview,
+    startFromRow: jobData.startFromRow || 0,
     context: {
       defaultRound,
       defaultMode,

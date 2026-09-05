@@ -1,28 +1,38 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const { parseFileStream } = require('./csvXlsxStreamParser');
 const { initErrorReport, appendFailedRow, finalizeErrorReport } = require('./bulkUploadErrorReport');
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
+const {
+  computeIdempotencyKey,
+  createJobRecord,
+  updateCheckpoint,
+  markJobStatus,
+  recordProcessedKeys,
+  isKeyProcessed,
+  getJobById,
+} = require('./importJobRepository');
+const { registerActiveJob, unregisterActiveJob, isServerShuttingDown } = require('./importJobManager');
+const { storePreviewSession, formatPreviewResponse } = require('./bulkUploadPreview');
 
 const DEFAULT_BATCH_SIZE = BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE; // conservative default
 
 // Active job status store for immediate status querying across all pipeline jobs
 const pipelineJobStatusMap = new Map();
 
+// In-memory set of processed keys per job for O(1) duplicate prevention during re-runs
+const processedKeysCache = new Map(); // jobId -> Set<idempotencyKey>
+
 /**
  * Per-user cooldown tracking.
  * Map of userId → { expiresAt: Date, rowsProcessed: number }
- * Cleared automatically when cooldown expires.
  */
 const userCooldownMap = new Map();
 
 /**
  * Checks if an organisation already has a running bulk upload job.
- * Must be called before starting any bulk upload.
- *
- * @param {string} organizationId
- * @returns {{ blocked: boolean, jobId?: string, progress?: number, state?: string }}
  */
 function checkOrgConcurrency(organizationId) {
   for (const [jobId, status] of pipelineJobStatusMap) {
@@ -41,14 +51,8 @@ function checkOrgConcurrency(organizationId) {
 
 /**
  * Checks if a user is within the cooldown period.
- * SUPER_ADMIN and roles listed in COOLDOWN_EXEMPT_ROLES bypass the cooldown.
- *
- * @param {string} userId
- * @param {string} [role] - User's role string (e.g. 'SUPER_ADMIN')
- * @returns {{ blocked: boolean, retryAfterSeconds?: number }}
  */
 function checkUserCooldown(userId, role) {
-  // Exempt roles bypass cooldown (but NOT the concurrency lock)
   if (role && BULK_UPLOAD_LIMITS.COOLDOWN_EXEMPT_ROLES.includes(role)) {
     return { blocked: false };
   }
@@ -67,58 +71,30 @@ function checkUserCooldown(userId, role) {
 }
 
 /**
- * Sets a cooldown for a user after a bulk job that consumed resources.
- * Not called if the job failed before processing a single row (validation-only failure).
- *
- * @param {string} userId
- * @param {number} rowsProcessed - actual rows touched (0 = validation failure, no cooldown)
- * @param {string} [role]
+ * Sets a cooldown for a user after a bulk job.
  */
 function applyUserCooldown(userId, rowsProcessed, role) {
   if (!userId) return;
-  // Exempt roles get no cooldown
   if (role && BULK_UPLOAD_LIMITS.COOLDOWN_EXEMPT_ROLES.includes(role)) return;
-  // Validation-only failure (0 rows processed) — don't penalise the user
   if (rowsProcessed === 0) return;
 
   const expiresAt = Date.now() + (BULK_UPLOAD_LIMITS.COOLDOWN_SECONDS * 1000);
   userCooldownMap.set(userId, { expiresAt, rowsProcessed });
 
-  // Auto-clean after cooldown expires
   const timer = setTimeout(() => userCooldownMap.delete(userId), BULK_UPLOAD_LIMITS.COOLDOWN_SECONDS * 1000 + 1000);
   if (timer.unref) timer.unref();
 }
 
-
 /**
  * Gets status for a pipeline job by jobId.
- * @param {string} jobId 
- * @returns {object|null}
  */
 function getPipelineJobStatus(jobId) {
   return pipelineJobStatusMap.get(jobId) || null;
 }
 
 /**
- * Universal streaming bulk upload pipeline.
- * Runs background parsing, validation, batch processing, SSE progress emission,
- * and CSV error/warning report generation.
- *
- * @param {object} options
- * @param {string} options.jobId
- * @param {string} options.filePath
- * @param {string} [options.fileType]
- * @param {string} [options.uploadedBy]
- * @param {string} [options.organizationId]
- * @param {Function} options.validateRow - async (rawRow, rowNumber, context) => { valid: boolean, data?: any, errors?: string[], warnings?: string[] }
- * @param {Function} [options.duplicateCheck] - async (data, rowNumber, context) => { isDuplicate: boolean, reason?: string, warnings?: string[] }
- * @param {Function} [options.transformRow] - async (validatedData, rowNumber, context) => itemToBatch | null
- * @param {Function} options.batchInsert - async (batchItems, context) => { succeeded: number, failed: number }
- * @param {Function} [options.onComplete] - async (summary, context) => void
- * @param {Function} [options.emitProgress] - (organizationId, jobId, progressObj) => void
- * @param {Function} [options.emitCompleted] - (organizationId, jobId, completedObj) => void
- * @param {number} [options.batchSize=500]
- * @param {object} [options.context={}] - custom options or context passed to handlers
+ * Universal streaming bulk upload pipeline with Crash Resilience, Checkpointing,
+ * Resumability, Row-Level Idempotency, Backpressure, Poison-Pill Isolation, and Preview Mode.
  */
 async function runStreamingBulkUploadPipeline(options) {
   const {
@@ -136,6 +112,7 @@ async function runStreamingBulkUploadPipeline(options) {
     emitCompleted,
     batchSize = DEFAULT_BATCH_SIZE,
     context = {},
+    preview = false,
   } = options;
 
   const flowType = options.flowType || (
@@ -145,18 +122,83 @@ async function runStreamingBulkUploadPipeline(options) {
     (options.validateRow?.name && options.validateRow.name.toLowerCase().includes('lead')) ? 'lead_list' : 'candidates'
   );
 
-  initErrorReport(jobId);
+  const sourceFilename = options.sourceFilename || (filePath ? path.basename(filePath) : 'uploaded_file');
+
+  // Admission control: check process memory before beginning work
+  const startRssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  if (startRssMb > 307) { // 60% of 512MB
+    console.warn(`[AdmissionControl] Instance memory elevated before starting job ${jobId}: ${startRssMb}MB. Running GC and cooling down.`);
+    if (global.gc) global.gc();
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  // Check if this is a resumption of a previously interrupted job
+  let startFromRow = options.startFromRow || 0;
+  let resumeAttempts = 0;
+  let existingCreatedEntityIds = [];
 
   let processed = 0;
   let created = 0;
   let updated = 0;
   let duplicates = 0;
   let failed = 0;
+
+  if (!preview) {
+    const existingJob = await getJobById(jobId).catch(() => null);
+    if (existingJob) {
+      if (existingJob.status === 'COMPLETED') {
+        console.log(`[StreamingBulkUpload] Job ${jobId} already marked COMPLETED.`);
+      }
+      startFromRow = existingJob.last_committed_row || 0;
+      resumeAttempts = (existingJob.resume_attempts || 0) + 1;
+      created = existingJob.created_count || 0;
+      updated = existingJob.updated_count || 0;
+      duplicates = existingJob.duplicates_count || 0;
+      failed = existingJob.failed_count || 0;
+      try {
+        existingCreatedEntityIds = Array.isArray(existingJob.created_entity_ids)
+          ? existingJob.created_entity_ids
+          : JSON.parse(existingJob.created_entity_ids || '[]');
+      } catch (_) {}
+      console.log(`[Resumption] Resuming job ${jobId} from row ${startFromRow + 1} (attempt #${resumeAttempts}). Cumulative counts: created=${created}, updated=${updated}, duplicates=${duplicates}, failed=${failed}`);
+    } else {
+      await createJobRecord({
+        jobId,
+        flowType,
+        filePath,
+        sourceFilename,
+        uploadedBy,
+        organizationId,
+      }).catch(err => console.warn('[JobRepo] Notice creating job record:', err.message));
+    }
+  }
+
+  initErrorReport(jobId);
+
   let systemErrorCount = 0;
   let dataErrorCount = 0;
   let totalRows = 0;
+  let currentEffectiveBatchSize = batchSize;
   let batch = [];
+  let pendingKeyEntries = [];
+  let collectedEntityIds = [...existingCreatedEntityIds];
   let firstErrorReason = null;
+  let isAbortingForShutdown = false;
+  let detectedHeaders = {};
+  const sampleErrors = [];
+  const autoCreatedJobs = [];
+
+  // Metrics collection
+  const startTime = Date.now();
+  let peakRssMb = startRssMb;
+  let totalBatchesCommitted = 0;
+  let throttlingEvents = 0;
+  let isolatedRetries = 0;
+
+  if (!processedKeysCache.has(jobId)) {
+    processedKeysCache.set(jobId, new Set());
+  }
+  const jobKeySet = processedKeysCache.get(jobId);
 
   const generateSystemErrorId = () =>
     `ERR-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -176,7 +218,7 @@ async function runStreamingBulkUploadPipeline(options) {
     errorReportUrl: null,
     error: null,
     summaryError: null,
-    startTime: Date.now(),
+    startTime,
   };
   pipelineJobStatusMap.set(jobId, statusObj);
 
@@ -186,55 +228,172 @@ async function runStreamingBulkUploadPipeline(options) {
     organizationId,
     userRole: options.userRole || null,
     flowType,
+    preview,
     ...context,
   };
 
+  // Controller for graceful shutdown hook
+  const controller = {
+    abortForShutdown: async () => {
+      isAbortingForShutdown = true;
+      console.log(`[StreamingBulkUpload] Graceful abort requested for job ${jobId}. Flushing in-flight batch...`);
+      await flushBatch();
+    },
+  };
+  registerActiveJob(jobId, controller);
+
+  /**
+   * Commits the current batch to DB with atomic Checkpointing and Poison-Pill Isolation.
+   */
   const flushBatch = async () => {
-    if (batch.length === 0) return;
+    if (batch.length === 0 || preview) {
+      batch = [];
+      pendingKeyEntries = [];
+      return;
+    }
+
     const currentBatch = batch;
+    const currentKeys = pendingKeyEntries;
     batch = [];
+    pendingKeyEntries = [];
+
+    const preBatchRss = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    peakRssMb = Math.max(peakRssMb, preBatchRss);
+
+    let batchCreated = 0;
+    let batchUpdated = 0;
+    let batchFailed = 0;
+    let newIds = [];
 
     try {
       const res = await batchInsert(currentBatch, pipelineContext);
       if (res) {
-        if (typeof res.created === 'number') {
-          created += res.created;
-        } else if (typeof res.succeeded === 'number') {
-          created += res.succeeded;
-        } else {
-          created += currentBatch.length;
-        }
+        if (typeof res.created === 'number') batchCreated = res.created;
+        else if (typeof res.succeeded === 'number') batchCreated = res.succeeded;
+        else batchCreated = currentBatch.length;
 
-        if (typeof res.updated === 'number') {
-          updated += res.updated;
-        }
-        if (typeof res.duplicates === 'number') {
-          duplicates += res.duplicates;
-        }
+        if (typeof res.updated === 'number') batchUpdated = res.updated;
+        if (typeof res.duplicates === 'number') duplicates += res.duplicates;
         if (typeof res.failed === 'number') {
-          failed += res.failed;
+          batchFailed = res.failed;
           dataErrorCount += res.failed;
         }
+        if (Array.isArray(res.createdEntityIds)) {
+          newIds = res.createdEntityIds;
+          collectedEntityIds.push(...newIds);
+        }
       } else {
-        created += currentBatch.length;
+        batchCreated = currentBatch.length;
       }
-    } catch (err) {
-      const errorId = generateSystemErrorId();
-      console.error(`[SYSTEM_ERROR ${errorId}] Batch insert error on job ${jobId}:`, err.stack || err);
-      failed += currentBatch.length;
-      systemErrorCount += currentBatch.length;
-      const sysMsg = `System error while processing this batch — please report this. (Reference: ${errorId})`;
-      if (!firstErrorReason) firstErrorReason = sysMsg;
-      const rowNumbers = currentBatch.map(b => b.rowNumber).filter(Boolean);
-      const rowRange = rowNumbers.length > 0 ? `${rowNumbers[0]}-${rowNumbers[rowNumbers.length - 1]}` : '0';
-      appendFailedRow(jobId, rowRange, sysMsg, 'error', 'SYSTEM_ERROR');
+      created += batchCreated;
+      updated += batchUpdated;
+      failed += batchFailed;
+      totalBatchesCommitted++;
+    } catch (batchErr) {
+      // ── Row-Level Poison Pill Isolation Fallback ─────────────────────────
+      isolatedRetries++;
+      console.warn(`[PoisonPillIsolation] Batch of ${currentBatch.length} items on job ${jobId} failed (${batchErr.message}). Isolating row-by-row...`);
+
+      for (let i = 0; i < currentBatch.length; i++) {
+        const singleItem = currentBatch[i];
+        try {
+          const singleRes = await batchInsert([singleItem], pipelineContext);
+          if (singleRes && typeof singleRes.created === 'number') {
+            created += singleRes.created;
+          } else if (singleRes && typeof singleRes.updated === 'number') {
+            updated += singleRes.updated;
+          } else {
+            created++;
+          }
+          if (singleRes && Array.isArray(singleRes.createdEntityIds)) {
+            collectedEntityIds.push(...singleRes.createdEntityIds);
+          }
+        } catch (singleErr) {
+          failed++;
+          dataErrorCount++;
+          const rowNum = singleItem.rowNumber || 'N/A';
+          appendFailedRow(
+            jobId,
+            rowNum,
+            `Isolated row write error: ${singleErr.message}`,
+            'error',
+            'DATA_ERROR'
+          );
+        }
+      }
+    }
+
+    // Record processed idempotency keys
+    if (currentKeys.length > 0) {
+      await recordProcessedKeys(jobId, currentKeys).catch(() => {});
+      for (const k of currentKeys) {
+        jobKeySet.add(k.idempotencyKey);
+      }
+    }
+
+    // Write Atomic Checkpoint
+    const lastRow = currentBatch[currentBatch.length - 1]?.rowNumber || processed;
+    const currentMetrics = {
+      durationMs: Date.now() - startTime,
+      peakRssMb,
+      totalBatches: totalBatchesCommitted,
+      throttlingEvents,
+      isolatedRetries,
+    };
+
+    await updateCheckpoint(jobId, {
+      lastProcessedRow: processed,
+      lastCommittedRow: lastRow,
+      created,
+      updated,
+      duplicates,
+      failed,
+      newEntityIds: newIds,
+      metrics: currentMetrics,
+    }).catch(err => console.warn('[Checkpoint] Notice updating checkpoint:', err.message));
+
+    // ── Adaptive Backpressure & Throttling Check ────────────────────────────
+    const postBatchRss = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    peakRssMb = Math.max(peakRssMb, postBatchRss);
+
+    if (postBatchRss >= 384) { // 75% of 512MB: Hard Backpressure
+      throttlingEvents++;
+      console.warn(`[AdaptiveBackpressure HARD] High RSS on job ${jobId}: ${postBatchRss}MB. Pausing for GC and cool-down.`);
+      if (global.gc) global.gc();
+      await new Promise(resolve => setTimeout(resolve, 800));
+      currentEffectiveBatchSize = Math.max(25, Math.floor(batchSize / 4));
+    } else if (postBatchRss >= 307) { // 60% of 512MB: Soft Backpressure
+      throttlingEvents++;
+      console.warn(`[AdaptiveBackpressure SOFT] Elevated RSS on job ${jobId}: ${postBatchRss}MB. Halving batch size and throttling.`);
+      currentEffectiveBatchSize = Math.max(50, Math.floor(batchSize / 2));
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } else {
+      currentEffectiveBatchSize = batchSize;
     }
   };
 
   try {
     const parseResult = await parseFileStream(filePath, fileType, async (rawRow, rowNumber) => {
+      // If graceful shutdown requested, stop accepting new rows
+      if (isAbortingForShutdown || isServerShuttingDown()) {
+        return;
+      }
+
       processed++;
       totalRows = Math.max(totalRows, rowNumber - 1);
+
+      // Skip already committed rows during resumption
+      if (startFromRow > 0 && rowNumber <= startFromRow) {
+        return;
+      }
+
+      // Check row-level idempotency key
+      const dedupField = rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || rawRow.Email || rawRow.email || rawRow.Name || rowNumber;
+      const idempotencyKey = computeIdempotencyKey(jobId, rowNumber, dedupField);
+
+      if (jobKeySet.has(idempotencyKey)) {
+        return; // Already processed in earlier run of this job
+      }
 
       let valResult;
       try {
@@ -253,11 +412,8 @@ async function runStreamingBulkUploadPipeline(options) {
       if (!valResult || !valResult.valid) {
         failed++;
         const isSysErr = valResult?.errorType === 'SYSTEM_ERROR';
-        if (isSysErr) {
-          systemErrorCount++;
-        } else {
-          dataErrorCount++;
-        }
+        if (isSysErr) systemErrorCount++;
+        else dataErrorCount++;
 
         const rowId = rawRow.Name || rawRow.name || rawRow['Candidate Name'] || rawRow.Phone || rawRow.phone || rawRow['Phone Number'] || '';
         const prefix = (rowId && !isSysErr) ? `[Row Info: ${rowId}] ` : '';
@@ -268,8 +424,16 @@ async function runStreamingBulkUploadPipeline(options) {
           firstErrorReason = (valResult?.errors && valResult.errors.length > 0) ? valResult.errors[0] : reason;
         }
         appendFailedRow(jobId, rowNumber, isSysErr ? reason : `${prefix}${reason}`, 'error', isSysErr ? 'SYSTEM_ERROR' : 'DATA_ERROR');
+
+        if (preview && sampleErrors.length < 10) {
+          sampleErrors.push({
+            rowNumber,
+            reason: isSysErr ? reason : `${prefix}${reason}`,
+            severity: 'error',
+          });
+        }
       } else {
-        // Primary and secondary duplicate checks
+        // Duplicate checks
         if (typeof duplicateCheck === 'function') {
           let dupResult = null;
           try {
@@ -281,7 +445,7 @@ async function runStreamingBulkUploadPipeline(options) {
           if (dupResult && dupResult.isDuplicate) {
             duplicates++;
             appendFailedRow(jobId, rowNumber, dupResult.reason || 'Duplicate skipped', 'duplicate', 'N/A');
-            return; // Skip transforming and batching
+            return;
           }
           if (dupResult && Array.isArray(dupResult.warnings)) {
             dupResult.warnings.forEach((warn) => {
@@ -290,7 +454,7 @@ async function runStreamingBulkUploadPipeline(options) {
           }
         }
 
-        // Add any validator warnings
+        // Add validator warnings
         if (Array.isArray(valResult.warnings)) {
           valResult.warnings.forEach((warn) => {
             appendFailedRow(jobId, rowNumber, warn, 'warning', 'N/A');
@@ -314,14 +478,25 @@ async function runStreamingBulkUploadPipeline(options) {
         }
 
         if (item) {
-          batch.push(item);
+          if (!preview) {
+            batch.push({ ...item, rowNumber });
+            pendingKeyEntries.push({
+              rowNumber,
+              idempotencyKey,
+              action: 'CREATED',
+            });
+          } else {
+            created++;
+            if (item.jobRole || item.preferredRole) {
+              autoCreatedJobs.push(item.jobRole || item.preferredRole);
+            }
+          }
         } else {
-          // If transform explicitly returned null without error, treat as a duplicate or skipped item
           duplicates++;
           appendFailedRow(jobId, rowNumber, 'Row skipped (no data to insert)', 'duplicate', 'N/A');
         }
 
-        if (batch.length >= batchSize) {
+        if (!preview && batch.length >= currentEffectiveBatchSize) {
           await flushBatch();
         }
       }
@@ -353,6 +528,37 @@ async function runStreamingBulkUploadPipeline(options) {
 
     await flushBatch();
 
+    // ── Dry-Run Preview Mode Return ─────────────────────────────────────────
+    if (preview) {
+      unregisterActiveJob(jobId);
+      const previewToken = `prev_${jobId}_${Date.now()}`;
+      const previewResult = formatPreviewResponse({
+        jobId,
+        sourceFilename,
+        detectedHeaders,
+        totalRows: processed,
+        projectedCreated: created,
+        projectedUpdated: updated,
+        projectedDuplicates: duplicates,
+        projectedErrors: failed,
+        sampleErrors,
+        autoCreatedJobs,
+        previewToken,
+      });
+
+      storePreviewSession(previewToken, {
+        jobId,
+        filePath,
+        fileType,
+        sourceFilename,
+        uploadedBy,
+        organizationId,
+        options,
+      });
+
+      return previewResult;
+    }
+
     if (parseResult && parseResult.extraSheetNames && parseResult.extraSheetNames.length > 0) {
       appendFailedRow(
         jobId,
@@ -366,7 +572,7 @@ async function runStreamingBulkUploadPipeline(options) {
     // Enforce Strict Accounting Invariant
     const succeeded = created + updated;
     const expectedTotal = succeeded + duplicates + failed;
-    if (processed !== expectedTotal) {
+    if (processed !== expectedTotal && !isAbortingForShutdown) {
       throw new Error(`Row accounting invariant violated: total processed rows (${processed}) does not equal created/updated (${succeeded}) [created: ${created}, updated: ${updated}] + duplicates (${duplicates}) + errors/failed (${failed})`);
     }
 
@@ -382,9 +588,9 @@ async function runStreamingBulkUploadPipeline(options) {
       }, pipelineContext);
     }
 
-    const errorReportUrl = finalizeErrorReport(jobId, flowType);
+    const errorReportUrl = await finalizeErrorReport(jobId, flowType);
 
-    // Summary-level intelligence (Pattern Detection)
+    // Summary intelligence
     if (systemErrorCount > 0 && (systemErrorCount === processed || systemErrorCount >= failed * 0.5)) {
       if (systemErrorCount === processed) {
         statusObj.summaryError = `${processed} of ${processed} rows failed with the same system error. This is likely a bug, not a data problem.`;
@@ -397,7 +603,18 @@ async function runStreamingBulkUploadPipeline(options) {
       statusObj.summaryError = `${failed} of ${processed} rows failed. First error: ${firstErrorReason}`;
     }
 
-    statusObj.state = 'completed';
+    const finalDurationMs = Date.now() - startTime;
+    const finalMetrics = {
+      durationMs: finalDurationMs,
+      durationSec: (finalDurationMs / 1000).toFixed(2),
+      rowsPerSec: (processed / Math.max(1, finalDurationMs / 1000)).toFixed(1),
+      peakRssMb,
+      totalBatches: totalBatchesCommitted,
+      throttlingEvents,
+      isolatedRetries,
+    };
+
+    statusObj.state = isAbortingForShutdown ? 'interrupted' : 'completed';
     statusObj.processed = processed;
     statusObj.succeeded = succeeded;
     statusObj.created = created;
@@ -408,7 +625,16 @@ async function runStreamingBulkUploadPipeline(options) {
     statusObj.progress = 100;
     statusObj.errorReportUrl = errorReportUrl;
 
-    // Apply cooldown after a job that did real work
+    await markJobStatus(jobId, isAbortingForShutdown ? 'INTERRUPTED' : 'COMPLETED', {
+      errorReportUrl,
+      metrics: finalMetrics,
+      created,
+      updated,
+      duplicates,
+      failed,
+      createdEntityIds: collectedEntityIds,
+    }).catch(() => {});
+
     applyUserCooldown(uploadedBy, processed, options.userRole);
 
     if (emitCompleted) {
@@ -424,46 +650,8 @@ async function runStreamingBulkUploadPipeline(options) {
       });
     }
 
-    // Emit bulk_upload_completed audit log event
-    let fileSize = 0;
-    try {
-      if (filePath && fs.existsSync(filePath)) {
-        fileSize = fs.statSync(filePath).size;
-      }
-    } catch (_) {}
-
-    const path = require('path');
-    const sourceFilename = options.sourceFilename || (filePath ? path.basename(filePath) : 'uploaded_file');
-    
-    const { logAudit } = require('../utils/audit');
-    logAudit({
-      actorUserId: uploadedBy,
-      action: 'bulk_upload_completed',
-      entityType: 'bulk_upload_job',
-      entityId: jobId,
-      entityName: `${flowType} upload — ${sourceFilename}`,
-      subjectType: 'bulk_upload_job',
-      subjectId: jobId,
-      subjectName: `${flowType} upload — ${sourceFilename}`,
-      newData: {
-        flow_type: flowType,
-        source_filename: sourceFilename,
-        file_size_bytes: fileSize,
-        total_rows: processed,
-        created,
-        updated,
-        duplicates,
-        errors: failed,
-        warnings: 0,
-        duration_ms: statusObj.startTime ? (Date.now() - statusObj.startTime) : 0,
-        errorReportUrl,
-      },
-      organizationId,
-    });
-
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (_) {}
-    }
+    unregisterActiveJob(jobId);
+    processedKeysCache.delete(jobId);
 
     return {
       jobId,
@@ -475,122 +663,37 @@ async function runStreamingBulkUploadPipeline(options) {
       failed,
       totalRows: processed,
       errorReportUrl,
+      metrics: finalMetrics,
     };
   } catch (err) {
-    console.error(`[StreamingBulkPipeline] Job ${jobId} failed with error:`, err);
+    unregisterActiveJob(jobId);
+    processedKeysCache.delete(jobId);
+
+    const finalDurationMs = Date.now() - startTime;
+    const finalMetrics = {
+      durationMs: finalDurationMs,
+      peakRssMb,
+      error: err.message,
+    };
+
+    await markJobStatus(jobId, 'FAILED', {
+      metrics: finalMetrics,
+      created,
+      updated,
+      duplicates,
+      failed,
+    }).catch(() => {});
+
     statusObj.state = 'failed';
     statusObj.error = err.message;
-    const errorReportUrl = finalizeErrorReport(jobId, flowType);
-    statusObj.errorReportUrl = errorReportUrl;
-
-    // Apply cooldown if job did real work before failing
-    applyUserCooldown(uploadedBy, processed, options.userRole);
-
-    if (emitCompleted) {
-      emitCompleted(organizationId, jobId, {
-        processed,
-        succeeded: created + updated,
-        created,
-        updated,
-        duplicates,
-        failed,
-        errorReportUrl,
-      });
-    }
-
-    if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (_) {}
-    }
-
     throw err;
   }
 }
 
-/**
- * Memory-safe streaming pipeline implementation (explicit code shape).
- * Processes a file stream row-by-row, validating and batching inserts to the database.
- */
-async function processUploadStream({
-  filePath,
-  fileType,
-  schema,
-  rowValidator,
-  batchInsert,
-  onProgress,
-  emitError,
-  jobId,
-}) {
-  let processed = 0;
-  let created = 0;
-  let duplicates = 0;
-  let errors = 0;
-  let warnings = 0;
-  let batch = [];
-
-  const BATCH_SIZE = 500;
-
-  // Use parseFileStream to parse row-by-row streamingly
-  await parseFileStream(filePath, fileType, async (rawRow, rowNum) => {
-    processed++;
-    const result = await rowValidator(rawRow, rowNum);
-
-    if (result.severity === 'error') {
-      errors++;
-      emitError(rowNum, 'error', result.reason);
-      return;
-    }
-    if (result.severity === 'duplicate') {
-      duplicates++;
-      emitError(rowNum, 'duplicate', result.reason);
-      return;
-    }
-
-    if (Array.isArray(result.warnings)) {
-      for (const w of result.warnings) {
-        warnings++;
-        emitError(rowNum, 'warning', w);
-      }
-    }
-
-    if (result.data) {
-      batch.push(result.data);
-    } else {
-      created++; // Row processed but no data to insert (e.g. warning-only or soft-skip)
-    }
-
-    if (batch.length >= BATCH_SIZE) {
-      await batchInsert(batch);
-      created += batch.length;
-      batch = [];
-      onProgress({ processed, created, duplicates, errors, warnings });
-    }
-  });
-
-  // Flush remaining rows
-  if (batch.length > 0) {
-    await batchInsert(batch);
-    created += batch.length;
-    batch = [];
-  }
-
-  // Final progress update
-  onProgress({ processed, created, duplicates, errors, warnings });
-
-  // Accounting invariant check
-  if (created + duplicates + errors !== processed) {
-    throw new Error(`Row accounting invariant violated: total processed rows (${processed}) does not equal created/succeeded (${created}) + duplicates (${duplicates}) + errors/failed (${errors})`);
-  }
-
-  return { processed, created, duplicates, errors, warnings };
-}
-
 module.exports = {
   runStreamingBulkUploadPipeline,
-  processUploadStream,
   getPipelineJobStatus,
-  pipelineJobStatusMap,
   checkOrgConcurrency,
   checkUserCooldown,
   applyUserCooldown,
-  userCooldownMap,
 };

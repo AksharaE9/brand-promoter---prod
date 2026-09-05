@@ -175,6 +175,8 @@ app.get('/api/health/cache', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
 app.post('/api/candidates/bulk-upload', heavyEndpointLimiter);
 app.post('/api/interviews/bulk-upload', heavyEndpointLimiter);
 app.post('/api/interview-feedback/bulk-upload', heavyEndpointLimiter);
+app.post('/api/candidates/bulk-upload/joined', heavyEndpointLimiter);
+app.post('/api/candidates/bulk-upload/offer-letter', heavyEndpointLimiter);
 app.use('/api/reports', heavyEndpointLimiter);
 
 app.use('/api/auth', authLimiter, authRoutes);
@@ -190,6 +192,11 @@ app.post('/api/interview-feedback/bulk-upload', uploadLimiter);
 app.use('/api/interview-feedback/bulk-upload', require('./routes/feedbackUpload'));
 app.post('/api/interviews/bulk-upload', uploadLimiter);
 app.use('/api/interviews/bulk-upload', require('./routes/interviewUpload'));
+app.post('/api/candidates/bulk-upload/joined', uploadLimiter);
+app.use('/api/candidates/bulk-upload/joined', require('./routes/joinedCandidatesUpload'));
+app.post('/api/candidates/bulk-upload/offer-letter', uploadLimiter);
+app.use('/api/candidates/bulk-upload/offer-letter', require('./routes/offerLetterUpload'));
+app.use('/api/bulk-upload', require('./routes/bulkUploadHistoryRoutes'));
 app.use('/api/candidates', require('./routes/internalReports'));
 app.use('/api/candidates', apiLimiter, cc(0), candidateRoutes);
 app.use('/api/applications', apiLimiter, cc(0), applicationRoutes);

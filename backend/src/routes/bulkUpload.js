@@ -9,7 +9,7 @@ const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
 const { validateFile } = require('../utils/fileValidator');
 const { enqueueJob, getJobStatus } = require('../jobs/bulkCandidateUpload.processor');
-const { getErrorReportPath } = require('../lib/bulkUploadErrorReport');
+const { getErrorReportPath, getReportContentType } = require('../lib/bulkUploadErrorReport');
 const { pipelineJobStatusMap } = require('../lib/streamingBulkUploadPipeline');
 
 const router = express.Router();
@@ -53,9 +53,28 @@ router.get(
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
   asyncHandler(async (req, res) => {
     const isDriveContext = Boolean(req.query.driveId || req.query.context === 'drive');
+    const format = req.query.format === 'xlsx' ? 'xlsx' : 'csv';
     const activeSchema = isDriveContext ? COLLEGE_DRIVE_IMPORT_SCHEMA : ALL_CANDIDATES_IMPORT_SCHEMA;
-    const filename = isDriveContext ? 'college_drive_bulk_upload_template.csv' : 'candidate_bulk_upload_template.csv';
+    const baseName = isDriveContext ? 'college_drive_bulk_upload_template' : 'candidate_bulk_upload_template';
+    const filename = `${baseName}.${format}`;
 
+    if (format === 'xlsx') {
+      try {
+        const { generateTemplate, verifyBufferSignature } = require('../lib/interviewTemplates');
+        const buffer = await generateTemplate(activeSchema, 'xlsx');
+        verifyBufferSignature(buffer, 'xlsx');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Length', buffer.length.toString());
+        return res.end(buffer);
+      } catch (err) {
+        console.error('Template download failed:', err);
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(500).json({ success: false, error: 'Template generation failed' });
+      }
+    }
+
+    // CSV format (default)
     const headers = activeSchema.map(f => f.required ? `${f.label} *` : f.label);
     const sampleRow = isDriveContext ? [
       'EXT-1001',
@@ -265,7 +284,7 @@ router.get(
   })
 );
 
-// ── GET /api/candidates/bulk-upload/:jobId/report (Download CSV Error Report)
+// ── GET /api/candidates/bulk-upload/:jobId/report (Download XLSX Error Report)
 router.get(
   '/:jobId/report',
   requireRoles('SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'),
@@ -277,8 +296,10 @@ router.get(
       throw new ApiError(404, 'Error report not found for this job');
     }
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="bulk_upload_report_${jobId}.csv"`);
+    const contentType = getReportContentType(reportPath);
+    const ext = reportPath.endsWith('.xlsx') ? 'xlsx' : 'csv';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="bulk_upload_report_${jobId}.${ext}"`);
     fs.createReadStream(reportPath).pipe(res);
   })
 );

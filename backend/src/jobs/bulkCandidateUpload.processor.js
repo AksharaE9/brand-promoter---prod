@@ -132,7 +132,6 @@ async function findExistingCandidate(dbData, organizationId) {
     const byPhone = await prisma.candidate.findFirst({
       where: {
         organizationId: orgId,
-        isDeleted: false,
         OR: [
           { phoneNormalized: phoneKey },
           { phoneNormalized: `+91${phoneKey}` },
@@ -150,7 +149,6 @@ async function findExistingCandidate(dbData, organizationId) {
     return prisma.candidate.findFirst({
       where: {
         organizationId: orgId,
-        isDeleted: false,
         email: { equals: email, mode: 'insensitive' },
       },
       select: { id: true },
@@ -164,11 +162,13 @@ async function findExistingCandidate(dbData, organizationId) {
  * Import each row: create new candidate, or update if phone/email already exists.
  */
 async function batchInsertCandidates(batch, context) {
-  if (batch.length === 0) return { created: 0, updated: 0, duplicates: 0, failed: 0, succeeded: 0 };
+  if (batch.length === 0) return { created: 0, updated: 0, duplicates: 0, failed: 0, succeeded: 0, createdEntityIds: [] };
 
   let created = 0;
   let updated = 0;
   let failed = 0;
+  const createdEntityIds = [];
+
   const { logAudit } = require('../utils/audit');
   const { appendFailedRow } = require('../lib/bulkUploadErrorReport');
 
@@ -202,25 +202,52 @@ async function batchInsertCandidates(batch, context) {
         });
         updated++;
       } else {
-        saved = await prisma.candidate.create({
-          data: {
-            ...dbData,
-            createdAt: new Date(),
-          },
-        });
-        logAudit({
-          actorUserId: context.uploadedBy,
-          action: 'candidate_created',
-          entityType: 'CANDIDATE',
-          entityId: saved.id,
-          entityName: saved.fullName,
-          subjectType: 'candidate',
-          subjectId: saved.id,
-          subjectName: saved.fullName,
-          newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_create' },
-          organizationId: context.organizationId,
-        });
-        created++;
+        try {
+          saved = await prisma.candidate.create({
+            data: {
+              ...dbData,
+              createdAt: new Date(),
+            },
+          });
+          createdEntityIds.push(saved.id);
+          logAudit({
+            actorUserId: context.uploadedBy,
+            action: 'candidate_created',
+            entityType: 'CANDIDATE',
+            entityId: saved.id,
+            entityName: saved.fullName,
+            subjectType: 'candidate',
+            subjectId: saved.id,
+            subjectName: saved.fullName,
+            newData: { source: 'bulk_upload', job_id: context.jobId, mode: 'upsert_create' },
+            organizationId: context.organizationId,
+          });
+          created++;
+        } catch (createErr) {
+          const fallback = await prisma.candidate.findFirst({
+            where: {
+              OR: [
+                ...(dbData.phoneNormalized ? [{ phoneNormalized: dbData.phoneNormalized }] : []),
+                ...(dbData.phone ? [{ phone: dbData.phone }] : []),
+                ...(dbData.email && dbData.email !== 'N/A' ? [{ email: dbData.email }] : []),
+              ]
+            }
+          });
+          if (fallback) {
+            const { createdAt, createdById, organizationId, ...updateData } = dbData;
+            saved = await prisma.candidate.update({
+              where: { id: fallback.id },
+              data: {
+                ...updateData,
+                phoneNormalized: dbData.phoneNormalized || null,
+                isDeleted: false,
+              },
+            });
+            updated++;
+          } else {
+            throw createErr;
+          }
+        }
       }
 
       if (context.driveId) {
@@ -251,7 +278,7 @@ async function batchInsertCandidates(batch, context) {
     }
   }
 
-  return { created, updated, duplicates: 0, failed, succeeded: created + updated };
+  return { created, updated, duplicates: 0, failed, succeeded: created + updated, createdEntityIds };
 }
 
 async function processCandidateUpload(jobData) {
@@ -284,6 +311,8 @@ async function processCandidateUpload(jobData) {
     sourceFilename,
     flowType: 'candidates',
     batchSize: BULK_UPLOAD_LIMITS.BATCH_SIZE_CANDIDATE,
+    preview: !!jobData.preview,
+    startFromRow: jobData.startFromRow || 0,
     context: {
       validCreatedById,
       driveId: driveId || null,

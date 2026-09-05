@@ -18,6 +18,7 @@ const { getCached } = require("../../utils/cache");
 const inv = require("../../utils/cacheInvalidation");
 const { upsertCompanyForOrg } = require("../companies/routes");
 const { normalizePhoneNumber } = require("../../lib/phoneNormalization");
+const { resolveCandidateByNumber } = require('../../lib/candidateResolver');
 
 // Default company — used when none is supplied for backward-compat clients
 const DEFAULT_COMPANY = 'Akshara Enterprises';
@@ -1788,40 +1789,12 @@ router.post(
 
 /**
  * Resolves candidate record by phone number (normalized lookup).
- * @param {string} rawNumber 
- * @param {string|null} organizationId 
+ * Delegates to the shared candidateResolver lib — do not duplicate logic here.
+ * @param {string} rawNumber
+ * @param {string|null} organizationId
  * @returns {Promise<object|null>}
  */
-async function resolveCandidateByNumber(rawNumber, organizationId = null) {
-  if (!rawNumber) return null;
-  const normalized = normalizePhoneNumber(rawNumber);
-  if (!normalized) return null;
-
-  const where = {
-    isDeleted: false,
-    OR: [
-      { phoneNormalized: normalized },
-      { phone: String(rawNumber).trim() },
-    ],
-  };
-
-  if (organizationId) {
-    where.organizationId = organizationId;
-  }
-
-  return await prisma.candidate.findFirst({
-    where,
-    select: {
-      id: true,
-      fullName: true,
-      email: true,
-      phone: true,
-      preferredRole: true,
-      currentCompany: true,
-      organizationId: true,
-    },
-  });
-}
+// resolveCandidateByNumber is imported from ../../lib/candidateResolver above.
 
 // GET /api/candidates/resolve-by-number?number=...
 router.get(
@@ -1844,6 +1817,7 @@ router.get(
 );
 
 module.exports = router;
+// Keep backward-compat export — processors should now import from lib/candidateResolver directly.
 module.exports.resolveCandidateByNumber = resolveCandidateByNumber;
 
 

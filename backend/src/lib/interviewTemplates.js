@@ -316,6 +316,7 @@ function getEffectiveSelectionStatus(record) {
  * @param {string} requestedRound
  */
 async function assertCanScheduleRound(prisma, candidateId, requestedRound) {
+  if (!candidateId) return;
   // Check for prior rejections first
   const allFeedbacks = await prisma.interviewFeedback.findMany({
     where: { candidateId, deletedAt: null },
@@ -410,6 +411,8 @@ const COMBINED_FEEDBACK_TEMPLATE = [
   { key: 'comments',        label: 'Comments (Reason for Selection/Reject)',  required: false }
 ];
 
+const TEMPLATE_SCHEMA_VERSION = '2.0';
+
 async function generateTemplate(schema, format) {
   const filteredSchema = schema.filter(f => f.type !== 'file');
   const headers = filteredSchema.map(f => f.required ? `${f.label} *` : f.label);
@@ -423,6 +426,9 @@ async function generateTemplate(schema, format) {
 
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
+  wb.creator = 'ATS Unified Import Engine';
+  wb.keywords = `SCHEMA_VERSION=${TEMPLATE_SCHEMA_VERSION}`;
+  wb.description = `ATS Template Schema Version ${TEMPLATE_SCHEMA_VERSION}`;
   const ws = wb.addWorksheet('Template');
   ws.addRow(headers);
   ws.getRow(1).font = { bold: true };
@@ -515,6 +521,7 @@ module.exports = {
   INTERVIEW_SCHEDULE_IMPORT_SCHEMA,
   COMBINED_FEEDBACK_TEMPLATE,
   generateTemplate,
+  TEMPLATE_SCHEMA_VERSION,
   verifyBufferSignature,
   computeInterviewStatusUpdate,
   computeInterviewStatusRevert,

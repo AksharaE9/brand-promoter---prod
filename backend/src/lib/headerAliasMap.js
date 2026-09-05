@@ -101,6 +101,30 @@ const HEADER_ALIASES = {
   'zoho meeting link': 'zohoLink',
   'zoho meeting': 'zohoLink',
   'zoho_meeting_link': 'zohoLink',
+
+  // Joining Date / DOJ Aliases (used by Joined + Offer Letter paths)
+  'joining date': 'joiningDate',
+  'date of joining': 'joiningDate',
+  'doj': 'joiningDate',
+  'joining_date': 'joiningDate',
+  'join date': 'joiningDate',
+
+  // Offer Date Aliases
+  'offer date': 'offerDate',
+  'offer_date': 'offerDate',
+  'offerdate': 'offerDate',
+  'offer sent date': 'offerDate',
+  'date of offer': 'offerDate',
+
+  // Offer Decision Aliases
+  'offer decision': 'offerDecision',
+  'offer_decision': 'offerDecision',
+  'offerdecision': 'offerDecision',
+  'decision': 'offerDecision',
+
+  // Candidate Status Aliases (for direct status overrides in specialized paths)
+  'status': 'status',
+  'candidate status': 'status',
 };
 
 function resolveHeader(rawHeader) {

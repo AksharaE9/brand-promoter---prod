@@ -9,7 +9,7 @@ const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
 const { validateFile } = require('../utils/fileValidator');
 const { processBulkFeedbackUpload, getJobStatus } = require('../jobs/bulkFeedbackUpload.processor');
-const { getErrorReportPath } = require('../lib/bulkUploadErrorReport');
+const { getErrorReportPath, getReportContentType } = require('../lib/bulkUploadErrorReport');
 const { pipelineJobStatusMap } = require('../lib/streamingBulkUploadPipeline');
 
 const router = express.Router();
@@ -221,8 +221,10 @@ router.get(
       throw new ApiError(404, `Error report for job "${jobId}" not found`);
     }
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="bulk_feedback_report_${jobId}.csv"`);
+    const contentType = getReportContentType(filePath);
+    const ext = filePath.endsWith('.xlsx') ? 'xlsx' : 'csv';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="bulk_feedback_report_${jobId}.${ext}"`);
     res.sendFile(filePath);
   })
 );
