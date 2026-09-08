@@ -600,3 +600,75 @@ export function useUpdateRound() {
     },
   });
 }
+
+// ── Toggle Not Responded (reversible) ──
+/**
+ * @returns {import('@tanstack/react-query').UseMutationResult<any, any, any, any>}
+ */
+export function useToggleNotResponded() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ roundId, notResponded, reason }) =>
+      schedulingApi.toggleNotResponded(roundId, { notResponded, reason }),
+
+    onMutate: async ({ roundId, notResponded }) => {
+      await queryClient.cancelQueries({ queryKey: ['scheduling'] });
+      const previousRound = queryClient.getQueryData(QUERY_KEYS.round(roundId));
+      const previousRoundDetails = queryClient.getQueryData(['scheduling', 'round-details', roundId]);
+      const previousLists = queryClient.getQueriesData({ queryKey: ['scheduling', 'rounds'] });
+
+      const optimisticResult = notResponded ? 'NOT_RESPONDED' : 'PENDING';
+      const optimisticStatus = notResponded ? 'COMPLETED' : 'SCHEDULED';
+
+      queryClient.setQueryData(QUERY_KEYS.round(roundId), (old) => {
+        if (!old) return old;
+        const currentData = old.data ?? old;
+        return {
+          ...old,
+          data: { ...currentData, result: optimisticResult, status: optimisticStatus, _optimistic: true },
+        };
+      });
+
+      queryClient.setQueryData(['scheduling', 'round-details', roundId], (old) => {
+        if (!old) return old;
+        const currentData = old.data ?? old;
+        return {
+          ...old,
+          data: { ...currentData, result: optimisticResult, status: optimisticStatus, _optimistic: true },
+        };
+      });
+
+      queryClient.setQueriesData({ queryKey: ['scheduling', 'rounds'] }, (old) =>
+        updateInfiniteOrFlatList(old, (list) =>
+          list.map((r) =>
+            r.id === roundId ? { ...r, result: optimisticResult, status: optimisticStatus, _optimistic: true } : r
+          )
+        )
+      );
+
+      return { previousRound, previousRoundDetails, previousLists };
+    },
+
+    onError: (err, variables, context) => {
+      if (context?.previousRound) queryClient.setQueryData(QUERY_KEYS.round(variables.roundId), context.previousRound);
+      if (context?.previousRoundDetails) queryClient.setQueryData(['scheduling', 'round-details', variables.roundId], context.previousRoundDetails);
+      context?.previousLists?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      toast.error(`Failed to update Not Responded status: ${err.message}`);
+    },
+
+    onSuccess: (data, variables) => {
+      const realData = data?.data ?? data;
+      queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['candidate-feedbacks'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      if (data?.notResponded) {
+        toast.success('Marked as Not Responded');
+      } else {
+        toast.success('Restored previous status');
+      }
+    },
+  });
+}

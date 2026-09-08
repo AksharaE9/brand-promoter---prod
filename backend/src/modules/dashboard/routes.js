@@ -12,36 +12,48 @@ router.use(auth);
  * Optimally fetches all dashboard counts, status funnels, recent applications, and interviews in parallel.
  */
 async function fetchDashboardData(orgId) {
-  // Fetch pipeline stages
-  const stages = await prisma.pipelineStage.findMany();
-
   // Compute today's UTC midnight boundaries for interview count
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
   const startOfToday = new Date(`${todayStr}T00:00:00.000Z`);
   const endOfToday   = new Date(`${todayStr}T23:59:59.999Z`);
 
-  // Run all counts/lookups in parallel
+  // Run unified metrics query and list lookups in parallel
   const [
-    candidateCount,
-    jobCount,
-    userCount,
-    totalApps,
+    coreMetricsRaw,
+    statusGroups,
+    stageCountsRaw,
+    stages,
     recentApplications,
     upcomingInterviews,
-    interviewsTodayCount,
-    statusGroups,
-    stageCountsRaw
   ] = await Promise.all([
-    prisma.candidate.count({ where: { organizationId: orgId, isDeleted: false } }),
-    prisma.job.count({ where: { organizationId: orgId, isActive: true } }),
-    prisma.user.count({ where: { organizationId: orgId, isDeleted: false, status: "ACTIVE" } }),
-    prisma.application.count({ where: { organizationId: orgId, isDeleted: false } }),
+    prisma.$queryRawUnsafe(`
+      SELECT
+        (SELECT COUNT(*)::int FROM candidates WHERE "organizationId" = $1 AND "isDeleted" = false) as candidate_count,
+        (SELECT COUNT(*)::int FROM jobs WHERE "organizationId" = $1 AND "isActive" = true) as job_count,
+        (SELECT COUNT(*)::int FROM users WHERE "organizationId" = $1 AND "isDeleted" = false AND status = 'ACTIVE') as user_count,
+        (SELECT COUNT(*)::int FROM applications WHERE "organizationId" = $1 AND "isDeleted" = false) as total_apps,
+        (SELECT COUNT(*)::int FROM interviews WHERE "organizationId" = $1 AND "scheduledStart" >= $2 AND "scheduledStart" <= $3 AND status != 'CANCELLED') as today_interviews
+    `, orgId, startOfToday, endOfToday),
+    prisma.application.groupBy({
+      by: ["status"],
+      where: { organizationId: orgId, isDeleted: false },
+      _count: { _all: true },
+    }),
+    prisma.application.groupBy({
+      by: ["currentStageId"],
+      where: { organizationId: orgId, isDeleted: false, status: "IN_PIPELINE" },
+      _count: { _all: true },
+    }),
+    prisma.pipelineStage.findMany(),
     prisma.application.findMany({
       where: { organizationId: orgId, isDeleted: false },
       orderBy: { createdAt: "desc" },
       take: 6, // Bounded for Live Feed rendering
-      include: {
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
         candidate: { select: { id: true, fullName: true, email: true } },
         job: { select: { id: true, title: true } },
       },
@@ -49,7 +61,7 @@ async function fetchDashboardData(orgId) {
     prisma.interview.findMany({
       where: { organizationId: orgId, scheduledStart: { gte: now } },
       orderBy: { scheduledStart: "asc" },
-      take: 10, // Bounded for upcoming interviews feed (not used for the count metric)
+      take: 10, // Bounded for upcoming interviews feed
       select: {
         id: true,
         candidateId: true,
@@ -66,26 +78,14 @@ async function fetchDashboardData(orgId) {
         interviewerIds: true,
       }
     }),
-    // Real COUNT(*) for today's interviews — accurate regardless of how many there are.
-    // Previously computed as upcomingInterviews.filter(today).length which was capped at 10.
-    prisma.interview.count({
-      where: {
-        organizationId: orgId,
-        scheduledStart: { gte: startOfToday, lte: endOfToday },
-        status: { not: 'CANCELLED' },
-      },
-    }),
-    prisma.application.groupBy({
-      by: ["status"],
-      where: { organizationId: orgId, isDeleted: false },
-      _count: { _all: true },
-    }),
-    prisma.application.groupBy({
-      by: ["currentStageId"],
-      where: { organizationId: orgId, isDeleted: false, status: "IN_PIPELINE" },
-      _count: { _all: true },
-    }),
   ]);
+
+  const metrics = coreMetricsRaw?.[0] || {};
+  const candidateCount = metrics.candidate_count || 0;
+  const jobCount = metrics.job_count || 0;
+  const userCount = metrics.user_count || 0;
+  const totalApps = metrics.total_apps || 0;
+  const interviewsTodayCount = metrics.today_interviews || 0;
 
   const statusCounts = {};
   statusGroups.forEach(g => {

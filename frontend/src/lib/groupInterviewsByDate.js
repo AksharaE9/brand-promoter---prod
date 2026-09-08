@@ -88,9 +88,11 @@ export function getStatusStyle(result) {
     case 'ON_HOLD':
       return { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' };
     case 'OFFER_LETTER':
-      return { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' };
+      return { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' };
     case 'DIDNT_JOIN':
       return { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' };
+    case 'NOT_RESPONDED':
+      return { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' };
     default:
       // PENDING / SCHEDULED / null
       return { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' };

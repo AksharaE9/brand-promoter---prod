@@ -36,6 +36,31 @@ const indexes = [
           ON candidates ("organizationId", "isDeleted", "updatedAt" DESC)`,
   },
   {
+    name: 'idx_candidates_org_updated_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_updated_id
+          ON candidates ("organizationId", "isDeleted", "updatedAt" DESC, id DESC)`,
+  },
+  {
+    name: 'idx_candidates_org_status_updated_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_status_updated_id
+          ON candidates ("organizationId", "isDeleted", status, "updatedAt" DESC, id DESC)`,
+  },
+  {
+    name: 'idx_interviews_org_date_cand',
+    sql: `CREATE INDEX IF NOT EXISTS idx_interviews_org_date_cand
+          ON interviews ("organizationId", "candidateId", "scheduledStart" ASC)`,
+  },
+  {
+    name: 'idx_import_jobs_status_resume_created',
+    sql: `CREATE INDEX IF NOT EXISTS idx_import_jobs_status_resume_created
+          ON import_jobs (status, resume_attempts, created_at ASC)`,
+  },
+  {
+    name: 'idx_import_jobs_org_created',
+    sql: `CREATE INDEX IF NOT EXISTS idx_import_jobs_org_created
+          ON import_jobs (organization_id, created_at DESC)`,
+  },
+  {
     name: 'idx_candidates_email_btree',
     sql: `CREATE INDEX IF NOT EXISTS idx_candidates_email_btree
           ON candidates (email)`,

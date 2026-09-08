@@ -62,5 +62,15 @@ describe('Frontend Interview Templates & Clipboard Formatter', () => {
       expect(result).toContain('Status: SELECTED');
       expect(result).toContain('Comments: Excellent mock session performance.');
     });
+
+    test('supports NOT_RESPONDED in selection statuses and templates', () => {
+      const values = {
+        name: 'Bob Smith',
+        roundNumber: 'Round 1',
+        selectionStatus: 'NOT_RESPONDED',
+      };
+      const result = formatFeedbackForClipboard(InterviewRound.ROUND_1, values);
+      expect(result).toContain('Selection Status: NOT_RESPONDED');
+    });
   });
 });

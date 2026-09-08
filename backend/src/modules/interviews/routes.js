@@ -1801,6 +1801,288 @@ router.patch(
   })
 );
 
+// ── Helper: Not Responded Toggle Handler ──
+async function handleNotRespondedToggle({ roundId, notResponded, reason, req }) {
+  const { data: current } = await cache.getRound(roundId);
+  if (!current) throw new ApiError(404, "Interview not found");
+
+  const orgId = req.user.organizationId || "defaultOrg";
+  const candidateId = current.candidateId || current.application?.candidateId;
+  const canonicalRound = current.roundNo === 1 ? 'ROUND_1' : current.roundNo === 2 ? 'ROUND_2' : 'FINAL_ROUND';
+
+  const isCurrentlyNotResponded = current.result === 'NOT_RESPONDED';
+  const targetState = typeof notResponded === 'boolean' ? notResponded : !isCurrentlyNotResponded;
+
+  if (targetState === isCurrentlyNotResponded) {
+    return { success: true, data: current, unchanged: true, notResponded: isCurrentlyNotResponded };
+  }
+
+  if (targetState) {
+    // ── Toggle ON: Mark as Not Responded ──
+    const existingFb = candidateId ? await prisma.interviewFeedback.findFirst({
+      where: { candidateId, round: canonicalRound, deletedAt: null }
+    }) : null;
+
+    let originalFeedbackData = null;
+    if (existingFb && existingFb.selectionStatus !== 'NOT_RESPONDED') {
+      originalFeedbackData = {
+        id: existingFb.id,
+        templateVersion: existingFb.templateVersion,
+        feedbackData: existingFb.feedbackData,
+        selectionStatus: existingFb.selectionStatus,
+        overallRating: existingFb.overallRating,
+        submittedById: existingFb.submittedById,
+      };
+    } else if (Array.isArray(current.feedback) && current.feedback.length > 0 && current.feedback[0].selectionStatus !== 'NOT_RESPONDED') {
+      originalFeedbackData = current.feedback[0];
+    } else if (current.originalFeedbackData) {
+      originalFeedbackData = current.originalFeedbackData;
+    }
+
+    const roundLabel = canonicalRound === 'ROUND_1' ? 'Round 1' : canonicalRound === 'ROUND_2' ? 'Round 2' : 'Final Round';
+    const autoFeedbackData = {
+      roundNumber: roundLabel,
+      name: current.candidateName || current.application?.candidate?.fullName || '',
+      panelists: current.interviewerNames || req.user.fullName || '',
+      role: current.jobTitle || current.application?.job?.title || '',
+      selectionStatus: 'NOT_RESPONDED',
+      status: 'NOT_RESPONDED',
+      comments: reason || 'Candidate did not respond / Not Responded',
+      notResponded: true,
+      overallRating: null,
+      doj: null,
+      timings: '',
+      duration: '',
+    };
+
+    let fbRecord = null;
+    if (candidateId) {
+      fbRecord = await prisma.interviewFeedback.upsert({
+        where: {
+          candidateId_round: {
+            candidateId,
+            round: canonicalRound,
+          }
+        },
+        create: {
+          candidateId,
+          round: canonicalRound,
+          submittedById: req.user.id,
+          templateVersion: 2,
+          feedbackData: autoFeedbackData,
+          selectionStatus: 'NOT_RESPONDED',
+          overallRating: null,
+          pendingLink: false,
+        },
+        update: {
+          submittedById: req.user.id,
+          templateVersion: 2,
+          feedbackData: autoFeedbackData,
+          selectionStatus: 'NOT_RESPONDED',
+          overallRating: null,
+          deletedAt: null,
+        }
+      });
+    }
+
+    const previousStatus = (current.status && current.status !== 'COMPLETED') ? current.status : (current.previousStatus || 'SCHEDULED');
+    const previousResult = current.result !== 'NOT_RESPONDED' ? current.result : (current.previousResult || null);
+    const previousOutcome = current.outcome !== 'NOT_RESPONDED' ? current.outcome : (current.previousOutcome || null);
+
+    const updatedFeedbackList = [
+      {
+        id: fbRecord ? fbRecord.id : `fb-nr-${roundId}`,
+        submittedById: req.user.id,
+        submittedByName: req.user.fullName,
+        submittedAt: new Date().toISOString(),
+        selectionStatus: 'NOT_RESPONDED',
+        feedbackData: autoFeedbackData,
+        notResponded: true,
+      }
+    ];
+
+    const updateData = {
+      ...current,
+      status: 'COMPLETED',
+      result: 'NOT_RESPONDED',
+      outcome: 'NOT_RESPONDED',
+      outcomeSetAt: new Date().toISOString(),
+      previousStatus,
+      previousResult,
+      previousOutcome,
+      notRespondedAt: new Date().toISOString(),
+      notRespondedBy: req.user.id,
+      originalFeedbackData: originalFeedbackData || null,
+      feedback: updatedFeedbackList,
+      updatedAt: new Date().toISOString()
+    };
+
+    const result = await cache.writeRound(
+      roundId,
+      updateData,
+      req.user.id,
+      orgId,
+      current
+    );
+
+    const { broadcastNamedEvent } = require('../../utils/sse');
+    broadcastNamedEvent('interview-feedback:updated', {
+      interviewId: roundId,
+      candidateId,
+      round: canonicalRound,
+      selectionStatus: 'NOT_RESPONDED',
+    });
+    broadcastNamedEvent('INTERVIEW_UPDATED', { interviewId: roundId, ...updateData });
+
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "MARK_NOT_RESPONDED",
+        entityType: "INTERVIEW",
+        entityId: roundId,
+        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+        oldData: { status: current.status, result: current.result },
+        newData: { status: 'COMPLETED', result: 'NOT_RESPONDED' },
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        orgId,
+      });
+    });
+
+    return { success: true, data: result.data, notResponded: true };
+  } else {
+    // ── Toggle OFF: Restore previous state ──
+    const previousStatus = current.previousStatus || 'SCHEDULED';
+    const previousResult = current.previousResult || null;
+    const previousOutcome = current.previousOutcome || null;
+    const orig = current.originalFeedbackData;
+
+    let restoredFeedbackList = [];
+    let restoredResult = previousResult;
+    let restoredOutcome = previousOutcome;
+
+    if (orig && candidateId) {
+      await prisma.interviewFeedback.upsert({
+        where: {
+          candidateId_round: {
+            candidateId,
+            round: canonicalRound,
+          }
+        },
+        create: {
+          candidateId,
+          round: canonicalRound,
+          submittedById: orig.submittedById || req.user.id,
+          templateVersion: orig.templateVersion || 2,
+          feedbackData: orig.feedbackData || orig,
+          selectionStatus: orig.selectionStatus || orig.status || 'PENDING',
+          overallRating: orig.overallRating !== undefined ? orig.overallRating : null,
+          deletedAt: null,
+        },
+        update: {
+          submittedById: orig.submittedById || req.user.id,
+          templateVersion: orig.templateVersion || 2,
+          feedbackData: orig.feedbackData || orig,
+          selectionStatus: orig.selectionStatus || orig.status || 'PENDING',
+          overallRating: orig.overallRating !== undefined ? orig.overallRating : null,
+          deletedAt: null,
+        }
+      });
+      restoredFeedbackList = [orig];
+      restoredResult = orig.selectionStatus || orig.status || previousResult || null;
+      restoredOutcome = restoredResult;
+    } else if (candidateId) {
+      await prisma.interviewFeedback.updateMany({
+        where: {
+          candidateId,
+          round: canonicalRound,
+          selectionStatus: 'NOT_RESPONDED',
+        },
+        data: {
+          deletedAt: new Date(),
+        }
+      });
+      restoredFeedbackList = [];
+    }
+
+    const updateData = {
+      ...current,
+      status: previousStatus,
+      result: restoredResult,
+      outcome: restoredOutcome,
+      outcomeSetAt: restoredResult ? current.outcomeSetAt : null,
+      notRespondedAt: null,
+      notRespondedBy: null,
+      originalFeedbackData: null,
+      feedback: restoredFeedbackList,
+      updatedAt: new Date().toISOString()
+    };
+
+    const result = await cache.writeRound(
+      roundId,
+      updateData,
+      req.user.id,
+      orgId,
+      current
+    );
+
+    const { broadcastNamedEvent } = require('../../utils/sse');
+    broadcastNamedEvent('interview-feedback:updated', {
+      interviewId: roundId,
+      candidateId,
+      round: canonicalRound,
+      selectionStatus: restoredResult || 'PENDING',
+    });
+    broadcastNamedEvent('INTERVIEW_UPDATED', { interviewId: roundId, ...updateData });
+
+    setImmediate(() => {
+      logAudit({
+        actorUserId: req.user.id,
+        actorName: req.user.fullName,
+        actorEmail: req.user.email,
+        actorRole: req.user.role,
+        action: "UNMARK_NOT_RESPONDED",
+        entityType: "INTERVIEW",
+        entityId: roundId,
+        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+        oldData: { status: current.status, result: current.result },
+        newData: { status: previousStatus, result: restoredResult },
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+        orgId,
+      });
+    });
+
+    return { success: true, data: result.data, notResponded: false };
+  }
+}
+
+// ── POST / PATCH not-responded toggle ──
+router.post(
+  '/:roundId/not-responded',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { notResponded, reason } = req.body || {};
+    const result = await handleNotRespondedToggle({ roundId, notResponded, reason, req });
+    res.json(result);
+  })
+);
+
+router.patch(
+  '/:roundId/not-responded',
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { roundId } = req.params;
+    const { notResponded, reason } = req.body || {};
+    const result = await handleNotRespondedToggle({ roundId, notResponded, reason, req });
+    res.json(result);
+  })
+);
+
 // ── PATCH cancel ──
 router.patch(
   '/:roundId/cancel',

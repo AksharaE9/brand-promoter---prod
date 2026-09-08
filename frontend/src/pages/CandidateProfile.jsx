@@ -98,6 +98,10 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
             <div className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">sentiment_dissatisfied</span> DIDN'T JOIN
             </div>
+          ) : iv.result === 'NOT_RESPONDED' ? (
+            <div className="px-3 py-1.5 rounded-xl bg-purple-100 text-purple-700 text-xs font-bold flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">person_off</span> NOT RESPONDED
+            </div>
           ) : (
             <div className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold">PENDING</div>
           )}
@@ -127,13 +131,14 @@ const InterviewItem = React.memo(({ iv, idx, onUpdateLinks, onUploadRecording, n
                       f.recommendation === 'REJECTED' || f.recommendation === 'FAIL' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                       f.recommendation === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                       f.recommendation === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-700 border border-slate-200' :
+                      f.recommendation === 'NOT_RESPONDED' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
                       'bg-slate-50 text-slate-500'
                     }`}>
-                      {f.recommendation === 'DIDNT_JOIN' ? "DIDN'T JOIN" : f.recommendation}
+                      {f.recommendation === 'DIDNT_JOIN' ? "DIDN'T JOIN" : f.recommendation === 'NOT_RESPONDED' ? 'NOT RESPONDED' : f.recommendation}
                     </div>
                   </div>
 
-                  {f.recommendation !== 'DIDNT_JOIN' && (
+                  {f.recommendation !== 'DIDNT_JOIN' && f.recommendation !== 'NOT_RESPONDED' && (
                     <div className="grid grid-cols-3 gap-2">
                       <div className="bg-white p-1.5 rounded-lg border border-slate-100 text-center">
                         <div className="text-[8px] text-[#7a88a3] uppercase font-bold">Tech</div>

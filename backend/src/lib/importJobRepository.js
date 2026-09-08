@@ -149,26 +149,36 @@ async function markJobStatus(jobId, status, details = {}) {
 }
 
 /**
- * Records processed idempotency keys in batch.
+ * Records processed idempotency keys in batch using a single multi-row SQL INSERT.
  */
 async function recordProcessedKeys(jobId, entries) {
   if (!entries || entries.length === 0) return;
   await initImportDb();
 
+  const valuesClauses = [];
+  const params = [];
+  let paramIdx = 1;
+
   for (const entry of entries) {
     const id = `${jobId}_${entry.rowNumber}_${entry.idempotencyKey.slice(0, 12)}`;
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO import_processed_keys (id, job_id, row_number, idempotency_key, entity_id, action, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT (id) DO NOTHING;`,
+    valuesClauses.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, NOW())`);
+    params.push(
       id,
       jobId,
       entry.rowNumber,
       entry.idempotencyKey,
       entry.entityId || null,
       entry.action || 'CREATED'
-    ).catch(() => {});
+    );
   }
+
+  const query = `INSERT INTO import_processed_keys (id, job_id, row_number, idempotency_key, entity_id, action, created_at)
+                 VALUES ${valuesClauses.join(', ')}
+                 ON CONFLICT (id) DO NOTHING;`;
+
+  await prisma.$executeRawUnsafe(query, ...params).catch(err => {
+    console.warn('[ImportJobRepository] recordProcessedKeys warning:', err.message);
+  });
 }
 
 /**
@@ -185,7 +195,7 @@ async function isKeyProcessed(jobId, idempotencyKey) {
 }
 
 /**
- * Gets a job record by ID.
+ * Gets a job record by ID (full record including created_entity_ids for undo).
  */
 async function getJobById(jobId) {
   await initImportDb();
@@ -201,7 +211,12 @@ async function getJobById(jobId) {
  */
 async function getInterruptedJobs(organizationId = null) {
   await initImportDb();
-  let query = `SELECT * FROM import_jobs WHERE status IN ('INTERRUPTED', 'PROCESSING') AND resume_attempts < 3`;
+  let query = `SELECT id, flow_type, status, file_path, source_filename, uploaded_by, organization_id,
+                      total_rows, last_processed_row, last_committed_row, created_count, updated_count,
+                      duplicates_count, failed_count, resume_attempts, error_report_url, metrics,
+                      checkpoint_at, created_at, updated_at
+               FROM import_jobs
+               WHERE status IN ('INTERRUPTED', 'PROCESSING') AND resume_attempts < 3`;
   const params = [];
   if (organizationId) {
     query += ` AND organization_id = $1`;
@@ -217,7 +232,8 @@ async function getInterruptedJobs(organizationId = null) {
 async function getStuckJobs(thresholdMinutes = 10) {
   await initImportDb();
   return prisma.$queryRawUnsafe(
-    `SELECT * FROM import_jobs
+    `SELECT id, flow_type, status, source_filename, organization_id, total_rows, last_committed_row, resume_attempts
+     FROM import_jobs
      WHERE status = 'PROCESSING'
        AND checkpoint_at < (NOW() - INTERVAL '${parseInt(thresholdMinutes, 10)} minutes')
        AND resume_attempts < 3;`
@@ -225,11 +241,15 @@ async function getStuckJobs(thresholdMinutes = 10) {
 }
 
 /**
- * Lists recent job history for admin UI.
+ * Lists recent job history for admin UI (lean columns without massive created_entity_ids payload).
  */
 async function getJobHistory(organizationId = null, limit = 50) {
   await initImportDb();
-  let query = `SELECT * FROM import_jobs`;
+  let query = `SELECT id, flow_type, status, source_filename, uploaded_by, organization_id,
+                      total_rows, last_processed_row, last_committed_row, created_count, updated_count,
+                      duplicates_count, failed_count, resume_attempts, error_report_url, metrics,
+                      checkpoint_at, created_at, updated_at
+               FROM import_jobs`;
   const params = [];
   if (organizationId) {
     query += ` WHERE organization_id = $1`;

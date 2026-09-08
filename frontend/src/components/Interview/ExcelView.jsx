@@ -187,6 +187,7 @@ function StatusPill({ result }) {
     ON_HOLD:      { bg: '#fef9ed', text: '#d97706', label: 'ON HOLD' },
     OFFER_LETTER: { bg: '#eff6ff', text: '#1f52cc', label: 'OFFER LETTER' },
     DIDNT_JOIN:   { bg: '#f1f5f9', text: '#64748b', label: "DIDN'T JOIN" },
+    NOT_RESPONDED: { bg: '#f3e8ff', text: '#7e22ce', label: 'NOT RESPONDED' },
   };
   const style = map[result] || { bg: '#fef4e8', text: '#f2994a', label: result || 'PENDING' };
   return (

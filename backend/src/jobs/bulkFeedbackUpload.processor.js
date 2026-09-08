@@ -116,8 +116,12 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
     });
   }
   if (statusVal) {
-    dataPayload.status = String(statusVal).trim();
-    dataPayload.selectionStatus = String(statusVal).trim();
+    let normalizedStatus = String(statusVal).trim().toUpperCase();
+    if (['NOT RESPONDED', 'NOT_RESPONDED', 'NO RESPONSE', 'DIDNT RESPOND', 'DID NOT RESPOND'].includes(normalizedStatus)) {
+      normalizedStatus = 'NOT_RESPONDED';
+    }
+    dataPayload.status = normalizedStatus;
+    dataPayload.selectionStatus = normalizedStatus;
   }
 
   // Handle comments alias

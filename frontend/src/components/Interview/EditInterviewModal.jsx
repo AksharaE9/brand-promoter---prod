@@ -37,6 +37,7 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
       const scheduledDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
       const scheduledTime = !isNaN(dateObj.getTime()) ? dateObj.toTimeString().substring(0, 5) : '10:00';
       
+      const isNotResponded = data.data.result === 'NOT_RESPONDED';
       const initial = {
         roundName: data.data.round || `Round ${data.data.roundNo}`,
         scheduledDate,
@@ -49,7 +50,8 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
         interviewerIds: data.data.interviewerIds || [],
         rescheduleReason: '',
         instructions: data.data.instructions || '',
-        internalNotes: data.data.internalNotes || ''
+        internalNotes: data.data.internalNotes || '',
+        notResponded: isNotResponded,
       };
       setFormData(initial);
       setOriginalData(initial);
@@ -107,6 +109,12 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
         scheduledStart
       };
 
+      if (hasChanged('notResponded')) {
+        await api.post(`/interviews/${interviewId}/not-responded`, {
+          notResponded: formData.notResponded,
+        });
+      }
+
       if (rescheduleOnly) {
         await api.patch(`/interviews/${interviewId}/reschedule`, {
           scheduledStart,
@@ -128,6 +136,8 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
       }
 
       queryClient.invalidateQueries({ queryKey: ['scheduling'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['candidate-feedbacks'] });
       if (onUpdate) onUpdate();
       onClose();
     } catch (err) {
@@ -158,6 +168,48 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
         ) : (
           <div className="space-y-4">
             {error && <div className="text-red-600 bg-red-50 p-3 rounded-lg text-sm">{error}</div>}
+
+            {/* Not Responded Toggle Banner */}
+            <div className={`p-3.5 rounded-xl border transition-all flex items-center justify-between ${
+              formData.notResponded
+                ? 'bg-purple-50/90 border-purple-200'
+                : 'bg-slate-50/70 border-slate-200 hover:bg-slate-50'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                  formData.notResponded ? 'bg-purple-600 text-white shadow-xs' : 'bg-slate-200 text-slate-500'
+                }`}>
+                  <span className="material-symbols-outlined text-base">
+                    {formData.notResponded ? 'person_cancel' : 'person_check'}
+                  </span>
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    Candidate Status: {formData.notResponded ? <span className="text-purple-700">Not Responded</span> : <span className="text-slate-600">Attending / Pending</span>}
+                    {hasChanged('notResponded') && <span className="w-2 h-2 rounded-full bg-blue-500" title="Modified" />}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {formData.notResponded
+                      ? 'Round will be marked as Not Responded and feedback auto-resolved on Save.'
+                      : 'Toggle on to record that the candidate never responded / no-show.'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, notResponded: !prev.notResponded }))}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  formData.notResponded
+                    ? 'bg-purple-600 text-white shadow-sm shadow-purple-200 hover:bg-purple-700'
+                    : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {formData.notResponded ? 'check_box' : 'check_box_outline_blank'}
+                </span>
+                {formData.notResponded ? 'Not Responded (Selected)' : 'Mark Not Responded'}
+              </button>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
               <div>

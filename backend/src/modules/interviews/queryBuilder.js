@@ -67,15 +67,10 @@ async function buildInterviewListQuery({
   // via `curl .../api/interviews?limit=250 | wc -c` on a production-like dataset.
   const lim = Math.min(150, Math.max(1, parseInt(limit) || 20));
 
-  // Base query filter (excluding deleted candidates and orphaned interviews)
+  // Base query filter with direct index utilization
   const where = {
     organizationId: orgId,
     candidateId: { not: null },
-    application: {
-      candidate: {
-        isDeleted: false
-      }
-    }
   };
 
   // Support date filter (YYYY-MM-DD format in IST timezone)

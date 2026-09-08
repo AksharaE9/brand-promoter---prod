@@ -52,6 +52,11 @@ export const schedulingApi = {
     const res = await api.patch(`/interviews/${roundId}/status`, { status, notes });
     return res.data;
   },
+
+  toggleNotResponded: async (roundId, payload = {}) => {
+    const res = await api.post(`/interviews/${roundId}/not-responded`, payload);
+    return res.data;
+  },
   
   reschedule: async (roundId, { scheduledDate, durationMinutes, reason }) => {
     const res = await api.patch(`/interviews/${roundId}/reschedule`, {

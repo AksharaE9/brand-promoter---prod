@@ -84,6 +84,7 @@ async function checkRound1FeedbackAlerts() {
     where: {
       roundNo: 1,
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+      NOT: { result: 'NOT_RESPONDED' },
       round1SMSAlertSent: false,
       scheduledStart: { lte: oneHourAgo },
     },
@@ -228,6 +229,7 @@ async function checkRound2FeedbackAlerts() {
     where: {
       roundNo: 2,
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
+      NOT: { result: 'NOT_RESPONDED' },
       round2EmailAlertSent: false,
       scheduledStart: { lte: now },
     },
@@ -480,6 +482,9 @@ async function checkDelayedFeedbackAlerts() {
         },
         {
           status: { in: ['SCHEDULED', 'RESCHEDULED'] }
+        },
+        {
+          NOT: { result: 'NOT_RESPONDED' }
         },
         {
           scheduledStart: {

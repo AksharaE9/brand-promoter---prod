@@ -63,6 +63,12 @@ async function initImportDb() {
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS idx_import_keys_job_key ON import_processed_keys (job_id, idempotency_key);
     `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_import_jobs_status_resume_created ON import_jobs (status, resume_attempts, created_at ASC);
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS idx_import_jobs_org_created ON import_jobs (organization_id, created_at DESC);
+    `);
 
     isInitialized = true;
     console.log('[ImportDbInit] Import persistence tables and indices initialized successfully.');

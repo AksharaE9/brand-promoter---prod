@@ -22,7 +22,7 @@ const ROUND_DISPLAY_LABEL = {
   FINAL_ROUND: 'Final Round',
 };
 
-const SELECTION_STATUSES = ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'REJECTED'];
+const SELECTION_STATUSES = ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'NOT_RESPONDED', 'REJECTED'];
 
 // Round 1 — Updated 19-field template
 const ROUND_1_TEMPLATE = [
@@ -102,7 +102,7 @@ const LEGACY_ASSESSMENT_FIELDS = [
   { key: 'technical', label: 'Technical', type: 'select', required: false, options: ['1/5','2/5','3/5','4/5','5/5'] },
   { key: 'communication', label: 'Comm.', type: 'select', required: false, options: ['1/5','2/5','3/5','4/5','5/5'] },
   { key: 'culture', label: 'Culture', type: 'select', required: false, options: ['1/5','2/5','3/5','4/5','5/5'] },
-  { key: 'overallRecommendation', label: 'Overall Recommendation', type: 'select', required: true, options: ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'REJECTED'] },
+  { key: 'overallRecommendation', label: 'Overall Recommendation', type: 'select', required: true, options: ['SELECTED', 'OFFER_LETTER', 'ON_HOLD', 'DIDNT_JOIN', 'NOT_RESPONDED', 'REJECTED'] },
   { key: 'keyStrengths', label: 'Key Strengths', type: 'textarea', required: false },
   { key: 'concerns', label: 'Concerns / Weaknesses', type: 'textarea', required: false },
   { key: 'overallSummary', label: 'Overall Summary', type: 'textarea', required: false },

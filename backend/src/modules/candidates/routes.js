@@ -161,30 +161,45 @@ const candidateSearchHandler = async (req, res) => {
     }
   };
 
-  const [total, items] = await Promise.all([
-    prisma.candidate.count({ where }),
-    prisma.candidate.findMany(queryOptions)
-  ]);
+  const cacheKey = `candidates:search:${orgId}:${cursor || 'start'}:${limit}:${q}:${JSON.stringify(filters)}`;
 
-  const hasMore = items.length > limit;
-  if (hasMore) {
-    items.pop();
-  }
+  const fetchSearch = async () => {
+    const isFirstPage = !cursor;
+    const [total, items] = await Promise.all([
+      isFirstPage ? prisma.candidate.count({ where }) : Promise.resolve(null),
+      prisma.candidate.findMany(queryOptions)
+    ]);
 
-  const nextCursor = hasMore 
-    ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
-    : null;
+    const hasMore = items.length > limit;
+    if (hasMore) {
+      items.pop();
+    }
+
+    const nextCursor = hasMore 
+      ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
+      : null;
+
+    return {
+      items,
+      nextCursor,
+      hasMore,
+      ...(total !== null ? { total } : {}),
+      limit
+    };
+  };
+
+  const result = await getCached(cacheKey, fetchSearch, 15000);
 
   res.json({
     success: true,
-    data: items,
-    rows: items,
-    nextCursor,
-    hasMore,
+    data: result.items,
+    rows: result.items,
+    nextCursor: result.nextCursor,
+    hasMore: result.hasMore,
     pagination: {
-      total,
-      limit,
-      hasMore
+      ...(result.total !== undefined ? { total: result.total } : {}),
+      limit: result.limit,
+      hasMore: result.hasMore
     }
   });
 };
@@ -938,9 +953,9 @@ router.get(
         }
       };
 
-      // Fetch count and items in parallel to optimize latency by a full roundtrip
+      const isFirstPage = !cursor;
       const [total, items] = await Promise.all([
-        prisma.candidate.count({ where }),
+        isFirstPage ? prisma.candidate.count({ where }) : Promise.resolve(null),
         prisma.candidate.findMany(queryOptions)
       ]);
 
@@ -953,7 +968,7 @@ router.get(
         ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
         : null;
 
-      return { items, nextCursor, hasMore, total };
+      return { items, nextCursor, hasMore, ...(total !== null ? { total } : {}) };
     };
 
     let data;

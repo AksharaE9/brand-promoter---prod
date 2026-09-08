@@ -106,6 +106,7 @@ export function getStatusLabel(result) {
     ON_HOLD:      'ON HOLD',
     OFFER_LETTER: 'OFFER LETTER',
     DIDNT_JOIN:   "DIDN'T JOIN",
+    NOT_RESPONDED: 'NOT RESPONDED',
   };
   return labels[result] || result || 'PENDING';
 }

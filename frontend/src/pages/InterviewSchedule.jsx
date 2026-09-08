@@ -12,7 +12,7 @@ import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseN
 import { subscribeSSE } from '../lib/sse';
 import { groupInterviewsByDate, toDateKey, formatTime12h, getStatusStyle, getCandidateInitials } from '../lib/groupInterviewsByDate';
 
-import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails, updateInfiniteOrFlatList } from '../hooks/useScheduling';
+import { useRoundsList, useCreateRound, useSubmitFeedback, useRescheduleRound, useUpdatePanel, useSaveMeetLink, useTransferCandidate, useDeleteRound, useRoundDetails, useToggleNotResponded, updateInfiniteOrFlatList } from '../hooks/useScheduling';
 import useDebounce from '../hooks/useDebounce';
 import { schedulingApi } from '../services/schedulingApi';
 import { usePaginatedList } from '../hooks/usePaginatedList';
@@ -535,6 +535,7 @@ const InterviewSchedule = () => {
   const [isEditingFeedback, setIsEditingFeedback] = useState(false);
   const [showCandidateList, setShowCandidateList] = useState(false);
   const [showJobList, setShowJobList] = useState(false);
+  const [showNotRespondedConfirmModal, setShowNotRespondedConfirmModal] = useState(false);
   const lastCandidateJobKeyRef = useRef('');
   const [roundFilter, setRoundFilter] = useState('all'); // 'all', '1', '2'
   const recorderRef = useRef(null);
@@ -597,6 +598,7 @@ const InterviewSchedule = () => {
   const saveMeetLinkMutation = useSaveMeetLink();
   const transferCandidateMutation = useTransferCandidate();
   const deleteRoundMutation = useDeleteRound();
+  const toggleNotRespondedMutation = useToggleNotResponded();
 
   // Base query page 1 seed — handled below in the unified useEffect to avoid TDZ issues.
 
@@ -1456,6 +1458,45 @@ const InterviewSchedule = () => {
     }
   };
 
+  const handleToggleNotResponded = async () => {
+    if (!selectedInterview) return;
+    const isCurrentlyNotResponded = selectedInterview.result === 'NOT_RESPONDED';
+    if (isCurrentlyNotResponded) {
+      // Toggle OFF -> immediately restore
+      try {
+        await toggleNotRespondedMutation.mutateAsync({ roundId: selectedInterview.id, notResponded: false });
+        await loadAll();
+      } catch (err) {
+        setError(err.message || 'Failed to revert Not Responded status');
+      }
+    } else {
+      // Toggle ON -> check if real feedback exists
+      const hasRealFeedback = (myFeedback && myFeedback.selectionStatus !== 'NOT_RESPONDED') ||
+        (selectedFeedbacks.length > 0 && selectedFeedbacks[0].selectionStatus !== 'NOT_RESPONDED');
+      if (hasRealFeedback) {
+        setShowNotRespondedConfirmModal(true);
+      } else {
+        try {
+          await toggleNotRespondedMutation.mutateAsync({ roundId: selectedInterview.id, notResponded: true });
+          await loadAll();
+        } catch (err) {
+          setError(err.message || 'Failed to mark as Not Responded');
+        }
+      }
+    }
+  };
+
+  const confirmMarkNotResponded = async () => {
+    setShowNotRespondedConfirmModal(false);
+    if (!selectedInterview) return;
+    try {
+      await toggleNotRespondedMutation.mutateAsync({ roundId: selectedInterview.id, notResponded: true });
+      await loadAll();
+    } catch (err) {
+      setError(err.message || 'Failed to mark as Not Responded');
+    }
+  };
+
   const onUpdateStatus = async (applicationId, status) => {
     // Optimistic update via hook — no loading spinner, no refetch
     try {
@@ -1846,9 +1887,10 @@ const InterviewSchedule = () => {
                           resultStatus === 'FAIL' || resultStatus === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
                           resultStatus === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                           resultStatus === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                          resultStatus === 'NOT_RESPONDED' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
                           'bg-[#fef4e8] text-[#f2994a]'
                         }`}>
-                          {resultStatus === 'DIDNT_JOIN' ? "Didn't Join" : resultStatus}
+                          {resultStatus === 'DIDNT_JOIN' ? "Didn't Join" : resultStatus === 'NOT_RESPONDED' ? "Not Responded" : resultStatus}
                         </span>
                       )}
                     </div>
@@ -2061,8 +2103,9 @@ const InterviewSchedule = () => {
                                         iv.result === 'FAIL' || iv.result === 'REJECTED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                                         iv.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                         iv.result === 'OFFER_LETTER' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                        iv.result === 'NOT_RESPONDED' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                                         'bg-slate-50 text-slate-500 border-slate-200';
-                                      const resultLabel = iv.result === 'DIDNT_JOIN' ? "Didn't Join" : (iv.result || 'Scheduled');
+                                      const resultLabel = iv.result === 'DIDNT_JOIN' ? "Didn't Join" : iv.result === 'NOT_RESPONDED' ? 'Not Responded' : (iv.result || 'Scheduled');
                                       // Compute slot: position among same-hour interviews on this day
                                       const slotNo = iv.slotNo || (sortedList.filter(s =>
                                         new Date(s.scheduledStart).getHours() === hr &&
@@ -2389,10 +2432,16 @@ const InterviewSchedule = () => {
                       <div className="font-bold text-base text-[#142651]">
                         Interview Details ({selectedInterview ? (selectedInterview.roundNo === 1 ? 'Round 1' : selectedInterview.roundNo === 2 ? 'Round 2' : 'Final Round') : 'No Selection'})
                       </div>
-                      {selectedInterview && (!selectedInterview.feedback || (Array.isArray(selectedInterview.feedback) && selectedInterview.feedback.length === 0)) && (
+                      {selectedInterview && (!selectedInterview.feedback || (Array.isArray(selectedInterview.feedback) && selectedInterview.feedback.length === 0)) && selectedInterview.result !== 'NOT_RESPONDED' && (
                         <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1">
                           <span className="material-symbols-outlined text-xs">pending_actions</span>
                           Feedback Pending
+                        </span>
+                      )}
+                      {selectedInterview && selectedInterview.result === 'NOT_RESPONDED' && (
+                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-100 text-purple-800 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">person_off</span>
+                          Not Responded
                         </span>
                       )}
                       {selectedInterview && (
@@ -2403,6 +2452,21 @@ const InterviewSchedule = () => {
                     {/* Actions */}
                     {canScheduleInterview && selectedInterview && !detailsError && !isDetailsLoading && (
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleNotResponded(selectedInterview)}
+                          disabled={toggleNotRespondedMutation.isPending}
+                          className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-0.5 transition-all cursor-pointer ${
+                            selectedInterview?.result === 'NOT_RESPONDED'
+                              ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm'
+                              : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                          }`}
+                          title={selectedInterview?.result === 'NOT_RESPONDED' ? 'Unmark Not Responded (restore previous status)' : 'Mark as Not Responded (auto-resolves feedback)'}
+                        >
+                          <span className="material-symbols-outlined text-xs">
+                            {selectedInterview?.result === 'NOT_RESPONDED' ? 'check_circle' : 'person_off'}
+                          </span>
+                          {selectedInterview?.result === 'NOT_RESPONDED' ? 'Not Responded' : 'Not Responded'}
+                        </button>
                         <button
                           onClick={() => {
                             setTransferringInterview(selectedInterview);
@@ -2480,9 +2544,10 @@ const InterviewSchedule = () => {
                               selectedInterview?.result === 'FAIL' || selectedInterview?.result === 'REJECTED' ? 'bg-[#fbeaea] text-[#cf3a3a]' :
                               selectedInterview?.result === 'ON_HOLD' ? 'bg-amber-50 text-amber-600 border border-amber-200' :
                               selectedInterview?.result === 'DIDNT_JOIN' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                              selectedInterview?.result === 'NOT_RESPONDED' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
                               'bg-[#fef4e8] text-[#f2994a]'
                             }`}>
-                            {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : (selectedInterview?.result || 'PENDING')}
+                            {selectedInterview?.result === 'DIDNT_JOIN' ? "DIDN'T JOIN" : selectedInterview?.result === 'NOT_RESPONDED' ? 'NOT RESPONDED' : (selectedInterview?.result || 'PENDING')}
                           </div>
                         </div>
                         
@@ -2914,6 +2979,46 @@ const InterviewSchedule = () => {
                   />
                 )}
               </React.Suspense>
+            </div>
+          </Reveal>
+        </div>
+      )}
+
+      {showNotRespondedConfirmModal && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setShowNotRespondedConfirmModal(null)} />
+          <Reveal className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative z-10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">warning</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Replace Submitted Feedback?</h3>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  This round already has submitted feedback. Marking it <strong>Not Responded</strong> will auto-set the feedback outcome to Not Responded. The original feedback will be securely preserved and restored if you uncheck this toggle later.
+                </p>
+                <div className="flex items-center justify-end gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setShowNotRespondedConfirmModal(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={toggleNotRespondedMutation.isPending}
+                    onClick={() => {
+                      const { interview, nextState } = showNotRespondedConfirmModal;
+                      setShowNotRespondedConfirmModal(null);
+                      executeToggleNotResponded(interview, nextState);
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors cursor-pointer"
+                  >
+                    {toggleNotRespondedMutation.isPending ? 'Updating...' : 'Continue & Mark Not Responded'}
+                  </button>
+                </div>
+              </div>
             </div>
           </Reveal>
         </div>
