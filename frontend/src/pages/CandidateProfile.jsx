@@ -18,16 +18,21 @@ import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 function resolveResumeAction(candidate) {
   if (!candidate) return null;
 
-  if (candidate.customFields && typeof candidate.customFields === 'object' && candidate.customFields.resumeStatus === 'missing') {
+  const customStatus = candidate.customFields && typeof candidate.customFields === 'object' && candidate.customFields.resumeStatus
+    ? String(candidate.customFields.resumeStatus).toLowerCase()
+    : null;
+
+  if (customStatus === 'missing') {
     return {
       href: '#',
-      label: 'Resume Missing (Needs Re-upload)',
+      label: 'Resume unavailable — needs re-upload',
       icon: 'warning',
       downloadAttr: undefined,
       isCloud: false,
       disabled: true,
     };
   }
+
 
   const original = (candidate.resumeLinkOriginal || '').trim();
   const download = (candidate.resumeLinkDownload || '').trim();

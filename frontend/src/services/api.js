@@ -69,7 +69,8 @@ const api = {
       const { apiGetBlob } = await import('../lib/api');
       return { data: await apiGetBlob(path) };
     }
-    const data = await apiGet(path, false, config);
+    const useCache = config?.useCache !== undefined ? config.useCache : true;
+    const data = await apiGet(path, useCache, config);
     return { data };
   },
   post: async (path, body, config) => {

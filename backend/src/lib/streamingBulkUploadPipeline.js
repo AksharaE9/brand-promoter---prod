@@ -676,7 +676,8 @@ async function runStreamingBulkUploadPipeline(options) {
       error: err.message,
     };
 
-    await markJobStatus(jobId, 'FAILED', {
+    const finalStatus = (resumeAttempts >= 3) ? 'FAILED_INCOMPLETE' : 'FAILED';
+    await markJobStatus(jobId, finalStatus, {
       metrics: finalMetrics,
       created,
       updated,
@@ -684,7 +685,7 @@ async function runStreamingBulkUploadPipeline(options) {
       failed,
     }).catch(() => {});
 
-    statusObj.state = 'failed';
+    statusObj.state = finalStatus === 'FAILED_INCOMPLETE' ? 'failed_incomplete' : 'failed';
     statusObj.error = err.message;
     throw err;
   }

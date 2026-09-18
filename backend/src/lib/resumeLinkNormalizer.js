@@ -19,6 +19,11 @@ function normalizeResumeLink(rawUrl) {
     return null;
   }
 
+  // Reject non-HTTP(S) schemes (such as file:///, ftp://, javascript:)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return null;
+  }
+
   if (url.hostname.includes('drive.google.com')) {
     const match = trimmed.match(/\/file\/d\/([^/]+)/) || trimmed.match(/[?&]id=([^&]+)/);
     const fileId = match?.[1];

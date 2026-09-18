@@ -4,7 +4,7 @@ const path = require("path");
 const XLSX = require("xlsx");
 const prisma = require("../../config/db");
 const { uploadFileToCloudinary } = require("../../config/cloudinary"); // legacy stub — kept for backward compat with old http:// records
-const { isDbStorageKey, makeStorageKey, streamDbFile } = require("../../utils/dbStorage");
+const { isDbStorageKey, makeStorageKey, streamDbFile, verifyDbFile, makeContentDisposition, getSafeExtension, fixUtf8Filename } = require("../../utils/dbStorage");
 
 
 const { auth, requireRoles } = require("../../middleware/auth");
@@ -707,17 +707,22 @@ router.post(
       const tempFileMeta = await prisma.fileMeta.create({
         data: {
           storageKey: 'db://pending',
-          originalName: req.file.originalname,
+          originalName: fixUtf8Filename(req.file.originalname),
           mimeType: req.file.mimetype,
           sizeBytes: req.file.size,
           fileData: req.file.buffer,
           uploadedById: req.user.id,
         }
       });
+
       await prisma.fileMeta.update({
         where: { id: tempFileMeta.id },
         data: { storageKey: makeStorageKey(tempFileMeta.id) }
       });
+
+      // Verify-after-write: assert record existence and non-zero byte size before proceeding
+      await verifyDbFile(prisma, tempFileMeta.id, 1);
+
       resumeFileId = tempFileMeta.id;
     }
 
@@ -1275,6 +1280,13 @@ router.get(
       throw new ApiError(404, "Resume file not found for this candidate");
     }
 
+    // Check if candidate's resume is flagged as missing
+    const resumeStatus = candidate.customFields?.resumeStatus ? String(candidate.customFields.resumeStatus).toUpperCase() : null;
+    if (resumeStatus === 'MISSING') {
+      const reason = candidate.customFields?.resumeUnavailableReason || 'Resume file is unavailable in persistent storage. Please request a re-upload.';
+      throw new ApiError(404, reason);
+    }
+
     const { storageKey, originalName, mimeType, fileData } = candidate.resumeFile;
     const safeFileName = originalName || 'resume.pdf';
 
@@ -1283,7 +1295,7 @@ router.get(
       if (!fileData || fileData.length === 0) {
         throw new ApiError(404, "Resume not found in database. It may have been stored externally and is no longer available.");
       }
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+      res.setHeader("Content-Disposition", makeContentDisposition(safeFileName, 'attachment'));
       res.setHeader("Content-Type", mimeType || "application/octet-stream");
       streamDbFile(fileData, res);
       return;
@@ -1296,7 +1308,7 @@ router.get(
         const response = await fetch(storageKey);
         if (!response.ok) throw new Error(`Fetch failed: ${response.statusText}`);
         const buf = Buffer.from(await response.arrayBuffer());
-        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+        res.setHeader("Content-Disposition", makeContentDisposition(safeFileName, 'attachment'));
         res.setHeader("Content-Type", mimeType || "application/octet-stream");
         res.send(buf);
       } catch (err) {
@@ -1343,26 +1355,43 @@ router.post(
       throw new ApiError(403, "You do not have access to this candidate's data");
     }
 
+    validateFile(req.file, 'candidate');
+
     // Store resume directly in DB — no Cloudinary, no local disk
     const tempFileMeta = await prisma.fileMeta.create({
       data: {
         storageKey: 'db://pending',
-        originalName: req.file.originalname,
+        originalName: fixUtf8Filename(req.file.originalname),
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
         fileData: req.file.buffer,
         uploadedById: req.user.id
       }
     });
+
     await prisma.fileMeta.update({
       where: { id: tempFileMeta.id },
       data: { storageKey: makeStorageKey(tempFileMeta.id) }
     });
+
+    // Verify-after-write readback check
+    await verifyDbFile(prisma, tempFileMeta.id, 1);
+
+    // Clean up customFields.resumeStatus if candidate was previously marked missing
+    let updatedCustomFields = candidate.customFields;
+    if (updatedCustomFields && typeof updatedCustomFields === 'object') {
+      if (updatedCustomFields.resumeStatus || updatedCustomFields.resumeUnavailableReason) {
+        updatedCustomFields = { ...updatedCustomFields };
+        delete updatedCustomFields.resumeStatus;
+        delete updatedCustomFields.resumeUnavailableReason;
+      }
+    }
     
     await prisma.candidate.update({
       where: { id },
       data: {
-        resumeFileId: tempFileMeta.id
+        resumeFileId: tempFileMeta.id,
+        customFields: updatedCustomFields,
       }
     });
 
@@ -1371,6 +1400,7 @@ router.post(
     res.json({ success: true, data: { resumeFileId: tempFileMeta.id, storageKey: makeStorageKey(tempFileMeta.id) } });
   }),
 );
+
 
 
 // DELETE Soft delete candidate

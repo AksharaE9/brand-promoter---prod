@@ -493,8 +493,26 @@ export async function downloadAuthenticatedFile(path, suggestedFilename) {
   }
 
   const cd = response.headers.get('content-disposition');
-  const filenameFromServer = cd?.match(/filename="?([^"]+)"?/)?.[1];
-  const filename = filenameFromServer ? decodeURIComponent(filenameFromServer) : suggestedFilename;
+  let filenameFromServer = null;
+  if (cd) {
+    const rfcMatch = cd.match(/filename\*=(?:UTF-8|utf-8)''([^;]+)/i);
+    if (rfcMatch && rfcMatch[1]) {
+      try {
+        filenameFromServer = decodeURIComponent(rfcMatch[1].trim());
+      } catch (_) {}
+    }
+    if (!filenameFromServer) {
+      const standardMatch = cd.match(/filename="?([^";]+)"?/i);
+      if (standardMatch && standardMatch[1]) {
+        try {
+          filenameFromServer = decodeURIComponent(standardMatch[1].trim());
+        } catch (_) {
+          filenameFromServer = standardMatch[1].trim();
+        }
+      }
+    }
+  }
+  const filename = filenameFromServer || suggestedFilename;
 
   const blob = await response.blob();
 

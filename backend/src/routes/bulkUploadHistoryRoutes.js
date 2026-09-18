@@ -177,4 +177,59 @@ router.post('/preview/confirm', auth, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/bulk-upload/circuit-breaker/status
+ * Admin-only: Check auto-resumption circuit breaker status.
+ */
+router.get('/circuit-breaker/status', auth, requireRoles(['SUPER_ADMIN', 'ADMIN']), (req, res) => {
+  const { isRecoveryCircuitBreakerTripped } = require('../lib/importJobManager');
+  const tripped = isRecoveryCircuitBreakerTripped();
+  res.json({
+    success: true,
+    circuitBreakerTripped: tripped,
+    status: tripped ? 'TRIPPED (Auto-resumption disabled)' : 'HEALTHY (Auto-resumption active)',
+  });
+});
+
+/**
+ * POST /api/bulk-upload/circuit-breaker/reset
+ * Admin-only: Reset auto-resumption circuit breaker.
+ */
+router.post('/circuit-breaker/reset', auth, requireRoles(['SUPER_ADMIN', 'ADMIN']), (req, res) => {
+  const { resetRecoveryCircuitBreaker } = require('../lib/importJobManager');
+  resetRecoveryCircuitBreaker();
+  res.json({
+    success: true,
+    message: 'Auto-resumption circuit breaker has been reset successfully.',
+  });
+});
+
+/**
+ * POST /api/bulk-upload/retry/:jobId
+ * Admin-only: Manually retry an interrupted or failed job.
+ */
+router.post('/retry/:jobId', auth, requireRoles(['SUPER_ADMIN', 'ADMIN']), async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = await getJobById(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Import job not found' });
+    }
+
+    const { resumeSingleJob } = require('../lib/importJobManager');
+    // Run single job resumption in background
+    resumeSingleJob(job).catch(err => {
+      console.error(`[BulkRetry] Error manually retrying job ${jobId}:`, err.message);
+    });
+
+    res.json({
+      success: true,
+      message: `Manual retry initiated for job ${jobId}.`,
+      statusUrl: `/api/bulk-upload/job/${jobId}`,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

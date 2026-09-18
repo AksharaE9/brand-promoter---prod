@@ -933,10 +933,7 @@ router.post(
       throw new ApiError(400, 'File attachment is required (field: file)');
     }
 
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    if (!['.csv', '.xlsx', '.xls'].includes(ext)) {
-      throw new ApiError(415, 'Only CSV and Excel files are allowed for scheduling attachments.');
-    }
+    validateFile(req.file, 'bulkData');
 
     const member = await prisma.schedulingMember.findUnique({
       where: { id: memberId },
@@ -956,6 +953,9 @@ router.post(
     const mimeType = req.file.mimetype;
 
     const targetDateStr = date || req.query.date || getTodayString();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
+      throw new ApiError(400, `Invalid date format "${targetDateStr}". Expected YYYY-MM-DD.`);
+    }
     const forDate = new Date(`${targetDateStr}T00:00:00.000Z`);
 
     // Create record with DB binary storage — no Cloudinary, no local disk
@@ -996,7 +996,10 @@ router.post(
     const { fileData: _fd, ...safeFile } = attachedFile;
     res.status(201).json({
       success: true,
-      data: safeFile,
+      data: {
+        ...safeFile,
+        filename: safeFile.originalName || (safeFile.fileUrl ? safeFile.fileUrl.split('/').pop() : 'file') || 'file',
+      },
     });
   })
 );
@@ -1337,7 +1340,7 @@ router.get(
       }
       groupMap[dateStr].push({
         id: file.id,
-        filename: file.fileUrl.split('/').pop() || 'file',
+        filename: file.originalName || file.fileUrl.split('/').pop() || 'file',
         fileUrl: file.fileUrl,
         uploaded_by: file.uploadedBy?.fullName || 'User',
         created_at: file.createdAt,

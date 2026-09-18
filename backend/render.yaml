@@ -17,4 +17,6 @@ services:
         sync: false
       - key: CORS_ORIGIN
         value: https://brand-promoter-prod.vercel.app
+      - key: FRONTEND_URL
+        value: https://brand-promoter-prod.vercel.app
 

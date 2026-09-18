@@ -260,11 +260,25 @@ async function getJobHistory(organizationId = null, limit = 50) {
   return prisma.$queryRawUnsafe(query, ...params);
 }
 
+async function incrementResumeAttempts(jobId) {
+  await initImportDb();
+  const rows = await prisma.$queryRawUnsafe(
+    `UPDATE import_jobs
+     SET resume_attempts = COALESCE(resume_attempts, 0) + 1,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING resume_attempts;`,
+    jobId
+  );
+  return rows && rows.length > 0 ? rows[0].resume_attempts : 1;
+}
+
 module.exports = {
   computeIdempotencyKey,
   createJobRecord,
   updateCheckpoint,
   markJobStatus,
+  incrementResumeAttempts,
   recordProcessedKeys,
   isKeyProcessed,
   getJobById,

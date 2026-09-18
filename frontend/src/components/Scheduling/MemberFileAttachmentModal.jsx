@@ -126,11 +126,11 @@ export default function MemberFileAttachmentModal({ memberId, memberName, initia
     }
   };
 
-  const normalizedFiles = files.map((f) => {
+  const normalizedFiles = files.filter(Boolean).map((f) => {
     return {
       id: f.id,
       fileUrl: f.fileUrl,
-      filename: f.filename || f.fileUrl.split('/').pop() || 'file',
+      filename: f.filename || f.originalName || (f.fileUrl ? f.fileUrl.split('/').pop() : 'file') || 'file',
       note: f.note,
       uploadedBy: f.uploadedBy?.fullName || f.uploaded_by || 'User',
       createdAt: f.createdAt || f.created_at,

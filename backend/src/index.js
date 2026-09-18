@@ -81,10 +81,10 @@ async function bootstrap() {
 
     // Initialize Bulk Import persistence tables & Crash Resilience
     const { initImportDb } = require("./lib/importDbInit");
-    const { startStuckJobReaper, runStartupRecoverySweep, handleGracefulShutdown } = require("./lib/importJobManager");
+    const { startStuckJobReaper, scheduleDelayedStartupRecovery, handleGracefulShutdown } = require("./lib/importJobManager");
     await initImportDb();
     startStuckJobReaper();
-    runStartupRecoverySweep().catch(err => console.warn('[StartupRecovery] Sweep notice:', err.message));
+    scheduleDelayedStartupRecovery(60000);
 
     // Load in-process background workers
     if (shouldLoadWorkers) {
@@ -94,6 +94,8 @@ async function bootstrap() {
         scheduleSyncJob = syncModule.scheduleSyncJob;
         importWorker = require("./jobs/bulkImportWorker").worker;
         notificationScheduler = require("./jobs/notificationScheduler");
+        const { startResumeHealthCheck } = require("./jobs/resumeHealthCheck");
+        startResumeHealthCheck();
         console.log('[Workers] In-process background workers loaded successfully.');
       } catch (err) {
         console.warn("[Workers] Background workers failed to load:", err.message);
