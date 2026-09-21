@@ -25,6 +25,8 @@ const inv = {
       `candidates:list:${orgId}:*`,
       `candidates:search:${orgId}:*`,
       `candidates:filtered:${orgId}:*`,
+      `candidates:count:${orgId}:*`,
+      `candidates:status-counts:${orgId}`,
       candidateId ? `candidates:detail:${candidateId}` : null,
       `dashboard:*:${orgId}*`,
       `analytics:*:${orgId}:*`,
@@ -37,6 +39,8 @@ const inv = {
       `candidates:list:${orgId}:*`,
       `candidates:search:${orgId}:*`,
       `candidates:filtered:${orgId}:*`,
+      `candidates:count:${orgId}:*`,
+      `candidates:status-counts:${orgId}`,
       `dashboard:*:${orgId}*`,
       `analytics:*:${orgId}:*`,
     ]);

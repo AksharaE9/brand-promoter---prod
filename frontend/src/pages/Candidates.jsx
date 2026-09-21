@@ -13,7 +13,8 @@ const BulkUploadModal = lazyWithRetry(() => import('../components/BulkUpload/Bul
 import CreateCandidateModal from '../components/CreateCandidateModal';
 import { buildApiUrl, API_ROOT_URL, apiGet, apiPost, apiDelete, getStoredUser } from '../lib/api';
 import { usePaginatedList } from '../hooks/usePaginatedList';
-import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
+import { useCandidateStatusCounts, useCandidateFilteredCount } from '../hooks/useCandidateCounts';
+import PaginatedListView from '../components/PaginatedListView';
 import { search as apiSearch } from '../lib/searchClient';
 import { enterpriseFooterLinks, enterpriseNavItems } from '../config/enterpriseNav';
 import CollegeDriveWorkspace from '../components/CollegeDriveWorkspace';
@@ -316,7 +317,6 @@ const Candidates = () => {
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') || '');
-  const [totalCount, setTotalCount] = useState(0);
   const statusFilter = statusParam || 'All';
   const [roleFilter, setRoleFilter] = useState('All');
   const [locationFilter, setLocationFilter] = useState('All');
@@ -394,36 +394,53 @@ const Candidates = () => {
     ...(debouncedSearch && debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
   }), [statusFilter, companyFilter, roleFilter, locationFilter, dateRange, debouncedSearch]);
 
+  const hasActiveFilters =
+    roleFilter !== 'All' ||
+    locationFilter !== 'All' ||
+    companyFilter !== 'All' ||
+    dateFilter !== 'All' ||
+    Boolean(customDateFrom) ||
+    Boolean(customDateTo) ||
+    Boolean(search.trim());
+
   const {
-    data: infiniteData,
+    items: queryItems,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isLoading,
-    isFetching,
     refetch,
     error: queryError,
   } = usePaginatedList('/candidates', {
-    pageSize: 100,
+    initialPageSize: 50,
+    subsequentPageSize: 100,
     filters: candidatesFilters,
-    queryKey: ['candidates', 'pool'],
+    queryKey: ['candidates', statusFilter],
   });
 
   const loading = isLoading;
 
+  // Parallel status counts query for tab headers
+  const { data: statusCounts } = useCandidateStatusCounts();
+
+  // Parallel filtered count query for active filter combinations
+  const { data: customFilteredCount } = useCandidateFilteredCount(candidatesFilters, hasActiveFilters);
+
   // Synchronize infinite query data to items local state
   useEffect(() => {
-    if (infiniteData?.pages) {
-      const flattened = infiniteData.pages.flatMap(page => page.data || page.rows || []);
-      setItems(flattened);
-      
-      // Also sync totalCount for the count rendering
-      const firstPage = infiniteData.pages[0];
-      setTotalCount(firstPage?.pagination?.total || flattened.length);
-    } else {
-      setItems([]);
+    setItems(queryItems);
+  }, [queryItems]);
+
+  const totalCount = useMemo(() => {
+    if (hasActiveFilters && typeof customFilteredCount === 'number') {
+      return customFilteredCount;
     }
-  }, [infiniteData]);
+    if (statusCounts) {
+      if (statusFilter === 'ALL' || statusFilter === 'All') return statusCounts.ALL || 0;
+      return statusCounts[statusFilter] ?? queryItems.length;
+    }
+    return queryItems.length;
+  }, [hasActiveFilters, customFilteredCount, statusCounts, statusFilter, queryItems.length]);
 
   // Handle query error
   useEffect(() => {
@@ -667,19 +684,6 @@ const Candidates = () => {
     };
   }), [items, statusFilter]);
 
-  // Unique roles and locations for filter dropdowns
-  const visibleCandidates = useMemo(() => {
-    let list = allMapped;
-    if (roleFilter !== 'All') list = list.filter(c => matchesRoleFilter(c.role, roleFilter));
-    if (locationFilter !== 'All') list = list.filter(c => matchesPlaceFilter(c.location, locationFilter));
-    if (dateFilter !== 'All' || customDateFrom || customDateTo) {
-      list = list.filter(c =>
-        matchesDateFilter(c, statusFilter, dateFilter, customDateFrom, customDateTo)
-      );
-    }
-    return list;
-  }, [allMapped, roleFilter, locationFilter, dateFilter, customDateFrom, customDateTo, statusFilter]);
-
   const clearAllFilters = useCallback(() => {
     setRoleFilter('All');
     setLocationFilter('All');
@@ -695,15 +699,6 @@ const Candidates = () => {
       return next;
     });
   }, [setSearchParams]);
-
-  const hasActiveFilters =
-    roleFilter !== 'All' ||
-    locationFilter !== 'All' ||
-    companyFilter !== 'All' ||
-    dateFilter !== 'All' ||
-    Boolean(customDateFrom) ||
-    Boolean(customDateTo) ||
-    Boolean(search.trim());
 
   const pageTitle = useMemo(() => {
     if (statusFilter === 'OFFER_SENT') return 'Offer Sent Registry';
@@ -966,60 +961,14 @@ const Candidates = () => {
                     <span>Loaded {items.length} of {totalCount > 0 ? totalCount.toLocaleString() : items.length}</span>
                   </>
                 ) : (
-                  <span>{totalCount > 0 ? totalCount.toLocaleString() : visibleCandidates.length} candidate{(totalCount > 0 ? totalCount : visibleCandidates.length) !== 1 ? 's' : ''}</span>
+                  <span>{totalCount > 0 ? totalCount.toLocaleString() : items.length} candidate{(totalCount > 0 ? totalCount : items.length) !== 1 ? 's' : ''}</span>
                 )}
               </span>
             )}
           </div>
         )}
 
-        {loading && items.length === 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <CardSkeleton key={i} />)}
-          </div>
-        ) : searchError ? (
-          <div className="py-20 text-center os-card border-red-100 bg-red-50/20">
-            <div className="text-red-600 mb-3 font-semibold">{searchError}</div>
-            <button className="os-btn-primary" onClick={() => refetch()}>Retry Search</button>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="py-20 text-center os-card">
-            {statusFilter === 'JOINED' ? (
-              hasActiveFilters ? (
-                <>
-                  <div className="text-slate-500 mb-2 font-semibold">No joined candidates match the selected filters.</div>
-                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
-                </>
-              ) : (
-                <>
-                  <div className="text-slate-500 mb-2 font-semibold">No joined candidates yet.</div>
-                  <p className="text-sm text-slate-400 max-w-md mx-auto mb-5">
-                    Candidates appear here after you mark them as Joined from Offer Sent, or when you add them with + Add Candidate on this page.
-                  </p>
-                  {canManageCandidates && (
-                    <button className="os-btn-primary" type="button" onClick={() => setShowCreateModal(true)}>
-                      + Add Joined Candidate
-                    </button>
-                  )}
-                </>
-              )
-            ) : statusFilter === 'OFFER_SENT' ? (
-              <>
-                <div className="text-slate-400 mb-2">No offer-sent candidates found.</div>
-                {hasActiveFilters && (
-                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>
-                {hasActiveFilters && (
-                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
-                )}
-              </>
-            )}
-          </div>
-        ) : viewMode === 'grid' && statusFilter === 'JOINED' ? (
+        {viewMode === 'grid' && statusFilter === 'JOINED' ? (
           <>
             {/* Calendar Grid */}
             <div className="os-card p-0 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1140,29 +1089,43 @@ const Candidates = () => {
             )}
           </>
         ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {visibleCandidates.map((c) => (
-                <CandidateCard 
-                  key={c.id}
-                  candidate={c} 
-                  onNavigate={handleNavigate} 
-                  onDelete={onDeleteCandidate} 
-                  onUpdateStatus={onUpdateStatus}
-                  canManageCandidates={canManageCandidates}
-                  isOfferSent={statusFilter === 'OFFER_SENT'}
-                />
-              ))}
-            </div>
-            <InfiniteScrollSentinel
-              hasNextPage={hasNextPage}
-              isFetchingNextPage={isFetchingNextPage}
-              fetchNextPage={fetchNextPage}
-            />
-            {!hasNextPage && items.length > 0 && (
-              <p className="text-xs text-slate-400 font-medium text-center mt-6 w-full">All {totalCount > 0 ? totalCount : items.length} candidates loaded</p>
+          <PaginatedListView
+            items={allMapped}
+            renderItem={(c) => (
+              <CandidateCard 
+                key={c.id}
+                candidate={c} 
+                onNavigate={handleNavigate} 
+                onDelete={onDeleteCandidate} 
+                onUpdateStatus={onUpdateStatus}
+                canManageCandidates={canManageCandidates}
+                isOfferSent={statusFilter === 'OFFER_SENT'}
+              />
             )}
-          </>
+            keyExtractor={(c) => c.id}
+            isLoading={loading}
+            isFetchingNextPage={isFetchingNextPage}
+            hasNextPage={hasNextPage}
+            fetchNextPage={fetchNextPage}
+            totalCount={totalCount}
+            resourceName="candidates"
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={clearAllFilters}
+            emptyMessage={
+              statusFilter === 'JOINED'
+                ? 'No joined candidates yet.'
+                : statusFilter === 'OFFER_SENT'
+                ? 'No offer-sent candidates found.'
+                : statusFilter === 'REJECTED'
+                ? 'No rejected candidates found.'
+                : 'No candidates found matching your criteria.'
+            }
+            emptySub={
+              statusFilter === 'JOINED' && !hasActiveFilters
+                ? 'Candidates appear here after you mark them as Joined from Offer Sent, or when you add them with + Add Candidate on this page.'
+                : null
+            }
+          />
         )}
       </PageEnter>
 

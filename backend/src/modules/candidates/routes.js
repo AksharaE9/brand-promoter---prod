@@ -65,81 +65,139 @@ const parseQueryBody = (req, res, next) => {
   }
 };
 
-const candidateSearchHandler = async (req, res) => {
-  const q = (req.body.q || '').trim();
-  const filters = req.body.filters || {};
-  const limit = Math.min(250, Math.max(1, Number.parseInt(req.body.limit, 10) || 24));
-  const cursor = req.body.cursor?.trim();
-  const orgId = req.user.organizationId || "defaultOrg";
+// Shared candidate list field projection
+const candidateListSelect = {
+  id: true,
+  fullName: true,
+  preferredRole: true,
+  location: true,
+  area: true,
+  source: true,
+  email: true,
+  phone: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  offerDecision: true,
+  doj: true,
+  company: true,
+  resumeFile: {
+    select: {
+      storageKey: true,
+    },
+  },
+  profilePhotoFile: {
+    select: {
+      storageKey: true,
+    },
+  },
+  applications: {
+    where: { isDeleted: false },
+    take: 1,
+    select: {
+      id: true,
+      status: true,
+      joiningDate: true,
+      createdAt: true,
+      updatedAt: true,
+      job: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+    },
+  },
+};
 
+// Shared query builder for all candidate list, search, and count operations
+function buildCandidateWhere(orgId, filters = {}, user = null, q = '') {
   const andConditions = [
     { organizationId: orgId },
-    { isDeleted: false }
+    { isDeleted: false },
   ];
 
-  if (filters.status && filters.status !== 'All') {
-    const appSyncedStatuses = new Set(["JOINED", "OFFER_SENT", "REJECTED"]);
-    if (appSyncedStatuses.has(filters.status)) {
+  const status = (filters.status || '').trim();
+  if (status && status !== 'All') {
+    const appSyncedStatuses = new Set(['JOINED', 'OFFER_SENT', 'REJECTED']);
+    if (appSyncedStatuses.has(status)) {
       andConditions.push({
         OR: [
-          { status: filters.status },
-          { applications: { some: { status: filters.status, isDeleted: false } } },
+          { status },
+          { applications: { some: { status, isDeleted: false } } },
         ],
       });
     } else {
-      andConditions.push({ status: filters.status });
+      andConditions.push({ status });
     }
   }
-  if (filters.category && filters.category !== 'All') {
-    andConditions.push({ category: filters.category });
+
+  const category = (filters.category || '').trim();
+  if (category && category !== 'All') {
+    andConditions.push({ category });
   }
-  if (filters.company && filters.company !== 'All') {
-    andConditions.push({ company: filters.company });
+
+  const company = (filters.company || '').trim();
+  if (company && company !== 'All') {
+    andConditions.push({ company });
   }
-  if (filters.role && filters.role !== 'All') {
+
+  if (filters.assignedToMe === 'true' || filters.assignedToMe === true) {
+    if (user?.id) {
+      andConditions.push({ mentorId: user.id });
+    }
+  }
+
+  const role = (filters.role || '').trim();
+  if (role && role !== 'All') {
     andConditions.push({
       OR: [
-        { preferredRole: { contains: filters.role, mode: 'insensitive' } },
-        { jobTitle: { contains: filters.role, mode: 'insensitive' } },
-        { applications: { some: { job: { title: { contains: filters.role, mode: 'insensitive' } }, isDeleted: false } } }
-      ]
+        { preferredRole: { contains: role, mode: 'insensitive' } },
+        { jobTitle: { contains: role, mode: 'insensitive' } },
+        { applications: { some: { job: { title: { contains: role, mode: 'insensitive' } }, isDeleted: false } } },
+      ],
     });
   }
-  if (filters.location && filters.location !== 'All') {
+
+  const location = (filters.location || '').trim();
+  if (location && location !== 'All') {
     andConditions.push({
       OR: [
-        { location: { contains: filters.location, mode: 'insensitive' } },
-        { area: { contains: filters.location, mode: 'insensitive' } }
-      ]
+        { location: { contains: location, mode: 'insensitive' } },
+        { area: { contains: location, mode: 'insensitive' } },
+      ],
     });
   }
-  if (filters.dateFrom || filters.dateTo) {
+
+  const dateFrom = filters.dateFrom;
+  const dateTo = filters.dateTo;
+  if (dateFrom || dateTo) {
     const dateRange = {};
-    if (filters.dateFrom) {
-      const dFrom = new Date(filters.dateFrom);
+    if (dateFrom) {
+      const dFrom = new Date(dateFrom);
       if (!isNaN(dFrom.getTime())) dateRange.gte = dFrom;
     }
-    if (filters.dateTo) {
-      const dTo = new Date(filters.dateTo);
+    if (dateTo) {
+      const dTo = new Date(dateTo);
       if (!isNaN(dTo.getTime())) {
         dTo.setHours(23, 59, 59, 999);
         dateRange.lte = dTo;
       }
     }
     if (Object.keys(dateRange).length > 0) {
-      if (filters.status === 'JOINED') {
+      if (status === 'JOINED') {
         andConditions.push({
           OR: [
             { createdAt: dateRange },
-            { applications: { some: { isDeleted: false, createdAt: dateRange } } }
-          ]
+            { applications: { some: { isDeleted: false, createdAt: dateRange } } },
+          ],
         });
-      } else if (filters.status === 'OFFER_SENT' || filters.status === 'REJECTED') {
+      } else if (status === 'OFFER_SENT' || status === 'REJECTED') {
         andConditions.push({
           OR: [
             { updatedAt: dateRange },
-            { applications: { some: { isDeleted: false, updatedAt: dateRange } } }
-          ]
+            { applications: { some: { isDeleted: false, updatedAt: dateRange } } },
+          ],
         });
       } else {
         andConditions.push({ createdAt: dateRange });
@@ -147,79 +205,61 @@ const candidateSearchHandler = async (req, res) => {
     }
   }
 
-  if (q) {
+  const searchTerm = (q || filters.search || filters.q || '').trim();
+  if (searchTerm) {
     andConditions.push({
       OR: [
-        { fullName: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-        { phone: { contains: q } }
-      ]
+        { fullName: { contains: searchTerm, mode: 'insensitive' } },
+        { email: { contains: searchTerm, mode: 'insensitive' } },
+        { phone: { contains: searchTerm } },
+      ],
     });
   }
 
+  const cursor = (filters.cursor || '').trim();
   if (cursor) {
     const parts = cursor.split('_');
     if (parts.length === 2) {
       const [timeStr, cursorId] = parts;
       const cursorTime = new Date(parseInt(timeStr, 10));
-      andConditions.push({
-        OR: [
-          { updatedAt: { lt: cursorTime } },
-          { updatedAt: cursorTime, id: { lt: cursorId } }
-        ]
-      });
+      if (!isNaN(cursorTime.getTime())) {
+        andConditions.push({
+          OR: [
+            { updatedAt: { lt: cursorTime } },
+            { updatedAt: cursorTime, id: { lt: cursorId } },
+          ],
+        });
+      }
     }
   }
 
-  const where = { AND: andConditions };
+  return { AND: andConditions };
+}
+
+const candidateSearchHandler = async (req, res) => {
+  const q = (req.body.q || '').trim();
+  const filters = req.body.filters || {};
+  // Server-side limit cap: max 100
+  const limit = Math.min(100, Math.max(1, Number.parseInt(req.body.limit, 10) || 50));
+  const cursor = (req.body.cursor || '').trim();
+  const orgId = req.user.organizationId || "defaultOrg";
+
+  const where = buildCandidateWhere(orgId, { ...filters, cursor }, req.user, q);
 
   const queryOptions = {
     where,
     take: limit + 1,
     orderBy: [
       { updatedAt: 'desc' },
-      { id: 'desc' }
+      { id: 'desc' },
     ],
-    select: {
-      id: true,
-      fullName: true,
-      preferredRole: true,
-      location: true,
-      area: true,
-      source: true,
-      email: true,
-      phone: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-      offerDecision: true,
-      doj: true,
-      company: true,
-      resumeFile: { select: { storageKey: true } },
-      profilePhotoFile: { select: { storageKey: true } },
-      applications: {
-        where: { isDeleted: false },
-        select: {
-          id: true,
-          status: true,
-          joiningDate: true,
-          createdAt: true,
-          updatedAt: true,
-          job: { select: { id: true, title: true } }
-        }
-      }
-    }
+    select: candidateListSelect,
   };
 
   const cacheKey = `candidates:search:${orgId}:${cursor || 'start'}:${limit}:${q}:${JSON.stringify(filters)}`;
 
   const fetchSearch = async () => {
-    const isFirstPage = !cursor;
-    const [total, items] = await Promise.all([
-      isFirstPage ? prisma.candidate.count({ where }) : Promise.resolve(null),
-      prisma.candidate.findMany(queryOptions)
-    ]);
-
+    const items = await prisma.candidate.findMany(queryOptions);
     const hasMore = items.length > limit;
     if (hasMore) {
       items.pop();
@@ -233,8 +273,7 @@ const candidateSearchHandler = async (req, res) => {
       items,
       nextCursor,
       hasMore,
-      ...(total !== null ? { total } : {}),
-      limit
+      limit,
     };
   };
 
@@ -242,15 +281,15 @@ const candidateSearchHandler = async (req, res) => {
 
   res.json({
     success: true,
+    items: result.items,
     data: result.items,
     rows: result.items,
     nextCursor: result.nextCursor,
     hasMore: result.hasMore,
     pagination: {
-      ...(result.total !== undefined ? { total: result.total } : {}),
       limit: result.limit,
-      hasMore: result.hasMore
-    }
+      hasMore: result.hasMore,
+    },
   });
 };
 
@@ -890,187 +929,78 @@ router.post(
   })
 );
 
-// GET List candidates (with filter, search, cursor pagination)
+// GET Grouped candidate status counts (single fast query for tab headers)
+router.get(
+  "/status-counts",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const orgId = req.user.organizationId || "defaultOrg";
+    const cacheKey = `candidates:status-counts:${orgId}`;
+
+    const counts = await getCached(cacheKey, async () => {
+      const rows = await prisma.$queryRawUnsafe(`
+        SELECT status, COUNT(*)::int as count
+        FROM candidates
+        WHERE "organizationId" = $1 AND "isDeleted" = false
+        GROUP BY status;
+      `, orgId);
+
+      const statusMap = { ALL: 0, ACTIVE: 0, OFFER_SENT: 0, JOINED: 0, REJECTED: 0 };
+      let total = 0;
+      rows.forEach(r => {
+        const count = parseInt(r.count, 10) || 0;
+        statusMap[r.status] = count;
+        total += count;
+      });
+      statusMap.ALL = total;
+      return statusMap;
+    }, 30000); // 30s TTL
+
+    res.json({ success: true, counts });
+  })
+);
+
+// GET Filtered candidate count (decoupled from list query for performance)
+router.get(
+  "/count",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const orgId = req.user.organizationId || "defaultOrg";
+    const where = buildCandidateWhere(orgId, req.query, req.user);
+    const cacheKey = `candidates:count:${orgId}:${JSON.stringify(req.query)}`;
+
+    const count = await getCached(cacheKey, () => prisma.candidate.count({ where }), 30000);
+    res.json({ success: true, count });
+  })
+);
+
+// GET List candidates (with filter, search, keyset cursor pagination)
 router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
-    const limit = Math.min(250, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
-    const cursor = req.query.cursor?.trim(); 
-    const search = req.query.search?.trim();
-    const category = req.query.category?.trim();
-    const status = req.query.status?.trim();
-    const company = req.query.company?.trim();  // ── NEW filter ──
-    const role = req.query.role?.trim();
-    const location = req.query.location?.trim();
-    const dateFrom = req.query.dateFrom?.trim();
-    const dateTo = req.query.dateTo?.trim();
-    const assignedToMe = req.query.assignedToMe === 'true';
+    // Enforce server-side limit cap: max 100, default 50
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+    const cursor = (req.query.cursor || '').trim();
+    const search = (req.query.search || req.query.q || '').trim();
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}:${role || ''}:${location || ''}:${dateFrom || ''}:${dateTo || ''}`;
+    const where = buildCandidateWhere(orgId, req.query, req.user, search);
+
+    const queryOptions = {
+      where,
+      take: limit + 1,
+      orderBy: [
+        { updatedAt: 'desc' },
+        { id: 'desc' },
+      ],
+      select: candidateListSelect,
+    };
+
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search}:${JSON.stringify(req.query)}`;
 
     const fetchCandidatesFromDb = async () => {
-      const andConditions = [
-        { organizationId: orgId },
-        { isDeleted: false }
-      ];
-
-      if (status && status !== 'All') {
-        // Sidebar views (JOINED / OFFER_SENT / REJECTED) may be set on the
-        // candidate record OR only on a related application — match either.
-        const appSyncedStatuses = new Set(["JOINED", "OFFER_SENT", "REJECTED"]);
-        if (appSyncedStatuses.has(status)) {
-          andConditions.push({
-            OR: [
-              { status },
-              { applications: { some: { status, isDeleted: false } } },
-            ],
-          });
-        } else {
-          andConditions.push({ status });
-        }
-      }
-      if (category && category !== 'All') andConditions.push({ category });
-      if (company && company !== 'All') andConditions.push({ company });
-      if (assignedToMe) andConditions.push({ mentorId: req.user.id });
-
-      if (role && role !== 'All') {
-        andConditions.push({
-          OR: [
-            { preferredRole: { contains: role, mode: 'insensitive' } },
-            { jobTitle: { contains: role, mode: 'insensitive' } },
-            { applications: { some: { job: { title: { contains: role, mode: 'insensitive' } }, isDeleted: false } } }
-          ]
-        });
-      }
-
-      if (location && location !== 'All') {
-        andConditions.push({
-          OR: [
-            { location: { contains: location, mode: 'insensitive' } },
-            { area: { contains: location, mode: 'insensitive' } }
-          ]
-        });
-      }
-
-      if (dateFrom || dateTo) {
-        const dateRange = {};
-        if (dateFrom) {
-          const dFrom = new Date(dateFrom);
-          if (!isNaN(dFrom.getTime())) dateRange.gte = dFrom;
-        }
-        if (dateTo) {
-          const dTo = new Date(dateTo);
-          if (!isNaN(dTo.getTime())) {
-            dTo.setHours(23, 59, 59, 999);
-            dateRange.lte = dTo;
-          }
-        }
-        if (Object.keys(dateRange).length > 0) {
-          if (status === 'JOINED') {
-            andConditions.push({
-              OR: [
-                { createdAt: dateRange },
-                { applications: { some: { isDeleted: false, createdAt: dateRange } } }
-              ]
-            });
-          } else if (status === 'OFFER_SENT' || status === 'REJECTED') {
-            andConditions.push({
-              OR: [
-                { updatedAt: dateRange },
-                { applications: { some: { isDeleted: false, updatedAt: dateRange } } }
-              ]
-            });
-          } else {
-            andConditions.push({ createdAt: dateRange });
-          }
-        }
-      }
-
-      if (search) {
-        andConditions.push({
-          OR: [
-            { fullName: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search } }
-          ]
-        });
-      }
-
-      if (cursor) {
-        const parts = cursor.split('_');
-        if (parts.length === 2) {
-          const [timeStr, cursorId] = parts;
-          const cursorTime = new Date(parseInt(timeStr, 10));
-          andConditions.push({
-            OR: [
-              { updatedAt: { lt: cursorTime } },
-              { updatedAt: cursorTime, id: { lt: cursorId } }
-            ]
-          });
-        }
-      }
-
-      const where = { AND: andConditions };
-
-      const queryOptions = {
-        where,
-        take: limit + 1,
-        orderBy: [
-          { updatedAt: 'desc' },
-          { id: 'desc' }
-        ],
-        select: {
-          id: true,
-          fullName: true,
-          preferredRole: true,
-          location: true,
-          area: true,
-          source: true,
-          email: true,
-          phone: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-          offerDecision: true,
-          doj: true,
-          company: true,   // ── NEW field ──
-          resumeFile: {
-            select: {
-              storageKey: true
-            }
-          },
-          profilePhotoFile: {
-            select: {
-              storageKey: true
-            }
-          },
-          applications: {
-            where: { isDeleted: false },
-            select: {
-              id: true,
-              status: true,
-              joiningDate: true,
-              createdAt: true,
-              updatedAt: true,
-              job: {
-                select: {
-                  id: true,
-                  title: true
-                }
-              }
-            }
-          }
-        }
-      };
-
-      const isFirstPage = !cursor;
-      const [total, items] = await Promise.all([
-        isFirstPage ? prisma.candidate.count({ where }) : Promise.resolve(null),
-        prisma.candidate.findMany(queryOptions)
-      ]);
-
+      const items = await prisma.candidate.findMany(queryOptions);
       const hasMore = items.length > limit;
       if (hasMore) {
         items.pop();
@@ -1080,35 +1010,29 @@ router.get(
         ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
         : null;
 
-      return { items, nextCursor, hasMore, ...(total !== null ? { total } : {}) };
+      return { items, nextCursor, hasMore, limit };
     };
 
     let data;
     if (search) {
       data = await fetchCandidatesFromDb();
     } else {
-      data = await getCached(cacheKeyStr, fetchCandidatesFromDb, 20000);
+      data = await getCached(cacheKeyStr, fetchCandidatesFromDb, 30000);
     }
-
 
     const pagination = {
-      total: data.total || 0,
-      limit,
-      hasMore: data.hasMore
+      limit: data.limit,
+      hasMore: data.hasMore,
     };
-
-    if (data.items && data.items.length > 30) {
-      const { streamPaginatedJson } = require("../../utils/streamResponse");
-      return streamPaginatedJson(res, data.items, { nextCursor: data.nextCursor, hasMore: data.hasMore, pagination, rows: data.items });
-    }
 
     res.json({
       success: true,
+      items: data.items,
       data: data.items,
       rows: data.items,
       nextCursor: data.nextCursor,
       hasMore: data.hasMore,
-      pagination
+      pagination,
     });
   })
 );

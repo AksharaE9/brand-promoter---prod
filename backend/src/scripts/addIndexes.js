@@ -41,6 +41,24 @@ const indexes = [
           ON candidates ("organizationId", "isDeleted", "updatedAt" DESC, id DESC)`,
   },
   {
+    name: 'idx_candidates_list_covering',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_list_covering
+          ON candidates ("organizationId", "isDeleted", "updatedAt" DESC, id DESC)
+          INCLUDE ("fullName", "preferredRole", location, company, phone, "offerDecision", doj, status, "createdAt")`,
+  },
+  {
+    name: 'idx_candidates_list_status_covering',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_list_status_covering
+          ON candidates ("organizationId", "isDeleted", status, "updatedAt" DESC, id DESC)
+          INCLUDE ("fullName", "preferredRole", location, company, phone, "offerDecision", doj, "createdAt")`,
+  },
+  {
+    name: 'idx_candidates_company_covering',
+    sql: `CREATE INDEX IF NOT EXISTS idx_candidates_company_covering
+          ON candidates ("organizationId", "isDeleted", company, "updatedAt" DESC, id DESC)
+          INCLUDE ("fullName", "preferredRole", location, phone, "offerDecision", doj, status, "createdAt")`,
+  },
+  {
     name: 'idx_candidates_org_status_updated_id',
     sql: `CREATE INDEX IF NOT EXISTS idx_candidates_org_status_updated_id
           ON candidates ("organizationId", "isDeleted", status, "updatedAt" DESC, id DESC)`,
