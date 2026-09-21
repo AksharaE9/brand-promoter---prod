@@ -132,7 +132,7 @@ export default defineConfig(({ command }) => {
     target: 'es2020',
     modulePreload: false,
     cssCodeSplit: true,
-    sourcemap: false,           // disable in production
+    sourcemap: 'hidden',        // generates source maps for error symbolication without public mapping comments
     reportCompressedSize: true,
     rollupOptions: {
       output: {

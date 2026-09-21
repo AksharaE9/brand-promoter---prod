@@ -1,5 +1,6 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { CardSkeleton } from './Skeleton';
+import CardErrorBoundary from './CardErrorBoundary';
 
 /**
  * PaginatedListView — The definitive shared presentation component for all list views.
@@ -10,6 +11,7 @@ import { CardSkeleton } from './Skeleton';
  * 3. Smooth Sentinel Prefetch: triggers fetchNextPage() when user scrolls within 400px of bottom.
  * 4. Inline Loading More indicator at the list foot that doesn't unmount or freeze existing cards.
  * 5. Clean Empty State with "Clear Filters" button when active.
+ * 6. Scoped Card Error Boundaries to limit blast radius of corrupted records.
  */
 export default function PaginatedListView({
   items = [],
@@ -96,9 +98,9 @@ export default function PaginatedListView({
       {/* Item Grid */}
       <div className={gridClassName}>
         {items.map((item, index) => (
-          <React.Fragment key={keyExtractor(item, index)}>
+          <CardErrorBoundary key={keyExtractor(item, index)} resourceName={resourceName}>
             {renderItem(item, index)}
-          </React.Fragment>
+          </CardErrorBoundary>
         ))}
       </div>
 

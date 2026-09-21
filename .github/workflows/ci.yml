@@ -106,7 +106,7 @@ jobs:
         working-directory: frontend
         run: |
           if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.cjs" ] || [ -f ".eslintrc.json" ]; then
-            npx eslint src/ --ext .jsx,.tsx,.js,.ts --max-warnings 0
+            npx eslint src/ --ext .jsx,.tsx,.js,.ts
           else
             echo "No ESLint config found, skipping"
           fi

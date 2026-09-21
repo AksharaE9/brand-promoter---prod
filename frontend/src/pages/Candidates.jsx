@@ -744,7 +744,7 @@ const Candidates = () => {
 
   const joiningMap = useMemo(() => {
     const map = {};
-    visibleCandidates.forEach(c => {
+    allMapped.forEach(c => {
       if (!c.joiningDate) return;
       const d = new Date(c.joiningDate);
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
@@ -752,7 +752,7 @@ const Candidates = () => {
       map[key].push(c);
     });
     return map;
-  }, [visibleCandidates]);
+  }, [allMapped]);
 
   return (
     <EnterpriseLayout

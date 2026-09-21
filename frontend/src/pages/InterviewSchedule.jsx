@@ -3009,9 +3009,7 @@ const InterviewSchedule = () => {
                     type="button"
                     disabled={toggleNotRespondedMutation.isPending}
                     onClick={() => {
-                      const { interview, nextState } = showNotRespondedConfirmModal;
-                      setShowNotRespondedConfirmModal(null);
-                      executeToggleNotResponded(interview, nextState);
+                      confirmMarkNotResponded();
                     }}
                     className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm transition-colors cursor-pointer"
                   >

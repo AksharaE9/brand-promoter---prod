@@ -8,6 +8,8 @@
         "dev:backend": "npm run dev --prefix backend",
         "dev": "node scripts/dev.js",
         "build:all": "npm run build --prefix frontend && npm run build --prefix backend",
-        "deploy:test": "npm run build:all && node scripts/deploy-test.js"
+        "check-all": "node scripts/check-list-architecture.js && npm run lint --prefix frontend && npm run check-syntax --prefix backend",
+        "test:all": "npm run test:ci --prefix frontend && npm run test:unit --prefix backend",
+        "deploy:test": "npm run check-all && npm run build:all && node scripts/deploy-test.js"
     }
 }

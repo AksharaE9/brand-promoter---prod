@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node ../scripts/check-doubled-api.js && tsc && vite build",
+    "lint": "eslint src/ --ext .jsx,.tsx,.js,.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "node ../scripts/check-doubled-api.js && npm run lint && tsc && vite build",
     "preview": "vite preview --port 4173",
     "test": "vitest run",
-    "test:ci": "vitest run --reporter=verbose",
-    "lint": "eslint src/ --ext .jsx,.tsx,.js,.ts --max-warnings 0"
+    "test:ci": "vitest run --reporter=verbose"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",

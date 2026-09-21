@@ -15,6 +15,25 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
     console.error('Unhandled UI Error caught by ErrorBoundary:', error, errorInfo);
+
+    try {
+      if (typeof window !== 'undefined' && window.fetch) {
+        fetch('/api/client-errors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            level: 'error',
+            message: error?.message || String(error),
+            stack: error?.stack || null,
+            componentStack: errorInfo?.componentStack || null,
+            route: window.location.pathname,
+            buildHash: import.meta.env.VITE_BUILD_HASH || 'dev',
+            buildTime: import.meta.env.VITE_BUILD_TIME || null,
+            timestamp: new Date().toISOString(),
+          }),
+        }).catch(() => {});
+      }
+    } catch (_) {}
   }
 
   handleReload() {
@@ -22,8 +41,12 @@ class ErrorBoundary extends React.Component {
   }
 
   handleCopyError() {
+    const buildHash = import.meta.env.VITE_BUILD_HASH || 'dev';
+    const buildTime = import.meta.env.VITE_BUILD_TIME || 'dev';
     const errorDetails = `
+Build: ${buildHash} (${buildTime})
 Error: ${this.state.error?.toString()}
+Route: ${window.location.pathname}
 Stack: ${this.state.error?.stack || 'N/A'}
 Component Stack: ${this.state.errorInfo?.componentStack || 'N/A'}
 User Agent: ${navigator.userAgent}
@@ -185,6 +208,7 @@ Time: ${new Date().toISOString()}
                 wordBreak: 'break-all',
                 maxHeight: '200px',
               }}>
+                <strong>Build:</strong> {import.meta.env.VITE_BUILD_HASH || 'dev'} ({import.meta.env.VITE_BUILD_TIME || 'local'})<br /><br />
                 <strong>Error:</strong> {this.state.error?.toString()}<br /><br />
                 <strong>Stack:</strong> {this.state.error?.stack || 'N/A'}<br /><br />
                 <strong>Component Stack:</strong> {this.state.errorInfo?.componentStack || 'N/A'}
