@@ -23,6 +23,7 @@ const inv = {
   async candidate(orgId, candidateId) {
     await runInvalidations([
       `candidates:list:${orgId}:*`,
+      `candidates:search:${orgId}:*`,
       `candidates:filtered:${orgId}:*`,
       candidateId ? `candidates:detail:${candidateId}` : null,
       `dashboard:*:${orgId}*`,
@@ -34,6 +35,7 @@ const inv = {
   async candidateList(orgId) {
     await runInvalidations([
       `candidates:list:${orgId}:*`,
+      `candidates:search:${orgId}:*`,
       `candidates:filtered:${orgId}:*`,
       `dashboard:*:${orgId}*`,
       `analytics:*:${orgId}:*`,
@@ -62,6 +64,7 @@ const inv = {
       `applications:list:${orgId}:*`,
       candidateId ? `candidates:detail:${candidateId}` : null,
       `candidates:list:${orgId}:*`,
+      `candidates:search:${orgId}:*`,
       `dashboard:*:${orgId}*`,
       `analytics:*:${orgId}:*`,
     ]);

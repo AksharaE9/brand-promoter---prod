@@ -96,6 +96,56 @@ const candidateSearchHandler = async (req, res) => {
   if (filters.company && filters.company !== 'All') {
     andConditions.push({ company: filters.company });
   }
+  if (filters.role && filters.role !== 'All') {
+    andConditions.push({
+      OR: [
+        { preferredRole: { contains: filters.role, mode: 'insensitive' } },
+        { jobTitle: { contains: filters.role, mode: 'insensitive' } },
+        { applications: { some: { job: { title: { contains: filters.role, mode: 'insensitive' } }, isDeleted: false } } }
+      ]
+    });
+  }
+  if (filters.location && filters.location !== 'All') {
+    andConditions.push({
+      OR: [
+        { location: { contains: filters.location, mode: 'insensitive' } },
+        { area: { contains: filters.location, mode: 'insensitive' } }
+      ]
+    });
+  }
+  if (filters.dateFrom || filters.dateTo) {
+    const dateRange = {};
+    if (filters.dateFrom) {
+      const dFrom = new Date(filters.dateFrom);
+      if (!isNaN(dFrom.getTime())) dateRange.gte = dFrom;
+    }
+    if (filters.dateTo) {
+      const dTo = new Date(filters.dateTo);
+      if (!isNaN(dTo.getTime())) {
+        dTo.setHours(23, 59, 59, 999);
+        dateRange.lte = dTo;
+      }
+    }
+    if (Object.keys(dateRange).length > 0) {
+      if (filters.status === 'JOINED') {
+        andConditions.push({
+          OR: [
+            { createdAt: dateRange },
+            { applications: { some: { isDeleted: false, createdAt: dateRange } } }
+          ]
+        });
+      } else if (filters.status === 'OFFER_SENT' || filters.status === 'REJECTED') {
+        andConditions.push({
+          OR: [
+            { updatedAt: dateRange },
+            { applications: { some: { isDeleted: false, updatedAt: dateRange } } }
+          ]
+        });
+      } else {
+        andConditions.push({ createdAt: dateRange });
+      }
+    }
+  }
 
   if (q) {
     andConditions.push({
@@ -851,10 +901,14 @@ router.get(
     const category = req.query.category?.trim();
     const status = req.query.status?.trim();
     const company = req.query.company?.trim();  // ── NEW filter ──
+    const role = req.query.role?.trim();
+    const location = req.query.location?.trim();
+    const dateFrom = req.query.dateFrom?.trim();
+    const dateTo = req.query.dateTo?.trim();
     const assignedToMe = req.query.assignedToMe === 'true';
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}`;
+    const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search || ''}:${category || ''}:${status || ''}:${assignedToMe}:${company || ''}:${role || ''}:${location || ''}:${dateFrom || ''}:${dateTo || ''}`;
 
     const fetchCandidatesFromDb = async () => {
       const andConditions = [
@@ -862,7 +916,7 @@ router.get(
         { isDeleted: false }
       ];
 
-      if (status) {
+      if (status && status !== 'All') {
         // Sidebar views (JOINED / OFFER_SENT / REJECTED) may be set on the
         // candidate record OR only on a related application — match either.
         const appSyncedStatuses = new Set(["JOINED", "OFFER_SENT", "REJECTED"]);
@@ -877,9 +931,62 @@ router.get(
           andConditions.push({ status });
         }
       }
-      if (category) andConditions.push({ category });
-      if (company) andConditions.push({ company });
+      if (category && category !== 'All') andConditions.push({ category });
+      if (company && company !== 'All') andConditions.push({ company });
       if (assignedToMe) andConditions.push({ mentorId: req.user.id });
+
+      if (role && role !== 'All') {
+        andConditions.push({
+          OR: [
+            { preferredRole: { contains: role, mode: 'insensitive' } },
+            { jobTitle: { contains: role, mode: 'insensitive' } },
+            { applications: { some: { job: { title: { contains: role, mode: 'insensitive' } }, isDeleted: false } } }
+          ]
+        });
+      }
+
+      if (location && location !== 'All') {
+        andConditions.push({
+          OR: [
+            { location: { contains: location, mode: 'insensitive' } },
+            { area: { contains: location, mode: 'insensitive' } }
+          ]
+        });
+      }
+
+      if (dateFrom || dateTo) {
+        const dateRange = {};
+        if (dateFrom) {
+          const dFrom = new Date(dateFrom);
+          if (!isNaN(dFrom.getTime())) dateRange.gte = dFrom;
+        }
+        if (dateTo) {
+          const dTo = new Date(dateTo);
+          if (!isNaN(dTo.getTime())) {
+            dTo.setHours(23, 59, 59, 999);
+            dateRange.lte = dTo;
+          }
+        }
+        if (Object.keys(dateRange).length > 0) {
+          if (status === 'JOINED') {
+            andConditions.push({
+              OR: [
+                { createdAt: dateRange },
+                { applications: { some: { isDeleted: false, createdAt: dateRange } } }
+              ]
+            });
+          } else if (status === 'OFFER_SENT' || status === 'REJECTED') {
+            andConditions.push({
+              OR: [
+                { updatedAt: dateRange },
+                { applications: { some: { isDeleted: false, updatedAt: dateRange } } }
+              ]
+            });
+          } else {
+            andConditions.push({ createdAt: dateRange });
+          }
+        }
+      }
 
       if (search) {
         andConditions.push({

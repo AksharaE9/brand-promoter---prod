@@ -47,13 +47,6 @@ export function usePaginatedList(endpoint, options = {}) {
 
   const { hasNextPage, isFetching, fetchNextPage, isLoading } = queryResult;
 
-  // Background progressive prefetching of subsequent chunks to load full dataset smoothly
-  useEffect(() => {
-    if (enabled && hasNextPage && !isFetching && !isLoading) {
-      fetchNextPage();
-    }
-  }, [enabled, hasNextPage, isFetching, isLoading, fetchNextPage]);
-
   // Safe wrapper for pages and rows to prevent cache-corruption crashes
   const safeData = useMemo(() => {
     if (!queryResult.data) return undefined;

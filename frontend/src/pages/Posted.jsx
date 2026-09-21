@@ -256,7 +256,7 @@ const Posted = () => {
           <div className="os-card mt-6">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-800">
-                All Shared Files ({filteredFiles.length})
+                All Shared Files ({isLoading && files.length === 0 ? '...' : filteredFiles.length})
               </h2>
             </div>
 

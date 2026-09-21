@@ -422,7 +422,6 @@ router.get(
       console.warn(
         `[InterviewList:SLOW] ${duration}ms | org:${orgId} | ` +
         `rounds:${populated.length} | ` +
-        `cache:MISS | ` +
         `query:${req.query.cursor ? 'page-N' : 'page-1'}`
       );
     }

@@ -378,12 +378,20 @@ const Candidates = () => {
   const canManageCandidates = useMemo(() => ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'].includes(currentUser?.role), [currentUser]);
   const isSuperAdmin = useMemo(() => currentUser?.role === 'SUPER_ADMIN', [currentUser]);
 
-  // Delete all candidates (SUPER_ADMIN only)
+  // Date range resolver for server-side filtering
+  const dateRange = useMemo(() => {
+    return resolveDateFilterRange(dateFilter, customDateFrom, customDateTo);
+  }, [dateFilter, customDateFrom, customDateTo]);
+
   const candidatesFilters = useMemo(() => ({
     ...(statusFilter && statusFilter !== 'All' ? { status: statusFilter } : {}),
     ...(companyFilter && companyFilter !== 'All' ? { company: companyFilter } : {}),
+    ...(roleFilter && roleFilter !== 'All' ? { role: roleFilter } : {}),
+    ...(locationFilter && locationFilter !== 'All' ? { location: locationFilter } : {}),
+    ...(dateRange?.start ? { dateFrom: dateRange.start.toISOString() } : {}),
+    ...(dateRange?.end ? { dateTo: dateRange.end.toISOString() } : {}),
     ...(debouncedSearch && debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-  }), [statusFilter, companyFilter, debouncedSearch]);
+  }), [statusFilter, companyFilter, roleFilter, locationFilter, dateRange, debouncedSearch]);
 
   const {
     data: infiniteData,
@@ -391,6 +399,7 @@ const Candidates = () => {
     hasNextPage,
     isFetchingNextPage,
     isLoading,
+    isFetching,
     refetch,
     error: queryError,
   } = usePaginatedList('/candidates', {
@@ -943,9 +952,23 @@ const Candidates = () => {
               </button>
             )}
 
-            <span className="ml-auto text-[10px] text-slate-400 font-semibold whitespace-nowrap">
-              {visibleCandidates.length} candidate{visibleCandidates.length !== 1 ? 's' : ''}
-            </span>
+            {loading && items.length === 0 ? (
+              <span className="ml-auto text-[10px] text-[#1f52cc] font-semibold whitespace-nowrap flex items-center gap-1.5 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#1f52cc]" />
+                Loading candidates...
+              </span>
+            ) : (
+              <span className="ml-auto text-[10px] text-slate-500 font-semibold whitespace-nowrap flex items-center gap-1.5">
+                {isFetchingNextPage ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                    <span>Loaded {items.length} of {totalCount > 0 ? totalCount.toLocaleString() : items.length}</span>
+                  </>
+                ) : (
+                  <span>{totalCount > 0 ? totalCount.toLocaleString() : visibleCandidates.length} candidate{(totalCount > 0 ? totalCount : visibleCandidates.length) !== 1 ? 's' : ''}</span>
+                )}
+              </span>
+            )}
           </div>
         )}
 
@@ -956,31 +979,42 @@ const Candidates = () => {
         ) : searchError ? (
           <div className="py-20 text-center os-card border-red-100 bg-red-50/20">
             <div className="text-red-600 mb-3 font-semibold">{searchError}</div>
-            <button className="os-btn-primary" onClick={() => fetchCandidates({ reset: true })}>Retry Search</button>
+            <button className="os-btn-primary" onClick={() => refetch()}>Retry Search</button>
           </div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center os-card">
             {statusFilter === 'JOINED' ? (
-              <>
-                <div className="text-slate-500 mb-2 font-semibold">No joined candidates yet.</div>
-                <p className="text-sm text-slate-400 max-w-md mx-auto mb-5">
-                  Candidates appear here after you mark them as Joined from Offer Sent, or when you add them with + Add Candidate on this page.
-                </p>
-                {canManageCandidates && (
-                  <button className="os-btn-primary" type="button" onClick={() => setShowCreateModal(true)}>
-                    + Add Joined Candidate
-                  </button>
-                )}
-              </>
+              hasActiveFilters ? (
+                <>
+                  <div className="text-slate-500 mb-2 font-semibold">No joined candidates match the selected filters.</div>
+                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
+                </>
+              ) : (
+                <>
+                  <div className="text-slate-500 mb-2 font-semibold">No joined candidates yet.</div>
+                  <p className="text-sm text-slate-400 max-w-md mx-auto mb-5">
+                    Candidates appear here after you mark them as Joined from Offer Sent, or when you add them with + Add Candidate on this page.
+                  </p>
+                  {canManageCandidates && (
+                    <button className="os-btn-primary" type="button" onClick={() => setShowCreateModal(true)}>
+                      + Add Joined Candidate
+                    </button>
+                  )}
+                </>
+              )
             ) : statusFilter === 'OFFER_SENT' ? (
               <>
                 <div className="text-slate-400 mb-2">No offer-sent candidates found.</div>
-                <button className="os-btn-outline" onClick={() => { setSearch(''); clearAllFilters(); }}>Clear Filters</button>
+                {hasActiveFilters && (
+                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
+                )}
               </>
             ) : (
               <>
                 <div className="text-slate-400 mb-2">No candidates found matching your criteria.</div>
-                <button className="os-btn-outline" onClick={() => { setSearch(''); setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('status'); next.delete('search'); return next; }); }}>Clear Filters</button>
+                {hasActiveFilters && (
+                  <button className="os-btn-outline" onClick={clearAllFilters}>Clear Filters</button>
+                )}
               </>
             )}
           </div>

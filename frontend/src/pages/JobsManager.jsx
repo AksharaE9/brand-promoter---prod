@@ -230,7 +230,7 @@ const JobsManager = () => {
             </div>
             <div className="rounded-2xl bg-[#2455d9] text-white px-4 py-2.5 text-[11px] flex items-center gap-2 font-bold uppercase tracking-wider shadow-md">
               <span className="material-symbols-outlined text-sm">groups</span>
-              Active <b>{activeCount}</b>
+              Active <b>{loading && items.length === 0 ? '...' : activeCount}</b>
             </div>
           </div>
         </div>
