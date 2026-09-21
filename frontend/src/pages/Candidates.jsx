@@ -30,6 +30,7 @@ import {
   DATE_FILTER_PRESETS,
   matchesDateFilter,
   dateFilterHint,
+  resolveDateFilterRange,
 } from '../lib/dateFilter';
 
 const initialForm = {
