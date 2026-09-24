@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
+import { MIN_SCHEDULING_DATE, MAX_SCHEDULING_DATE, validateSchedulingDate } from '../../lib/dateValidation';
 
 const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
   const [formData, setFormData] = useState({});
@@ -33,9 +34,27 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
     setIsLoading(true);
     try {
       const { data } = await api.get(`/interviews/${interviewId}`);
-      const dateObj = data.data.scheduledStart ? new Date(data.data.scheduledStart) : new Date();
-      const scheduledDate = !isNaN(dateObj.getTime()) ? dateObj.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-      const scheduledTime = !isNaN(dateObj.getTime()) ? dateObj.toTimeString().substring(0, 5) : '10:00';
+      let scheduledDate = '';
+      let scheduledTime = '10:00';
+      if (data.data.scheduledStart) {
+        const dateObj = new Date(data.data.scheduledStart);
+        if (!isNaN(dateObj.getTime())) {
+          const y = dateObj.getFullYear();
+          const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const d = String(dateObj.getDate()).padStart(2, '0');
+          const hr = String(dateObj.getHours()).padStart(2, '0');
+          const min = String(dateObj.getMinutes()).padStart(2, '0');
+          scheduledDate = `${y}-${m}-${d}`;
+          scheduledTime = `${hr}:${min}`;
+        }
+      }
+      if (!scheduledDate) {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        scheduledDate = `${y}-${m}-${d}`;
+      }
       
       const isNotResponded = data.data.result === 'NOT_RESPONDED';
       const initial = {
@@ -103,6 +122,13 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
       const [hours, minutes] = formData.scheduledTime.split(':').map(Number);
       const scheduledStart = new Date(year, month - 1, day, hours, minutes).toISOString();
       
+      const dateCheck = validateSchedulingDate(scheduledStart);
+      if (!dateCheck.valid) {
+        setError(dateCheck.error);
+        setIsSaving(false);
+        return;
+      }
+
       const payload = {
         ...formData,
         round: formData.roundName, // MAP roundName to round
@@ -122,14 +148,17 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
           rescheduleReason: formData.rescheduleReason
         });
         
-        try {
-          await api.post('/notifications', {
-            title: 'Interview Rescheduled',
-            message: `Interview has been rescheduled to ${formData.scheduledDate} ${formData.scheduledTime}`,
-            type: 'INFO'
-          });
-        } catch (notifErr) {
-          console.error('Notification failed:', notifErr);
+        // Suppress outbound notification if rescheduled date is in the past
+        if (!dateCheck.isPast) {
+          try {
+            await api.post('/notifications', {
+              title: 'Interview Rescheduled',
+              message: `Interview has been rescheduled to ${formData.scheduledDate} ${formData.scheduledTime}`,
+              type: 'INFO'
+            });
+          } catch (notifErr) {
+            console.error('Notification failed:', notifErr);
+          }
         }
       } else {
         await api.put(`/interviews/${interviewId}`, payload);
@@ -228,7 +257,7 @@ const EditInterviewModal = ({ isOpen, onClose, interviewId, onUpdate }) => {
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Scheduled Date {hasChanged('scheduledDate') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>
-                <input type="date" name="scheduledDate" value={formData.scheduledDate} onChange={handleChange} className="w-full os-input" />
+                <input type="date" name="scheduledDate" min={MIN_SCHEDULING_DATE} max={MAX_SCHEDULING_DATE} value={formData.scheduledDate} onChange={handleChange} className="w-full os-input" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">Scheduled Time {hasChanged('scheduledTime') && <span className="w-2 h-2 rounded-full bg-blue-500"/>}</label>

@@ -7,6 +7,7 @@ const { normalizePhoneNumber } = require('../lib/phoneNormalization');
 const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib/streamingBulkUploadPipeline');
 const sse = require('../utils/sse');
 const cacheInvalidation = require('../utils/cacheInvalidation');
+const { validateSchedulingDate } = require('../utils/dateValidation');
 
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
@@ -278,11 +279,18 @@ async function validateInterviewRow(rawRow, rowNumber, context) {
   if (!rawStart) {
     errors.push(`Row ${rowNumber}, Column "Start Date & Time": Start Date & Time is required`);
   } else {
-    startDateTime = parseIndianDateTime(rawStart);
-    if (!startDateTime) {
+    const parsed = parseIndianDateTime(rawStart);
+    if (!parsed) {
       errors.push(
         `Row ${rowNumber}, Column "Start Date & Time": Invalid date-time format "${rawStart}". Expected formats: "31-7-2026 & 15:00", "31/07/2026 15:00", or "2026-07-31T15:00"`
       );
+    } else {
+      const dateCheck = validateSchedulingDate(parsed);
+      if (!dateCheck.valid) {
+        errors.push(`Row ${rowNumber}, Column "Start Date & Time": ${dateCheck.error}`);
+      } else {
+        startDateTime = dateCheck.date;
+      }
     }
   }
 
@@ -583,6 +591,9 @@ async function batchInsertInterviews(batchItems, context) {
       if (item.canonicalRound === 'ROUND_2') { roundNo = 2; roundLabel = 'Round 2'; }
       else if (item.canonicalRound === 'FINAL_ROUND') { roundNo = 99; roundLabel = 'Final Round'; }
 
+      const isPast = new Date(item.startDateTime) < new Date();
+      const notesPayload = isPast ? JSON.stringify({ backdated: true, feedbackDelayedAlertSent: true }) : null;
+
       const createdIv = await prisma.interview.create({
         data: {
           application: { connect: { id: appId } },
@@ -601,6 +612,9 @@ async function batchInsertInterviews(batchItems, context) {
           interviewerNames: interviewerNamesList.join(', ') || null,
           organizationId: context.organizationId,
           createdById: context.uploadedBy || null,
+          notes: notesPayload,
+          round1SMSAlertSent: isPast,
+          round2EmailAlertSent: isPast,
         },
       });
 

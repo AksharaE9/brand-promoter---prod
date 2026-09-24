@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-
-const TODAY = new Date().toISOString().split('T')[0];
+import { MIN_SCHEDULING_DATE, MAX_SCHEDULING_DATE } from '../lib/dateValidation';
 
 const JoinModal = ({ candidateName, jobTitle, isLoading, onConfirm, onCancel }) => {
   const [dateOfJoining, setDateOfJoining] = useState('');
@@ -97,7 +96,8 @@ const JoinModal = ({ candidateName, jobTitle, isLoading, onConfirm, onCancel }) 
               id="join-date-input"
               ref={firstInputRef}
               type="date"
-              min={TODAY}
+              min={MIN_SCHEDULING_DATE}
+              max={MAX_SCHEDULING_DATE}
               required
               value={dateOfJoining}
               onChange={(e) => setDateOfJoining(e.target.value)}

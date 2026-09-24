@@ -19,6 +19,7 @@ const { populateInterviewRelations } = require("./relationPopulator");
 const { mergeDirtyQueue } = require("./dirtyQueueMerger");
 const { getNextSchedulableRound, validateFeedbackData, ROUND_DISPLAY_LABEL, normalizeRoundNo, assertCanScheduleRound, computeInterviewStatusUpdate, computeInterviewStatusRevert } = require("../../lib/interviewTemplates");
 const { optimizeNotesPayload } = require("../../utils/followUpOptimizer");
+const { validateSchedulingDate } = require("../../utils/dateValidation");
 
 const crypto = require("crypto");
 
@@ -544,6 +545,11 @@ router.post(
       throw new ApiError(400, "Missing required fields");
     }
 
+    const dateCheck = validateSchedulingDate(scheduledStart);
+    if (!dateCheck.valid) {
+      throw new ApiError(400, dateCheck.error);
+    }
+
     const roundNo = normalizeRoundNo(req.body.roundNo, req.body.round);
     const roundLabel = roundNo === 1 ? 'Round 1' : roundNo === 2 ? 'Round 2' : 'Final Round';
 
@@ -577,6 +583,21 @@ router.post(
     const resolvedJobTitle = req.body.jobTitle || appInfo.job?.title || "";
 
     const orgId = req.user.organizationId || "defaultOrg";
+    const isPast = dateCheck.isPast;
+
+    let notesObj = {};
+    if (req.body.notes) {
+      try {
+        notesObj = typeof req.body.notes === 'string' ? JSON.parse(req.body.notes) : req.body.notes;
+      } catch (_) {
+        notesObj = { raw: req.body.notes };
+      }
+    }
+    if (isPast) {
+      notesObj.backdated = true;
+      notesObj.feedbackDelayedAlertSent = true;
+    }
+
     const roundData = {
       ...req.body,
       candidateId: resolvedCandidateId,
@@ -585,11 +606,15 @@ router.post(
       jobTitle: resolvedJobTitle,
       roundNo,
       round: roundLabel,
+      scheduledStart: dateCheck.date.toISOString(),
       meetingLink: req.body.meetingLink || "",
       zohoLink: req.body.zohoLink || "",
       createdById: req.user.id,
       createdAt: new Date().toISOString(),
-      status: "SCHEDULED"
+      status: "SCHEDULED",
+      round1SMSAlertSent: isPast,
+      round2EmailAlertSent: isPast,
+      notes: Object.keys(notesObj).length > 0 ? JSON.stringify(notesObj) : null,
     };
 
     if (roundData.notes) {
@@ -639,8 +664,9 @@ router.post(
     if (!scheduledStart) {
       throw new ApiError(400, "Scheduled start date/time is required");
     }
-    if (isNaN(Date.parse(scheduledStart))) {
-      throw new ApiError(400, "Invalid scheduled start date/time format");
+    const dateCheck = validateSchedulingDate(scheduledStart);
+    if (!dateCheck.valid) {
+      throw new ApiError(400, dateCheck.error);
     }
     if (mode !== 'WALK_IN_DRIVE') {
       if (!interviewerIds || !Array.isArray(interviewerIds) || interviewerIds.length === 0) {
@@ -705,18 +731,35 @@ router.post(
 
     const roundLabel = ROUND_DISPLAY_LABEL[nextRound] || (roundNo === 99 ? 'Final Round' : `Round ${roundNo}`);
     const orgId = req.user.organizationId || "defaultOrg";
+    const isPast = dateCheck.isPast;
+
+    let notesObj = {};
+    if (req.body.notes) {
+      try {
+        notesObj = typeof req.body.notes === 'string' ? JSON.parse(req.body.notes) : req.body.notes;
+      } catch (_) {
+        notesObj = { raw: req.body.notes };
+      }
+    }
+    if (isPast) {
+      notesObj.backdated = true;
+      notesObj.feedbackDelayedAlertSent = true;
+    }
 
     const roundData = {
       candidateId,
       candidateName: candidate.fullName,
       roundNo,
       round: roundLabel,
-      scheduledStart: scheduledStart ? new Date(scheduledStart) : new Date(),
+      scheduledStart: dateCheck.date.toISOString(),
       durationMinutes: parseInt(durationMinutes) || 60,
       mode: mode || "VIRTUAL",
       meetingLink: meetingLink || "",
       interviewerIds: Array.isArray(interviewerIds) ? interviewerIds : [],
       status: "SCHEDULED",
+      round1SMSAlertSent: isPast,
+      round2EmailAlertSent: isPast,
+      notes: Object.keys(notesObj).length > 0 ? JSON.stringify(notesObj) : null,
     };
 
     if (req.body.notes) {
@@ -1419,9 +1462,6 @@ router.put(
     const isSuperAdmin = req.user.role === "SUPER_ADMIN";
 
     if (!isSuperAdmin) {
-      if (new Date(data.scheduledStart) < new Date() && data.scheduledStart !== current.scheduledStart) {
-        throw new ApiError(400, "Interview date must not be in the past");
-      }
       if (current.status === "COMPLETED" || current.status === "CANCELLED") {
         throw new ApiError(400, `Cannot edit interview in ${current.status} status`);
       }
@@ -1443,6 +1483,12 @@ router.put(
     if (!data.scheduledStart) {
       throw new ApiError(400, "Start Date & Time is required");
     }
+
+    const dateCheck = validateSchedulingDate(data.scheduledStart);
+    if (!dateCheck.valid) {
+      throw new ApiError(400, dateCheck.error);
+    }
+    data.scheduledStart = dateCheck.date.toISOString();
 
     const durationMinutes = Number(data.durationMinutes || 60);
     if (!data.durationMinutes || isNaN(durationMinutes) || durationMinutes < 15 || durationMinutes > 480) {
@@ -1487,7 +1533,9 @@ router.put(
       current
     );
 
-    if (data.scheduledStart !== current.scheduledStart || data.mode !== current.mode) {
+    // Suppress outbound notifications if scheduled date is in the past
+    const isPast = dateCheck.isPast;
+    if (!isPast && (data.scheduledStart !== current.scheduledStart || data.mode !== current.mode)) {
       data.interviewerIds.forEach(id => {
         sendNotification({
           userId: id,
@@ -1548,14 +1596,19 @@ router.patch(
     const isSuperAdmin = req.user.role === "SUPER_ADMIN";
 
     if (!isSuperAdmin) {
-      if (req.body.scheduledStart && new Date(req.body.scheduledStart) < new Date() && req.body.scheduledStart !== current.scheduledStart) {
-        throw new ApiError(400, "Interview date must not be in the past");
-      }
       // Allow updating notes/follow-up attachments on COMPLETED rounds; block changing scheduledStart, mode, or status on COMPLETED rounds
       const isNotesOnlyUpdate = Object.keys(req.body).every(k => k === 'notes');
       if (!isNotesOnlyUpdate && (current.status === "COMPLETED" || current.status === "CANCELLED")) {
         throw new ApiError(400, `Cannot edit interview details in ${current.status} status`);
       }
+    }
+
+    if (req.body.scheduledStart) {
+      const dateCheck = validateSchedulingDate(req.body.scheduledStart);
+      if (!dateCheck.valid) {
+        throw new ApiError(400, dateCheck.error);
+      }
+      mergedData.scheduledStart = dateCheck.date.toISOString();
     }
 
     if (('interviewerIds' in req.body) && (!Array.isArray(interviewerIds) || interviewerIds.length === 0)) {
@@ -1595,7 +1648,7 @@ router.patch(
       status = "RESCHEDULED";
       rescheduleHistory.push({
         previousDate: current.scheduledStart,
-        newDate: req.body.scheduledStart,
+        newDate: mergedData.scheduledStart,
         reason: req.body.rescheduleReason || "No reason provided",
         rescheduledBy: req.user.id,
         rescheduledAt: new Date().toISOString()
@@ -1621,7 +1674,9 @@ router.patch(
       current
     );
 
-    if (req.body.scheduledStart !== current.scheduledStart || req.body.mode !== current.mode) {
+    // Suppress outbound notifications if scheduled date is in the past
+    const isPast = mergedData.scheduledStart ? (new Date(mergedData.scheduledStart) < new Date()) : false;
+    if (!isPast && (req.body.scheduledStart !== current.scheduledStart || req.body.mode !== current.mode)) {
       const interviewersToNotify = mergedData.interviewerIds || [];
       interviewersToNotify.forEach(id => {
         sendNotification({
@@ -1681,6 +1736,14 @@ router.patch(
     const { roundId } = req.params;
     const { scheduledStart, mode, rescheduleReason } = req.body;
 
+    if (!scheduledStart) {
+      throw new ApiError(400, "scheduledStart is required");
+    }
+    const dateCheck = validateSchedulingDate(scheduledStart);
+    if (!dateCheck.valid) {
+      throw new ApiError(400, dateCheck.error);
+    }
+
     const { data: current } = await cache.getRound(roundId);
     if (!current) throw new ApiError(404, "Interview not found");
 
@@ -1692,14 +1755,14 @@ router.patch(
 
     rescheduleHistory.push({
       previousDate: current.scheduledStart,
-      newDate: scheduledStart,
+      newDate: dateCheck.date.toISOString(),
       reason: rescheduleReason || "No reason provided",
       rescheduledBy: req.user.id,
       rescheduledAt: new Date().toISOString()
     });
 
     const updateData = {
-      scheduledStart,
+      scheduledStart: dateCheck.date.toISOString(),
       mode,
       status: "RESCHEDULED",
       rescheduleHistory,

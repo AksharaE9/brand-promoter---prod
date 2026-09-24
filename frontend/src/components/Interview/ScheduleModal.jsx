@@ -7,6 +7,7 @@ import {
   ROUND_DISPLAY_LABEL, 
   InterviewRound 
 } from '../../lib/interviewTemplates';
+import { MIN_SCHEDULING_DATE, MAX_SCHEDULING_DATE } from '../../lib/dateValidation';
 import { ContactAttemptPopover } from './ContactAttemptPopover';
 import { schedulingApi } from '../../services/schedulingApi';
 import { 
@@ -84,13 +85,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     enabled: !!scheduleForm.candidateId,
     staleTime: 30_000,
   });
-
-  const localToday = React.useMemo(() => {
-    const d = new Date();
-    const offset = d.getTimezoneOffset();
-    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
-    return localDate.toISOString().split('T')[0];
-  }, []);
 
   const selectedCandidatePhone = React.useMemo(() => {
     if (!scheduleForm.candidateId) return '';
@@ -527,7 +521,8 @@ export const ScheduleModal = React.memo(function ScheduleModal({
                     required
                     value={scheduleForm.scheduledStart ? scheduleForm.scheduledStart.slice(0, 10) : ''}
                     onChange={handleDatePartChange}
-                    min={localToday}
+                    min={MIN_SCHEDULING_DATE}
+                    max={MAX_SCHEDULING_DATE}
                     style={{ colorScheme: 'light' }}
                     aria-label="Start date"
                   />

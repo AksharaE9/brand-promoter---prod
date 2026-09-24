@@ -84,7 +84,10 @@ async function checkRound1FeedbackAlerts() {
     where: {
       roundNo: 1,
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
-      NOT: { result: 'NOT_RESPONDED' },
+      NOT: [
+        { result: 'NOT_RESPONDED' },
+        { notes: { contains: '"backdated":true' } },
+      ],
       round1SMSAlertSent: false,
       scheduledStart: { lte: oneHourAgo },
     },
@@ -229,7 +232,10 @@ async function checkRound2FeedbackAlerts() {
     where: {
       roundNo: 2,
       status: { in: ['SCHEDULED', 'RESCHEDULED'] },
-      NOT: { result: 'NOT_RESPONDED' },
+      NOT: [
+        { result: 'NOT_RESPONDED' },
+        { notes: { contains: '"backdated":true' } },
+      ],
       round2EmailAlertSent: false,
       scheduledStart: { lte: now },
     },
@@ -494,9 +500,14 @@ async function checkDelayedFeedbackAlerts() {
         {
           OR: [
             { notes: null },
-            { NOT: { notes: { contains: '"feedbackDelayedAlertSent":true' } } }
-          ]
-        }
+            {
+              AND: [
+                { NOT: { notes: { contains: '"feedbackDelayedAlertSent":true' } } },
+                { NOT: { notes: { contains: '"backdated":true' } } },
+              ],
+            },
+          ],
+        },
       ]
     },
     take: 100,
