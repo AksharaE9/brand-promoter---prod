@@ -97,9 +97,7 @@ How to select a candidate, assign a job requisition, select date and time, alloc
    - **`Meeting Link`** *(Optional)*: Paste meeting URL (e.g. Google Meet or Zoom link).
    - **`Zoho Link`** *(Optional)*: Paste Zoho Meeting URL if applicable.
    - **Follow-up Attachments** *(Optional)*: Recruiters/admins can attach `.pdf`, `.png`, or `.jpg` documents under `Add phone`, `Add email`, or `Add morning` follow-up fields.
-5. Review any warning banners:
-   - If prior round feedback has not been recorded, an amber notice will appear: `Round 1 feedback hasn't been submitted yet. You can still schedule Round 2.` (You may dismiss this notice by clicking `close`).
-6. Click the button labeled `Confirm Schedule`.
+5. Click the button labeled `Confirm Schedule`.
 
 #### You'll know it worked when…
 The modal window closes and the newly scheduled interview session appears on the calendar grid under `/schedule`, reflecting the assigned candidate, round, time slot, and interviewer panel.

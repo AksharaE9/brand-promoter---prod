@@ -845,7 +845,6 @@ const CandidateProfile = () => {
             searchingJobs={false}
             savingSchedule={savingSchedule}
             allInterviews={interviews}
-            candidateFeedbacks={candidate?.interviewFeedbacks || []}
             setBanner={setBanner}
             setError={setError}
             onClose={() => setShowScheduleModal(false)}

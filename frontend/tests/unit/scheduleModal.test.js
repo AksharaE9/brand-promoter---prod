@@ -148,7 +148,6 @@ describe('ScheduleModal Smoke Test', () => {
       savingSchedule: false,
       onClose: vi.fn(),
       allInterviews: [],
-      candidateFeedbacks: [],
       setBanner: vi.fn(),
       setError: vi.fn(),
       onSubmit: vi.fn(),

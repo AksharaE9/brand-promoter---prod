@@ -52,7 +52,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   savingSchedule,
   onClose,
   allInterviews,
-  candidateFeedbacks: propCandidateFeedbacks,
   setBanner,
   setError,
   onSubmit,
@@ -62,18 +61,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   const [contactAttemptType, setContactAttemptType] = useState(null);
   const [loggingAttempt, setLoggingAttempt] = useState(false);
   const [uploadError, setUploadError] = useState(null);
-
-  const { data: fetchedFeedbacks = [] } = useQuery({
-    queryKey: ['candidate-feedbacks', scheduleForm.candidateId],
-    queryFn: async () => {
-      if (!scheduleForm.candidateId) return [];
-      const res = await apiGet(`/interviews/${scheduleForm.candidateId}/feedback`);
-      return res.data || [];
-    },
-    enabled: !!scheduleForm.candidateId,
-    staleTime: 30_000,
-  });
-  const candidateFeedbacks = propCandidateFeedbacks || fetchedFeedbacks;
 
   const { data: fetchedInterviews = [] } = useQuery({
     queryKey: ['candidate-interviews', scheduleForm.candidateId],
@@ -111,10 +98,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
 
   const candidateCompletedRounds = React.useMemo(() => {
     if (!scheduleForm.candidateId) return [];
-    const feedbackRounds = (candidateFeedbacks || [])
-      .filter((f) => (f.candidateId || f.candidate?.id) === scheduleForm.candidateId)
-      .map((f) => f.round);
-
     const mergedInterviews = [...(allInterviews || []), ...fetchedInterviews];
 
     const candInterviews = mergedInterviews.filter(
@@ -128,15 +111,11 @@ export const ScheduleModal = React.memo(function ScheduleModal({
       return InterviewRound.FINAL_ROUND;
     });
 
-    return Array.from(new Set([...feedbackRounds, ...interviewRounds]));
-  }, [scheduleForm.candidateId, allInterviews, fetchedInterviews, candidateFeedbacks]);
+    return Array.from(new Set(interviewRounds));
+  }, [scheduleForm.candidateId, allInterviews, fetchedInterviews]);
 
   const nextDerivedRound = getNextSchedulableRound(candidateCompletedRounds);
   const nextDerivedLabel = nextDerivedRound ? ROUND_DISPLAY_LABEL[nextDerivedRound] : 'All 3 Rounds Completed';
-
-  const priorRound = nextDerivedRound === 'ROUND_2' ? 'ROUND_1' : nextDerivedRound === 'FINAL_ROUND' ? 'ROUND_2' : null;
-  const priorRoundLabel = priorRound ? ROUND_DISPLAY_LABEL[priorRound] : '';
-  const priorRoundFeedbackMissing = priorRound ? !candidateCompletedRounds.includes(priorRound) : false;
 
   // Auto-synchronize the round details in the schedule form whenever the derived round changes
   React.useEffect(() => {
@@ -215,10 +194,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
   }, [setScheduleForm]);
 
   const handleCandidateSelect = React.useCallback((c) => {
-    const feedbackRounds = (candidateFeedbacks || [])
-      .filter((f) => f.candidateId === c.id)
-      .map((f) => f.round);
-
     const candInterviews = (allInterviews || []).filter(
       (iv) => (iv.application?.candidate?.id || iv.application?.candidateId || iv.candidateId) === c.id &&
               !iv._optimistic &&
@@ -231,7 +206,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
       return InterviewRound.FINAL_ROUND;
     });
 
-    const completed = Array.from(new Set([...feedbackRounds, ...interviewRounds]));
+    const completed = Array.from(new Set(interviewRounds));
     const nextDerived = getNextSchedulableRound(completed);
     
     const nextRoundNo = nextDerived === 'ROUND_1' ? 1
@@ -249,7 +224,7 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     }));
     setCandidateSearch(c.fullName);
     setShowCandidateList(false);
-  }, [allInterviews, candidateFeedbacks, setScheduleForm, setCandidateSearch, setShowCandidateList]);
+  }, [allInterviews, setScheduleForm, setCandidateSearch, setShowCandidateList]);
 
   const handleJobSelect = React.useCallback((j) => {
     setScheduleForm(prev => ({ ...prev, jobId: j.id }));
@@ -292,28 +267,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
     setScheduleForm(prev => ({ ...prev, slotNo: slotInfo.slotNo }));
   }, [slotInfo.slotNo, scheduleForm.scheduledStart]);
 
-  const [dismissedNoticeRound, setDismissedNoticeRound] = useState(null);
-
-  const currentRoundKey = scheduleForm.roundNo === 99 ? 'FINAL_ROUND' : scheduleForm.roundNo === 2 ? 'ROUND_2' : 'ROUND_1';
-
-  const missingFeedbackNotice = React.useMemo(() => {
-    if (!scheduleForm.candidateId) return null;
-    const hasRound1Fb = (candidateFeedbacks || []).some(
-      (f) => f.round === 'ROUND_1' || f.round === 'Round 1' || f.roundNo === 1
-    );
-    const hasRound2Fb = (candidateFeedbacks || []).some(
-      (f) => f.round === 'ROUND_2' || f.round === 'Round 2' || f.roundNo === 2
-    );
-
-    if (currentRoundKey === 'ROUND_2' && !hasRound1Fb) {
-      return "Round 1 feedback hasn't been submitted yet. You can still schedule Round 2.";
-    }
-    if (currentRoundKey === 'FINAL_ROUND' && (!hasRound1Fb || !hasRound2Fb)) {
-      return "Earlier round feedback hasn't been submitted yet. You can still schedule Final Round.";
-    }
-    return null;
-  }, [scheduleForm.candidateId, currentRoundKey, candidateFeedbacks]);
-
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={onClose} />
@@ -333,23 +286,6 @@ export const ScheduleModal = React.memo(function ScheduleModal({
             </button>
           </div>
           <form className="space-y-4" onSubmit={onSubmit}>
-            {/* Non-blocking Notice for Missing Prior Feedback */}
-            {missingFeedbackNotice && dismissedNoticeRound !== currentRoundKey && (
-              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium animate-in fade-in duration-150">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base text-amber-600 shrink-0">info</span>
-                  <span>{missingFeedbackNotice}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDismissedNoticeRound(currentRoundKey)}
-                  className="text-amber-500 hover:text-amber-700 p-0.5 rounded-md hover:bg-amber-100 transition-colors"
-                  title="Dismiss notice"
-                >
-                  <span className="material-symbols-outlined text-sm">close</span>
-                </button>
-              </div>
-            )}
 
             <div className="grid grid-cols-2 gap-4">
               {/* Candidate */}
