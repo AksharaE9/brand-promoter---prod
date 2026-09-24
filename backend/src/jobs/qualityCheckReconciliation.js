@@ -2,28 +2,42 @@
 
 const prisma = require('../config/db');
 
+// Explicit cutoff timestamp for last 2 days (Sept 22, 2026 onwards)
+const CUTOFF_DATE = new Date(process.env.QUALITY_CHECK_CUTOFF_DATE || '2026-09-22T00:00:00.000Z');
+
 /**
- * Reconcile candidates who cleared Round 2/Final Round or were marked OFFER_PROPOSED
- * but do not have a QualityCheck record.
+ * Reconcile candidates who cleared Round 2/Final Round or were marked for Offer Letter
+ * from Sept 22, 2026 onwards.
  */
-async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
-  const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
-  console.log(`[QC Reconciliation] Starting check for qualifying candidates since ${since.toISOString()} (limit ${limit})...`);
+async function runQualityCheckReconciliation() {
+  console.log(`[QC Reconciliation] Starting check for qualifying candidates from ${CUTOFF_DATE.toISOString()} onwards...`);
 
   let enqueuedCount = 0;
   let skippedCount = 0;
 
   try {
-    // 1. Find qualifying interview feedbacks (SELECTED for ROUND_2 or FINAL_ROUND)
+    // 1. First, remove any pending records older than the 2-day cutoff (Sept 22)
+    const deletedOld = await prisma.qualityCheck.deleteMany({
+      where: {
+        status: 'PENDING',
+        enteredQueueAt: {
+          lt: CUTOFF_DATE,
+        },
+      },
+    });
+    if (deletedOld.count > 0) {
+      console.log(`[QC Reconciliation] Cleaned ${deletedOld.count} older pending QC records created prior to ${CUTOFF_DATE.toISOString()}`);
+    }
+
+    // 2. Find qualifying interview feedbacks (SELECTED for ROUND_2 or FINAL_ROUND) since Sept 22
     const qualifyingFeedbacks = await prisma.interviewFeedback.findMany({
       where: {
         selectionStatus: 'SELECTED',
         round: { in: ['ROUND_2', 'FINAL_ROUND'] },
         deletedAt: null,
-        createdAt: { gte: since },
+        createdAt: { gte: CUTOFF_DATE },
       },
       orderBy: { createdAt: 'desc' },
-      take: limit,
       select: {
         id: true,
         candidateId: true,
@@ -46,7 +60,6 @@ async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
       const existing = await prisma.qualityCheck.findFirst({
         where: {
           candidateId: fb.candidateId,
-          interviewRoundId: fb.id,
         },
       });
 
@@ -57,26 +70,29 @@ async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
             interviewRoundId: fb.id,
             round: fb.round,
             status: 'PENDING',
-            source: 'RECONCILIATION',
+            source: fb.round === 'FINAL_ROUND' ? 'FINAL_ROUND_SELECTED' : 'ROUND_2_SELECTED',
             organizationId: orgId,
             enteredQueueAt: fb.createdAt || new Date(),
           },
         });
-        console.log(`[QC Reconciliation] Created QualityCheck for candidate ${fb.candidateId} (round: ${fb.round})`);
+        console.log(`[QC Reconciliation] Enqueued candidate ${fb.candidateId} (round: ${fb.round})`);
         enqueuedCount++;
       } else {
         skippedCount++;
       }
     }
 
-    // 2. Find candidates with status OFFER_PROPOSED and no QC
-    const offerProposedCandidates = await prisma.candidate.findMany({
+    // 3. Find candidates with offer status since Sept 22
+    const offerCandidates = await prisma.candidate.findMany({
       where: {
-        status: 'OFFER_PROPOSED',
         isDeleted: false,
-        updatedAt: { gte: since },
+        OR: [
+          { status: 'OFFER_PROPOSED' },
+          { status: 'OFFER_SENT' },
+          { currentStage: { contains: 'offer', mode: 'insensitive' } },
+        ],
+        updatedAt: { gte: CUTOFF_DATE },
       },
-      take: limit,
       select: {
         id: true,
         organizationId: true,
@@ -84,7 +100,7 @@ async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
       },
     });
 
-    for (const cand of offerProposedCandidates) {
+    for (const cand of offerCandidates) {
       const orgId = cand.organizationId || 'defaultOrg';
       const existing = await prisma.qualityCheck.findFirst({
         where: {
@@ -96,13 +112,14 @@ async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
         await prisma.qualityCheck.create({
           data: {
             candidateId: cand.id,
+            round: 'ROUND_2',
             status: 'PENDING',
             source: 'OFFER_PROPOSED',
             organizationId: orgId,
             enteredQueueAt: cand.updatedAt || new Date(),
           },
         });
-        console.log(`[QC Reconciliation] Created QualityCheck for OFFER_PROPOSED candidate ${cand.id}`);
+        console.log(`[QC Reconciliation] Enqueued offer candidate ${cand.id}`);
         enqueuedCount++;
       }
     }
@@ -115,6 +132,24 @@ async function runQualityCheckReconciliation(lookbackDays = 7, limit = 100) {
   }
 }
 
+let reconciliationInterval = null;
+
+function startQualityCheckReconciliation(intervalMs = 300000) {
+  // Run on startup
+  runQualityCheckReconciliation().catch(err => console.warn('[QC Reconciliation] Startup run warning:', err.message));
+  
+  if (reconciliationInterval) clearInterval(reconciliationInterval);
+  reconciliationInterval = setInterval(() => {
+    runQualityCheckReconciliation().catch(err => console.warn('[QC Reconciliation] Periodic run warning:', err.message));
+  }, intervalMs);
+
+  if (reconciliationInterval.unref) {
+    reconciliationInterval.unref();
+  }
+  console.log(`[QC Reconciliation] Periodic job started (interval: ${intervalMs / 1000}s, cutoff: ${CUTOFF_DATE.toISOString()})`);
+}
+
 module.exports = {
   runQualityCheckReconciliation,
+  startQualityCheckReconciliation,
 };

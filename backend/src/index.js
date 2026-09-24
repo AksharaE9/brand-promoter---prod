@@ -96,6 +96,8 @@ async function bootstrap() {
         notificationScheduler = require("./jobs/notificationScheduler");
         const { startResumeHealthCheck } = require("./jobs/resumeHealthCheck");
         startResumeHealthCheck();
+        const { startQualityCheckReconciliation } = require("./jobs/qualityCheckReconciliation");
+        startQualityCheckReconciliation();
         console.log('[Workers] In-process background workers loaded successfully.');
       } catch (err) {
         console.warn("[Workers] Background workers failed to load:", err.message);
