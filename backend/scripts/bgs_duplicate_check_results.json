@@ -1,0 +1,2534 @@
+{
+  "results": [
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 2,
+        "name": "Shamitha Krishna A",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7.5",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 3,
+        "name": "Rakshitha S",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [
+        {
+          "id": "cmrum2orm001zmt29ctitt7ri",
+          "fullName": "Rakshitha S",
+          "email": "the.rakshitha@gmail.com",
+          "phone": "8431917561",
+          "college": null,
+          "status": "ACTIVE",
+          "createdAt": "2026-07-21T12:09:55.426Z",
+          "isDeleted": false
+        }
+      ],
+      "normalizedMatches": [],
+      "fuzzyMatches": [
+        {
+          "candidate": {
+            "id": "6ScETPOeaLGRCwG84EzE",
+            "fullName": "Rakshitha V",
+            "email": "rakshithav065@gmail.com",
+            "phone": "9591818914",
+            "college": null,
+            "status": "ACTIVE",
+            "createdAt": "2026-05-13T09:13:06.011Z",
+            "isDeleted": false
+          },
+          "score": 0.9090909090909091
+        },
+        {
+          "candidate": {
+            "id": "fxbNqI3GODWKae4N3B0j",
+            "fullName": "Rakshitha R",
+            "email": "r9467585496@gmail.com",
+            "phone": "9902728441",
+            "college": null,
+            "status": "REJECTED",
+            "createdAt": "2026-05-13T09:56:57.764Z",
+            "isDeleted": false
+          },
+          "score": 0.9090909090909091
+        },
+        {
+          "candidate": {
+            "id": "cmrsujwqw00ofmt2rt2wpzkq8",
+            "fullName": "Rakshitha M",
+            "email": "rakshitham122005@gmail.com",
+            "phone": "7338416137",
+            "college": null,
+            "status": "ACTIVE",
+            "createdAt": "2026-07-20T06:31:43.496Z",
+            "isDeleted": false
+          },
+          "score": 0.9090909090909091
+        }
+      ]
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 4,
+        "name": "Ekta V Dhanunjaya",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 5,
+        "name": "Amrutha",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "6",
+        "doj": "5th oct",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 6,
+        "name": "Vijetha A naik",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7.5",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 7,
+        "name": "Gaanavi B",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 8,
+        "name": "Theertha varshini D",
+        "panelist": "Vinay Shetty",
+        "role": "Business Analyst Intern",
+        "rating": "4",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 9,
+        "name": "Divya S B",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 10,
+        "name": "Bindu Shree S",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "28th Sept",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": [
+        {
+          "candidate": {
+            "id": "FP10HnhqJTnsgTf3DH3Q",
+            "fullName": "Bindu shree R",
+            "email": "bindu.siri06@gmail.com",
+            "phone": "9731021584",
+            "college": null,
+            "status": "OFFER_SENT",
+            "createdAt": "2026-05-13T09:02:17.314Z",
+            "isDeleted": false
+          },
+          "score": 0.9230769230769231
+        }
+      ]
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 11,
+        "name": "Raksha G",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "5th Oct",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 12,
+        "name": "Devansh Verma",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "5th Oct",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 13,
+        "name": "Sohan M",
+        "panelist": "Vinay Shetty",
+        "role": "Business Analyst Intern",
+        "rating": "7",
+        "doj": "5th Oct",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 14,
+        "name": "Apeksha S",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "5th Oct",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 15,
+        "name": "Vaishnavi",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "October",
+        "status": "SELECTED"
+      },
+      "exactMatches": [
+        {
+          "id": "O6vr1Xk66E8Zs61Pp55s",
+          "fullName": "Vaishnavi",
+          "email": "sankathalavenkatanagavaishnavi@gmail.com",
+          "phone": "9493288695",
+          "college": null,
+          "status": "REJECTED",
+          "createdAt": "2026-05-14T12:46:18.178Z",
+          "isDeleted": false
+        }
+      ],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 16,
+        "name": "Nisarga",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [
+        {
+          "id": "cmto8kcfl0008lno3xhsyc6md",
+          "fullName": "Nisarga",
+          "email": "nisarga83@gmail.com",
+          "phone": "+91 9108330919",
+          "college": "Horticulture College",
+          "status": "ACTIVE",
+          "createdAt": "2026-09-05T10:24:32.241Z",
+          "isDeleted": false
+        }
+      ],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 17,
+        "name": "Pragathi GS",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 18,
+        "name": "Yashwant kumar",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": [
+        {
+          "candidate": {
+            "id": "cmudxvt9o004bn9rv9uiwv3qn",
+            "fullName": "Yashwanth Kumar",
+            "email": "uyashwanth1013@gmail.com",
+            "phone": "9618194235",
+            "college": null,
+            "status": "ACTIVE",
+            "createdAt": "2026-09-23T10:07:32.076Z",
+            "isDeleted": false
+          },
+          "score": 0.9333333333333333
+        }
+      ]
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 19,
+        "name": "shamya MJ",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 20,
+        "name": "swati",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "8",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 21,
+        "name": "chai l jain",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "9",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 22,
+        "name": "Santosh khul",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "6",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 23,
+        "name": "Bhumika S",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 24,
+        "name": "harshitha M Mary",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "9",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 25,
+        "name": "Sushmita TK",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "8",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Selected",
+        "source_row": 26,
+        "name": "hitha Sh",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "8",
+        "doj": "immediate",
+        "status": "SELECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 2,
+        "name": "Yashaswini gowda",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "5th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 3,
+        "name": "N reddy Kumari",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "3",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 4,
+        "name": "Priyanka",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "3",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 5,
+        "name": "Dyuti",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "6",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 6,
+        "name": "Nithyashree T R",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 7,
+        "name": "Punya H",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 8,
+        "name": "Shubha D C",
+        "panelist": "Vinay Shetty",
+        "role": "Business Analyst Intern",
+        "rating": "4",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 9,
+        "name": "Sneha S",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "6",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 10,
+        "name": "Deekshitha M",
+        "panelist": "Vinay Shetty",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "28th Sept",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": [
+        {
+          "candidate": {
+            "id": "dMFJ1Wh1oyzQ3QHRp8BF",
+            "fullName": "Deekshitha K",
+            "email": "ddeekshithak85@gmail.com",
+            "phone": "8431041500",
+            "college": null,
+            "status": "ACTIVE",
+            "createdAt": "2026-05-26T06:29:25.183Z",
+            "isDeleted": false
+          },
+          "score": 0.9166666666666666
+        }
+      ]
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 11,
+        "name": "Vinutha V",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "7",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 12,
+        "name": "saniya B K",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 13,
+        "name": "manushree",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 14,
+        "name": "Sachin j",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 15,
+        "name": "Niranjan k",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 16,
+        "name": "Abilash PA",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "5",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 17,
+        "name": "Arvind",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 18,
+        "name": "Santosh khul",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "2",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    },
+    {
+      "item": {
+        "source_list": "Rejected",
+        "source_row": 19,
+        "name": "PRATHIBHA KS",
+        "panelist": "Praneel",
+        "role": "Data Analyst Intern",
+        "rating": "4",
+        "doj": "immediate",
+        "status": "REJECTED"
+      },
+      "exactMatches": [],
+      "normalizedMatches": [],
+      "fuzzyMatches": []
+    }
+  ],
+  "allUsers": [
+    {
+      "id": "AQOxFsOPEPVBxJ33cNbu",
+      "fullName": "-",
+      "email": "-@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "BJd3OFY4oP2e374ylmBK",
+      "fullName": "Irene Thomas",
+      "email": "irene2025100@sjim.edu.in",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "CXr6ovApgCBnhlubdp1W",
+      "fullName": "Pavan Admin",
+      "email": "pavankumarganachari@gmail.com",
+      "role": "ADMIN",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "DdIzxDzZO703zkEfSpFR",
+      "fullName": "Shruthi Vasudevan",
+      "email": "shruthi.2003v@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "IcMuRfawh6OT2M8yoYui",
+      "fullName": "Tarun Suresh",
+      "email": "tarunsuresh18@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "Lt8wLO17mr41qNr6WQE5",
+      "fullName": "Kshitij K",
+      "email": "kshitijkhatokar@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "QcjvooSVcO1ZgI5E9vfF",
+      "fullName": "Sathvik K",
+      "email": "sathvikk314@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "UCF92yrcIXYyiFbb8CQN",
+      "fullName": "Pramukh BK",
+      "email": "bkpramukh11@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "Up19mywC01UoWQfa1NOB",
+      "fullName": "Tharun R",
+      "email": "tharunrchalam@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "XwJ3ravlMaZteWtm5xG7",
+      "fullName": "Ananth Charan",
+      "email": "ananthwork9@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cCdNVlt6dNhV36PdKxLA",
+      "fullName": "ABHINITHA H R",
+      "email": "abhinithahr@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cYEZblWdN7gubrQvLgYj",
+      "fullName": "Vinay Shetty",
+      "email": "vinay.shetty@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrn4yt2b002wqw2rr7q8of9n",
+      "fullName": "Subramanya",
+      "email": "subramanya@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrocg1il0000l429ebzkr4cy",
+      "fullName": "Suhas Krishna",
+      "email": "suhas.krishna@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrwbuuum0000ije02hmmy7s7",
+      "fullName": "Super Admin",
+      "email": "superadmin@gmail.com",
+      "role": "SUPER_ADMIN",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrwcxqlg0000ijxw7mg076tz",
+      "fullName": "QA Verification Recruiter",
+      "email": "audit-verification@internal.qa",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmrxcdz630083my2rx094jvlg",
+      "fullName": "Manan chhabra",
+      "email": "chhabramanan9@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrzv9wqc002glh2t9klie9qr",
+      "fullName": "Keshav B",
+      "email": "keshav.bhattad@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cms32jyez001bju2s3y8kps4s",
+      "fullName": "Mohammad Fazil",
+      "email": "mohammadfazilf425@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "73783a2b-0045-431c-9b71-75aeab0b6840",
+      "fullName": "Super Admin",
+      "email": "admin.bcf349cd@talentos.secure",
+      "role": "SUPER_ADMIN",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrnay5ft0002ld2r8k6jagsg",
+      "fullName": "Rishika R Rai",
+      "email": "rrairishika@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmr8wql9u005qp92s2svisrkw",
+      "fullName": "Andrea Rosario",
+      "email": "168609b@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmr4viao2006bqt2shu48has7",
+      "fullName": "Riya damai",
+      "email": "riyadamai385@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmr4icmif000sqt2srj9fzweq",
+      "fullName": "Ambika Hegde",
+      "email": "ambikahegde3010@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmr3fjxu10008li2rnwo9il5k",
+      "fullName": "Suhas Krishna",
+      "email": "suhaskrishna@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "VrIWjhxuYXhMD63T9w0z",
+      "fullName": "Suhas Krishna",
+      "email": "suhaskrishna749@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "3bc46d3d-2c59-44f4-8de8-aaea7ea09ea0",
+      "fullName": "Hiring Team Interviewer",
+      "email": "interviewer@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmqgm3voc0006g61vc9onftnu",
+      "fullName": "Padma J Adappagoudar",
+      "email": "padmaj99a@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "Pwpd94dtZsUIAcRn1zrI",
+      "fullName": "Pava Rag",
+      "email": "pava.rag@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "USf5IEn9aS6i8fYBbNOj",
+      "fullName": "Abhintha",
+      "email": "abhintha@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "JgAdDjV4mQ0NtVJ7nxu5",
+      "fullName": "Sathvik K",
+      "email": "sathvikk371@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "XPf8glsE3KJOIbSPnhTw",
+      "fullName": "Jagriti Sarda",
+      "email": "jagritisarda02@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "4jpndSPZ3Al25841VvLL",
+      "fullName": "Madhumati Angadi",
+      "email": "madhumati3006@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cms31ovv90011j32tagtcfma0",
+      "fullName": "Ramesh Tippannavar",
+      "email": "rvim25mba048.rvim@rvei.edu.in",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmr4fq4uu0008nb2t9iy3df5n",
+      "fullName": "Swati Desai",
+      "email": "swatidesai024@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "ACXdW05iuSlbNR1G1C8z",
+      "fullName": "Jagrithi",
+      "email": "jagrithi@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "J33LPaMJ7QH1Hen8KaJg",
+      "fullName": "Purav",
+      "email": "purav@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "TOES1cIUcdAarE9NvWkt",
+      "fullName": "Abhinita",
+      "email": "abhinita@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "daYQzP70jkkzt2PaHyeM",
+      "fullName": "Sri CHANDANA",
+      "email": "bheemasrichandana@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "hjIRMiXUAwCKouzK9zJ8",
+      "fullName": "Shreesha",
+      "email": "shreesha@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "lu3MwrR0TIgD68AT5Ju4",
+      "fullName": "Keshav",
+      "email": "keshav@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "o3r4aAHyE39DGRNVTrcE",
+      "fullName": "shreyas",
+      "email": "shreyas@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "p6mOHl1KrqIRTHHonxyC",
+      "fullName": "Swarchitha S",
+      "email": "sswarchitha@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "pdB3COd1M7rmQQhlgxvO",
+      "fullName": "Godavari DK",
+      "email": "godavari.dk@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "re56ljEGsGX6xyVRsB9N",
+      "fullName": "YUVAN MELWIN MJ",
+      "email": "yuvan.melwinmj@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "s0YYsSPezeP93Plc3fEM",
+      "fullName": "Ananath",
+      "email": "ananath@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "uBjeprsho1onUAwgpL6E",
+      "fullName": "Sanchi Petkar",
+      "email": "hr.career.sanchi@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "unBxfzgxsN9wEgQUw6xf",
+      "fullName": "Haris",
+      "email": "haris@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "vP5agtcPgUUHw6wVam1o",
+      "fullName": "Pavan Kumar N",
+      "email": "pavankumar.n@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "wczapoqTXJeAzk1wCfRb",
+      "fullName": "PAVAN RAG B R",
+      "email": "pavanragbr.084bbak2123@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "wtPQShwtAbxLXj93ydOR",
+      "fullName": "Subramanya",
+      "email": "subramanya@ats.local",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "xNWplOKDEV0cn8jo6QvV",
+      "fullName": "shubhanga v",
+      "email": "shubhanga03@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "za0Co0oZ6lrzIkCbyeq0",
+      "fullName": "Swarchitha S",
+      "email": "swarchitha87@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cms4gx2zz002flq2tvelxoj8f",
+      "fullName": "Rachana P",
+      "email": "rachanaap2005@gmail.com",
+      "role": "SUPER_ADMIN",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmsd5viv5006es82rta77bdru",
+      "fullName": "Supriya M",
+      "email": "supriyam5261@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmtcy8rrz002mm9mzpfqvrpas",
+      "fullName": "Aadesh Anantha",
+      "email": "aadeshn2007@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmsh5at0900ddo52srakohs4b",
+      "fullName": "Praneel",
+      "email": "praneelsingh42@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "hoihq7RrvmYIfAuuBWPB",
+      "fullName": "J Vaishnav Rahul",
+      "email": "jvaishnav.rahul@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "rtkG387NSA3tNEEOMuOY",
+      "fullName": "Ujwal ",
+      "email": "ujwal.ravikumar@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "xcwSAYvjqcLlfgknxqSp",
+      "fullName": "Madhumati",
+      "email": "madhumati.angadi@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmt409nnt0008jt2z966658am",
+      "fullName": "NISHANTH K m",
+      "email": "kmaninishanth@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmsssx1ft009dib2rpbtz06a9",
+      "fullName": "Piya singh",
+      "email": "officialpiya0@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmtcj128j007klmmzq86akbms",
+      "fullName": "Trishika",
+      "email": "angel.trishika9900@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmtcj2i0g007nlmmz4klphtg2",
+      "fullName": "KENISHA",
+      "email": "kenishaparakh@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "qj1peEoY7MZ6G02vsvN8",
+      "fullName": "Ananth - Madhumati",
+      "email": "ananth.-.madhumati@ats.local",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmte0po4m001cktn7g7bgqvtl",
+      "fullName": "Vaani baid",
+      "email": "baivaani@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmte7tjjo00akktn76nwwnsps",
+      "fullName": "Derek Dennison",
+      "email": "derek.dennison.1076@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmteg7iom00niktn7p5gidc60",
+      "fullName": "Surya R",
+      "email": "suryaravichander@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmsehyvnd0000ijdsmvt4ifw3",
+      "fullName": "System Super Admin",
+      "email": "admin@ats.local",
+      "role": "SUPER_ADMIN",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "cmthandpa001kjymx28i4qwr0",
+      "fullName": "Yogesh K",
+      "email": "kyogeshyogesh42@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmtk32fa500kdjymxc3nam88s",
+      "fullName": "Javeria Sadaf Salman",
+      "email": "sadafsalman7745@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmrndjpvq000clg2rb2ley1ki",
+      "fullName": "swanand nakade",
+      "email": "swanandnakade7@gmail.com",
+      "role": "RECRUITER",
+      "isActive": false,
+      "status": "INACTIVE"
+    },
+    {
+      "id": "z0k4KYst5bDMUQkL0Dvq",
+      "fullName": "syed harris",
+      "email": "syed.harris@aksharaenterprises.info",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmu2gkhhq001um8r56citxee8",
+      "fullName": "Simran k",
+      "email": "simranrajpurhit@gmail.com",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmub1mwgp0000tbywjbvgjg84",
+      "fullName": "CI HR User",
+      "email": "hr@test.ci",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    },
+    {
+      "id": "cmub1mwuw0001tbywq81a9wqd",
+      "fullName": "CI Interviewer",
+      "email": "iv@test.ci",
+      "role": "RECRUITER",
+      "isActive": true,
+      "status": "ACTIVE"
+    }
+  ],
+  "allJobs": [
+    {
+      "id": "0fy5475rPsucNmu2uRm9",
+      "title": "BRAND PROMOTER",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "1CPgDERV9PdhnrncbxIA",
+      "title": "sales and marketing exevcutive",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "3BjNmBb3AqamSw5FGu6t",
+      "title": "HR INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "3ZR5Ljxhaw3Z8WCpRsCR",
+      "title": "BP",
+      "isActive": false,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "4Ityst52cTD8JI0v96Vy",
+      "title": "Sales & Marketing Executive",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "78cc9bd3-6d3a-4148-a507-4f4fccbc0bfb",
+      "title": "hr",
+      "isActive": true,
+      "department": "hr",
+      "openingsCount": 45
+    },
+    {
+      "id": "7n1rvouZ1BFcmoKTaSJ5",
+      "title": "BDE INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "8YJC6csbthsGsQQpWGqt",
+      "title": "Ops Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 10
+    },
+    {
+      "id": "ADHj0B6FnpqIPQkzwpmQ",
+      "title": "Sales &Marketing Executive",
+      "isActive": true,
+      "department": "na",
+      "openingsCount": 1
+    },
+    {
+      "id": "AEEq8XuNwWFzdeoLJUn5",
+      "title": "SOFTWARE DEVELOPER",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "DCNh9mvn7VuOPBY8S7kf",
+      "title": "BA",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "DITF8eTmPkrFAMFjDXpU",
+      "title": "BA intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "EBzDrrBIf1cHJlXscxqp",
+      "title": "OPERATION SINTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "Frt3GwiotbR33uU4zyAI",
+      "title": "HR Intern",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 1
+    },
+    {
+      "id": "Gicg5nHQVV1ELvv8BNlb",
+      "title": "BRAND PROMOTER- SHOP EVENTS",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "Gj4Yu2VTfvlZQfGJqYSE",
+      "title": "Operations",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "HfF3u6vU9OZakmckwyCJ",
+      "title": "Marketing",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "HlgpxodzVCJvk4KSCYFY",
+      "title": "NA",
+      "isActive": true,
+      "department": "NA",
+      "openingsCount": 1
+    },
+    {
+      "id": "KA6P3eHQl5yPbj0EwDWQ",
+      "title": "MARKETING AND OPERATIONS",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "KvNUfnBS1EE8aIOdngok",
+      "title": "Marketing Executive",
+      "isActive": true,
+      "department": "Marketing",
+      "openingsCount": 1
+    },
+    {
+      "id": "M5Tyjwq7W8LCEdGiv3UX",
+      "title": "OPERATIONS INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "MXxjT2thhL59Bzwytby1",
+      "title": "MARKETING INTERN",
+      "isActive": true,
+      "department": "MARKETING",
+      "openingsCount": 1
+    },
+    {
+      "id": "NyEkPLzgYXVx4HGWNzsL",
+      "title": "WOMEN IN BP",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "O5MrSm6iMWaqQDvZTlrj",
+      "title": "BDE FULL TIME",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "ONBppBoG0e4bd0uhgL3n",
+      "title": "SME Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "OSUpFCWE9zXwlomVDG6c",
+      "title": "BDE intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "SNJGSb71fnMC9GozDDNl",
+      "title": "BA & OPERATIONS",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "VPVR948y9nQGWR0izhj2",
+      "title": "SALES AND MARKETING EXECUTIVE INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "Zytzwh3eZbGMMZ1qRbZm",
+      "title": "BDE INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "ak4Y6kMrlo3tsLdPMy0h",
+      "title": "BDE",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "baTMIPuh6r7H1Qaf6dfj",
+      "title": "HR Intern",
+      "isActive": true,
+      "department": "Human Resource",
+      "openingsCount": 1
+    },
+    {
+      "id": "boODzRnmVIT46UsDadHS",
+      "title": "MARKETING INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqhlmj2p000mbb1vhi50warc",
+      "title": "Ops",
+      "isActive": true,
+      "department": "Operations",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqhlpfzz000sbb1vq49hcq6j",
+      "title": "Operations",
+      "isActive": true,
+      "department": "-",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqho7d7n0012g52ce0w13oce",
+      "title": "BDE/SME",
+      "isActive": true,
+      "department": "Field sales",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqhpbyap002sg52cepqtjpia",
+      "title": "Telecalling (part-time SME)",
+      "isActive": true,
+      "department": "SME intern",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqhqp7oi005tg52cf1dn9fk9",
+      "title": "HR",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqj06cwf000ndd2enm2y5o5k",
+      "title": "Ops Intern",
+      "isActive": true,
+      "department": "Operations",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqj0fgwm000ubn2todrhx0m5",
+      "title": "BDE",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqj8li7x0001e328pc9g1qwy",
+      "title": "SME Intern",
+      "isActive": true,
+      "department": "Sales and Marketing",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqkgdtce000qds297olefvv7",
+      "title": "BDE/SME",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqkhplxt002kds29ikl70oi2",
+      "title": "SME Intern",
+      "isActive": true,
+      "department": "Sales and Marketing",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqktkz9h001tct29ofi23e8b",
+      "title": "Tellicalling Sme(Part Time)",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmqktlnpk001zct29eoce6qja",
+      "title": "Tellicalling Sme (Part Time)",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmr3h30k20002jfkk0fgt9dt7",
+      "title": "Test Software Engineer",
+      "isActive": true,
+      "department": "Engineering",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmr4ika2c0013qt2s9jgw7epd",
+      "title": "Tele sales",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmraj3ajx000yng2sxof83z7m",
+      "title": "Ops Intern",
+      "isActive": true,
+      "department": "Operations",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmraj3s280014ng2su9ouyrz1",
+      "title": "HR Intern",
+      "isActive": true,
+      "department": "Human Resources",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmraj9yas001yng2sv7fot9ms",
+      "title": "Business Operations Intern",
+      "isActive": true,
+      "department": "Operations",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmral5m5t007dng2suw56zku5",
+      "title": "Marketing Intern",
+      "isActive": true,
+      "department": "Marketing",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrbtpn0k00cxng2sa5n2u6fw",
+      "title": "BDE Intern",
+      "isActive": true,
+      "department": "Business Development",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrj87yg6000cnn2qdnju5jzw",
+      "title": "Tele sales executive",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrln08cr000rlf2rpxovcc2s",
+      "title": "Ops",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrn3492f000rqw2rml6ehu4o",
+      "title": "Team Lead",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrn4gfev0027qw2r9hhxtams",
+      "title": "Web Developer",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrn50b6p0030qw2read8dtk3",
+      "title": "BDE/SME",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrnjjhvp0092lg2ry71l2zkt",
+      "title": "Data Analyst Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrog7p8d000ql429z0nhillu",
+      "title": "HR & Operations Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrx56ou6001kmy2rk7zgf7jd",
+      "title": "Business Analyst Intern",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrx5q5dn004emy2rddad2yca",
+      "title": "HR and Operations Intern",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 1
+    },
+    {
+      "id": "cms2pj9uw002xra2ttmbgt4g4",
+      "title": "Telesales",
+      "isActive": true,
+      "department": "Telecalling",
+      "openingsCount": 30
+    },
+    {
+      "id": "ddf9b0c8-50b8-4133-aae3-43980c1eb4b3",
+      "title": "web",
+      "isActive": true,
+      "department": "tech",
+      "openingsCount": 10
+    },
+    {
+      "id": "dvq8rBvKgPXJz0ePDR6P",
+      "title": "BA INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 3
+    },
+    {
+      "id": "gXU5UBAiZ6wwME8ckSPD",
+      "title": "OPERATIONS INTERN",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "h4YsczdUD7ObMO3qlaMK",
+      "title": "Field Sales Associate",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "iuQqpFWGPtuBVLQJarSw",
+      "title": "BDE intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "kmYY7aqz05tcXAj1fjxY",
+      "title": "Sales and marketing executive",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "lfZbLZWtJqjwKwImlOtu",
+      "title": "ba",
+      "isActive": true,
+      "department": "internal",
+      "openingsCount": 5
+    },
+    {
+      "id": "rhHL6uE7XHaDC9zxePYh",
+      "title": "BDE intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "sXqQG1194735ra2LUx9I",
+      "title": "Ops Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "u6TuiYofk7loeuTdGWop",
+      "title": "HR Intern",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 10
+    },
+    {
+      "id": "vHj8UCXyP9kjZ77MdyeU",
+      "title": "HR",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "vtU6IikwbuwL2wLEFraG",
+      "title": "bde",
+      "isActive": true,
+      "department": "operations",
+      "openingsCount": 6
+    },
+    {
+      "id": "xPZO7GSDaEn8BVgI7HJh",
+      "title": "SHOP EVENT",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "xb0b5se93DmnPLf86WIH",
+      "title": "SME Intern",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "yTFv11TiPjh3qIaTtY9R",
+      "title": "BP",
+      "isActive": true,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmub1mx1x0003tbyw7p2pg2k7",
+      "title": "CI Test Engineer",
+      "isActive": true,
+      "department": "Engineering",
+      "openingsCount": 1
+    },
+    {
+      "id": "cmtmlktvr000wpxnv7lkpjw0p",
+      "title": "Tech + Ops",
+      "isActive": true,
+      "department": "HR",
+      "openingsCount": 100
+    },
+    {
+      "id": "cmrnht0tv004xlg2roobb41uk",
+      "title": "Business Analyst",
+      "isActive": false,
+      "department": null,
+      "openingsCount": 1
+    },
+    {
+      "id": "cmrnbuqub000ild2rn6o88q31",
+      "title": "Data analyst",
+      "isActive": false,
+      "department": null,
+      "openingsCount": 1
+    }
+  ],
+  "allColleges": [
+    {
+      "id": "TUn4uQ1BrI766sziSkWw",
+      "name": "Kairalee Nikethan Golden Jublee Degree College",
+      "location": "5th Main, CMH Road, 9th Cross, 1st stage",
+      "area": "Indiranagar",
+      "year": "2023-26",
+      "role": "Candidate",
+      "course": "BCom, BBA",
+      "createdById": "JgAdDjV4mQ0NtVJ7nxu5",
+      "createdAt": "2026-05-13T09:22:40.493Z",
+      "updatedAt": "2026-05-13T09:22:40.493Z"
+    },
+    {
+      "id": "b0p3jgCt2k8dzH6NUmEC",
+      "name": "BIT",
+      "location": "Bengaluru",
+      "area": "Nation college road",
+      "year": "2026",
+      "role": "BDE&SME",
+      "course": "Any",
+      "createdById": "VrIWjhxuYXhMD63T9w0z",
+      "createdAt": "2026-05-13T05:46:38.854Z",
+      "updatedAt": "2026-05-13T05:46:38.854Z"
+    },
+    {
+      "id": "cmrubf53t001wmt29u89sf4mp",
+      "name": "CMS JAIN",
+      "location": "Indiranagar",
+      "area": "Bengaluru",
+      "year": null,
+      "role": null,
+      "course": null,
+      "createdById": "73783a2b-0045-431c-9b71-75aeab0b6840",
+      "createdAt": "2026-07-21T07:11:40.698Z",
+      "updatedAt": "2026-07-21T07:11:40.698Z"
+    },
+    {
+      "id": "cmrvvg6bu0006mt2958sykr80",
+      "name": "JAIN CMS",
+      "location": "BANGALORE",
+      "area": "LALBAGH",
+      "year": "2026",
+      "role": "HR , Marketing, operations",
+      "course": "B.com , BBA",
+      "createdById": "re56ljEGsGX6xyVRsB9N",
+      "createdAt": "2026-07-22T09:20:07.434Z",
+      "updatedAt": "2026-07-22T09:20:07.434Z"
+    },
+    {
+      "id": "jDtZQCA45sZq4r6uxnKL",
+      "name": "Loyola Degree College",
+      "location": "Bannerghatta",
+      "area": "Kalena Agrahara",
+      "year": "2026",
+      "role": "BDE, ME",
+      "course": "BCOM,etc",
+      "createdById": "Lt8wLO17mr41qNr6WQE5",
+      "createdAt": "2026-05-13T09:16:12.324Z",
+      "updatedAt": "2026-05-13T09:16:12.324Z"
+    },
+    {
+      "id": "vEwOPxWgAQxL0SHtnMme",
+      "name": "Jindal Degree College for Women",
+      "location": "Madanayakanahalli",
+      "area": "Nagasandra",
+      "year": "2026",
+      "role": "BDE, SME",
+      "course": "BBA, BCOM",
+      "createdById": "Lt8wLO17mr41qNr6WQE5",
+      "createdAt": "2026-05-13T06:20:20.990Z",
+      "updatedAt": "2026-05-13T06:20:20.990Z"
+    },
+    {
+      "id": "cmtnzm1id002xpxndklu9lcqj",
+      "name": "Bangalore University",
+      "location": "Bangalore",
+      "area": "Mysore Road",
+      "year": null,
+      "role": "Business Development Executive",
+      "course": "BBA,BCom",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:13:54.853Z",
+      "updatedAt": "2026-09-05T06:13:54.853Z"
+    },
+    {
+      "id": "cmtnzp7xq002ypxndn2z5vo6l",
+      "name": "Presidency College",
+      "location": "Bangalore",
+      "area": "Hebbal",
+      "year": null,
+      "role": "BDE,HR,Marketing",
+      "course": "BBA,BCOM,BTECH",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:16:23.150Z",
+      "updatedAt": "2026-09-05T06:16:23.150Z"
+    },
+    {
+      "id": "cmtnzrecd002zpxndfob1a6si",
+      "name": "Kristu Jayanthi",
+      "location": "Bangalore",
+      "area": "Kothanur",
+      "year": null,
+      "role": "BDE,HR,Sales and Marketing Executive",
+      "course": "BBA,BCOM",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:18:04.765Z",
+      "updatedAt": "2026-09-05T06:18:04.765Z"
+    },
+    {
+      "id": "cmtnztmwg0030pxndg2jbtrky",
+      "name": "SSMRV Degree College",
+      "location": "Bangalore",
+      "area": "Jayanagar",
+      "year": null,
+      "role": "BDE,Sales and Marketing,HR and Operations",
+      "course": "BBA,BCOM",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:19:49.168Z",
+      "updatedAt": "2026-09-05T06:19:49.168Z"
+    },
+    {
+      "id": "cmto117es0006nro3v5eaf6yo",
+      "name": "MALLESHWARAM LADIES ASSOCIATION",
+      "location": "Bangalore",
+      "area": "Malleshwaram",
+      "year": null,
+      "role": "Telesales,Marketing,BDE",
+      "course": "BCOM",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:53:41.957Z",
+      "updatedAt": "2026-09-05T06:53:41.957Z"
+    },
+    {
+      "id": "cmto18l2k0008nro3cl8odqwf",
+      "name": "Horticulture College",
+      "location": "Mysore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "BSC",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T06:59:26.253Z",
+      "updatedAt": "2026-09-05T06:59:26.253Z"
+    },
+    {
+      "id": "cmto1dzuy000gnro3861v0uac",
+      "name": "Community College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "BDE,SME",
+      "course": "BCOM,MBA",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:03:38.698Z",
+      "updatedAt": "2026-09-05T07:03:38.698Z"
+    },
+    {
+      "id": "cmto1hy16000inro3heth45x2",
+      "name": "BTI College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "BCOM,BBA",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:06:42.954Z",
+      "updatedAt": "2026-09-05T07:06:42.954Z"
+    },
+    {
+      "id": "cmto1vpfb0000nko4vxyrx9r4",
+      "name": "BIT College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "MBA",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:17:24.984Z",
+      "updatedAt": "2026-09-05T07:17:24.984Z"
+    },
+    {
+      "id": "cmto21za1000bnko44vgxn4dy",
+      "name": "INDUS VALLEY College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "BCOM",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:22:17.690Z",
+      "updatedAt": "2026-09-05T07:22:17.690Z"
+    },
+    {
+      "id": "cmto27a6n000inko4dpq7eacl",
+      "name": "Silicon City College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "BCOM,BBA",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:26:25.103Z",
+      "updatedAt": "2026-09-05T07:26:25.103Z"
+    },
+    {
+      "id": "cmto2dgr3000mnko4owmd1i44",
+      "name": "Charan College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "BDE,SME",
+      "course": "BCA,BCOM,BBA",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T07:31:13.551Z",
+      "updatedAt": "2026-09-05T07:31:13.551Z"
+    },
+    {
+      "id": "cmto6kh0h0004hto62ts5qcwh",
+      "name": "Garden City University",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "Data Analyst",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T09:28:38.945Z",
+      "updatedAt": "2026-09-05T09:28:38.945Z"
+    },
+    {
+      "id": "cmtodwt1r000nn9o3622sxko8",
+      "name": "APS Degree College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE,HR",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T12:54:11.727Z",
+      "updatedAt": "2026-09-05T12:54:11.727Z"
+    },
+    {
+      "id": "cmtoe4pbs000pn9o31u8xaz4q",
+      "name": "Balaji College",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "sales",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T13:00:20.152Z",
+      "updatedAt": "2026-09-05T13:00:20.152Z"
+    },
+    {
+      "id": "cmtoe8uz6000qn9o30ifm0jl2",
+      "name": "GFGC",
+      "location": "Bengaluru",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T13:03:34.098Z",
+      "updatedAt": "2026-09-05T13:03:34.098Z"
+    },
+    {
+      "id": "cmtoed02i000rn9o30p2qchuu",
+      "name": "Royal College of Management",
+      "location": "Bangalore",
+      "area": null,
+      "year": null,
+      "role": "Sales,BDE",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T13:06:47.323Z",
+      "updatedAt": "2026-09-05T13:06:47.323Z"
+    },
+    {
+      "id": "cmtof0snt000sn9o3ld8jcwhp",
+      "name": "Shanthiniketan",
+      "location": "Bengaluru",
+      "area": null,
+      "year": null,
+      "role": "SME,BDE",
+      "course": "Any",
+      "createdById": "cms4gx2zz002flq2tvelxoj8f",
+      "createdAt": "2026-09-05T13:25:17.466Z",
+      "updatedAt": "2026-09-05T13:25:17.466Z"
+    }
+  ],
+  "allDrives": [
+    {
+      "id": "3ONgxjXSSkNmDKKWi9SQ",
+      "title": "recuritment",
+      "collegeId": "unknownCollege",
+      "dateFrom": "2026-05-14",
+      "dateTo": "2026-05-15",
+      "status": "PLANNED",
+      "description": null,
+      "notes": null,
+      "ownerId": "73783a2b-0045-431c-9b71-75aeab0b6840",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T04:34:53.509Z",
+      "updatedAt": "2026-05-13T04:34:53.509Z"
+    },
+    {
+      "id": "cmrtgfsj6000umt29sq3257uq",
+      "title": "GFGC RAJAJINAGAR ",
+      "collegeId": "b0p3jgCt2k8dzH6NUmEC",
+      "dateFrom": "2026-07-29",
+      "dateTo": "2026-07-29",
+      "status": "PLANNED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cmrocg1il0000l429ebzkr4cy",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-07-20T16:44:22.962Z",
+      "updatedAt": "2026-07-20T16:44:22.962Z"
+    },
+    {
+      "id": "cmrvvgvnj0007mt29fxu60ik8",
+      "title": "JAIN CMS INTERNSHIP FAIR",
+      "collegeId": "cmrvvg6bu0006mt2958sykr80",
+      "dateFrom": "2026-07-22",
+      "dateTo": null,
+      "status": "ACTIVE",
+      "description": null,
+      "notes": null,
+      "ownerId": "re56ljEGsGX6xyVRsB9N",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-07-22T09:20:40.185Z",
+      "updatedAt": "2026-07-22T09:20:40.185Z"
+    },
+    {
+      "id": "pMm8hJpHtIoUXzXUFNsc",
+      "title": "Full Time Recruitment Drive ",
+      "collegeId": "vEwOPxWgAQxL0SHtnMme",
+      "dateFrom": "2026-05-07",
+      "dateTo": "2026-05-07",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "Lt8wLO17mr41qNr6WQE5",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T06:22:00.103Z",
+      "updatedAt": "2026-05-13T06:22:00.103Z"
+    },
+    {
+      "id": "rwNMobRA3MoATDgnxmtJ",
+      "title": "to recruited ",
+      "collegeId": "unknownCollege",
+      "dateFrom": "2026-05-08",
+      "dateTo": "2026-05-09",
+      "status": "PLANNED",
+      "description": null,
+      "notes": null,
+      "ownerId": "73783a2b-0045-431c-9b71-75aeab0b6840",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-08T10:00:46.519Z",
+      "updatedAt": "2026-05-08T10:00:46.519Z"
+    },
+    {
+      "id": "sEzyHMT2w2ciGnJGcQDn",
+      "title": "Full Time Recruitment Drive",
+      "collegeId": "jDtZQCA45sZq4r6uxnKL",
+      "dateFrom": "2026-05-11",
+      "dateTo": "2026-05-11",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "Lt8wLO17mr41qNr6WQE5",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T10:32:48.100Z",
+      "updatedAt": "2026-05-13T10:32:48.100Z"
+    },
+    {
+      "id": "xB0r0Fu3EELgWTCIXZRV",
+      "title": "recuriment",
+      "collegeId": "unknownCollege",
+      "dateFrom": "2026-05-14",
+      "dateTo": "2026-05-15",
+      "status": "PLANNED",
+      "description": null,
+      "notes": null,
+      "ownerId": "hoihq7RrvmYIfAuuBWPB",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T05:26:59.297Z",
+      "updatedAt": "2026-05-13T05:26:59.297Z"
+    },
+    {
+      "id": "cmto284pt000lnko4a1zbecny",
+      "title": "Silicon City College",
+      "collegeId": "cmto27a6n000inko4dpq7eacl",
+      "dateFrom": "2026-05-12",
+      "dateTo": "2026-05-12",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:27:04.673Z",
+      "updatedAt": "2026-09-05T08:46:12.247Z"
+    },
+    {
+      "id": "2Dhar0tu23PtO9Zn01d7",
+      "title": "Placement Drive 2026",
+      "collegeId": "TUn4uQ1BrI766sziSkWw",
+      "dateFrom": "2026-05-07",
+      "dateTo": "2026-05-07",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "JgAdDjV4mQ0NtVJ7nxu5",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T09:26:49.870Z",
+      "updatedAt": "2026-09-05T08:46:10.237Z"
+    },
+    {
+      "id": "3rPWAQptjlkyyeLfRUPU",
+      "title": "Campus recruitment",
+      "collegeId": "b0p3jgCt2k8dzH6NUmEC",
+      "dateFrom": "2026-04-29",
+      "dateTo": "2026-04-29",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "VrIWjhxuYXhMD63T9w0z",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-05-13T06:19:35.863Z",
+      "updatedAt": "2026-09-05T08:46:10.729Z"
+    },
+    {
+      "id": "cmto1a7ac000bnro38ufhjnm2",
+      "title": "Horticulture College",
+      "collegeId": "cmto18l2k0008nro3cl8odqwf",
+      "dateFrom": "2026-05-29",
+      "dateTo": "2026-05-29",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:00:41.700Z",
+      "updatedAt": "2026-09-05T08:46:10.975Z"
+    },
+    {
+      "id": "cmto24dbp000hnko48emzlceu",
+      "title": "INDUS VALLEY College",
+      "collegeId": "cmto21za1000bnko44vgxn4dy",
+      "dateFrom": "2026-05-12",
+      "dateTo": "2026-05-12",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:24:09.205Z",
+      "updatedAt": "2026-09-05T08:46:11.223Z"
+    },
+    {
+      "id": "cmto22ydz000gnko4xn353a3t",
+      "title": "INDUS VALLEY College",
+      "collegeId": "cmto21za1000bnko44vgxn4dy",
+      "dateFrom": "2026-05-12",
+      "dateTo": "2026-05-12",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:23:03.191Z",
+      "updatedAt": "2026-09-05T08:46:11.505Z"
+    },
+    {
+      "id": "cmto1f9q0000hnro312l7c04n",
+      "title": "Community College",
+      "collegeId": "cmto1dzuy000gnro3861v0uac",
+      "dateFrom": "2026-05-25",
+      "dateTo": "2026-05-25",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:04:38.137Z",
+      "updatedAt": "2026-09-05T08:46:11.754Z"
+    },
+    {
+      "id": "cmto1iwgg000jnro3vdbfc3oy",
+      "title": "BTI",
+      "collegeId": "cmto1hy16000inro3heth45x2",
+      "dateFrom": "2026-05-25",
+      "dateTo": "2026-05-25",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:07:27.568Z",
+      "updatedAt": "2026-09-05T08:46:12.001Z"
+    },
+    {
+      "id": "cmto2eagl000pnko46p1ffnh1",
+      "title": "Charan College",
+      "collegeId": "cmto2dgr3000mnko4owmd1i44",
+      "dateFrom": "2026-05-23",
+      "dateTo": "2026-05-23",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T07:31:52.053Z",
+      "updatedAt": "2026-09-05T08:46:12.495Z"
+    },
+    {
+      "id": "cmto12glz0007nro32mmlpvti",
+      "title": "MALLESHWARAM LADIES ASSOCIATION",
+      "collegeId": "cmto117es0006nro3v5eaf6yo",
+      "dateFrom": "2026-06-05",
+      "dateTo": "2026-06-05",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T06:54:40.535Z",
+      "updatedAt": "2026-09-05T08:46:12.741Z"
+    },
+    {
+      "id": "cmtoe0610000on9o3y3895gum",
+      "title": "APS College",
+      "collegeId": "cmtodwt1r000nn9o3622sxko8",
+      "dateFrom": "2026-05-05",
+      "dateTo": "2026-05-05",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cms4gx2zz002flq2tvelxoj8f",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-09-05T12:56:48.516Z",
+      "updatedAt": "2026-09-05T12:56:48.516Z"
+    }
+  ]
+}
