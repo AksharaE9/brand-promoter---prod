@@ -258,14 +258,6 @@ export function useRealtimeUpdates() {
         addToast({ type:'info', message:'Offer rejected' });
         break;
 
-      /* ─── QUALITY CHECKS ─── */
-      case 'QUALITY_CHECK_ENQUEUED':
-      case 'QUALITY_CHECK_DECIDED':
-      case 'interview-feedback:updated':
-        qc.invalidateQueries({ queryKey: ['quality-checks'] });
-        qc.invalidateQueries({ queryKey: ['candidates'] });
-        break;
-
       /* ─── APPLICATIONS ─── */
       case 'APPLICATION_CREATED':
         qc.invalidateQueries({ queryKey:['applications'] });
