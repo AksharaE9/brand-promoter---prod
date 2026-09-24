@@ -2,8 +2,10 @@ import { clearAuth } from '../lib/api';
 
 const ALL_ROLES = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'];
 const ADMIN_RECRUITER = ['SUPER_ADMIN', 'RECRUITER'];
+const APPROVER_ROLES = ['QUALITY_APPROVER', 'SUPER_ADMIN', 'ADMIN'];
 
 export const enterpriseNavItems = [
+  { key: 'quality-check', label: 'Second Round Quality Check', href: '/quality-check', icon: 'fact_check', roles: APPROVER_ROLES },
   { key: 'dashboard',  label: 'Dashboard',           href: '/dashboard',               icon: 'dashboard',      roles: ALL_ROLES },
   { key: 'candidates', label: 'All Candidates',       href: '/candidates',              icon: 'group',          roles: ALL_ROLES },
   { key: 'passed',     label: 'Offer Sent',           href: '/candidates?status=OFFER_SENT', icon: 'check_circle', roles: ALL_ROLES },
@@ -28,7 +30,7 @@ export const enterpriseFooterLinks = [
     label: 'Logout',
     href: '/login',
     icon: 'logout',
-    roles: ALL_ROLES,
+    roles: [...ALL_ROLES, 'QUALITY_APPROVER'],
     onClick: () => clearAuth(),
   },
 ];

@@ -31,6 +31,7 @@ const NotFound            = lazyWithRetry(() => import('./pages/NotFound'),     
 const Sourcing            = lazyWithRetry(() => import('./pages/Sourcing'),                       'Sourcing');
 const Referrals           = lazyWithRetry(() => import('./pages/Referrals'),                      'Referrals');
 const Posted              = lazyWithRetry(() => import('./pages/Posted'),                         'Posted');
+const QualityCheckPage    = lazyWithRetry(() => import('./pages/QualityCheck/QualityCheckPage'), 'QualityCheckPage');
 
 // Sales Module
 const SalesLayout         = lazyWithRetry(() => import('./pages/Sales/SalesLayout'),      'SalesLayout');
@@ -43,6 +44,7 @@ const SalesTeam           = lazyWithRetry(() => import('./pages/Sales/SalesTeam'
 
 const ALL_ROLES      = ['SUPER_ADMIN', 'RECRUITER', 'INTERVIEWER', 'USER'];
 const ADMIN_RECRUITER = ['SUPER_ADMIN', 'RECRUITER'];
+const APPROVER_ROLES = ['QUALITY_APPROVER', 'SUPER_ADMIN', 'ADMIN'];
 
 import PageSkeleton from './components/PageSkeleton';
 import ToastContainer from './components/ToastContainer';
@@ -126,6 +128,7 @@ function AppRoutes() {
       <Route path="/posted"                    element={protectedElement(<Posted />)} />
       <Route path="/sourcing"                  element={protectedElement(<Sourcing />)} />
       <Route path="/referrals"                 element={protectedElement(<Referrals />)} />
+      <Route path="/quality-check"             element={protectedElement(<QualityCheckPage />, APPROVER_ROLES, 'dashboard')} />
 
       {/* Admin-only */}
       <Route path="/analytics" element={protectedElement(<Analytics />, ['SUPER_ADMIN'], 'dashboard')} />

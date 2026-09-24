@@ -214,6 +214,7 @@ app.use('/api/files', apiLimiter, cc(0), require('./modules/files/routes'));
 app.use('/api/posted-files', apiLimiter, cc(0), require('./modules/posted-files/routes'));
 app.use('/api/analytics', analyticsLimiter, cc(0), require('./modules/analytics/routes'));
 app.use('/api/scheduling', apiLimiter, cc(0), schedulingRoutes);
+app.use('/api/quality-checks', apiLimiter, cc(0), require('./modules/quality-check/routes'));
 
 
 app.use(notFound);

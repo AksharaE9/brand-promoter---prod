@@ -200,6 +200,7 @@ export const EnterpriseSidebar = React.memo(({
 EnterpriseSidebar.displayName = 'EnterpriseSidebar';
 
 export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', searchValue, onSearchChange, tabs = [], right = null }) => {
+  const role = getStoredUser()?.role;
   return (
     <header className="os-topbar">
       <div className="os-search">
@@ -222,12 +223,14 @@ export const EnterpriseTopbar = React.memo(({ searchPlaceholder = 'Search...', s
 
       <div className="os-top-right">
         {right}
-        <Link
-          to="/sales"
-          className="os-sales-btn"
-        >
-          Sales Workspace
-        </Link>
+        {role !== 'QUALITY_APPROVER' && role !== 'INTERVIEWER' && (
+          <Link
+            to="/sales"
+            className="os-sales-btn"
+          >
+            Sales Workspace
+          </Link>
+        )}
       </div>
     </header>
   );

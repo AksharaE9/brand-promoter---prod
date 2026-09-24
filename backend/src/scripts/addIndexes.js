@@ -406,6 +406,72 @@ const indexes = [
     sql: `CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_name_trgm 
           ON audit_logs USING GIN ("entityName" gin_trgm_ops);`,
   },
+  // ── Quality Check (Second Round Quality Approver) Tables & Indexes ────────
+  {
+    name: 'tbl_quality_checks',
+    sql: `CREATE TABLE IF NOT EXISTS quality_checks (
+            id VARCHAR(36) PRIMARY KEY,
+            candidate_id VARCHAR(36) NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+            interview_round_id VARCHAR(36),
+            round TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+            entered_queue_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            decided_by_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+            decided_at TIMESTAMPTZ,
+            ctc_amount DOUBLE PRECISION,
+            ctc_currency VARCHAR(10) DEFAULT 'INR',
+            comments TEXT,
+            source VARCHAR(50) NOT NULL DEFAULT 'ROUND_2_SELECTED',
+            organization_id VARCHAR(50) NOT NULL DEFAULT 'defaultOrg',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );`,
+  },
+  {
+    name: 'uniq_qualitycheck_candidate_round',
+    sql: `CREATE UNIQUE INDEX IF NOT EXISTS uniq_qualitycheck_candidate_round
+          ON quality_checks (candidate_id, interview_round_id)
+          WHERE interview_round_id IS NOT NULL;`,
+  },
+  {
+    name: 'idx_qualitycheck_queue',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qualitycheck_queue
+          ON quality_checks (organization_id, status, entered_queue_at DESC, id DESC);`,
+  },
+  {
+    name: 'idx_qualitycheck_candidate',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qualitycheck_candidate
+          ON quality_checks (candidate_id);`,
+  },
+  {
+    name: 'idx_qualitycheck_entered_queue',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qualitycheck_entered_queue
+          ON quality_checks (entered_queue_at DESC);`,
+  },
+  {
+    name: 'tbl_quality_check_decisions',
+    sql: `CREATE TABLE IF NOT EXISTS quality_check_decisions (
+            id VARCHAR(36) PRIMARY KEY,
+            quality_check_id VARCHAR(36) NOT NULL REFERENCES quality_checks(id) ON DELETE CASCADE,
+            decision VARCHAR(20) NOT NULL,
+            decided_by_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            decided_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ctc_amount DOUBLE PRECISION,
+            ctc_currency VARCHAR(10) DEFAULT 'INR',
+            comments TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );`,
+  },
+  {
+    name: 'idx_qc_decision_qc_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qc_decision_qc_id
+          ON quality_check_decisions (quality_check_id);`,
+  },
+  {
+    name: 'idx_qc_decision_decided_by',
+    sql: `CREATE INDEX IF NOT EXISTS idx_qc_decision_decided_by
+          ON quality_check_decisions (decided_by_id);`,
+  },
 ];
 
 // Post-index: run ANALYZE so the PostgreSQL query planner picks up new stats
@@ -418,6 +484,8 @@ const analyzeStatements = [
   'ANALYZE scheduling_member_files',
   'ANALYZE audit_logs',
   'ANALYZE report_errors',
+  'ANALYZE quality_checks',
+  'ANALYZE quality_check_decisions',
 ];
 
 

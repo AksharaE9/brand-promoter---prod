@@ -58,6 +58,9 @@ const ALL_EVENTS = [
   'NOTIFICATION',
   'VISIBILITY_RECONCILE',
   'interview-feedback:updated',
+  // Quality Checks
+  'QUALITY_CHECK_ENQUEUED', 'QUALITY_CHECK_DECIDED',
+  'quality-check:enqueued', 'quality-check:decided',
   'INTERVIEW_FEEDBACK_SUBMITTED',
   'INTERVIEW_PANELISTS_UPDATED',
   'POSTED_FILE_ADDED',
@@ -255,6 +258,14 @@ export function useRealtimeUpdates() {
         addToast({ type:'info', message:'Offer rejected' });
         break;
 
+      /* ─── QUALITY CHECKS ─── */
+      case 'QUALITY_CHECK_ENQUEUED':
+      case 'QUALITY_CHECK_DECIDED':
+      case 'interview-feedback:updated':
+        qc.invalidateQueries({ queryKey: ['quality-checks'] });
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        break;
+
       /* ─── APPLICATIONS ─── */
       case 'APPLICATION_CREATED':
         qc.invalidateQueries({ queryKey:['applications'] });
@@ -370,12 +381,31 @@ export function useRealtimeUpdates() {
         qc.invalidateQueries({ queryKey: ['scheduling'] });
         qc.invalidateQueries({ queryKey: ['candidates'] });
         qc.invalidateQueries({ queryKey: ['dashboard'] });
+        qc.invalidateQueries({ queryKey: ['quality-checks'] });
         qc.invalidateQueries({ queryKey: ['scheduling', 'round-details'], refetchType: 'active' });
         if (data.candidateId) {
           qc.invalidateQueries({ queryKey: ['candidate', data.candidateId] });
           qc.invalidateQueries({ queryKey: ['interviews', data.candidateId] });
           qc.invalidateQueries({ queryKey: ['candidate-feedbacks', data.candidateId] });
         }
+        break;
+
+      case 'QUALITY_CHECK_ENQUEUED':
+      case 'quality-check:enqueued':
+        qc.invalidateQueries({ queryKey: ['quality-checks'] });
+        qc.invalidateQueries({ queryKey: ['candidates'] });
+        addToast({
+          type: 'info',
+          message: data.candidateName
+            ? `New candidate enqueued for Quality Check: ${data.candidateName}`
+            : 'Candidate enqueued for Quality Check',
+        });
+        break;
+
+      case 'QUALITY_CHECK_DECIDED':
+      case 'quality-check:decided':
+        qc.invalidateQueries({ queryKey: ['quality-checks'] });
+        qc.invalidateQueries({ queryKey: ['candidates'] });
         break;
 
       case 'INTERVIEW_FEEDBACK_SUBMITTED':

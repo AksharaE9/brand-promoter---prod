@@ -234,6 +234,13 @@ router.patch(
     const updateData = { status };
     if (joiningDate) updateData.joiningDate = joiningDate;
 
+    // Enforce QualityCheck gate for OFFER_SENT
+    if (status === 'OFFER_SENT') {
+      const qcService = require('../quality-check/service');
+      const orgId = req.user.organizationId || "defaultOrg";
+      await qcService.assertOfferSentAllowed(existing.candidateId, orgId);
+    }
+
     await prisma.application.update({ where: { id }, data: updateData });
 
     // Sync candidate status for sidebar views

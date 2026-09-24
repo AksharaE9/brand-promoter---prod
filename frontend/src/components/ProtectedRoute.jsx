@@ -83,6 +83,9 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 
   const currentUser = getStoredUser();
   if (allowedRoles.length > 0 && !allowedRoles.includes(currentUser?.role)) {
+    if (currentUser?.role === 'QUALITY_APPROVER') {
+      return <Navigate to="/quality-check" replace />;
+    }
     return <Navigate to="/dashboard" replace />;
   }
 

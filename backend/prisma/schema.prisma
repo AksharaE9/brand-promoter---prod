@@ -21,6 +21,22 @@ enum UserRole {
   RECRUITER
   INTERVIEWER
   USER
+  QUALITY_APPROVER
+}
+
+enum QualityCheckStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ON_HOLD
+}
+
+enum QualityCheckSource {
+  ROUND_2_SELECTED
+  FINAL_ROUND_SELECTED
+  OFFER_PROPOSED
+  BACKFILL
+  RECONCILIATION
 }
 
 enum UserStatus {
@@ -122,12 +138,11 @@ model User {
   schedulingMemberFiles SchedulingMemberFile[]
   submittedReports    CandidateInternalReport[]
   recruitmentReports  RecruitmentReport[]
+  qualityChecksDecided QualityCheck[] @relation("QualityCheckDecidedBy")
+  qualityCheckDecisions QualityCheckDecision[]
   postedFiles         PostedFile[]
 
-
-
   @@index([email])
-
   @@index([organizationId])
   @@index([role])
   @@index([status])
@@ -218,7 +233,7 @@ model Candidate {
   interviewFeedbacks  InterviewFeedback[]
   contactAttempts     CandidateContactAttempt[]
   internalReports     CandidateInternalReport[]
-
+  qualityChecks       QualityCheck[]
 
   @@index([organizationId])
   @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
@@ -238,6 +253,57 @@ model Candidate {
   @@index([assignedRecruiterId])
   @@index([mentorId])
   @@map("candidates")
+}
+
+// ─────────────────────────────────────────────
+// Quality Checks (Second Round Quality Approvals)
+// ─────────────────────────────────────────────
+
+model QualityCheck {
+  id                String             @id @default(cuid())
+  candidateId       String             @map("candidate_id")
+  interviewRoundId  String?            @map("interview_round_id")
+  round             String?            // ROUND_2 | FINAL_ROUND
+  status            QualityCheckStatus @default(PENDING)
+  enteredQueueAt    DateTime           @default(now()) @map("entered_queue_at")
+  decidedById       String?            @map("decided_by_id")
+  decidedAt         DateTime?          @map("decided_at")
+  ctcAmount         Float?             @map("ctc_amount")
+  ctcCurrency       String?            @default("INR") @map("ctc_currency")
+  comments          String?
+  source            QualityCheckSource @default(ROUND_2_SELECTED)
+  organizationId    String             @default("defaultOrg") @map("organization_id")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  candidate         Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  decidedBy         User?              @relation("QualityCheckDecidedBy", fields: [decidedById], references: [id])
+  decisions         QualityCheckDecision[]
+
+  @@unique([candidateId, interviewRoundId], map: "uniq_qualitycheck_candidate_round")
+  @@index([organizationId, status, enteredQueueAt(sort: Desc), id(sort: Desc)], map: "idx_qualitycheck_queue")
+  @@index([candidateId], map: "idx_qualitycheck_candidate")
+  @@index([enteredQueueAt], map: "idx_qualitycheck_entered_queue")
+  @@map("quality_checks")
+}
+
+model QualityCheckDecision {
+  id              String             @id @default(cuid())
+  qualityCheckId  String             @map("quality_check_id")
+  decision        QualityCheckStatus
+  decidedById     String             @map("decided_by_id")
+  decidedAt       DateTime           @default(now()) @map("decided_at")
+  ctcAmount       Float?             @map("ctc_amount")
+  ctcCurrency     String?            @default("INR") @map("ctc_currency")
+  comments        String?
+  createdAt       DateTime           @default(now()) @map("created_at")
+
+  qualityCheck    QualityCheck       @relation(fields: [qualityCheckId], references: [id], onDelete: Cascade)
+  decidedBy       User               @relation(fields: [decidedById], references: [id])
+
+  @@index([qualityCheckId], map: "idx_qc_decision_qc_id")
+  @@index([decidedById], map: "idx_qc_decision_decided_by")
+  @@map("quality_check_decisions")
 }
 
 

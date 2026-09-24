@@ -1169,6 +1169,26 @@ router.patch(
       }
     });
 
+    // ── Quality Check Gate: Enforce approval before moving to OFFER_SENT ──
+    if (updateData.status === 'OFFER_SENT' || updateData.offerDecision === 'OFFER_SENT') {
+      const qcService = require('../quality-check/service');
+      await qcService.assertOfferSentAllowed(id, orgId);
+    }
+
+    // ── Queue Trigger: Enqueue if explicitly marked OFFER_PROPOSED ──
+    if (updateData.status === 'OFFER_PROPOSED' || updateData.offerDecision === 'OFFER_PROPOSED') {
+      try {
+        const qcService = require('../quality-check/service');
+        qcService.enqueueCandidate({
+          candidateId: id,
+          orgId,
+          source: 'OFFER_PROPOSED',
+        }).catch(err => console.warn('[QC Hook] Offer proposed enqueue warning:', err.message));
+      } catch (qcErr) {
+        console.warn('[QC Hook] Failed to trigger QC enqueue hook:', qcErr.message);
+      }
+    }
+
     const updatedCandidate = await prisma.candidate.update({
       where: { id },
       data: updateData

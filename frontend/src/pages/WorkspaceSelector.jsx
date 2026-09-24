@@ -7,6 +7,12 @@ const WorkspaceSelector = () => {
     const navigate = useNavigate();
     const user = getStoredUser();
 
+    React.useEffect(() => {
+        if (user?.role === 'QUALITY_APPROVER') {
+            navigate('/quality-check', { replace: true });
+        }
+    }, [user, navigate]);
+
     const workspaces = [
         {
             id: 'ats',

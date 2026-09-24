@@ -943,6 +943,22 @@ router.post(
       return fb;
     });
 
+    // 4. Additive Hook: Enqueue for Quality Check if round 2 / final round was SELECTED
+    if (selectionStatus === 'SELECTED' && (round === 'ROUND_2' || round === 'FINAL_ROUND')) {
+      try {
+        const qcService = require('../quality-check/service');
+        qcService.enqueueCandidate({
+          candidateId,
+          orgId: req.user.organizationId || 'defaultOrg',
+          interviewRoundId: feedbackRecord.id,
+          round,
+          source: round === 'FINAL_ROUND' ? 'FINAL_ROUND_SELECTED' : 'ROUND_2_SELECTED',
+        }).catch(err => console.warn('[QC Hook] Async enqueue warning:', err.message));
+      } catch (qcErr) {
+        console.warn('[QC Hook] Failed to trigger QC enqueue hook:', qcErr.message);
+      }
+    }
+
     // Emit interview-feedback:updated SSE event
     const sse = require('../../utils/sse');
     sse.broadcastToOrg(req.user.organizationId || 'defaultOrg', 'interview-feedback:updated', {

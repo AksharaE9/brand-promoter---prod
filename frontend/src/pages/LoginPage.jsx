@@ -47,9 +47,9 @@ const LoginPage = () => {
 
       useAuthStore.getState().setAuth(result.data.token, result.data.user);
 
-      // If the user was redirected here after session expiry, send them back
-      // to where they were — not always to /workspaces.
-      if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+      if (result.data.user?.role === 'QUALITY_APPROVER') {
+        navigate('/quality-check');
+      } else if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
         navigate(returnTo);
       } else {
         navigate('/workspaces');

@@ -187,6 +187,10 @@ async function batchInsertOfferLetterCandidates(batch, context) {
       let saved;
 
       if (existing) {
+        // Enforce QualityCheck gate for OFFER_SENT
+        const qcService = require('../modules/quality-check/service');
+        await qcService.assertOfferSentAllowed(existing.id, context.organizationId);
+
         const { createdAt, createdById, organizationId, ...updateData } = dbData;
         saved = await prisma.candidate.update({
           where: { id: existing.id },
