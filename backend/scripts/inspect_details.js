@@ -1,54 +1,40 @@
 'use strict';
-require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
-const fs = require('fs');
+const prisma = require('../src/config/db');
 
-const dbUrl = process.env.RENDER_DATABASE_URL || 
-  'postgresql://ats_to2n_user:ixDs4gP0kpcwDfffaYASiVjJMIK7B7k0@dpg-d9kugflaeets73a88qhg-a.oregon-postgres.render.com/ats_to2n?sslmode=require';
-
-const prisma = new PrismaClient({
-  datasources: { db: { url: dbUrl } }
-});
-
-async function main() {
-  console.log('--- USERS ---');
-  const users = await prisma.user.findMany({
-    select: { id: true, fullName: true, email: true, role: true, isActive: true }
+async function run() {
+  const cands = await prisma.candidate.findMany({
+    where: {
+      OR: [
+        { fullName: { contains: 'Balaji', mode: 'insensitive' } },
+        { fullName: { contains: 'Pooja', mode: 'insensitive' } },
+        { fullName: { contains: 'Shashank', mode: 'insensitive' } },
+        { fullName: { contains: 'Nithin', mode: 'insensitive' } },
+        { fullName: { contains: 'Aishwarya', mode: 'insensitive' } }
+      ]
+    },
+    select: { id: true, fullName: true, email: true, phone: true, college: true, preferredRole: true, source: true, createdAt: true, status: true }
   });
-  console.log(users);
+  console.log('Matched Candidates in DB:');
+  console.log(JSON.stringify(cands, null, 2));
 
-  console.log('--- JOBS ---');
-  const jobs = await prisma.job.findMany({
-    select: { id: true, title: true, isActive: true, department: true, openingsCount: true }
-  });
-  console.log(jobs);
-
-  console.log('--- COLLEGES ---');
   const colleges = await prisma.college.findMany();
+  console.log('\nColleges:');
   console.log(colleges);
 
-  console.log('--- BGS / VINAY / PRANEEL SEARCH ---');
-  const bgsColleges = colleges.filter(c => /bgs/i.test(c.name));
-  console.log('BGS Colleges:', bgsColleges);
+  const drives = await prisma.collegeDrive.findMany();
+  console.log('\nCollege Drives:');
+  console.log(drives);
 
-  // Check interviews by Vinay Shetty or Praneel
-  const vinayUser = users.find(u => /vinay/i.test(u.fullName));
-  const praneelUser = users.find(u => /praneel/i.test(u.fullName));
-  console.log('Vinay User:', vinayUser);
-  console.log('Praneel User:', praneelUser);
+  const users = await prisma.user.findMany({
+    select: { id: true, fullName: true, email: true, role: true }
+  });
+  console.log('\nUsers:');
+  console.log(users);
 
-  // Check names with specific focus requested by prompt:
-  // Amrutha, Vaishnavi, Nisarga, Swati, Divya S B, Raksha G, Sneha S, Priyanka, Arvind
-  const focusNames = ['Amrutha', 'Vaishnavi', 'Nisarga', 'Swati', 'Divya S B', 'Raksha G', 'Sneha S', 'Priyanka', 'Arvind'];
-  for (const fn of focusNames) {
-    const found = await prisma.candidate.findMany({
-      where: {
-        fullName: { contains: fn, mode: 'insensitive' }
-      },
-      select: { id: true, fullName: true, phone: true, email: true, college: true, preferredRole: true, status: true, createdAt: true }
-    });
-    console.log(`Search for "${fn}":`, found);
-  }
+  const jobs = await prisma.job.findMany();
+  console.log('\nJobs:');
+  console.log(jobs.map(j => ({ id: j.id, title: j.title, dept: j.department, active: j.isActive })));
+
+  await prisma.$disconnect();
 }
-
-main().catch(console.error).finally(() => prisma.$disconnect());
+run().catch(console.error);
