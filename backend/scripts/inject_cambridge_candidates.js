@@ -15,9 +15,17 @@ const path = require('path');
 const XLSX = require('xlsx');
 const prisma = require('../src/config/db');
 
+/**
+ * ARCHITECTURAL RULE: LIFECYCLE STATUS vs SELECTION OUTCOME
+ * 
+ * 1. `Interview.status` (e.g. 'COMPLETED', 'SCHEDULED', 'RESCHEDULED') tracks lifecycle state (whether the interview occurred).
+ * 2. `Interview.result` and `Interview.outcome` (e.g. 'SELECTED', 'REJECTED', 'ON_HOLD', 'OFFER_LETTER') track the selection decision.
+ * 3. Never infer interview date from other recruiter columns (such as DOJ). If interview date is missing, fail loudly and ask.
+ */
+
 const IMPORT_MARKER = 'CAMBRIDGE_COLLEGE_DRIVE_IMPORT';
-const DRIVE_DATE_STR = '2026-10-05';
-const DRIVE_DATE = new Date('2026-10-05T10:00:00.000Z');
+const DRIVE_DATE_STR = '2026-09-29';
+const DRIVE_DATE = new Date('2026-09-29T10:00:00.000Z'); // 15:30 IST
 const ORG_ID = 'defaultOrg';
 const DEFAULT_COMPANY = 'Akshara Enterprises';
 
@@ -276,28 +284,19 @@ async function runInjection({ dryRun = false, testSingle = false }) {
 
     // Panelist resolution
     let panelistKey = normalizeText(row['Panelist']);
-    if (serial === 21 && !panelistKey) {
-      // User decision: assign Vinay Shetty for #21 Amrutha A Hegde
-      panelistKey = 'Vinay Shetty';
-    }
-    const panelistConfig = PANELIST_MAP[panelistKey] || PANELIST_MAP['Vinay Shetty'];
+    const panelistConfig = panelistKey ? (PANELIST_MAP[panelistKey] || PANELIST_MAP['Vinay Shetty']) : { ids: [], names: null, primaryId: null };
 
-    // Status resolution based on User decisions:
-    // Decision: #31 Pooja -> SELECTED, #29 Rekhashree D -> REJECTED
+    // Status resolution based on Authoritative Source Mapping (Part 2):
     let finalStatus = 'REJECTED';
     let candidateStatus = 'REJECTED';
     let appStatus = 'REJECTED';
 
-    if (serial === 31) {
-      finalStatus = 'SELECTED';
-      candidateStatus = 'ACTIVE';
-      appStatus = 'IN_PIPELINE';
-    } else if (row._list === 'SELECTED') {
+    if (row._list === 'SELECTED') {
       finalStatus = 'SELECTED';
       candidateStatus = 'ACTIVE';
       appStatus = 'IN_PIPELINE';
     } else if (row._list === 'ON_HOLD') {
-      finalStatus = 'HOLD';
+      finalStatus = 'ON_HOLD';
       candidateStatus = 'ON_HOLD';
       appStatus = 'ON_HOLD';
     } else {
@@ -431,7 +430,7 @@ async function runInjection({ dryRun = false, testSingle = false }) {
           durationMinutes: 45,
           mode: 'DRIVE',
           status: 'COMPLETED',
-          result: 'COMPLETED',
+          result: finalStatus,
           outcome: finalStatus,
           outcomeSetAt: DRIVE_DATE,
           notes: fullInterviewNotes,
@@ -516,6 +515,14 @@ async function runInjection({ dryRun = false, testSingle = false }) {
   console.log(`SUMMARY: Total Processed: ${summary.total} | Created: ${summary.created} | Skipped: ${summary.skipped}`);
   console.log(`Breakdown: ${summary.selected} SELECTED, ${summary.rejected} REJECTED, ${summary.onHold} ON_HOLD`);
   console.log(`======================================================\n`);
+
+  // Post-import reconciliation assertion guard
+  if (!dryRun && !testSingle) {
+    if (summary.selected !== 14 || summary.rejected !== 19 || summary.onHold !== 2) {
+      throw new Error(`RECONCILIATION FAILURE: Expected 14 SELECTED, 19 REJECTED, 2 ON_HOLD. Got ${summary.selected}/${summary.rejected}/${summary.onHold}`);
+    }
+    console.log('[Post-Import Reconciliation Check Passed] Distribution exactly matches 14/19/2.\n');
+  }
 
   return summary;
 }
