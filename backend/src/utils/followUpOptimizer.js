@@ -149,12 +149,15 @@ async function processFollowUpFile(fileEntry) {
 
 /**
  * Optimizes all follow-up file attachments inside a stringified or object notes payload.
+ * Safely merges with existing DB notes when provided so stripped list-mode stubs ({ name, exists: true })
+ * do not overwrite or erase full attachment data stored in the database.
  *
- * @param {string|object} notesPayload
+ * @param {string|object} notesPayload - Incoming notes payload
+ * @param {string|object} [existingNotesPayload=null] - Existing notes payload from DB
  * @returns {Promise<string>} Stringified optimized notes JSON
  */
-async function optimizeNotesPayload(notesPayload) {
-  if (!notesPayload) return notesPayload;
+async function optimizeNotesPayload(notesPayload, existingNotesPayload = null) {
+  if (!notesPayload && !existingNotesPayload) return notesPayload;
 
   let parsed = null;
   try {
@@ -165,24 +168,44 @@ async function optimizeNotesPayload(notesPayload) {
 
   if (!parsed || typeof parsed !== 'object') return notesPayload;
 
-  const updated = { ...parsed };
-  let modified = false;
+  let existingParsed = null;
+  if (existingNotesPayload) {
+    try {
+      existingParsed = typeof existingNotesPayload === 'string' ? JSON.parse(existingNotesPayload) : existingNotesPayload;
+    } catch (_) {}
+  }
+
+  const updated = { ...(existingParsed || {}), ...parsed };
 
   const keys = ['phoneFollowUp', 'emailFollowUp', 'morningFollowUp'];
   for (const key of keys) {
-    if (updated[key]) {
-      // If it's a full object with data or base64 data string
-      if (typeof updated[key] === 'object' && updated[key].data) {
-        updated[key] = await processFollowUpFile(updated[key]);
-        modified = true;
-      } else if (typeof updated[key] === 'string' && updated[key].startsWith('data:')) {
-        updated[key] = await processFollowUpFile({ name: 'attachment', data: updated[key] });
-        modified = true;
+    if (parsed.hasOwnProperty(key)) {
+      const incomingVal = parsed[key];
+      // 1. Explicitly deleted / set to null
+      if (incomingVal === null) {
+        updated[key] = null;
+      }
+      // 2. Full object with new base64 data
+      else if (typeof incomingVal === 'object' && incomingVal.data) {
+        updated[key] = await processFollowUpFile(incomingVal);
+      }
+      // 3. Raw data URL string
+      else if (typeof incomingVal === 'string' && incomingVal.startsWith('data:')) {
+        updated[key] = await processFollowUpFile({ name: 'attachment', data: incomingVal });
+      }
+      // 4. Stripped stub from list mode ({ name, exists: true } without data)
+      // If DB already has the full file data, keep it!
+      else if (typeof incomingVal === 'object' && incomingVal.exists && !incomingVal.data) {
+        if (existingParsed && existingParsed[key] && existingParsed[key].data) {
+          updated[key] = existingParsed[key];
+        } else {
+          updated[key] = incomingVal;
+        }
       }
     }
   }
 
-  return modified ? JSON.stringify(updated) : (typeof notesPayload === 'string' ? notesPayload : JSON.stringify(notesPayload));
+  return JSON.stringify(updated);
 }
 
 module.exports = {

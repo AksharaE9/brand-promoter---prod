@@ -204,5 +204,60 @@ describe('followUpOptimizer Unit Tests', () => {
       expect(parsed.emailFollowUp).toBeNull();
       expect(parsed.morningFollowUp.data).toContain('data:image/jpeg;base64,');
     });
+
+    test('safely merges incoming stripped list-mode stub without clobbering existing DB attachment', async () => {
+      const existingInDb = {
+        phoneFollowUp: { name: 'existing-call.png', data: `data:image/png;base64,${samplePngBuffer.toString('base64')}`, type: 'image/png' },
+        emailFollowUp: { name: 'existing-email.pdf', data: 'data:application/pdf;base64,JVBERi0xLjQK...', type: 'application/pdf' },
+        morningFollowUp: null,
+      };
+
+      // Incoming payload from client who fetched via list mode (stripped stubs for phone & email, new upload for morning)
+      const incomingNotes = {
+        phoneFollowUp: { name: 'existing-call.png', exists: true },
+        emailFollowUp: { name: 'existing-email.pdf', exists: true },
+        morningFollowUp: { name: 'Screenshot 2026-10-06 at 6.44.21 PM.png', data: `data:image/png;base64,${samplePngBuffer.toString('base64')}` },
+      };
+
+      const resultStr = await optimizeNotesPayload(JSON.stringify(incomingNotes), JSON.stringify(existingInDb));
+      const parsed = JSON.parse(resultStr);
+
+      // Existing phone and email data MUST be preserved!
+      expect(parsed.phoneFollowUp.data).toBe(existingInDb.phoneFollowUp.data);
+      expect(parsed.emailFollowUp.data).toBe(existingInDb.emailFollowUp.data);
+      // New morning follow up is optimized and attached
+      expect(parsed.morningFollowUp.data).toContain('data:image/png;base64,');
+      expect(parsed.morningFollowUp.name).toBe('Screenshot 2026-10-06 at 6.44.21 PM.png');
+    });
+
+    test('explicit null in incoming payload deletes the follow-up attachment', async () => {
+      const existingInDb = {
+        phoneFollowUp: { name: 'existing-call.png', data: 'data:image/png;base64,abc' },
+        emailFollowUp: { name: 'existing-email.pdf', data: 'data:application/pdf;base64,xyz' },
+      };
+
+      const incomingNotes = {
+        phoneFollowUp: null, // explicit delete
+        emailFollowUp: { name: 'existing-email.pdf', exists: true },
+      };
+
+      const resultStr = await optimizeNotesPayload(JSON.stringify(incomingNotes), JSON.stringify(existingInDb));
+      const parsed = JSON.parse(resultStr);
+
+      expect(parsed.phoneFollowUp).toBeNull();
+      expect(parsed.emailFollowUp.data).toBe('data:application/pdf;base64,xyz');
+    });
+
+    test('handles macOS screenshot filename with narrow no-break space and multiple dots', async () => {
+      const macOsScreenshotName = 'Screenshot 2026-08-10 at 2.06.38\u202FPM.png';
+      const input = {
+        name: macOsScreenshotName,
+        data: `data:image/png;base64,${samplePngBuffer.toString('base64')}`,
+      };
+
+      const result = await processFollowUpFile(input);
+      expect(result.name).toBe(macOsScreenshotName);
+      expect(result.type).toBe('image/png');
+    });
   });
 });

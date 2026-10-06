@@ -2610,7 +2610,7 @@ const InterviewSchedule = () => {
                                 setBanner('Follow-up attachment updated successfully.');
                                 await loadAll();
                               } catch (err) {
-                                const msg = err?.response?.data?.error || err?.message || 'Failed to upload follow-up attachment';
+                                const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Failed to upload follow-up attachment';
                                 setError(msg);
                                 throw err;
                               }
@@ -2632,7 +2632,7 @@ const InterviewSchedule = () => {
                                 setBanner('Follow-up attachment removed successfully.');
                                 await loadAll();
                               } catch (err) {
-                                const msg = err?.response?.data?.error || err?.message || 'Failed to remove follow-up attachment';
+                                const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Failed to remove follow-up attachment';
                                 setError(msg);
                                 throw err;
                               }

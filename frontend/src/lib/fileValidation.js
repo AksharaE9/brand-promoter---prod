@@ -70,13 +70,14 @@ export const CATEGORY_CONFIGS = {
 };
 
 /**
- * Multi-dot safe extension extraction. Returns lowercase extension starting with dot e.g. ".jpeg".
+ * Multi-dot safe extension extraction with leading-dot protection. Returns lowercase extension starting with dot e.g. ".jpeg".
  */
 export function getFileExtension(filename) {
   if (!filename || typeof filename !== 'string') return '';
-  const lastDot = filename.lastIndexOf('.');
-  if (lastDot === -1) return '';
-  return filename.substring(lastDot).toLowerCase();
+  const cleanName = filename.trim();
+  const lastDot = cleanName.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === 0) return '';
+  return cleanName.substring(lastDot).toLowerCase();
 }
 
 /**

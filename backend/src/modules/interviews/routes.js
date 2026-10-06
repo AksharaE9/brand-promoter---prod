@@ -1531,7 +1531,7 @@ router.put(
     }
 
     if (data.notes) {
-      data.notes = await optimizeNotesPayload(data.notes);
+      data.notes = await optimizeNotesPayload(data.notes, current.notes);
     }
 
     const updateData = {
@@ -1549,36 +1549,45 @@ router.put(
       current
     );
 
-    // Suppress outbound notifications if scheduled date is in the past
-    const isPast = dateCheck.isPast;
-    if (!isPast && (data.scheduledStart !== current.scheduledStart || data.mode !== current.mode)) {
-      data.interviewerIds.forEach(id => {
-        sendNotification({
-          userId: id,
-          title: "Interview Updated",
-          message: `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`
-        });
-      });
-    }
-
+    // Primary write committed — respond immediately
     res.json({ success: true, data: result.data });
 
+    // Secondary operations (notifications, audit log) isolated outside request path
     setImmediate(() => {
-      logAudit({
-        actorUserId: req.user.id,
-        actorName: req.user.fullName,
-        actorEmail: req.user.email,
-        actorRole: req.user.role,
-        action: "UPDATE_INTERVIEW",
-        entityType: "INTERVIEW",
-        entityId: roundId,
-        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
-        oldData: current,
-        newData: updateData,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        orgId: req.user.organizationId || "defaultOrg",
-      });
+      try {
+        const isPast = dateCheck.isPast;
+        if (!isPast && ((data.scheduledStart && data.scheduledStart !== current.scheduledStart) || (data.mode && data.mode !== current.mode))) {
+          data.interviewerIds.forEach(id => {
+            sendNotification({
+              userId: id,
+              title: "Interview Updated",
+              message: `Interview has been updated. Date/Mode changed. Reason: ${data.rescheduleReason || 'N/A'}`
+            }).catch(e => console.error('[Notification] Failed:', e.message));
+          });
+        }
+      } catch (secErr) {
+        console.error('[PUT:interview] Secondary notification error:', secErr.message);
+      }
+
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          actorName: req.user.fullName,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          action: "UPDATE_INTERVIEW",
+          entityType: "INTERVIEW",
+          entityId: roundId,
+          entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+          oldData: current,
+          newData: updateData,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+          orgId: req.user.organizationId || "defaultOrg",
+        });
+      } catch (auditErr) {
+        console.error('[PUT:interview] Secondary audit error:', auditErr.message);
+      }
     });
   })
 );
@@ -1672,7 +1681,7 @@ router.patch(
     }
 
     if (req.body.notes) {
-      mergedData.notes = await optimizeNotesPayload(req.body.notes);
+      mergedData.notes = await optimizeNotesPayload(req.body.notes, current.notes);
     }
 
     const updateData = {
@@ -1690,38 +1699,46 @@ router.patch(
       current
     );
 
-    // Suppress outbound notifications if scheduled date is in the past
-    const isPast = mergedData.scheduledStart ? (new Date(mergedData.scheduledStart) < new Date()) : false;
-    if (!isPast && (req.body.scheduledStart !== current.scheduledStart || req.body.mode !== current.mode)) {
-      const interviewersToNotify = mergedData.interviewerIds || [];
-      interviewersToNotify.forEach(id => {
-        sendNotification({
-          userId: id,
-          title: "Interview Updated",
-          message: `Interview has been updated. Date/Mode changed. Reason: ${req.body.rescheduleReason || 'N/A'}`
-        });
-      });
-    }
-
+    // Primary write committed — respond immediately
     res.json({ success: true, data: result.data });
 
-    // Side effect: log audit
+    // Secondary operations (notifications, audit log) isolated outside request path
     setImmediate(() => {
-      logAudit({
-        actorUserId: req.user.id,
-        actorName: req.user.fullName,
-        actorEmail: req.user.email,
-        actorRole: req.user.role,
-        action: "UPDATE_INTERVIEW",
-        entityType: "INTERVIEW",
-        entityId: roundId,
-        entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
-        oldData: current,
-        newData: updateData,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        orgId: req.user.organizationId || "defaultOrg",
-      });
+      try {
+        const isPast = mergedData.scheduledStart ? (new Date(mergedData.scheduledStart) < new Date()) : false;
+        if (!isPast && ((req.body.scheduledStart && req.body.scheduledStart !== current.scheduledStart) || (req.body.mode && req.body.mode !== current.mode))) {
+          const interviewersToNotify = mergedData.interviewerIds || [];
+          interviewersToNotify.forEach(id => {
+            sendNotification({
+              userId: id,
+              title: "Interview Updated",
+              message: `Interview has been updated. Date/Mode changed. Reason: ${req.body.rescheduleReason || 'N/A'}`
+            }).catch(e => console.error('[Notification] Failed:', e.message));
+          });
+        }
+      } catch (secErr) {
+        console.error('[PATCH:interview] Secondary notification error:', secErr.message);
+      }
+
+      try {
+        logAudit({
+          actorUserId: req.user.id,
+          actorName: req.user.fullName,
+          actorEmail: req.user.email,
+          actorRole: req.user.role,
+          action: "UPDATE_INTERVIEW",
+          entityType: "INTERVIEW",
+          entityId: roundId,
+          entityName: `${current.candidateName || 'Candidate'} - ${current.round || ('Round ' + (current.roundNo || 1))}`,
+          oldData: current,
+          newData: updateData,
+          ipAddress: req.ip,
+          userAgent: req.headers["user-agent"],
+          orgId: req.user.organizationId || "defaultOrg",
+        });
+      } catch (auditErr) {
+        console.error('[PATCH:interview] Secondary audit error:', auditErr.message);
+      }
     });
   })
 );

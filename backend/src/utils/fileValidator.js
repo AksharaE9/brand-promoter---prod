@@ -75,11 +75,14 @@ const CATEGORY_CONFIGS = {
 };
 
 /**
- * Multi-dot safe extension extraction.
+ * Multi-dot safe extension extraction with leading-dot protection.
  */
 function getFileExtension(filename) {
   if (!filename || typeof filename !== 'string') return '';
-  return path.extname(filename).toLowerCase();
+  const cleanName = filename.trim();
+  const lastDot = cleanName.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === 0) return '';
+  return cleanName.substring(lastDot).toLowerCase();
 }
 
 /**
