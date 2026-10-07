@@ -1,8 +1,10 @@
 class ApiError extends Error {
-  constructor(statusCode, message, code = null) {
+  constructor(statusCode, message, code = null, details = null) {
     super(message);
+    this.name = 'ApiError';
     this.statusCode = statusCode;
     this.code = code || `HTTP_${statusCode}`;
+    this.details = details || null;
   }
 }
 
@@ -16,3 +18,4 @@ module.exports = {
   ApiError,
   asyncHandler,
 };
+

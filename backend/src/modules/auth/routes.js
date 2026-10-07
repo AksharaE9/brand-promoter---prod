@@ -150,6 +150,74 @@ router.post(
   }),
 );
 
+router.post(
+  "/refresh",
+  asyncHandler(async (req, res) => {
+    const authHeader = req.headers.authorization || "";
+    let token = req.body?.refreshToken;
+    if (!token && authHeader.startsWith("Bearer ")) {
+      token = authHeader.substring(7).trim();
+    }
+
+    if (!token) {
+      throw new ApiError(401, "Refresh token is required", "AUTH_TOKEN_MISSING");
+    }
+
+    let payload;
+    try {
+      const jwt = require("jsonwebtoken");
+      const JWT_SECRET = process.env.JWT_SECRET || "change_this_secret_in_env";
+      // Decode or verify token (allow expired token if session is valid in DB)
+      payload = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+    } catch (err) {
+      throw new ApiError(401, "Invalid refresh token", "AUTH_TOKEN_INVALID");
+    }
+
+    const resolvedUserId = payload.userId || payload.id;
+    if (!resolvedUserId) {
+      throw new ApiError(401, "Invalid token identity", "AUTH_TOKEN_INVALID");
+    }
+
+    if (payload.sessionId) {
+      const session = await prisma.session.findUnique({
+        where: { id: payload.sessionId },
+      });
+      if (!session) {
+        throw new ApiError(401, "Session has expired or has been revoked", "AUTH_SESSION_REVOKED");
+      }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: resolvedUserId },
+    });
+
+    if (!user || user.status !== "ACTIVE" || user.isDeleted === true) {
+      throw new ApiError(401, "Your account is inactive or has been disabled.", "AUTH_USER_INACTIVE");
+    }
+
+    const newToken = signAccessToken({
+      userId: user.id,
+      role: user.role,
+      sessionId: payload.sessionId || null,
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        token: newToken,
+        user: {
+          id: user.id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+          organizationId: user.organizationId,
+          profilePhotoUrl: user.profilePhotoUrl || null,
+        },
+      },
+    });
+  }),
+);
+
 router.get(
   "/me",
   auth,
@@ -160,6 +228,7 @@ router.get(
     });
   }),
 );
+
 
 router.post(
   "/change-password",

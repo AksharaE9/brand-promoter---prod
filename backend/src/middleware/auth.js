@@ -17,7 +17,7 @@ async function auth(req, res, next) {
 
   // 2. Try Query Parameter (Support for SSE, exports, and downloads)
   const urlToCheck = req.originalUrl || req.url || "";
-  if (!token && req.query.token && (
+  if (!token && req.query?.token && (
     urlToCheck.includes("/sse") || 
     urlToCheck.includes("/stream") || 
     urlToCheck.includes("/export") || 
@@ -26,17 +26,26 @@ async function auth(req, res, next) {
     token = req.query.token;
   }
 
+
   if (!token) {
-    return next(new ApiError(401, "Authorization token is required"));
+    return next(new ApiError(401, "Authorization token is required", "AUTH_TOKEN_MISSING"));
   }
 
   try {
-    const payload = verifyAccessToken(token);
+    let payload;
+    try {
+      payload = verifyAccessToken(token);
+    } catch (jwtErr) {
+      if (jwtErr.name === 'TokenExpiredError') {
+        return next(new ApiError(401, "Your session has expired. Please sign in again.", "AUTH_TOKEN_EXPIRED"));
+      }
+      return next(new ApiError(401, "Invalid authorization token", "AUTH_TOKEN_INVALID"));
+    }
 
     // Support both current format (userId) and legacy format (id)
     const resolvedUserId = payload.userId || payload.id;
     if (!resolvedUserId) {
-      return next(new ApiError(401, 'Invalid token: missing user identity'));
+      return next(new ApiError(401, 'Invalid token: missing user identity', 'AUTH_TOKEN_INVALID'));
     }
 
     // Try user cache before hitting DB
@@ -46,7 +55,7 @@ async function auth(req, res, next) {
     if (cachedUser) {
       const user = cachedUser;
       if (user.status !== "ACTIVE" || user.isDeleted === true) {
-        return next(new ApiError(401, "Inactive or deleted user account"));
+        return next(new ApiError(401, "Your account is inactive or has been disabled. Please contact your administrator.", "AUTH_USER_INACTIVE"));
       }
       req.user = user;
       // Update session last active in background and throttle to once every 2 minutes
@@ -71,7 +80,7 @@ async function auth(req, res, next) {
         where: { id: payload.sessionId },
       });
       if (!session) {
-        return next(new ApiError(401, "Session has been revoked or expired"));
+        return next(new ApiError(401, "Your session has expired or has been revoked. Please sign in again.", "AUTH_SESSION_REVOKED"));
       }
       // Update last active in background and throttle to once every 2 minutes
       const lastActiveKey = `session:lastActive:${payload.sessionId}`;
@@ -83,19 +92,18 @@ async function auth(req, res, next) {
       }).catch(() => {});
     }
 
-
     const userRecord = await prisma.user.findUnique({
       where: { id: resolvedUserId },
     });
 
     if (!userRecord) {
-      return next(new ApiError(401, "Invalid user"));
+      return next(new ApiError(401, "User account not found", "AUTH_TOKEN_INVALID"));
     }
 
     const user = { ...userRecord, sessionId: payload.sessionId || null };
 
     if (user.status !== "ACTIVE" || user.isDeleted === true) {
-      return next(new ApiError(401, "Inactive or deleted user account"));
+      return next(new ApiError(401, "Your account is inactive or has been disabled. Please contact your administrator.", "AUTH_USER_INACTIVE"));
     }
 
     // Cache for 2 minutes
@@ -109,18 +117,19 @@ async function auth(req, res, next) {
     req.user = user;
     return next();
   } catch (error) {
-    return next(new ApiError(401, "Invalid or expired token"));
+    if (error instanceof ApiError) return next(error);
+    return next(new ApiError(401, "Invalid or expired session", "AUTH_TOKEN_INVALID"));
   }
 }
 
 function requireRoles(...roles) {
   return (req, res, next) => {
     if (!req.user) {
-      return next(new ApiError(401, "Unauthorized"));
+      return next(new ApiError(401, "Authentication required", "AUTH_TOKEN_MISSING"));
     }
 
     if (!roles.includes(req.user.role)) {
-      return next(new ApiError(403, "Forbidden: insufficient permissions"));
+      return next(new ApiError(403, "You do not have permission to perform this action.", "AUTH_INSUFFICIENT_PERMISSION"));
     }
 
     return next();
@@ -138,4 +147,5 @@ module.exports = {
   requireRoles,
   invalidateUserCache,
 };
+
 

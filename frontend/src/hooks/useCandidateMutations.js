@@ -28,36 +28,17 @@
  * ──────────────────────────────────────────────────────────────────────────
  */
 import { useRef, useCallback, useState } from 'react';
-import { buildApiUrl, getStoredToken } from '../lib/api';
+import { request } from '../lib/api';
 
-// ── Shared fetch helper ────────────────────────────────────────────────────
+// ── Shared fetch helper using consolidated lib/api request ─────────────────
 async function authFetch(path, options = {}) {
-  const token = getStoredToken();
-  const headers = { ...(options.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const isFormData = options.body instanceof FormData;
-  if (!isFormData && options.body && typeof options.body === 'object') {
-    headers['Content-Type'] = 'application/json';
-    options = { ...options, body: JSON.stringify(options.body) };
-  }
-
-  const res = await fetch(buildApiUrl(path), { ...options, headers });
-  let data = null;
-  try { data = await res.json(); } catch (_) { /* no body */ }
-
-  if (!res.ok) {
-    const err = new Error(data?.message || `Request failed (${res.status})`);
-    err.status = res.status;
-    err.payload = data;
-    throw err;
-  }
-  return data;
+  return request(path, options);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 // useDeleteCandidate
 // Instantly removes the candidate from the list, rolls back on failure.
+
 // ─────────────────────────────────────────────────────────────────────────
 export function useDeleteCandidate({ onOptimisticRemove, onRollback, onSuccess, onError } = {}) {
   const [deletingIds, setDeletingIds] = useState(new Set());

@@ -6,7 +6,7 @@
  * than one network request per 5-minute window — identical TTL to server.
  * ──────────────────────────────────────────────────────────────────────────
  */
-import { getStoredToken, buildApiUrl } from '../lib/api';
+import { apiGet, apiPost } from '../lib/api';
 
 // ── Module-level request cache (prevents duplicate in-flight fetches) ──────
 let _cachedCompanies = null;
@@ -14,29 +14,6 @@ let _cacheExpiry     = 0;
 let _inflightPromise = null;
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches server TTL
-
-async function authFetch(path, options = {}) {
-  const token = getStoredToken();
-  const headers = { ...(options.headers || {}) };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const isFormData = options.body instanceof FormData;
-  if (!isFormData && options.body && typeof options.body === 'object') {
-    headers['Content-Type'] = 'application/json';
-    options = { ...options, body: JSON.stringify(options.body) };
-  }
-
-  const res = await fetch(buildApiUrl(path), { ...options, headers });
-  let data = null;
-  try { data = await res.json(); } catch (_) { /* no body */ }
-
-  if (!res.ok) {
-    const err = new Error(data?.message || `Request failed (${res.status})`);
-    err.status = res.status;
-    throw err;
-  }
-  return data;
-}
 
 export const companyApi = {
   /**
@@ -56,7 +33,7 @@ export const companyApi = {
     // Deduplicate in-flight requests (singleton promise pattern)
     if (_inflightPromise) return _inflightPromise;
 
-    _inflightPromise = authFetch('/companies')
+    _inflightPromise = apiGet('/companies', false)
       .then(res => {
         _cachedCompanies = res.data ?? [];
         _cacheExpiry     = Date.now() + CACHE_TTL_MS;
@@ -76,10 +53,7 @@ export const companyApi = {
    * The server returns the full updated list so we can refresh the cache.
    */
   async create(name) {
-    const res = await authFetch('/companies', {
-      method: 'POST',
-      body: { name },
-    });
+    const res = await apiPost('/companies', { name });
     // Bust local cache so the next list() returns fresh data
     _cachedCompanies = res.data ?? null;
     _cacheExpiry     = _cachedCompanies ? Date.now() + CACHE_TTL_MS : 0;
@@ -97,3 +71,4 @@ export const companyApi = {
     _inflightPromise = null;
   },
 };
+

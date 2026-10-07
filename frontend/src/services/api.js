@@ -1,91 +1,53 @@
-import { apiGet, apiDelete, isAuthenticatedRoute } from '../lib/api';
-import { getStoredToken, buildApiUrl, handle401SessionExpiry } from '../lib/api';
-
-async function customRequest(path, options = {}) {
-  const token = getStoredToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const url = buildApiUrl(path);
-
-  if (isAuthenticatedRoute(url) && !headers.Authorization) {
-    console.error('Authenticated request built without Authorization header:', url);
-    if (import.meta.env.DEV) {
-      throw new Error(`[Security Guard] Authenticated request built without Authorization header: ${url}`);
-    }
-  }
-
-  // Handle FormData
-  if (options.body instanceof FormData) {
-    delete headers['Content-Type']; // Let browser set boundary
-  } else if (options.body && typeof options.body === 'object') {
-    options.body = JSON.stringify(options.body);
-  }
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
-
-  let data = null;
-  try {
-    data = await response.json();
-  } catch (_) {
-    data = null;
-  }
-
-  if (!response.ok) {
-    const detailedMessage =
-      data?.message ||
-      (Array.isArray(data?.errors) && data.errors.length > 0 ? data.errors.join(', ') : null) ||
-      data?.error ||
-      `Request failed (${response.status})`;
-    const error = Object.assign(new Error(detailedMessage), {
-      status: response.status,
-      response: { data },
-      payload: data,
-      error: data?.error,
-      errors: data?.errors,
-    });
-    // 401 = dead session (token expired/revoked) — clear auth state and redirect.
-    if (response.status === 401) {
-      handle401SessionExpiry();
-    }
-    throw error;
-  }
-
-  return { data };
-}
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  apiPatch,
+  apiDelete,
+  apiGetBlob,
+  request,
+  buildApiUrl,
+  getStoredToken,
+  getStoredUser,
+  handle401SessionExpiry,
+  isAuthenticatedRoute,
+} from '../lib/api';
 
 const api = {
   get: async (path, config) => {
     if (config?.responseType === 'blob') {
-      const { apiGetBlob } = await import('../lib/api');
       return { data: await apiGetBlob(path) };
     }
     const useCache = config?.useCache !== undefined ? config.useCache : true;
     const data = await apiGet(path, useCache, config);
     return { data };
   },
-  post: async (path, body, config) => {
-    return customRequest(path, { method: 'POST', body, ...config });
-  },
-  put: async (path, body, config) => {
-    return customRequest(path, { method: 'PUT', body, ...config });
-  },
-  patch: async (path, body, config) => {
-    return customRequest(path, { method: 'PATCH', body, ...config });
-  },
-  delete: async (path, config) => {
-    const data = await apiDelete(path);
+  post: async (path, body, config = {}) => {
+    const data = await apiPost(path, body, config);
     return { data };
-  }
+  },
+  put: async (path, body, config = {}) => {
+    const data = await apiPut(path, body, config);
+    return { data };
+  },
+  patch: async (path, body, config = {}) => {
+    const data = await apiPatch(path, body, config);
+    return { data };
+  },
+  delete: async (path, config = {}) => {
+    const data = await apiDelete(path, config);
+    return { data };
+  },
+};
+
+export {
+  getStoredToken,
+  getStoredUser,
+  buildApiUrl,
+  handle401SessionExpiry,
+  isAuthenticatedRoute,
+  request,
 };
 
 export default api;
+

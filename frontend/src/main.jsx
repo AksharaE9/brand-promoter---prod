@@ -7,10 +7,11 @@ import './responsive.css';
 import './layout.css';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { startKeepAlive } from './lib/api';
+import { startKeepAlive, registerQueryClient } from './lib/api';
 
 // Prevent Render instance sleeping
 startKeepAlive();
+
 
 // Intercept clipboard copy to restore full text of visually truncated elements
 if (typeof document !== 'undefined') {
@@ -72,6 +73,9 @@ const queryClient = new QueryClient({
     }
   }
 });
+
+registerQueryClient(queryClient);
+
 
 const sessionPersister = {
   persistClient: async (client) => {

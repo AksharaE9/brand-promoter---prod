@@ -1598,6 +1598,14 @@ router.patch(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
+    const idempotencyKey = req.headers['x-idempotency-key'] || req.body?.idempotencyKey;
+    if (idempotencyKey) {
+      const cachedIdempotent = l1.get(`idempotency:${idempotencyKey}`);
+      if (cachedIdempotent) {
+        return res.json({ success: true, data: cachedIdempotent, idempotent: true });
+      }
+    }
+
     const { data: current } = await cache.getRound(roundId);
     if (!current) throw new ApiError(404, "Interview not found");
 
@@ -1699,8 +1707,13 @@ router.patch(
       current
     );
 
+    if (idempotencyKey && result?.data) {
+      l1.set(`idempotency:${idempotencyKey}`, result.data, 300_000); // 5 min
+    }
+
     // Primary write committed — respond immediately
     res.json({ success: true, data: result.data });
+
 
     // Secondary operations (notifications, audit log) isolated outside request path
     setImmediate(() => {

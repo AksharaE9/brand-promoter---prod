@@ -130,10 +130,11 @@ export const schedulingApi = {
    * bypassing interviewerIds / mode / meetingLink validations that are
    * only relevant when those fields are actually being changed.
    */
-  patchNotes: async (roundId, notes) => {
-    const res = await api.patch(`/interviews/${roundId}`, { notes });
+  patchNotes: async (roundId, notes, options = {}) => {
+    const res = await api.patch(`/interviews/${roundId}`, { notes }, options);
     return res.data;
   },
+
   
   deleteRound: async (roundId) => {
     const res = await api.delete(`/interviews/${roundId}`);

@@ -37,7 +37,9 @@ module.exports = {
     '**/tests/unit/fileValidator.test.js',
     '**/tests/unit/notRespondedToggle.test.js',
     '**/tests/unit/recoveryHardening.test.js',
+    '**/tests/unit/sessionExpiryAndErrors.test.js',
   ],
+
   // NO globalSetup — these tests need no DB seeding
   testTimeout: 10000,
   verbose: true,

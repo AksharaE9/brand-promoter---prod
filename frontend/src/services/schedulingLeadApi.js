@@ -34,20 +34,7 @@ export const schedulingLeadApi = {
     formData.append('file', file);
     formData.append('listDate', listDate);
 
-    const token = getStoredToken();
-    const response = await fetch(buildApiUrl(`/scheduling/members/${memberId}/lead-list`), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to upload lead list');
-    }
-    return data;
+    return await apiPost(`/scheduling/members/${memberId}/lead-list`, formData);
   },
 
   /** Admin: Export lead list as CSV download */
@@ -90,24 +77,12 @@ export const schedulingLeadApi = {
     if (date) formData.append('date', date);
     if (note) formData.append('note', note);
 
-    const token = getStoredToken();
-    const response = await fetch(buildApiUrl(`/scheduling/members/${memberId}/files`), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to upload attachment');
-    }
-    return data;
+    return await apiPost(`/scheduling/members/${memberId}/files`, formData);
   },
 
   /** Admin/Member: Get member profile details */
   getMemberProfile: async (memberId) => {
+
     const res = await apiGet(`/scheduling/members/${memberId}`);
     return res.data;
   },

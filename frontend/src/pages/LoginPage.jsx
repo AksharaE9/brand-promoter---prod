@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { buildApiUrl, hasToken } from '../lib/api';
+import { buildApiUrl } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 
 const earthImage =
@@ -15,8 +15,10 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   // Detect session-expiry redirect (set by handle401SessionExpiry in lib/api.js)
-  const urlParams = new URLSearchParams(window.location.search);
-  const sessionExpired = urlParams.get('sessionExpired') === 'true';
+  const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+  const reason = urlParams.get('reason');
+  const sessionExpired = urlParams.get('sessionExpired') === 'true' || reason === 'session_expired';
+  const isUserInactive = reason === 'user_inactive';
   const returnTo = urlParams.get('returnTo') || null;
 
   const handleLogin = async (event) => {
@@ -42,14 +44,14 @@ const LoginPage = () => {
       const result = await response.json();
 
       if (!response.ok || !result?.success) {
-        throw new Error(result?.message || 'Login failed. Please check credentials.');
+        throw new Error(result?.error?.message || result?.message || 'Login failed. Please check credentials.');
       }
 
       useAuthStore.getState().setAuth(result.data.token, result.data.user);
 
       if (result.data.user?.role === 'QUALITY_APPROVER') {
         navigate('/quality-check');
-      } else if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+      } else if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') && !returnTo.includes('javascript:')) {
         navigate(returnTo);
       } else {
         navigate('/workspaces');
@@ -60,6 +62,7 @@ const LoginPage = () => {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-white">
@@ -131,8 +134,8 @@ const LoginPage = () => {
             Enter your credentials to access the talent architecture console.
           </p>
 
-          {/* Session expiry banner — shown when redirected from handle401SessionExpiry */}
-          {sessionExpired && (
+          {/* Session expiry / Account inactive banner — shown when redirected from handle401SessionExpiry */}
+          {sessionExpired && !isUserInactive && (
             <div
               className="mt-5 flex items-start gap-3 rounded-xl border border-[#b8d0ff] bg-[#eff6ff] px-4 py-3"
               role="alert"
@@ -145,10 +148,29 @@ const LoginPage = () => {
                 info
               </span>
               <p className="text-sm text-[#1e3a8a] leading-snug">
-                <strong>Your session has expired.</strong> Please log in again to continue.
+                <strong>Your session has expired.</strong> Please sign in again.
               </p>
             </div>
           )}
+
+          {isUserInactive && (
+            <div
+              className="mt-5 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3"
+              role="alert"
+              aria-live="polite"
+            >
+              <span
+                className="material-symbols-outlined text-amber-600 mt-0.5 flex-shrink-0"
+                style={{ fontSize: 18 }}
+              >
+                warning
+              </span>
+              <p className="text-sm text-amber-800 leading-snug">
+                <strong>Account Inactive.</strong> Your account is inactive or has been disabled. Please contact your administrator.
+              </p>
+            </div>
+          )}
+
 
 
           <div className="mt-6 space-y-4">

@@ -59,6 +59,15 @@ app.use(compression({
   chunkSize: 16 * 1024,
 }));
 
+const crypto = require('crypto');
+
+app.use((req, res, next) => {
+  const incomingId = req.headers['x-request-id'];
+  req.id = (typeof incomingId === 'string' && incomingId.trim()) ? incomingId.trim() : `req_${crypto.randomBytes(8).toString('hex')}`;
+  res.setHeader('X-Request-Id', req.id);
+  next();
+});
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -85,7 +94,8 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS', 'QUERY'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Idempotency-Key'],
+    exposedHeaders: ['X-Request-Id', 'Retry-After'],
     maxAge: 600,
     optionsSuccessStatus: 204,
   }),
@@ -96,6 +106,7 @@ app.use(dedupMiddleware);
 app.use(pushHints);
 
 app.disable('x-powered-by');
+
 
 if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);

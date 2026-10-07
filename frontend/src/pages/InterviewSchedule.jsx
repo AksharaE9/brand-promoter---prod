@@ -164,7 +164,11 @@ export const FollowUpUploadField = React.memo(({
       await onUpload(base64);
       setUploadError(null);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Upload failed — please try again.';
+      if (err?.status === 401 || err?.isAuthError || err?.code === 'AUTH_TOKEN_EXPIRED') {
+        return;
+      }
+      const refStr = err?.requestId ? ` (Ref: ${err.requestId})` : '';
+      const msg = (err?.payload?.error?.message || err?.payload?.message || err?.message || 'Upload failed — please try again.') + refStr;
       setUploadError(msg);
       if (onError) onError(msg);
     } finally {
@@ -181,13 +185,18 @@ export const FollowUpUploadField = React.memo(({
     try {
       await onDelete();
     } catch (err) {
-      const msg = err?.response?.data?.error || err?.message || 'Failed to delete attachment';
+      if (err?.status === 401 || err?.isAuthError || err?.code === 'AUTH_TOKEN_EXPIRED') {
+        return;
+      }
+      const refStr = err?.requestId ? ` (Ref: ${err.requestId})` : '';
+      const msg = (err?.payload?.error?.message || err?.payload?.message || err?.message || 'Failed to delete attachment') + refStr;
       setUploadError(msg);
       if (onError) onError(msg);
     } finally {
       setDeleting(false);
     }
   };
+
 
   // Lazily fetch full base64 data when the stored value is a stripped stub (exists:true, no data)
   const handleView = async () => {
@@ -2605,12 +2614,19 @@ const InterviewSchedule = () => {
                                   [type]: base64,
                                 };
                                 const updatedNotes = JSON.stringify(nextNotesObj);
+                                const idempotencyKey = `followup_${selectedInterview.id}_${type}_${Date.now()}`;
 
-                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
+                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes, {
+                                  headers: { 'X-Idempotency-Key': idempotencyKey }
+                                });
                                 setBanner('Follow-up attachment updated successfully.');
                                 await loadAll();
                               } catch (err) {
-                                const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Failed to upload follow-up attachment';
+                                if (err?.status === 401 || err?.isAuthError || err?.code === 'AUTH_TOKEN_EXPIRED') {
+                                  return;
+                                }
+                                const refStr = err?.requestId ? ` (Ref: ${err.requestId})` : '';
+                                const msg = (err?.payload?.error?.message || err?.payload?.message || err?.message || 'Failed to upload follow-up attachment') + refStr;
                                 setError(msg);
                                 throw err;
                               }
@@ -2627,16 +2643,24 @@ const InterviewSchedule = () => {
                                   [type]: null,
                                 };
                                 const updatedNotes = JSON.stringify(nextNotesObj);
+                                const idempotencyKey = `followup_del_${selectedInterview.id}_${type}_${Date.now()}`;
 
-                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes);
+                                await schedulingApi.patchNotes(selectedInterview.id, updatedNotes, {
+                                  headers: { 'X-Idempotency-Key': idempotencyKey }
+                                });
                                 setBanner('Follow-up attachment removed successfully.');
                                 await loadAll();
                               } catch (err) {
-                                const msg = err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Failed to remove follow-up attachment';
+                                if (err?.status === 401 || err?.isAuthError || err?.code === 'AUTH_TOKEN_EXPIRED') {
+                                  return;
+                                }
+                                const refStr = err?.requestId ? ` (Ref: ${err.requestId})` : '';
+                                const msg = (err?.payload?.error?.message || err?.payload?.message || err?.message || 'Failed to remove follow-up attachment') + refStr;
                                 setError(msg);
                                 throw err;
                               }
                             };
+
 
                             return (
                               <>
