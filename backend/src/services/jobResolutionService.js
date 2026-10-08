@@ -210,6 +210,20 @@ class JobResolutionSession {
   }
 
   /**
+   * Preloads and resolves all distinct job titles up front before processing individual rows.
+   * Prevents race conditions and duplicate job creation during concurrent row imports.
+   */
+  async preloadTitles(titlesArray = [], defaultLocation = null) {
+    if (!this.initialized) {
+      await this.init();
+    }
+    const distinct = [...new Set(titlesArray.map(t => String(t || '').trim()).filter(Boolean))];
+    for (const title of distinct) {
+      await this.resolveOrAutoCreate(title, defaultLocation);
+    }
+  }
+
+  /**
    * Returns audit summary of resolution session.
    */
   getSummary() {

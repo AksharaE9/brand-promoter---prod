@@ -1,6 +1,6 @@
 'use strict';
 
-const { normalizePhoneNumber } = require('./phoneNormalization');
+const { normalizeString, normalizeEmailCell, normalizePhoneCell } = require('./cellNormalizer');
 
 /**
  * Validates a raw row object against candidate schema requirements.
@@ -9,15 +9,15 @@ const { normalizePhoneNumber } = require('./phoneNormalization');
  * - Default (All Candidates):
  *   - name: Mandatory. Non-empty string.
  *   - role: Mandatory. Non-empty string.
- *   - email: Mandatory. Validated email format.
+ *   - email: Mandatory. Validated email format (non-placeholder).
  *   - phone: Mandatory. Must resolve to 7-15 digits.
- *   - resumeLink: Mandatory. Non-empty string.
+ *   - resumeLink: Mandatory. Non-empty valid URL.
  *
  * - College Drive Context (`options.isDriveContext = true`):
  *   - name: Mandatory. Non-empty string.
  *   - phone: Mandatory. Must resolve to 7-15 digits.
  *   - role: Optional.
- *   - email: Optional. Validated format if provided.
+ *   - email: Optional. Validated format if provided; placeholder/incomplete emails are accepted as empty email with needs_contact_details flag.
  *   - resumeLink: Optional.
  *
  * - Both contexts:
@@ -33,44 +33,55 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
   const warnings = [];
   const isDriveContext = Boolean(options.isDriveContext || options.driveId || options.schema === 'drive');
 
-  const name = String(rawRow.name ?? '').trim();
+  const name = normalizeString(rawRow.name ?? '');
   if (!name) {
     errors.push('missing required field "name"');
   }
 
-  const role = String(rawRow.role ?? '').trim() || null;
+  const role = normalizeString(rawRow.role ?? '') || null;
   // Role is required for All Candidates but optional for College Drive context
   if (!isDriveContext && !role) {
     errors.push('missing required field "role"');
   }
 
-  const emailRaw = String(rawRow.email ?? '').trim();
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw);
-  let email = emailRaw || null;
+  const emailResult = normalizeEmailCell(rawRow.email);
+  let email = emailResult.email;
+  let needsContactDetails = emailResult.needsContactDetails;
+  const rawEmail = emailResult.rawValue;
+
   if (!isDriveContext) {
     // Email is required for All Candidates
-    if (!emailRaw) {
+    if (!rawEmail) {
       errors.push('missing required field "e-mail"');
-    } else if (!isEmailValid) {
-      errors.push(`invalid required field "e-mail": "${emailRaw}" is not a valid email address`);
+    } else if (emailResult.isPlaceholder) {
+      errors.push(`invalid required field "e-mail": "${rawEmail}" is a placeholder email and cannot be used as candidate identity`);
+    } else if (!emailResult.isValid) {
+      errors.push(`invalid required field "e-mail": "${rawEmail}" is not a valid email address`);
     }
   } else {
-    // Email is optional for College Drive — validate format only if present
-    if (emailRaw && !isEmailValid) {
-      errors.push(`invalid field "e-mail": "${emailRaw}" is not a valid email address`);
+    // Email is optional for College Drive
+    if (rawEmail) {
+      if (emailResult.isPlaceholder) {
+        email = null;
+        needsContactDetails = true;
+        warnings.push(`Row ${rowNumber}: Email "${rawEmail}" is a placeholder; imported with needs_contact_details flag`);
+      } else if (!emailResult.isValid) {
+        email = null;
+        needsContactDetails = true;
+        warnings.push(`Row ${rowNumber}: Incomplete email handle "${rawEmail}"; imported without email (needs_contact_details flag set)`);
+      }
     }
   }
 
-  const phoneRaw = String(rawRow.phone ?? '').trim();
-  const phoneDigits = phoneRaw.replace(/[^\d+]/g, '');
-  const phoneValid = /^\+?\d{7,15}$/.test(phoneDigits);
+  const phoneRaw = normalizeString(rawRow.phone ?? '');
+  const phoneResult = normalizePhoneCell(rawRow.phone);
   if (!phoneRaw) {
     errors.push('missing required field "phone number"');
-  } else if (!phoneValid) {
-    errors.push(`missing or invalid required field "phone number": "${phoneRaw}" is not a valid phone number (must be 7-15 digits)`);
+  } else if (!phoneResult.isValid) {
+    errors.push(`missing or invalid required field "phone number": "${rawRow.phone || ''}" is not a valid phone number (must be 7-15 digits)`);
   }
 
-  const resumeLinkRaw = String(rawRow.resumeLink ?? '').trim() || null;
+  const resumeLinkRaw = normalizeString(rawRow.resumeLink ?? '') || null;
   if (!isDriveContext) {
     if (!resumeLinkRaw) {
       errors.push('missing required field "resume link"');
@@ -84,12 +95,12 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
     }
   }
 
-  const college = String(rawRow.college ?? '').trim() || null;
-  const location = String(rawRow.location ?? '').trim() || null;
-  const course = String(rawRow.course ?? '').trim() || null;
-  const source = String(rawRow.source ?? '').trim() || null;
-  const company = String(rawRow.company ?? '').trim() || null;
-  const candidateId = String(rawRow.candidateId ?? rawRow.candidate_id ?? '').trim() || null;
+  const college = normalizeString(rawRow.college ?? '') || null;
+  const location = normalizeString(rawRow.location ?? '') || null;
+  const course = normalizeString(rawRow.course ?? '') || null;
+  const source = normalizeString(rawRow.source ?? '') || null;
+  const company = normalizeString(rawRow.company ?? '') || null;
+  const candidateId = normalizeString(rawRow.candidateId ?? rawRow.candidate_id ?? '') || null;
 
   if (errors.length > 0) {
     return {
@@ -98,8 +109,11 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
         candidateId,
         name,
         role,
-        email: isEmailValid ? email : null,
-        phone: phoneValid ? phoneDigits : null,
+        email: email || null,
+        rawEmail,
+        needsContactDetails,
+        phone: phoneResult.phone,
+        phoneNormalized: phoneResult.phoneNormalized,
         resumeLinkRaw,
         college,
         location,
@@ -120,7 +134,10 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
       name,
       role,
       email: email || null,
-      phone: phoneDigits,
+      rawEmail,
+      needsContactDetails,
+      phone: phoneResult.phone,
+      phoneNormalized: phoneResult.phoneNormalized,
       resumeLinkRaw,
       college,
       location,
@@ -135,3 +152,4 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
 module.exports = {
   validateCandidateRow,
 };
+

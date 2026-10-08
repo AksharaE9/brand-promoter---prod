@@ -14,12 +14,14 @@ const cacheInvalidation = require('../utils/cacheInvalidation');
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
 
+const { normalizeString, isPlaceholderEmail } = require('../lib/cellNormalizer');
+
 /**
  * Validates candidate row using shared candidateRowValidator.
  */
 async function validateCandidateRowWrapper(rawRow, rowNumber, context = {}) {
-  const isDriveContext = Boolean(context.driveId || context.isDriveContext);
-  const result = validateCandidateRow(rawRow, rowNumber, { isDriveContext });
+  const isDriveContext = Boolean(context.driveId || context.isDriveContext || context.schema === 'drive');
+  const result = validateCandidateRow(rawRow, rowNumber, { isDriveContext, driveId: context.driveId });
   if (!result.valid) {
     return {
       valid: false,
@@ -43,25 +45,39 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     ? normalizeResumeLink(candidateData.resumeLinkRaw)
     : null;
   const phoneNormalized =
+    candidateData.phoneNormalized ||
     normalizePhoneForDedup(candidateData.phone) ||
     normalizePhoneNumber(candidateData.phone) ||
     null;
-  let preferredRole = candidateData.role || null;
-  if (candidateData.role && String(candidateData.role).trim()) {
+
+  let preferredRole = candidateData.role ? normalizeString(candidateData.role) : null;
+  if (preferredRole) {
     if (!context.jobResolver) {
       const { JobResolutionSession } = require('../services/jobResolutionService');
       context.jobResolver = new JobResolutionSession(context.organizationId || 'defaultOrg', context.validCreatedById);
       await context.jobResolver.init();
     }
-    const resolution = await context.jobResolver.resolveOrAutoCreate(candidateData.role, candidateData.location);
-    if (resolution.job) {
+    const resolution = await context.jobResolver.resolveOrAutoCreate(preferredRole, candidateData.location);
+    if (resolution && resolution.job) {
       preferredRole = resolution.job.title;
     }
   }
 
+  const customFields = {};
+  if (candidateData.candidateId) {
+    customFields.externalCandidateId = candidateData.candidateId;
+  }
+  if (candidateData.needsContactDetails) {
+    customFields.needs_contact_details = true;
+    if (candidateData.rawEmail) {
+      customFields.rawEmail = candidateData.rawEmail;
+    }
+  }
+  customFields.sourceRow = rowNumber;
+
   const payload = {
     rowNumber,
-    fullName: candidateData.name,
+    fullName: normalizeString(candidateData.name),
     preferredRole: preferredRole || null,
     email: candidateData.email || 'N/A',
     phone: candidateData.phone,
@@ -71,18 +87,15 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     resumeLinkProvider: resumeLink?.provider || null,
     organizationId: context.organizationId || 'defaultOrg',
     createdById: context.validCreatedById || null,
-    source: candidateData.source || 'Bulk Candidate Upload',
+    source: normalizeString(candidateData.source) || 'Bulk Candidate Upload',
     status: 'ACTIVE',
-    college: candidateData.college || null,
-    location: candidateData.location || null,
-    course: candidateData.course || null,
-    company: candidateData.company || null,
+    college: normalizeString(candidateData.college) || null,
+    location: normalizeString(candidateData.location) || null,
+    course: normalizeString(candidateData.course) || null,
+    company: normalizeString(candidateData.company) || null,
     updatedAt: new Date(),
+    customFields: Object.keys(customFields).length > 0 ? customFields : null,
   };
-
-  if (candidateData.candidateId) {
-    payload.customFields = { externalCandidateId: candidateData.candidateId };
-  }
 
   return payload;
 }
@@ -95,8 +108,8 @@ async function duplicateCheckCandidate(candidateData, rowNumber, context) {
     context.seenCandidatesInFileMap = new Map();
   }
 
-  const phoneKey = normalizePhoneForDedup(candidateData.phone);
-  const emailKey = String(candidateData.email || '').trim().toLowerCase();
+  const phoneKey = normalizePhoneForDedup(candidateData.phoneNormalized || candidateData.phone);
+  const emailKey = normalizeString(candidateData.email || '').toLowerCase();
 
   if (phoneKey && phoneKey !== 'n/a') {
     if (context.seenCandidatesInFileMap.has(`phone:${phoneKey}`)) {
@@ -109,7 +122,8 @@ async function duplicateCheckCandidate(candidateData, rowNumber, context) {
     context.seenCandidatesInFileMap.set(`phone:${phoneKey}`, rowNumber);
   }
 
-  if (emailKey && emailKey !== 'n/a' && emailKey !== '') {
+  // Never treat placeholder emails as duplicates
+  if (emailKey && emailKey !== 'n/a' && emailKey !== '' && !isPlaceholderEmail(emailKey)) {
     if (context.seenCandidatesInFileMap.has(`email:${emailKey}`)) {
       const origRow = context.seenCandidatesInFileMap.get(`email:${emailKey}`);
       return {
@@ -125,7 +139,7 @@ async function duplicateCheckCandidate(candidateData, rowNumber, context) {
 
 async function findExistingCandidate(dbData, organizationId) {
   const phoneKey = normalizePhoneForDedup(dbData.phoneNormalized || dbData.phone);
-  const email = String(dbData.email || '').trim();
+  const email = normalizeString(dbData.email || '').toLowerCase();
   const orgId = organizationId || dbData.organizationId || 'defaultOrg';
 
   if (phoneKey) {
@@ -145,7 +159,8 @@ async function findExistingCandidate(dbData, organizationId) {
     if (byPhone) return byPhone;
   }
 
-  if (email && email.toLowerCase() !== 'n/a') {
+  // Placeholder emails (e.g. dummy@gmail.com, test@, na@) are NOT identities and must never be matched
+  if (email && email !== 'n/a' && !isPlaceholderEmail(email)) {
     return prisma.candidate.findFirst({
       where: {
         organizationId: orgId,
@@ -316,6 +331,7 @@ async function processCandidateUpload(jobData) {
     context: {
       validCreatedById,
       driveId: driveId || null,
+      isDriveContext: Boolean(jobData.isDriveContext || driveId || jobData.context?.isDriveContext),
       MAX_ROWS_EXCEEDED: false,
       seenCandidatesInFileMap: new Map(),
       ...(jobData.context || {}),
@@ -329,7 +345,7 @@ async function processCandidateUpload(jobData) {
           errors: [`Row ${rowNumber}: Upload exceeds the ${BULK_UPLOAD_LIMITS.MAX_ROWS}-row limit. Please split into smaller files.`],
         };
       }
-      return validateCandidateRowWrapper(rawRow, rowNumber, { driveId: pipelineContext?.driveId || driveId });
+      return validateCandidateRowWrapper(rawRow, rowNumber, pipelineContext);
     },
     duplicateCheck: duplicateCheckCandidate,
     transformRow: transformCandidateRow,

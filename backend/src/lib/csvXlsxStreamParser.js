@@ -5,6 +5,7 @@ const path = require('path');
 const { parse } = require('csv-parse');
 const XLSX = require('xlsx');
 const { resolveHeader } = require('./headerAliasMap');
+const { normalizeString } = require('./cellNormalizer');
 
 /**
  * Streaming parser wrapper for CSV and XLSX files.
@@ -12,7 +13,7 @@ const { resolveHeader } = require('./headerAliasMap');
  * Prevents memory overload and handles root causes:
  * 1. Preserves raw text for phone numbers (raw: false, no numeric coercion).
  * 2. Case & whitespace-insensitive header mapping via resolveHeader.
- * 3. Strips UTF-8 BOM (\uFEFF) on CSV/header cells.
+ * 3. Strips UTF-8 BOM (\uFEFF) on CSV/header cells, normalizes Unicode (NFC) & whitespace.
  * 4. Ignores blank trailing rows.
  * 5. Handles multi-sheet workbooks (only processes 1st sheet, notes extra sheets).
  *
@@ -67,7 +68,7 @@ function parseCsvFile(filePath, rowCallback) {
             // Header row
             headerMap = {};
             record.forEach((rawCol, idx) => {
-              const cleaned = String(rawCol || '').trim().replace(/^\uFEFF/, '');
+              const cleaned = normalizeString(rawCol).replace(/^\uFEFF/, '');
               const canonicalKey = resolveHeader(rawCol) || cleaned;
               if (canonicalKey) {
                 headerMap[idx] = canonicalKey;
@@ -81,7 +82,7 @@ function parseCsvFile(filePath, rowCallback) {
             record.forEach((val, idx) => {
               const key = headerMap[idx];
               if (key) {
-                const strVal = String(val ?? '').trim();
+                const strVal = normalizeString(val);
                 mappedRow[key] = strVal;
                 if (strVal) hasAnyData = true;
               }
@@ -151,7 +152,7 @@ async function parseXlsxFile(filePath, rowCallback) {
   const headerMap = {};
 
   headerRow.forEach((rawCol, idx) => {
-    const cleaned = String(rawCol || '').trim().replace(/^\uFEFF/, '');
+    const cleaned = normalizeString(rawCol).replace(/^\uFEFF/, '');
     const canonicalKey = resolveHeader(rawCol) || cleaned;
     if (canonicalKey) {
       headerMap[idx] = canonicalKey;
@@ -169,7 +170,7 @@ async function parseXlsxFile(filePath, rowCallback) {
       record.forEach((val, idx) => {
         const key = headerMap[idx];
         if (key) {
-          const strVal = String(val ?? '').trim();
+          const strVal = normalizeString(val);
           mappedRow[key] = strVal;
           if (strVal) hasAnyData = true;
         }
@@ -223,11 +224,11 @@ function countCsvRows(filePath) {
   return new Promise((resolve, reject) => {
     let lineCount = 0;
     let isFirstLine = true;
+    let hasTrailingChars = false;
 
     const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
 
     stream.on('data', (chunk) => {
-      let start = 0;
       for (let i = 0; i < chunk.length; i++) {
         if (chunk[i] === '\n') {
           if (isFirstLine) {
@@ -236,19 +237,18 @@ function countCsvRows(filePath) {
           } else {
             lineCount++;
           }
-          start = i + 1;
+          hasTrailingChars = false;
+        } else if (chunk[i] !== '\r') {
+          hasTrailingChars = true;
         }
       }
-      // Handle last line without trailing newline
     });
 
     stream.on('end', () => {
-      // If file doesn't end with a newline, count the last non-empty line
-      // by checking if isFirstLine was ever set to false (i.e. there was at least 1 newline)
-      // This is handled implicitly — the lineCount is already correct for files with trailing newlines
-      // For files without trailing newlines, add 1 only if there was content after the last newline
-      // Simple approach: just resolve lineCount (may be off by 1 for no-trailing-newline files,
-      // but that's acceptable for a pre-check — the pipeline's actual row count is authoritative)
+      // If file ends without a trailing newline and has remaining data row content
+      if (hasTrailingChars && !isFirstLine) {
+        lineCount++;
+      }
       resolve(Math.max(0, lineCount));
     });
 

@@ -8,12 +8,16 @@
 const fs = require('fs');
 const jobRepo = require('./importJobRepository');
 
-// Processors for each import flow
-const candidateProc = require('../jobs/bulkCandidateUpload.processor');
-const joinedProc = require('../jobs/bulkJoinedCandidateUpload.processor');
-const offerProc = require('../jobs/bulkOfferLetterUpload.processor');
-const interviewProc = require('../jobs/bulkInterviewUpload.processor');
-const feedbackProc = require('../jobs/bulkFeedbackUpload.processor');
+// Lazy processor loader to eliminate circular dependencies
+function getProcessors() {
+  return {
+    candidateProc: require('../jobs/bulkCandidateUpload.processor'),
+    joinedProc: require('../jobs/bulkJoinedCandidateUpload.processor'),
+    offerProc: require('../jobs/bulkOfferLetterUpload.processor'),
+    interviewProc: require('../jobs/bulkInterviewUpload.processor'),
+    feedbackProc: require('../jobs/bulkFeedbackUpload.processor'),
+  };
+}
 
 // Map of active jobs: jobId -> { controller, inFlightBatchPromise, lastRow }
 const activeJobsMap = new Map();
@@ -149,12 +153,13 @@ function startStuckJobReaper(intervalMs = 120000) {
  * Resolves the appropriate processor function for a given flow type.
  */
 function getProcessorForFlow(flowType) {
+  const procs = getProcessors();
   const clean = String(flowType || '').toLowerCase();
-  if (clean === 'joined') return joinedProc.processJoinedCandidateUpload;
-  if (clean === 'offer' || clean === 'offer-letter') return offerProc.processOfferLetterUpload;
-  if (clean === 'interviews' || clean === 'interview-schedule') return interviewProc.processBulkInterviewUpload;
-  if (clean === 'feedback' || clean === 'interview-feedback') return feedbackProc.processBulkFeedbackUpload;
-  return candidateProc.processCandidateUpload;
+  if (clean === 'joined') return procs.joinedProc.processJoinedCandidateUpload;
+  if (clean === 'offer' || clean === 'offer-letter') return procs.offerProc.processOfferLetterUpload;
+  if (clean === 'interviews' || clean === 'interview-schedule') return procs.interviewProc.processBulkInterviewUpload;
+  if (clean === 'feedback' || clean === 'interview-feedback') return procs.feedbackProc.processBulkFeedbackUpload;
+  return procs.candidateProc.processCandidateUpload;
 }
 
 /**
