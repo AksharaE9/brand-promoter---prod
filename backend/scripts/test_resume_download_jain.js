@@ -1,4 +1,5 @@
 'use strict';
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const request = require('supertest');
 const { app } = require('../src/app');
 const prisma = require('../src/config/db');
