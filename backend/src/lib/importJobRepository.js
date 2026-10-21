@@ -231,12 +231,14 @@ async function getInterruptedJobs(organizationId = null) {
  */
 async function getStuckJobs(thresholdMinutes = 10) {
   await initImportDb();
+  const minutes = parseInt(thresholdMinutes, 10) || 10;
   return prisma.$queryRawUnsafe(
     `SELECT id, flow_type, status, source_filename, organization_id, total_rows, last_committed_row, resume_attempts
      FROM import_jobs
      WHERE status = 'PROCESSING'
-       AND checkpoint_at < (NOW() - INTERVAL '${parseInt(thresholdMinutes, 10)} minutes')
-       AND resume_attempts < 3;`
+       AND checkpoint_at < (NOW() - make_interval(mins => $1))
+       AND resume_attempts < 3;`,
+    minutes
   );
 }
 

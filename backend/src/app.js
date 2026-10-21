@@ -63,7 +63,10 @@ const crypto = require('crypto');
 
 app.use((req, res, next) => {
   const incomingId = req.headers['x-request-id'];
-  req.id = (typeof incomingId === 'string' && incomingId.trim()) ? incomingId.trim() : `req_${crypto.randomBytes(8).toString('hex')}`;
+  req.clientRequestId = (typeof incomingId === 'string' && incomingId.trim()) ? incomingId.trim() : null;
+  req.id = (typeof incomingId === 'string' && incomingId.trim().startsWith('req_be_'))
+    ? incomingId.trim()
+    : `req_be_${crypto.randomBytes(8).toString('hex')}`;
   res.setHeader('X-Request-Id', req.id);
   next();
 });

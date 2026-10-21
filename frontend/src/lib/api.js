@@ -337,7 +337,7 @@ async function attemptTokenRefresh() {
 }
 
 // ── Core Request Execution Pipeline with Consolidated Interceptor ────────────
-export async function request(path, options = {}, retries = 1) {
+export async function request(path, options = {}, retries = null) {
   const url = buildApiUrl(path);
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 
@@ -367,6 +367,7 @@ export async function request(path, options = {}, retries = 1) {
   }
 
   const isGet = !options.method || options.method === 'GET';
+  const effectiveRetries = retries !== null ? retries : (isGet ? 1 : 0);
   const requestKey = `${options.method || 'GET'}:${path}`;
 
   // Deduplication for GET requests
@@ -388,7 +389,7 @@ export async function request(path, options = {}, retries = 1) {
 
   const fetchPromise = (async () => {
     let lastErr;
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    for (let attempt = 0; attempt <= effectiveRetries; attempt++) {
       if (attempt > 0) {
         const delayMs = lastErr && lastErr.retryAfter ? parseInt(lastErr.retryAfter, 10) * 1000 : 1000;
         await new Promise(r => setTimeout(r, delayMs));
@@ -492,6 +493,10 @@ export async function request(path, options = {}, retries = 1) {
 
           // ── 5xx Server Errors: Never sign out, record and retry if allowed ──
           lastErr = error;
+          if (!isGet) {
+            // Never auto-retry mutating methods (POST/PUT/PATCH/DELETE) on 5xx
+            throw error;
+          }
           continue;
         }
 
@@ -509,21 +514,21 @@ export async function request(path, options = {}, retries = 1) {
           if (options.signal?.aborted) throw err;
           lastErr = new Error('Request timed out. Server may be waking up — please try again.');
           lastErr.isNetworkError = true;
-          if (!isGet) continue;
+          if (!isGet) throw lastErr;
           continue;
         }
 
         if (!err.status && (err instanceof TypeError || err.message?.includes('fetch'))) {
           lastErr = new Error('Could not reach the server. Please check your connection and try again.');
           lastErr.isNetworkError = true;
-          if (attempt < retries) continue;
+          if (attempt < effectiveRetries) continue;
           break;
         }
 
         if (err.status >= 400 && err.status < 500) throw err;
         lastErr = err;
       } finally {
-        if (isGet && attempt === retries) inflightRequests.delete(requestKey);
+        if (isGet && attempt === effectiveRetries) inflightRequests.delete(requestKey);
       }
     }
     throw lastErr || new Error('Request failed after retries');

@@ -38,6 +38,7 @@ module.exports = {
     '**/tests/unit/notRespondedToggle.test.js',
     '**/tests/unit/recoveryHardening.test.js',
     '**/tests/unit/sessionExpiryAndErrors.test.js',
+    '**/tests/unit/bulkUploadRegressionPart5.test.js',
   ],
 
   // NO globalSetup — these tests need no DB seeding

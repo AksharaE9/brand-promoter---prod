@@ -75,10 +75,32 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
 
   const phoneRaw = normalizeString(rawRow.phone ?? '');
   const phoneResult = normalizePhoneCell(rawRow.phone);
-  if (!phoneRaw) {
-    errors.push('missing required field "phone number"');
-  } else if (!phoneResult.isValid) {
-    errors.push(`missing or invalid required field "phone number": "${rawRow.phone || ''}" is not a valid phone number (must be 7-15 digits)`);
+  let phone = phoneResult.phone || null;
+  let phoneNormalized = phoneResult.phoneNormalized || null;
+
+  if (!isDriveContext) {
+    if (!phoneRaw) {
+      errors.push('missing required field "phone number"');
+    } else if (phoneResult.isPlaceholder) {
+      errors.push(`invalid required field "phone number": "${phoneRaw}" is a placeholder phone and cannot be used as candidate identity`);
+    } else if (!phoneResult.isValid) {
+      errors.push(`missing or invalid required field "phone number": "${rawRow.phone || ''}" is not a valid phone number (must be 7-15 digits)`);
+    }
+  } else {
+    // In drive context, phone is required, but placeholder or invalid format phone is converted to null with needs_contact_details flag
+    if (!phoneRaw) {
+      errors.push('missing required field "phone number"');
+    } else if (phoneResult.isPlaceholder) {
+      phone = null;
+      phoneNormalized = null;
+      needsContactDetails = true;
+      warnings.push(`Row ${rowNumber}: Phone "${phoneRaw}" is a placeholder; imported without phone (needs_contact_details flag set)`);
+    } else if (!phoneResult.isValid) {
+      phone = null;
+      phoneNormalized = null;
+      needsContactDetails = true;
+      warnings.push(`Row ${rowNumber}: Invalid phone format "${phoneRaw}"; imported without phone (needs_contact_details flag set)`);
+    }
   }
 
   const resumeLinkRaw = normalizeString(rawRow.resumeLink ?? '') || null;
@@ -112,8 +134,9 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
         email: email || null,
         rawEmail,
         needsContactDetails,
-        phone: phoneResult.phone,
-        phoneNormalized: phoneResult.phoneNormalized,
+        phone,
+        phoneNormalized,
+        rawPhone: phoneRaw,
         resumeLinkRaw,
         college,
         location,
@@ -136,8 +159,9 @@ function validateCandidateRow(rawRow, rowNumber, options = {}) {
       email: email || null,
       rawEmail,
       needsContactDetails,
-      phone: phoneResult.phone,
-      phoneNormalized: phoneResult.phoneNormalized,
+      phone,
+      phoneNormalized,
+      rawPhone: phoneRaw,
       resumeLinkRaw,
       college,
       location,

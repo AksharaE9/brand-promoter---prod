@@ -4,6 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { auth, requireRoles } = require('../middleware/auth');
 const { asyncHandler, ApiError } = require('../utils/errors');
@@ -183,9 +184,36 @@ router.post(
       );
     }
 
-    const jobId = uuidv4();
     const driveId = req.query.driveId || req.body?.driveId || null;
     const isDriveContext = Boolean(driveId || req.query.context === 'drive' || req.body?.context === 'drive' || req.query.isDriveContext === 'true');
+
+    // Server-side Idempotency Guard (content hash + drive ID + user)
+    const fileContent = fs.readFileSync(req.file.path);
+    const contentHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+    const idempotencySignature = `${userId || 'anon'}_${driveId || 'nodrive'}_${contentHash}`;
+
+    if (!global._uploadIdempotencyMap) {
+      global._uploadIdempotencyMap = new Map();
+    }
+    const existingJob = global._uploadIdempotencyMap.get(idempotencySignature);
+    if (existingJob && (Date.now() - existingJob.timestamp < 10 * 60 * 1000)) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+      }
+      return res.status(200).json({
+        success: true,
+        jobId: existingJob.jobId,
+        idempotent: true,
+        data: {
+          jobId: existingJob.jobId,
+          status: 'active',
+          message: 'Repeat submission returned original job.',
+        },
+      });
+    }
+
+    const jobId = uuidv4();
+    global._uploadIdempotencyMap.set(idempotencySignature, { jobId, timestamp: Date.now() });
 
     // Enqueue job for background processing
     await enqueueJob({

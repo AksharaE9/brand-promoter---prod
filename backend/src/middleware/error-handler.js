@@ -53,6 +53,23 @@ function errorHandler(err, req, res, next) {
     });
   }
 
+  if (
+    (err.name === 'MulterError' && err.code !== 'LIMIT_FILE_SIZE') ||
+    (err.message && (err.message.includes('Boundary not found') || err.message.includes('Multipart:')))
+  ) {
+    const msg = 'Malformed multipart form data: boundary not found or corrupted payload.';
+    return res.status(400).json({
+      success: false,
+      code: 'UPLOAD_MALFORMED_MULTIPART',
+      message: msg,
+      error: {
+        code: 'UPLOAD_MALFORMED_MULTIPART',
+        message: msg,
+        requestId,
+      },
+    });
+  }
+
   if (err instanceof ApiError) {
     const code = err.code || `HTTP_${err.statusCode}`;
     return res.status(err.statusCode).json({

@@ -11,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { auth, requireRoles } = require('../middleware/auth');
+router.use(auth);
 const { getJobHistory, getJobById } = require('../lib/importJobRepository');
 const { undoImport } = require('../lib/bulkUploadUndo');
 const { getPreviewSession } = require('../lib/bulkUploadPreview');

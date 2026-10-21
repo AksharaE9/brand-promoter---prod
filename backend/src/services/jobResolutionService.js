@@ -79,6 +79,7 @@ class JobResolutionSession {
     this.createdById = createdById || null;
     this.fuzzyThreshold = options.threshold || DEFAULT_FUZZY_THRESHOLD;
     this.maxAutoCreate = options.maxAutoCreate || MAX_AUTO_CREATE_JOBS_PER_IMPORT;
+    this.allowAutoCreate = options.allowAutoCreate !== false;
     
     this.activeJobs = [];
     this.autoCreatedJobsMap = new Map(); // normalizedTitle -> Job
@@ -164,7 +165,15 @@ class JobResolutionSession {
       return matchInfo;
     }
 
-    // No match found — Auto-create new Job Posting
+    // No match found — Auto-create new Job Posting (if allowed)
+    if (!this.allowAutoCreate) {
+      return {
+        job: null,
+        matchType: 'UNRESOLVED_ROLE',
+        error: `Role "${rawTitle}" does not match any existing job posting and auto-creation is disabled in college drive context.`,
+      };
+    }
+
     if (this.autoCreatedCount >= this.maxAutoCreate) {
       return {
         job: null,

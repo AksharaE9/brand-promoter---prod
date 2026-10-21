@@ -14,7 +14,7 @@ const cacheInvalidation = require('../utils/cacheInvalidation');
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
 
 
-const { normalizeString, isPlaceholderEmail } = require('../lib/cellNormalizer');
+const { normalizeString, isPlaceholderEmail, isPlaceholderPhone } = require('../lib/cellNormalizer');
 
 /**
  * Validates candidate row using shared candidateRowValidator.
@@ -41,6 +41,7 @@ async function validateCandidateRowWrapper(rawRow, rowNumber, context = {}) {
  * No duplicate filtering — every valid row is imported (create or update).
  */
 async function transformCandidateRow(candidateData, rowNumber, context) {
+  const isDriveContext = Boolean(context.driveId || context.isDriveContext || context.schema === 'drive');
   const resumeLink = candidateData.resumeLinkRaw
     ? normalizeResumeLink(candidateData.resumeLinkRaw)
     : null;
@@ -52,20 +53,43 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
 
   let preferredRole = candidateData.role ? normalizeString(candidateData.role) : null;
   if (preferredRole) {
-    if (!context.jobResolver) {
-      const { JobResolutionSession } = require('../services/jobResolutionService');
-      context.jobResolver = new JobResolutionSession(context.organizationId || 'defaultOrg', context.validCreatedById);
-      await context.jobResolver.init();
-    }
-    const resolution = await context.jobResolver.resolveOrAutoCreate(preferredRole, candidateData.location);
-    if (resolution && resolution.job) {
-      preferredRole = resolution.job.title;
+    const normRoleLower = preferredRole.toLowerCase();
+    // Confirmed campus drive mappings (preserve verbatim role in customFields.role_as_written)
+    const DRIVE_ROLE_MAPPINGS = {
+      'data analyst': 'Data Analyst Intern',
+      'business analyst': 'Business Analyst Intern',
+      'operations': 'Ops Intern',
+      'ops': 'Ops Intern',
+    };
+
+    if (isDriveContext && DRIVE_ROLE_MAPPINGS[normRoleLower]) {
+      preferredRole = DRIVE_ROLE_MAPPINGS[normRoleLower];
+    } else {
+      if (!context.jobResolver) {
+        const { JobResolutionSession } = require('../services/jobResolutionService');
+        context.jobResolver = new JobResolutionSession(
+          context.organizationId || 'defaultOrg',
+          context.validCreatedById,
+          { allowAutoCreate: !isDriveContext }
+        );
+        await context.jobResolver.init();
+      }
+      const resolution = await context.jobResolver.resolveOrAutoCreate(preferredRole, candidateData.location);
+      if (resolution && resolution.job) {
+        preferredRole = resolution.job.title;
+      }
     }
   }
 
   const customFields = {};
   if (candidateData.candidateId) {
     customFields.externalCandidateId = candidateData.candidateId;
+  }
+  if (candidateData.role) {
+    customFields.role_as_written = candidateData.role;
+  }
+  if (candidateData.rawPhone) {
+    customFields.rawPhone = candidateData.rawPhone;
   }
   if (candidateData.needsContactDetails) {
     customFields.needs_contact_details = true;
@@ -80,8 +104,8 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
     fullName: normalizeString(candidateData.name),
     preferredRole: preferredRole || null,
     email: candidateData.email || 'N/A',
-    phone: candidateData.phone,
-    phoneNormalized,
+    phone: candidateData.phone || null,
+    phoneNormalized: candidateData.phone ? phoneNormalized : null,
     resumeLinkOriginal: resumeLink?.originalUrl || null,
     resumeLinkDownload: resumeLink?.downloadUrl || null,
     resumeLinkProvider: resumeLink?.provider || null,
@@ -102,50 +126,60 @@ async function transformCandidateRow(candidateData, rowNumber, context) {
 
 /**
  * Checks for in-file duplicate candidates.
+ * In-file duplicate phones and emails DO NOT drop the candidate.
+ * The first row keeps the contact details; subsequent rows import without that contact
+ * and receive a row-level exception (needs_contact_details flag set).
  */
 async function duplicateCheckCandidate(candidateData, rowNumber, context) {
   if (!context.seenCandidatesInFileMap) {
     context.seenCandidatesInFileMap = new Map();
   }
 
+  const warnings = [];
+  const rawPhone = candidateData.rawPhone || candidateData.phone;
+  const rawEmail = candidateData.rawEmail || candidateData.email;
   const phoneKey = normalizePhoneForDedup(candidateData.phoneNormalized || candidateData.phone);
   const emailKey = normalizeString(candidateData.email || '').toLowerCase();
 
-  if (phoneKey && phoneKey !== 'n/a') {
+  // In-file duplicate phone detection
+  if (phoneKey && phoneKey !== 'n/a' && !isPlaceholderPhone(phoneKey)) {
     if (context.seenCandidatesInFileMap.has(`phone:${phoneKey}`)) {
       const origRow = context.seenCandidatesInFileMap.get(`phone:${phoneKey}`);
-      return {
-        isDuplicate: true,
-        reason: `Duplicate phone: ${candidateData.phone} — duplicate of row ${origRow} in the file`,
-      };
+      candidateData.phone = null;
+      candidateData.phoneNormalized = null;
+      candidateData.needsContactDetails = true;
+      warnings.push(`Row ${rowNumber}: DUPLICATE_PHONE_IN_FILE: phone ${rawPhone} is same as row ${origRow}; imported without phone (needs_contact_details flag set)`);
+    } else {
+      context.seenCandidatesInFileMap.set(`phone:${phoneKey}`, rowNumber);
     }
-    context.seenCandidatesInFileMap.set(`phone:${phoneKey}`, rowNumber);
   }
 
-  // Never treat placeholder emails as duplicates
+  // In-file duplicate email detection
   if (emailKey && emailKey !== 'n/a' && emailKey !== '' && !isPlaceholderEmail(emailKey)) {
     if (context.seenCandidatesInFileMap.has(`email:${emailKey}`)) {
       const origRow = context.seenCandidatesInFileMap.get(`email:${emailKey}`);
-      return {
-        isDuplicate: true,
-        reason: `Duplicate email: ${candidateData.email} — duplicate of row ${origRow} in the file`,
-      };
+      candidateData.email = null;
+      candidateData.needsContactDetails = true;
+      warnings.push(`Row ${rowNumber}: DUPLICATE_EMAIL_IN_FILE: email ${rawEmail} is same as row ${origRow}; imported without email (needs_contact_details flag set)`);
+    } else {
+      context.seenCandidatesInFileMap.set(`email:${emailKey}`, rowNumber);
     }
-    context.seenCandidatesInFileMap.set(`email:${emailKey}`, rowNumber);
   }
 
-  return { isDuplicate: false };
+  return { isDuplicate: false, warnings };
 }
 
-async function findExistingCandidate(dbData, organizationId) {
+async function findExistingCandidate(dbData, organizationId, context = {}) {
   const phoneKey = normalizePhoneForDedup(dbData.phoneNormalized || dbData.phone);
   const email = normalizeString(dbData.email || '').toLowerCase();
   const orgId = organizationId || dbData.organizationId || 'defaultOrg';
 
-  if (phoneKey) {
+  // Placeholder phones (e.g. 1234567890, 0000000000) are NOT identities and must never participate in dedup
+  if (phoneKey && !isPlaceholderPhone(phoneKey)) {
     const byPhone = await prisma.candidate.findFirst({
       where: {
         organizationId: orgId,
+        isDeleted: false,
         OR: [
           { phoneNormalized: phoneKey },
           { phoneNormalized: `+91${phoneKey}` },
@@ -159,15 +193,36 @@ async function findExistingCandidate(dbData, organizationId) {
     if (byPhone) return byPhone;
   }
 
-  // Placeholder emails (e.g. dummy@gmail.com, test@, na@) are NOT identities and must never be matched
+  // Placeholder emails (e.g. dummy@gmail.com, test@, na@) are NOT identities and must never participate in dedup
   if (email && email !== 'n/a' && !isPlaceholderEmail(email)) {
-    return prisma.candidate.findFirst({
+    const byEmail = await prisma.candidate.findFirst({
       where: {
         organizationId: orgId,
+        isDeleted: false,
         email: { equals: email, mode: 'insensitive' },
       },
       select: { id: true },
     });
+    if (byEmail) return byEmail;
+  }
+
+  // In college drive context, if candidate has neither valid phone nor valid email (e.g. placeholder row),
+  // match against already-enrolled candidate in the same drive by name to avoid duplicate re-creation
+  if (context.driveId && dbData.fullName) {
+    const driveExisting = await prisma.collegeDriveCandidate.findFirst({
+      where: {
+        driveId: context.driveId,
+        fullName: dbData.fullName,
+      },
+      select: { candidateId: true },
+    });
+    if (driveExisting && driveExisting.candidateId) {
+      const cand = await prisma.candidate.findUnique({
+        where: { id: driveExisting.candidateId },
+        select: { id: true, isDeleted: true },
+      });
+      if (cand && !cand.isDeleted) return cand;
+    }
   }
 
   return null;
@@ -190,7 +245,7 @@ async function batchInsertCandidates(batch, context) {
   for (const row of batch) {
     const { rowNumber, ...dbData } = row;
     try {
-      const existing = await findExistingCandidate(dbData, context.organizationId);
+      const existing = await findExistingCandidate(dbData, context.organizationId, context);
       let saved;
 
       if (existing) {
@@ -239,15 +294,45 @@ async function batchInsertCandidates(batch, context) {
           });
           created++;
         } catch (createErr) {
-          const fallback = await prisma.candidate.findFirst({
-            where: {
-              OR: [
-                ...(dbData.phoneNormalized ? [{ phoneNormalized: dbData.phoneNormalized }] : []),
-                ...(dbData.phone ? [{ phone: dbData.phone }] : []),
-                ...(dbData.email && dbData.email !== 'N/A' ? [{ email: dbData.email }] : []),
-              ]
+          const fallbackConditions = [];
+          if (dbData.phoneNormalized && !isPlaceholderPhone(dbData.phoneNormalized)) {
+            fallbackConditions.push({ phoneNormalized: dbData.phoneNormalized });
+          }
+          if (dbData.phone && !isPlaceholderPhone(dbData.phone)) {
+            fallbackConditions.push({ phone: dbData.phone });
+          }
+          if (dbData.email && dbData.email !== 'N/A' && !isPlaceholderEmail(dbData.email)) {
+            fallbackConditions.push({ email: dbData.email });
+          }
+
+          let fallback = null;
+          if (fallbackConditions.length > 0) {
+            fallback = await prisma.candidate.findFirst({
+              where: {
+                organizationId: context.organizationId,
+                isDeleted: false,
+                OR: fallbackConditions,
+              },
+            });
+          }
+
+          if (!fallback && context.driveId && dbData.fullName) {
+            const driveExisting = await prisma.collegeDriveCandidate.findFirst({
+              where: {
+                driveId: context.driveId,
+                fullName: dbData.fullName,
+              },
+            });
+            if (driveExisting && driveExisting.candidateId) {
+              const matchedCandidate = await prisma.candidate.findUnique({
+                where: { id: driveExisting.candidateId },
+              });
+              if (matchedCandidate && !matchedCandidate.isDeleted) {
+                fallback = matchedCandidate;
+              }
             }
-          });
+          }
+
           if (fallback) {
             const { createdAt, createdById, organizationId, ...updateData } = dbData;
             saved = await prisma.candidate.update({
@@ -393,4 +478,6 @@ module.exports = {
   processCandidateUpload,
   enqueueJob,
   getJobStatus: getPipelineJobStatus,
+  transformCandidateRow,
+  duplicateCheckCandidate,
 };

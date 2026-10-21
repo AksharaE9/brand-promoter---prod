@@ -45,6 +45,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null, is
   };
 
   const uploadAndStartImport = async (targetFile) => {
+    if (isUploading) return;
     if (!isOnline) {
       setError("You're offline. Please connect to the internet to upload files.");
       return;
@@ -68,9 +69,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null, is
         : isDrive
           ? '/candidates/bulk-upload?context=drive'
           : '/candidates/bulk-upload';
-      const { data } = await api.post(uploadUrl, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await api.post(uploadUrl, formData);
 
       const assignedJobId = data.jobId || data.data?.jobId;
       if (assignedJobId) {
@@ -80,7 +79,11 @@ const BulkUploadModal = ({ isOpen, onClose, onImportComplete, driveId = null, is
       }
     } catch (err) {
       const resp = err.response?.data;
-      const msg = resp?.error?.message || resp?.message || err.message || 'Upload failed';
+      const serverReqId = err.requestId || resp?.error?.requestId || resp?.requestId;
+      const baseMsg = resp?.error?.message || resp?.message || err.message || 'Upload failed';
+      const msg = serverReqId && !baseMsg.includes(serverReqId)
+        ? `${baseMsg} (Reference: ${serverReqId})`
+        : baseMsg;
       setError(msg);
     } finally {
       setIsUploading(false);

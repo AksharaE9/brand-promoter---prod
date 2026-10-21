@@ -15,6 +15,9 @@ const PLACEHOLDER_EMAIL_PATTERNS = [
   /^dummy\d*@/i,
   /^fake(@.*)?$/i,
   /^fake\d*@/i,
+  /^test(@.*)?$/i,
+  /^test\d*@/i,
+  /^na(@.*)?$/i,
   /^placeholder(@.*)?$/i,
   /^noemail(@.*)?$/i,
   /^no_email(@.*)?$/i,
@@ -23,7 +26,13 @@ const PLACEHOLDER_EMAIL_PATTERNS = [
   /^nil(@.*)?$/i,
   /^notavailable(@.*)?$/i,
   /^notprovided(@.*)?$/i,
-  /^abc@xyz\./i,
+  /^abc@/i,
+  /^xyz@/i,
+];
+
+const PLACEHOLDER_PHONE_PATTERNS = [
+  /^(0123456789|1234567890|9876543210|0987654321)$/,
+  /^(\d)\1+$/, // all repeated digits: 0000000000, 9999999999, 1111111111, etc.
 ];
 
 /**
@@ -62,6 +71,28 @@ function isPlaceholderEmail(emailStr) {
 }
 
 /**
+ * Detects if a phone string is a placeholder / dummy / invalid pattern.
+ */
+function isPlaceholderPhone(phoneStr) {
+  if (!phoneStr) return false;
+  const digits = String(phoneStr).replace(/[^\d]/g, '');
+  if (!digits) return false;
+  for (const pat of PLACEHOLDER_PHONE_PATTERNS) {
+    if (pat.test(digits)) return true;
+  }
+  if (digits.length < 7) return true;
+  // 10-digit Indian numbers must start with 6, 7, 8, or 9
+  if (digits.length === 10 && !/^[6-9]/.test(digits)) {
+    return true;
+  }
+  // 12-digit Indian numbers (+91...)
+  if (digits.length === 12 && digits.startsWith('91') && !/^91[6-9]/.test(digits)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Validates whether an email has a standard valid format.
  */
 function isValidEmailFormat(emailStr) {
@@ -72,7 +103,7 @@ function isValidEmailFormat(emailStr) {
 
 /**
  * Normalizes email address.
- * Returns { email, isPlaceholder, rawValue, isValid }
+ * Returns { email, isPlaceholder, rawValue, isValid, needsContactDetails }
  */
 function normalizeEmailCell(rawEmail) {
   const cleaned = normalizeString(rawEmail).toLowerCase();
@@ -97,30 +128,36 @@ function normalizeEmailCell(rawEmail) {
  */
 function normalizePhoneCell(rawPhone) {
   const cleaned = normalizeString(rawPhone);
-  if (!cleaned) return { phone: '', phoneNormalized: null, digits: '', isValid: false };
+  if (!cleaned) return { phone: '', phoneNormalized: null, digits: '', rawPhone: '', isValid: false, isPlaceholder: false, needsContactDetails: false };
 
   // Strip non-digit and non-plus characters (e.g. whitespace, dashes, parentheses)
   const phoneDigits = cleaned.replace(/[^\d+]/g, '');
   const onlyDigits = cleaned.replace(/[^\d]/g, '');
 
-  let phoneNormalized = null;
-  const isValid = onlyDigits.length >= 7 && onlyDigits.length <= 15;
+  const isPlaceholder = isPlaceholderPhone(onlyDigits);
+  const isValid = !isPlaceholder && onlyDigits.length >= 7 && onlyDigits.length <= 15;
 
-  if (onlyDigits.length === 10) {
-    phoneNormalized = `+91${onlyDigits}`;
-  } else if (onlyDigits.length === 12 && onlyDigits.startsWith('91')) {
-    phoneNormalized = `+${onlyDigits}`;
-  } else if (phoneDigits.startsWith('+') && isValid) {
-    phoneNormalized = `+${onlyDigits}`;
-  } else if (isValid) {
-    phoneNormalized = onlyDigits;
+  let phoneNormalized = null;
+  if (isValid) {
+    if (onlyDigits.length === 10) {
+      phoneNormalized = `+91${onlyDigits}`;
+    } else if (onlyDigits.length === 12 && onlyDigits.startsWith('91')) {
+      phoneNormalized = `+${onlyDigits}`;
+    } else if (phoneDigits.startsWith('+')) {
+      phoneNormalized = `+${onlyDigits}`;
+    } else {
+      phoneNormalized = onlyDigits;
+    }
   }
 
   return {
-    phone: phoneDigits,
-    phoneNormalized: phoneNormalized || (onlyDigits ? `+${onlyDigits}` : null),
+    phone: isPlaceholder ? '' : phoneDigits,
+    phoneNormalized: isPlaceholder ? null : (phoneNormalized || (onlyDigits ? `+${onlyDigits}` : null)),
     digits: onlyDigits,
+    rawPhone: cleaned,
     isValid,
+    isPlaceholder,
+    needsContactDetails: isPlaceholder || !isValid,
   };
 }
 
@@ -149,6 +186,7 @@ function normalizeCandidateRow(rawRow) {
       normalized.phoneNormalized = phoneResult.phoneNormalized;
       normalized.phoneDigits = phoneResult.digits;
       normalized.isPhoneValid = phoneResult.isValid;
+      normalized.isPlaceholderPhone = phoneResult.isPlaceholder;
     } else {
       normalized[key] = normalizeString(val);
     }
@@ -160,6 +198,7 @@ function normalizeCandidateRow(rawRow) {
 module.exports = {
   normalizeString,
   isPlaceholderEmail,
+  isPlaceholderPhone,
   isValidEmailFormat,
   normalizeEmailCell,
   normalizePhoneCell,
