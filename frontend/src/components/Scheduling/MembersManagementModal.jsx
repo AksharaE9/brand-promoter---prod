@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
-import { apiGet } from '../../lib/api';
+import { apiGet, clearApiCachePattern } from '../../lib/api';
 
 export default function MembersManagementModal({ isOpen, onClose, onMembersUpdated }) {
-  const [members, setMembers] = useState([]);
+  const queryClient = useQueryClient();
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
@@ -13,45 +13,70 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
   const [newName, setNewName] = useState('');
   const [newUserId, setNewUserId] = useState('');
 
-  const loadData = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const [membersData, usersRes] = await Promise.all([
-        schedulingLeadApi.getMembers(),
-        apiGet('/users').catch(() => ({ data: [] })),
-      ]);
-      setMembers(membersData || []);
-      setUsers(usersRes.data || []);
-    } catch (err) {
-      setError(err.message || 'Failed to load members');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Custom modal confirmation state for deletion (no native browser confirm dialog)
+  const [memberToDelete, setMemberToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
+  // TanStack Query for members with shared query key prefix 'telecalling-team'
+  const {
+    data: members = [],
+    isLoading: loading,
+    error: queryError,
+    refetch: refetchMembers,
+  } = useQuery({
+    queryKey: ['telecalling-team', 'members'],
+    queryFn: async () => {
+      clearApiCachePattern('/scheduling/members');
+      return await schedulingLeadApi.getMembers();
+    },
+    enabled: Boolean(isOpen),
+    staleTime: 5000,
+  });
+
+  // Fetch unlinked users when modal opens
   useEffect(() => {
     if (isOpen) {
-      loadData();
+      setError('');
+      setBanner('');
+      apiGet('/users')
+        .then((res) => setUsers(res?.data || []))
+        .catch(() => setUsers([]));
     }
   }, [isOpen]);
 
+  // Combined error display
+  const displayError = error || (queryError ? queryError.message : '');
+
+  // Normalized name and duplicate check
+  const normalizedNewName = newName.trim().replace(/\s+/g, ' ');
+  const isDuplicateName = Boolean(
+    normalizedNewName &&
+      members.some((m) => m.name.toLowerCase() === normalizedNewName.toLowerCase())
+  );
+
+  const invalidateTeamData = async () => {
+    clearApiCachePattern('/scheduling');
+    await queryClient.invalidateQueries({ queryKey: ['telecalling-team'] });
+    if (onMembersUpdated) {
+      onMembersUpdated();
+    }
+  };
+
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!normalizedNewName) return;
     setSaving(true);
     setError('');
     setBanner('');
     try {
       await schedulingLeadApi.createMember({
-        name: newName.trim(),
+        name: normalizedNewName,
         userId: newUserId || null,
       });
-      setBanner('Member added successfully.');
+      setBanner(`Member "${normalizedNewName}" added successfully.`);
       setNewName('');
       setNewUserId('');
-      await loadData();
-      if (onMembersUpdated) onMembersUpdated();
+      await invalidateTeamData();
     } catch (err) {
       setError(err.message || 'Failed to add member');
     } finally {
@@ -65,8 +90,7 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
     try {
       await schedulingLeadApi.updateMember(memberId, { active: !currentActive });
       setBanner(`Member ${!currentActive ? 'activated' : 'deactivated'} successfully.`);
-      await loadData();
-      if (onMembersUpdated) onMembersUpdated();
+      await invalidateTeamData();
     } catch (err) {
       setError(err.message || 'Failed to update member status');
     }
@@ -78,30 +102,35 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
     try {
       await schedulingLeadApi.updateMember(memberId, { userId: targetUserId || null });
       setBanner('User link updated successfully.');
-      await loadData();
-      if (onMembersUpdated) onMembersUpdated();
+      await invalidateTeamData();
     } catch (err) {
       setError(err.message || 'Failed to link user');
     }
   };
 
-  const handleDeleteMember = async (memberId, memberName) => {
-    if (!window.confirm(`Are you sure you want to delete ${memberName}? This will also delete all associated lead lists, reports, and files.`)) {
-      return;
-    }
+  const handleConfirmDelete = async () => {
+    if (!memberToDelete) return;
+    setDeleting(true);
     setError('');
     setBanner('');
     try {
-      await schedulingLeadApi.deleteMember(memberId);
-      setBanner(`Member ${memberName} deleted successfully.`);
-      await loadData();
-      if (onMembersUpdated) onMembersUpdated();
+      const res = await schedulingLeadApi.deleteMember(memberToDelete.id);
+      setBanner(res?.message || `Member "${memberToDelete.name}" deleted successfully.`);
+      setMemberToDelete(null);
+      await invalidateTeamData();
     } catch (err) {
       setError(err.message || 'Failed to delete member');
+    } finally {
+      setDeleting(false);
     }
   };
 
   if (!isOpen) return null;
+
+  // Breakdown counts for clear self-explanatory header
+  const totalCount = members.length;
+  const activeCount = members.filter((m) => m.active).length;
+  const inactiveCount = totalCount - activeCount;
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
@@ -121,14 +150,17 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
         </div>
 
         <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
-          {error && (
+          {displayError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
-              {error}
+              {displayError}
             </div>
           )}
           {banner && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700 font-medium">
-              {banner}
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700 font-medium flex items-center justify-between">
+              <span>{banner}</span>
+              <button onClick={() => setBanner('')} className="text-emerald-700 font-bold hover:underline text-[10px]">
+                Dismiss
+              </button>
             </div>
           )}
 
@@ -136,30 +168,42 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
           <form onSubmit={handleAddMember} className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
             <h3 className="text-xs uppercase font-bold text-slate-500 tracking-wider">Add New Member</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                type="text"
-                required
-                placeholder="Member Name (e.g. Madumathi)"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="h-10 px-3 rounded-xl border border-slate-200 text-sm focus:border-blue-500 outline-none bg-white"
-              />
-              <select
-                value={newUserId}
-                onChange={(e) => setNewUserId(e.target.value)}
-                className="h-10 px-3 rounded-xl border border-slate-200 text-sm focus:border-blue-500 outline-none bg-white"
-              >
-                <option value="">-- Link User Account (Optional) --</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.fullName} ({u.email})
-                  </option>
-                ))}
-              </select>
+              <div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Member Name (e.g. Madumathi)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className={`w-full h-10 px-3 rounded-xl border text-sm outline-none bg-white transition-colors ${
+                    isDuplicateName ? 'border-amber-400 focus:border-amber-500' : 'border-slate-200 focus:border-blue-500'
+                  }`}
+                />
+                {isDuplicateName && (
+                  <p className="text-[11px] text-amber-600 font-medium mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                    A member with this name already exists.
+                  </p>
+                )}
+              </div>
+              <div>
+                <select
+                  value={newUserId}
+                  onChange={(e) => setNewUserId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-slate-200 text-sm focus:border-blue-500 outline-none bg-white"
+                >
+                  <option value="">-- Link User Account (Optional) --</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} ({u.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <button
               type="submit"
-              disabled={saving || !newName.trim()}
+              disabled={saving || !normalizedNewName}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-1"
             >
               <span className="material-symbols-outlined text-sm">person_add</span>
@@ -167,9 +211,44 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
             </button>
           </form>
 
-          {/* Existing Members List */}
+          {/* Delete Confirmation Card (in-modal, replacing native browser confirm) */}
+          {memberToDelete && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-3 animate-in fade-in duration-150">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-red-600 text-xl shrink-0 mt-0.5">warning</span>
+                <div>
+                  <h4 className="text-sm font-bold text-red-900">Delete {memberToDelete.name}?</h4>
+                  <p className="text-xs text-red-700 mt-0.5">
+                    If this member has past lead lists, calls, or reports, their history will be preserved and the member will be safely archived. Otherwise, the member will be permanently deleted.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setMemberToDelete(null)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-semibold text-xs rounded-xl hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleConfirmDelete}
+                  className="px-3 py-1.5 bg-red-600 text-white font-bold text-xs rounded-xl hover:bg-red-700 shadow-sm transition-colors flex items-center gap-1"
+                >
+                  {deleting ? 'Deleting...' : 'Confirm Delete'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Existing Members List with Explanatory Counts */}
           <div className="space-y-2">
-            <h3 className="text-xs uppercase font-bold text-slate-500 tracking-wider">Existing Team Members ({members.length})</h3>
+            <h3 className="text-xs uppercase font-bold text-slate-500 tracking-wider">
+              Existing Team Members ({totalCount} total · {activeCount} active · {inactiveCount} inactive)
+            </h3>
             {loading ? (
               <div className="p-8 text-center text-slate-400 text-sm animate-pulse">Loading members...</div>
             ) : members.length === 0 ? (
@@ -229,7 +308,7 @@ export default function MembersManagementModal({ isOpen, onClose, onMembersUpdat
 
                       <button
                         type="button"
-                        onClick={() => handleDeleteMember(m.id, m.name)}
+                        onClick={() => setMemberToDelete(m)}
                         className="h-8 w-8 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors flex items-center justify-center shrink-0"
                         title="Delete Member"
                       >

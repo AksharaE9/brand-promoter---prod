@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import EnterpriseLayout, { EnterpriseSidebar, EnterpriseTopbar } from '../../components/EnterpriseLayout';
 import { PageEnter, Reveal } from '../../components/PageMotion';
 import { CandidateNameLink } from '../../components/CandidateNameLink';
 import MemberFileAttachmentModal from '../../components/Scheduling/MemberFileAttachmentModal';
-import { getStoredUser } from '../../lib/api';
+import { getStoredUser, clearApiCachePattern } from '../../lib/api';
 import { schedulingLeadApi } from '../../services/schedulingLeadApi';
 import { computeCompletionPercentage } from '../../lib/leadImportSchema';
 import { lazyWithRetry } from '../../lib/lazyWithRetry';
@@ -11,7 +11,7 @@ import { lazyWithRetry } from '../../lib/lazyWithRetry';
 const MembersManagementModal = lazyWithRetry(() => import('../../components/Scheduling/MembersManagementModal'), 'MembersManagementModal');
 const LeadListImportModal = lazyWithRetry(() => import('../../components/Scheduling/LeadListImportModal'), 'LeadListImportModal');
 const WorkDoneReportModal = lazyWithRetry(() => import('../../components/Scheduling/WorkDoneReportModal'), 'WorkDoneReportModal');
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import useDebounce from '../../hooks/useDebounce';
 import { search } from '../../lib/searchClient';
 import UserChip from '../../components/UserChip';
@@ -20,8 +20,6 @@ import { enterpriseNavItems, enterpriseFooterLinks } from '../../config/enterpri
 
 import { getTodayString } from '../../lib/datetime';
 
-const OVERVIEW_TIMEOUT_MS = 10_000; // 10 s — after this, replace loading with error+retry
-
 export default function SchedulingPage() {
   const currentUser = getStoredUser();
   const isAdmin = currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'RECRUITER';
@@ -29,11 +27,34 @@ export default function SchedulingPage() {
   const todayStr = getTodayString();
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
-  // Admin Data
-  const [adminOverview, setAdminOverview] = useState([]);
-  const [adminLoading, setAdminLoading] = useState(true);
-  const [adminError, setAdminError] = useState('');
-  const overviewTimeoutRef = useRef(null);
+  const queryClient = useQueryClient();
+
+  // Admin Overview Data via TanStack Query (shared key prefix 'telecalling-team')
+  const {
+    data: overviewData,
+    isLoading: adminLoading,
+    error: adminQueryError,
+    refetch: refetchAdminOverview,
+  } = useQuery({
+    queryKey: ['telecalling-team', 'overview', selectedDate],
+    queryFn: async () => {
+      clearApiCachePattern('/scheduling/admin/overview');
+      return await schedulingLeadApi.getAdminOverview(selectedDate, { fresh: true });
+    },
+    enabled: Boolean(isAdmin),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 5_000,
+  });
+
+  const adminError = adminQueryError ? adminQueryError.message : '';
+
+  const adminOverview = useMemo(() => {
+    const list = Array.isArray(overviewData) ? overviewData : (overviewData?.data || []);
+    return [...list].sort((a, b) =>
+      (a.memberName || '').localeCompare(b.memberName || '', undefined, { sensitivity: 'base' })
+    );
+  }, [overviewData]);
 
   // Member Data
   const [myList, setMyList] = useState(null);
@@ -70,35 +91,6 @@ export default function SchedulingPage() {
     ? (searchResults?.data || [])
     : (myList?.leads || []);
 
-  const loadAdminData = useCallback(async () => {
-    setAdminLoading(true);
-    setAdminError('');
-    setError('');
-
-    // Safety net: if the request takes > OVERVIEW_TIMEOUT_MS, surface an error
-    // instead of leaving the user stuck on "Loading telecaller overview..."
-    clearTimeout(overviewTimeoutRef.current);
-    overviewTimeoutRef.current = setTimeout(() => {
-      setAdminLoading((prev) => {
-        if (prev) {
-          setAdminError('Request timed out. The server took too long to respond.');
-        }
-        return false;
-      });
-    }, OVERVIEW_TIMEOUT_MS);
-
-    try {
-      const data = await schedulingLeadApi.getAdminOverview(selectedDate);
-      clearTimeout(overviewTimeoutRef.current);
-      setAdminOverview(data || []);
-    } catch (err) {
-      clearTimeout(overviewTimeoutRef.current);
-      setAdminError(err.message || 'Failed to load admin overview');
-    } finally {
-      setAdminLoading(false);
-    }
-  }, [selectedDate]);
-
   const loadMemberData = useCallback(async () => {
     setMemberLoading(true);
     setError('');
@@ -117,16 +109,18 @@ export default function SchedulingPage() {
   }, [selectedDate]);
 
   const refreshAll = useCallback(() => {
-    if (isAdmin) {
-      loadAdminData();
-    } else {
+    clearApiCachePattern('/scheduling');
+    queryClient.invalidateQueries({ queryKey: ['telecalling-team'] });
+    if (!isAdmin) {
       loadMemberData();
     }
-  }, [isAdmin, loadAdminData, loadMemberData]);
+  }, [isAdmin, loadMemberData, queryClient]);
 
   useEffect(() => {
-    refreshAll();
-  }, [refreshAll]);
+    if (!isAdmin) {
+      loadMemberData();
+    }
+  }, [isAdmin, loadMemberData]);
 
   // Derived metrics for member
   const totalLeadsToday = myList?.totalLeads || 0;
@@ -244,6 +238,7 @@ export default function SchedulingPage() {
                     <div>
                       <div className="text-xs text-slate-400 font-bold uppercase">Active Team Members</div>
                       <div className="text-2xl font-black text-slate-800">{totalActiveMembers}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Active telecallers for {selectedDate}</div>
                     </div>
                   </div>
 
@@ -294,7 +289,7 @@ export default function SchedulingPage() {
                       <span className="material-symbols-outlined text-4xl text-red-300">cloud_off</span>
                       <div className="text-sm text-red-600 font-semibold">{adminError}</div>
                       <button
-                        onClick={loadAdminData}
+                        onClick={() => refetchAdminOverview()}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all"
                       >
                         Retry
@@ -320,15 +315,24 @@ export default function SchedulingPage() {
                         <tbody className="divide-y divide-slate-100">
                           {adminOverview.map((item) => (
                             <tr key={item.memberId} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="p-4 font-bold text-slate-800 flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                                  {item.memberName.charAt(0).toUpperCase()}
+                              <td className="p-4 font-bold text-slate-800">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                                    {item.memberName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <CandidateNameLink
+                                      type="member"
+                                      candidateId={item.memberId}
+                                      candidateName={item.memberName}
+                                    />
+                                    {item.linkedUser && (
+                                      <div className="text-[10px] text-slate-400 font-normal">
+                                        Linked: {item.linkedUser.fullName}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                                <CandidateNameLink
-                                  type="member"
-                                  candidateId={item.memberId}
-                                  candidateName={item.memberName}
-                                />
                               </td>
 
                               <td className="p-4 text-slate-600">

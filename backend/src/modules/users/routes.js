@@ -206,10 +206,15 @@ router.patch(
     // Sync status change to associated scheduling member if exists
     await prisma.schedulingMember.updateMany({
       where: { userId: id },
-      data: { active: status === "ACTIVE" }
+      data: {
+        active: status === "ACTIVE",
+        deactivatedAt: status === "ACTIVE" ? null : new Date(),
+      }
     }).catch(err => {
       console.error("[UpdateUserStatus] Failed to update associated scheduling member status:", err.message);
     });
+    const { deleteCachePattern } = require("../../utils/cache");
+    deleteCachePattern('scheduling:overview*').catch(() => {});
 
     const orgId = req.user.organizationId || "defaultOrg";
     const inv = require("../../utils/cacheInvalidation");

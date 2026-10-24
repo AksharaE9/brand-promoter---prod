@@ -819,6 +819,8 @@ model SchedulingMember {
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
+  deactivatedAt DateTime?
+  deletedAt     DateTime?
   is_test_data Boolean  @default(false)
 
   leadLists    SchedulingLeadList[]

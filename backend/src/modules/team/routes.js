@@ -5,6 +5,7 @@ const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
 const sse = require("../../utils/sse");
 const inv = require("../../utils/cacheInvalidation");
+const { deleteCachePattern } = require("../../utils/cache");
 
 const router = express.Router();
 router.use(auth);
@@ -295,10 +296,11 @@ router.delete(
     // Deactivate associated scheduling member if exists
     await prisma.schedulingMember.updateMany({
       where: { userId },
-      data: { active: false }
+      data: { active: false, deactivatedAt: new Date() }
     }).catch(err => {
       console.error("[DeleteMember] Failed to deactivate associated scheduling member:", err.message);
     });
+    deleteCachePattern('scheduling:overview*').catch(() => {});
 
     // Revoke sessions asynchronously in the background to not block the HTTP response
     prisma.session.deleteMany({ where: { userId } }).catch(err => {
@@ -355,10 +357,11 @@ router.patch(
     // Reactivate associated scheduling member if exists
     await prisma.schedulingMember.updateMany({
       where: { userId },
-      data: { active: true }
+      data: { active: true, deactivatedAt: null }
     }).catch(err => {
       console.error("[RestoreMember] Failed to reactivate associated scheduling member:", err.message);
     });
+    deleteCachePattern('scheduling:overview*').catch(() => {});
 
     // Invalidate cache before returning response to avoid race conditions
     await inv.user(myOrg, userId);

@@ -19,6 +19,15 @@ function checkDirectory(dir) {
         console.error(err.stderr ? err.stderr.toString() : err.message);
         errors++;
       }
+
+      // 5.1 Architecture Guard: Only telecallingMemberService may call prisma.schedulingMember.findMany
+      if (!fullPath.includes('telecallingMemberService') && !fullPath.includes('analyzeAndTeardownTestData')) {
+        const fileContent = fs.readFileSync(fullPath, 'utf8');
+        if (fileContent.includes('prisma.schedulingMember.findMany')) {
+          console.error(`[Architecture Guard] Direct prisma.schedulingMember.findMany forbidden in: ${fullPath}. Use getTelecallingMembers() instead.`);
+          errors++;
+        }
+      }
     }
   }
   return errors;

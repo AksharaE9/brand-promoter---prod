@@ -35,6 +35,19 @@ const inflightRequests = new Map();
 const apiCache = new Map();
 const CACHE_TTL = 90_000; // 90 seconds default
 
+export function clearApiCachePattern(pattern) {
+  if (!pattern) {
+    apiCache.clear();
+    return;
+  }
+  const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+  for (const key of apiCache.keys()) {
+    if (regex.test(key)) {
+      apiCache.delete(key);
+    }
+  }
+}
+
 // Routes that benefit from a longer client-side cache (heavy pages)
 const LONG_CACHE_ROUTES = [
   '/dashboard/init',
@@ -502,6 +515,13 @@ export async function request(path, options = {}, retries = null) {
 
         if (isGet) {
           apiCache.set(requestKey, { data, timestamp: Date.now() });
+        } else {
+          if (path.includes('/scheduling')) {
+            clearApiCachePattern('/scheduling');
+            if (_registeredQueryClient) {
+              _registeredQueryClient.invalidateQueries({ queryKey: ['telecalling-team'] });
+            }
+          }
         }
         return data;
       } catch (err) {

@@ -14,6 +14,14 @@ const { isDbStorageKey, makeStorageKey, streamDbFile } = require('../../utils/db
 const { logAudit } = require('../../utils/audit');
 const sse = require('../../utils/sse');
 const { getCached, invalidate } = require('../../utils/cache');
+const {
+  getTelecallingMembers,
+  deleteTelecallingMember,
+  cleanMemberName,
+  checkDuplicateName,
+  assertUserLinkable,
+  invalidateTelecallingOverviewCache,
+} = require('./telecallingMemberService');
 
 
 const { parseSheetBuffer } = require('../../lib/sheetParser');
@@ -208,13 +216,9 @@ router.get(
   auth,
   requireRoles('SUPER_ADMIN', 'RECRUITER'),
   asyncHandler(async (req, res) => {
-    const members = await prisma.schedulingMember.findMany({
-      include: {
-        user: {
-          select: { id: true, fullName: true, email: true, role: true },
-        },
-      },
-      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+    const members = await getTelecallingMembers({
+      includeInactive: true,
+      sortBy: 'status',
     });
 
     res.json({
@@ -234,22 +238,23 @@ router.post(
   requireRoles('SUPER_ADMIN', 'RECRUITER'),
   asyncHandler(async (req, res) => {
     const { name, userId } = req.body;
-    if (!name || !name.trim()) {
+    const cleanName = cleanMemberName(name);
+    if (!cleanName) {
       throw new ApiError(400, 'Member name is required');
     }
 
+    const duplicate = await checkDuplicateName(cleanName);
+    if (duplicate) {
+      throw new ApiError(409, `A telecalling member with name "${duplicate.name}" already exists.`);
+    }
+
     if (userId) {
-      const existingLink = await prisma.schedulingMember.findUnique({
-        where: { userId },
-      });
-      if (existingLink) {
-        throw new ApiError(409, 'User account is already linked to another scheduling member');
-      }
+      await assertUserLinkable(userId);
     }
 
     const member = await prisma.schedulingMember.create({
       data: {
-        name: name.trim(),
+        name: cleanName,
         userId: userId || null,
         active: true,
       },
@@ -259,6 +264,9 @@ router.post(
         },
       },
     });
+
+    // Invalidate overview cache immediately
+    await invalidateTelecallingOverviewCache();
 
     await logAudit({
       actorUserId: req.user.id,
@@ -291,23 +299,30 @@ router.patch(
     const existing = await prisma.schedulingMember.findUnique({
       where: { id: memberId },
     });
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       throw new ApiError(404, 'Scheduling member not found');
     }
 
     const updateData = {};
-    if (name !== undefined && name.trim() !== '') {
-      updateData.name = name.trim();
+    if (name !== undefined) {
+      const cleanName = cleanMemberName(name);
+      if (!cleanName) {
+        throw new ApiError(400, 'Member name cannot be empty');
+      }
+      const duplicate = await checkDuplicateName(cleanName, memberId);
+      if (duplicate) {
+        throw new ApiError(409, `A telecalling member with name "${duplicate.name}" already exists.`);
+      }
+      updateData.name = cleanName;
     }
     if (active !== undefined) {
-      updateData.active = Boolean(active);
+      const isNowActive = Boolean(active);
+      updateData.active = isNowActive;
+      updateData.deactivatedAt = isNowActive ? null : new Date();
     }
     if (userId !== undefined) {
       if (userId && userId !== existing.userId) {
-        const linked = await prisma.schedulingMember.findUnique({ where: { userId } });
-        if (linked && linked.id !== memberId) {
-          throw new ApiError(409, 'User account is already linked to another scheduling member');
-        }
+        await assertUserLinkable(userId, memberId);
       }
       updateData.userId = userId || null;
     }
@@ -319,6 +334,9 @@ router.patch(
         user: { select: { id: true, fullName: true, email: true, role: true, status: true } },
       },
     });
+
+    // Invalidate overview cache immediately
+    await invalidateTelecallingOverviewCache();
 
     const myOrg = req.user.organizationId || "defaultOrg";
     if (active !== undefined && updated.userId) {
@@ -380,7 +398,7 @@ router.patch(
 
 /**
  * DELETE /api/scheduling/members/:memberId
- * Admin: Delete a scheduling member. Cascaded deletes are configured in the schema.
+ * Admin: Delete a scheduling member. Soft-deletes if history exists; hard-deletes otherwise.
  */
 router.delete(
   '/members/:memberId',
@@ -388,94 +406,24 @@ router.delete(
   requireRoles('SUPER_ADMIN', 'RECRUITER'),
   asyncHandler(async (req, res) => {
     const { memberId } = req.params;
-
-    const existing = await prisma.schedulingMember.findUnique({
-      where: { id: memberId },
-    });
-    if (!existing) {
-      throw new ApiError(404, 'Scheduling member not found');
-    }
-
     const myOrg = req.user.organizationId || "defaultOrg";
 
-    if (existing.userId) {
-      // Check if linked user has active candidates. If so, block the deletion.
-      const INACTIVE_STATUSES = ["REJECTED", "JOINED", "OFFER_DECLINED"];
-      const [c1, c3] = await Promise.all([
-        prisma.candidate.count({
-          where: {
-            organizationId: myOrg,
-            assignedRecruiterId: existing.userId,
-            status: { notIn: INACTIVE_STATUSES },
-            isDeleted: false,
-          },
-        }),
-        prisma.candidate.count({
-          where: {
-            organizationId: myOrg,
-            mentorId: existing.userId,
-            status: { notIn: INACTIVE_STATUSES },
-            isDeleted: false,
-          },
-        }),
-      ]);
-      const activeCount = c1 + c3;
-      if (activeCount > 0) {
-        throw new ApiError(400, `The linked user has ${activeCount} active candidates. Please reassign them first to delete this member.`);
-      }
-
-      // Soft delete the User record
-      const targetUser = await prisma.user.findUnique({ where: { id: existing.userId } });
-      if (targetUser && !targetUser.isDeleted) {
-        await prisma.user.update({
-          where: { id: existing.userId },
-          data: { isDeleted: true, isActive: false, deletedAt: new Date(), deletedBy: req.user.id, status: "INACTIVE" },
-        });
-
-        // Revoke sessions
-        prisma.session.deleteMany({ where: { userId: existing.userId } }).catch(err => {
-          console.error("[DeleteSchedulingMember] Background session delete failed:", err.message);
-        });
-
-        // Invalidate cache
-        const inv = require("../../utils/cacheInvalidation");
-        await inv.user(myOrg, existing.userId);
-        await invalidateUserCache(existing.userId);
-
-        // Audit log and SSE
-        await logAudit({
-          actorUserId: req.user.id,
-          actorName: req.user.fullName,
-          action: "TEAM_MEMBER_DELETED",
-          entityType: "USER",
-          entityId: existing.userId,
-          entityName: targetUser.fullName,
-          oldData: { isDeleted: false, status: targetUser.status },
-          newData: { isDeleted: true, status: "INACTIVE" },
-          ipAddress: req.ip,
-        });
-
-        sse.broadcastToOrg(myOrg, "TEAM_MEMBER_DELETED", { userId: existing.userId, deletedBy: req.user.id, deletedByName: req.user.fullName });
-        sse.sendToUser(existing.userId, "ACCOUNT_DEACTIVATED", { message: "Your account has been deactivated" });
-      }
-    }
-
-    await prisma.schedulingMember.delete({
-      where: { id: memberId },
-    });
+    const { hasHistory, member: existing } = await deleteTelecallingMember(memberId, req.user, myOrg);
 
     await logAudit({
       actorUserId: req.user.id,
       action: 'DELETE_SCHEDULING_MEMBER',
       entityType: 'SCHEDULING_MEMBER',
       entityId: memberId,
-      oldData: { name: existing.name, userId: existing.userId },
+      oldData: { name: existing.name, userId: existing.userId, softDeleted: hasHistory },
       ipAddress: req.ip,
     });
 
     res.json({
       success: true,
-      message: 'Scheduling member deleted successfully',
+      message: hasHistory
+        ? 'Scheduling member archived successfully (history preserved)'
+        : 'Scheduling member deleted successfully',
     });
   })
 );
@@ -1082,12 +1030,9 @@ router.get(
     const overview = await getCached(cacheKey, async () => {
       const targetDate = new Date(`${targetDateStr}T00:00:00.000Z`);
 
-      const members = await prisma.schedulingMember.findMany({
-        where: { active: true },
-        include: {
-          user: { select: { id: true, fullName: true, email: true } },
-        },
-        orderBy: { name: 'asc' },
+      const members = await getTelecallingMembers({
+        date: targetDateStr,
+        includeInactive: false,
       });
 
       const memberIds = members.map((m) => m.id);

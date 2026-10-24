@@ -5,8 +5,8 @@ import { buildApiUrl, apiGet, apiPost, apiPatch, apiDelete, getStoredToken } fro
  */
 export const schedulingLeadApi = {
   /** Admin: Fetch all members */
-  getMembers: async () => {
-    const res = await apiGet('/scheduling/members');
+  getMembers: async (options = {}) => {
+    const res = await apiGet('/scheduling/members', { bypassCache: true, ...options });
     return res.data;
   },
 
@@ -64,9 +64,12 @@ export const schedulingLeadApi = {
   },
 
   /** Admin: Overview across all members for date */
-  getAdminOverview: async (date) => {
-    const query = date ? `?date=${date}` : '';
-    const res = await apiGet(`/scheduling/admin/overview${query}`);
+  getAdminOverview: async (date, options = {}) => {
+    const params = new URLSearchParams();
+    if (date) params.append('date', date);
+    if (options.fresh) params.append('fresh', '1');
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await apiGet(`/scheduling/admin/overview${qs}`, { bypassCache: true, ...options });
     return res.data;
   },
 

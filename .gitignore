@@ -40,3 +40,8 @@ backend/backups/
 
 # Build-time generated version
 backend/src/version.json
+
+# Exports
+/exports/
+/backend/exports/
+
