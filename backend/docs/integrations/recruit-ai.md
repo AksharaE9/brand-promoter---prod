@@ -3,7 +3,7 @@
 **Integration Platform:** Recruit AI / HireIQ Voice Interviewer  
 **Inbound Webhook Endpoint:** `POST https://brandpromoter-backend.onrender.com/api/v1/integrations/recruit-ai/webhook`  
 **Outbound Schedule Endpoint:** `POST https://187.127.137.103/api/integrations/talentos/schedule`  
-**Authentication Header:** `x-api-key: hireiq_live_79aF2xK9_mQ8vL4wP1zX3cR6yB0jH5eT2`  
+**Authentication Header:** `x-api-key: <RECRUITAI_API_KEY>`  
 **Security Standard:** HMAC-SHA256 Signatures, Timing-safe verification, Idempotent deduplication
 
 ---
@@ -30,7 +30,7 @@ The integration between **TalentOS** and **Recruit AI / HireIQ** functions in tw
 
 **Endpoint:** `POST https://187.127.137.103/api/integrations/talentos/schedule`  
 *(Or local test: `POST http://localhost:5000/api/integrations/talentos/schedule`)*  
-**Header:** `x-api-key: hireiq_live_79aF2xK9_mQ8vL4wP1zX3cR6yB0jH5eT2`
+**Header:** `x-api-key: <RECRUITAI_API_KEY>`
 
 ### Payload Schema:
 ```json

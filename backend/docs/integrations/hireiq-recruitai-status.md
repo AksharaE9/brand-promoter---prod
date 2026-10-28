@@ -2,7 +2,7 @@
 
 **Date:** October 28, 2026  
 **Target Server:** `https://187.127.137.103`  
-**API Key Provided by Partner:** `hireiq_live_79aF2xK9_mQ8vL4wP1zX3cR6yB0jH5eT2`  
+**API Key Provided by Partner:** `hireiq_live_...` (Stored in Render as `RECRUITAI_API_KEY`)  
 **TalentOS Production Backend:** `https://brandpromoter-backend.onrender.com`
 
 ---
@@ -51,7 +51,7 @@ Please send this checklist directly to the HireIQ / Recruit AI engineering team:
 Hi HireIQ Engineering Team,
 
 TalentOS has completed our side of the integration:
-1. TalentOS Schedule Dispatcher is configured with your key: hireiq_live_79aF2xK9_mQ8vL4wP1zX3cR6yB0jH5eT2.
+1. TalentOS Schedule Dispatcher is configured with your key: <RECRUITAI_API_KEY>.
 2. TalentOS Webhook Receiver is live to receive interview results at:
    POST https://brandpromoter-backend.onrender.com/api/v1/integrations/recruit-ai/webhook
 
