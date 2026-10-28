@@ -485,6 +485,8 @@ function parseCliArgs() {
   let cityArg = 'bangalore';
   let familiesArg = null;
   let dateArg = null;
+  let coursesArg = null;
+  let outcomesArg = null;
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -492,10 +494,18 @@ function parseCliArgs() {
       cityArg = args[++i].toLowerCase();
     } else if (a.startsWith('--city=')) {
       cityArg = a.split('=')[1].toLowerCase();
-    } else if (a === '--families' && args[i + 1]) {
+    } else if ((a === '--families' || a === '--family' || a === '--roles' || a === '--role') && args[i + 1]) {
       familiesArg = args[++i];
-    } else if (a.startsWith('--families=')) {
+    } else if (a.startsWith('--families=') || a.startsWith('--roles=') || a.startsWith('--role=')) {
       familiesArg = a.split('=')[1];
+    } else if ((a === '--courses' || a === '--course') && args[i + 1]) {
+      coursesArg = args[++i].toLowerCase();
+    } else if (a.startsWith('--courses=') || a.startsWith('--course=')) {
+      coursesArg = a.split('=')[1].toLowerCase();
+    } else if ((a === '--outcomes' || a === '--outcome') && args[i + 1]) {
+      outcomesArg = args[++i].toLowerCase();
+    } else if (a.startsWith('--outcomes=') || a.startsWith('--outcome=')) {
+      outcomesArg = a.split('=')[1].toLowerCase();
     } else if (a === '--date' && args[i + 1]) {
       dateArg = args[++i];
     } else if (a.startsWith('--date=')) {
@@ -519,11 +529,11 @@ function parseCliArgs() {
 
   const todayStr = dateArg || new Date().toISOString().slice(0, 10);
 
-  return { profile, targetFamilies, todayStr };
+  return { profile, targetFamilies, coursesArg, outcomesArg, cityArg, familiesArg, dateArg, todayStr };
 }
 
-async function runExport() {
-  const { profile, targetFamilies, todayStr } = parseCliArgs();
+async function runCityExport(cliOptions) {
+  const { profile, targetFamilies, todayStr } = cliOptions || parseCliArgs();
   console.log(`Starting export pipeline for City: "${profile.displayName}", Families: [${targetFamilies.join(', ')}], Date: ${todayStr}...`);
 
   // Non-negotiable safety Rule 1.1: Read-only session
@@ -1312,6 +1322,926 @@ async function runExport() {
   };
 }
 
+// ============================================================================
+// BCA & MCA ON HOLD & REJECTED EXPORT PIPELINE (PART 0, PART 3 - 7)
+// ============================================================================
+
+function normalizeCourseText(str) {
+  if (!str) return '';
+  return String(str)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/[.-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function evaluateCourseBcaMca(cand, recordMatchRule) {
+  const cCourse = cand.course || '';
+  const cCollege = cand.college || '';
+  const fbCourses = (cand.interviewFeedbacks || []).map(f => f.feedbackData?.course || '').filter(Boolean);
+  const fbComments = (cand.interviewFeedbacks || []).map(f => f.feedbackData?.comments || '').filter(Boolean);
+  const invNotes = (cand.applications || []).flatMap(a => (a.interviews || []).map(i => i.notes || '')).filter(Boolean);
+  const comments = [...fbComments, ...invNotes].join('\n');
+
+  const courseNorm = normalizeCourseText(cCourse);
+  const collegeNorm = normalizeCourseText(cCollege);
+  const commentsNorm = normalizeCourseText(comments);
+
+  // Check explicit course fields
+  const isBcaInCandCourse = /\b(bca|bachelor of computer applications?|bachelor in computer applications?)\b/i.test(courseNorm);
+  const isMcaInCandCourse = /\b(mca|master of computer applications?|masters in computer applications?|integrated mca)\b/i.test(courseNorm);
+
+  // Check feedback courses
+  const isBcaInFb = fbCourses.some(fc => /\b(bca|bachelor of computer applications?|bachelor in computer applications?)\b/i.test(normalizeCourseText(fc)));
+  const isMcaInFb = fbCourses.some(fc => /\b(mca|master of computer applications?|masters in computer applications?|integrated mca)\b/i.test(normalizeCourseText(fc)));
+
+  // Check college field
+  const isBcaInCollege = /\b(bca)\b/i.test(collegeNorm);
+  const isMcaInCollege = /\b(mca)\b/i.test(collegeNorm);
+
+  // Check comments only
+  const isBcaInComments = /\b(bca)\b/i.test(commentsNorm);
+  const isMcaInComments = /\b(mca)\b/i.test(commentsNorm);
+  const isCompAppInComments = /\b(computer applications?)\b/i.test(commentsNorm);
+
+  // Exclusions (Part 3.5)
+  const isEngineering = /\b(btech|mtech|b\s*tech|m\s*tech|be|me|bachelor of engineering|bachelor of technology)\b/i.test(courseNorm);
+  const isCommerce = /\b(bcom|b\s*com|bachelor of commerce)\b/i.test(courseNorm);
+  const isBbaMba = /\b(bba|mba|bachelor of business administration)\b/i.test(courseNorm);
+
+  if (isEngineering && !isBcaInCandCourse && !isMcaInCandCourse) {
+    recordMatchRule('Course - Exclude', 'EXCLUDE', cCourse || 'Engineering', 1, 'Engineering degree (B.Tech / BE)');
+    return { tier: 'EXCLUDE', reason: 'Engineering degree (B.Tech / BE)', family: null, original: cCourse };
+  }
+  if (isCommerce && !isBcaInCandCourse && !isMcaInCandCourse) {
+    recordMatchRule('Course - Exclude', 'EXCLUDE', cCourse || 'Commerce', 1, 'Commerce degree (B.Com)');
+    return { tier: 'EXCLUDE', reason: 'Commerce degree (B.Com)', family: null, original: cCourse };
+  }
+  if (isBbaMba && !isBcaInCandCourse && !isMcaInCandCourse && !isBcaInFb && !isMcaInFb) {
+    recordMatchRule('Course - Exclude', 'EXCLUDE', cCourse || 'Business Admin', 1, 'Business Administration (BBA / MBA)');
+    return { tier: 'EXCLUDE', reason: 'Business Administration (BBA / MBA)', family: null, original: cCourse };
+  }
+
+  // Course discrepancy: candidate.course exists and feedback course exists and they disagree
+  if (cCourse && fbCourses.length > 0) {
+    const isSameDegree = (isBcaInCandCourse && isBcaInFb) || (isMcaInCandCourse && isMcaInFb);
+    if (!isSameDegree && (isBcaInCandCourse || isMcaInCandCourse || isBcaInFb || isMcaInFb)) {
+      const fam = (isMcaInCandCourse || isMcaInFb) ? 'MCA' : 'BCA';
+      recordMatchRule('Course - Review', 'REVIEW', `${cCourse} vs ${fbCourses[0]}`, 1, 'Course field and feedback course disagree');
+      return {
+        tier: 'REVIEW',
+        reason: `Course discrepancy: candidates.course is "${cCourse}" but interview feedback recorded "${fbCourses[0]}"`,
+        family: fam,
+        original: cCourse || fbCourses[0],
+        fieldFound: cCourse ? 'candidates.course' : 'interview_feedbacks.course',
+        isDiscrepancy: true
+      };
+    }
+  }
+
+  // Both BCA and MCA appearing
+  if ((isBcaInCandCourse || isBcaInFb) && (isMcaInCandCourse || isMcaInFb)) {
+    recordMatchRule('Course - MCA', 'INCLUDE', cCourse || 'BCA & MCA', 1, 'Student with both BCA and MCA (classified by current degree MCA)');
+    return {
+      tier: 'INCLUDE',
+      family: 'MCA',
+      original: cCourse || 'BCA & MCA',
+      fieldFound: cCourse ? 'candidates.course' : 'interview_feedbacks.course',
+      note: 'Both BCA and MCA appearing (classified by current degree MCA)'
+    };
+  }
+
+  // MCA Include
+  if (isMcaInCandCourse || isMcaInFb || isMcaInCollege) {
+    const orig = cCourse || fbCourses.find(fc => /\b(mca)\b/i.test(normalizeCourseText(fc))) || cCollege;
+    const fFound = cCourse ? 'candidates.course' : (fbCourses.length ? 'interview_feedbacks.course' : 'candidates.college');
+    recordMatchRule('Course - MCA', 'INCLUDE', orig, 1, 'MCA degree confirmed');
+    return {
+      tier: 'INCLUDE',
+      family: 'MCA',
+      original: orig,
+      fieldFound: fFound
+    };
+  }
+
+  // BCA Include
+  if (isBcaInCandCourse || isBcaInFb || isBcaInCollege) {
+    const orig = cCourse || fbCourses.find(fc => /\b(bca)\b/i.test(normalizeCourseText(fc))) || cCollege;
+    const fFound = cCourse ? 'candidates.course' : (fbCourses.length ? 'interview_feedbacks.course' : 'candidates.college');
+    recordMatchRule('Course - BCA', 'INCLUDE', orig, 1, 'BCA degree confirmed');
+    return {
+      tier: 'INCLUDE',
+      family: 'BCA',
+      original: orig,
+      fieldFound: fFound
+    };
+  }
+
+  // Check comments only
+  if (isMcaInComments) {
+    recordMatchRule('Course - Review', 'REVIEW', 'MCA in comments', 1, 'Course found only in free-text comments');
+    return {
+      tier: 'REVIEW',
+      reason: 'Course found only in interview comments/notes (MCA)',
+      family: 'MCA',
+      original: 'Found in comments/notes',
+      fieldFound: 'interview_notes_or_comments'
+    };
+  }
+  if (isBcaInComments) {
+    recordMatchRule('Course - Review', 'REVIEW', 'BCA in comments', 1, 'Course found only in free-text comments');
+    return {
+      tier: 'REVIEW',
+      reason: 'Course found only in interview comments/notes (BCA)',
+      family: 'BCA',
+      original: 'Found in comments/notes',
+      fieldFound: 'interview_notes_or_comments'
+    };
+  }
+  if (isCompAppInComments) {
+    recordMatchRule('Course - Review', 'REVIEW', 'Computer Applications in comments', 1, 'Computer application with no degree level stated');
+    return {
+      tier: 'REVIEW',
+      reason: 'Computer applications without degree level stated',
+      family: null,
+      original: 'Found in comments/notes',
+      fieldFound: 'interview_notes_or_comments'
+    };
+  }
+
+  return { tier: 'EXCLUDE', reason: 'No BCA/MCA pattern', family: null, original: cCourse };
+}
+
+function evaluateOutcomesBcaMca(cand, recordMatchRule) {
+  const rounds = [];
+
+  for (const fb of (cand.interviewFeedbacks || [])) {
+    let rNum = 1;
+    if (fb.round === 'ROUND_2' || fb.feedbackData?.roundNumber?.includes('2') || fb.feedbackData?.round === '2') rNum = 2;
+    if (fb.round === 'FINAL_ROUND' || fb.feedbackData?.roundNumber?.includes('Final') || fb.feedbackData?.roundNumber?.includes('3')) rNum = 3;
+
+    rounds.push({
+      source: 'interview_feedback',
+      roundNum: rNum,
+      roundName: fb.round,
+      status: fb.selectionStatus,
+      rating: fb.overallRating,
+      panelist: fb.feedbackData?.panelists || fb.feedbackData?.panelist || (fb.submittedBy?.fullName || ''),
+      comments: fb.feedbackData?.comments || '',
+      doj: fb.feedbackData?.doj || fb.feedbackData?.tentativeDoj || '',
+      date: fb.updatedAt || fb.createdAt,
+      isPlaceholder: false
+    });
+  }
+
+  for (const app of (cand.applications || [])) {
+    for (const inv of (app.interviews || [])) {
+      let rNum = inv.roundNo || 1;
+      if (inv.round?.toLowerCase().includes('round 2') || inv.round === 'ROUND_2') rNum = 2;
+      if (inv.round?.toLowerCase().includes('final') || inv.round === 'ROUND_3') rNum = 3;
+
+      const isPlaceholder = (inv.notes && inv.notes.includes('[Placeholder]')) ||
+        (cand.customFields?.r1_placeholder === true && rNum === 1);
+
+      let outcome = inv.outcome || inv.result;
+      if (!outcome && inv.status === 'COMPLETED') {
+        outcome = 'COMPLETED_NO_OUTCOME';
+      }
+
+      rounds.push({
+        source: 'interview',
+        roundNum: rNum,
+        roundName: inv.round || `Round ${rNum}`,
+        status: outcome || inv.status,
+        lifecycleStatus: inv.status,
+        result: inv.result,
+        outcome: inv.outcome,
+        rating: null,
+        panelist: inv.interviewerNames || '',
+        comments: inv.notes || '',
+        doj: '',
+        date: inv.scheduledStart || inv.createdAt,
+        isPlaceholder
+      });
+    }
+  }
+
+  rounds.sort((a, b) => {
+    if (a.roundNum !== b.roundNum) return a.roundNum - b.roundNum;
+    const da = a.date ? new Date(a.date).getTime() : 0;
+    const db = b.date ? new Date(b.date).getTime() : 0;
+    return da - db;
+  });
+
+  let everOnHold = false;
+  let everRejected = false;
+  let everSelected = false;
+
+  for (const r of rounds) {
+    const s = String(r.status || '').toUpperCase();
+    if (s.startsWith('REJECT')) everRejected = true;
+    if (s.includes('HOLD')) everOnHold = true;
+    if (s.startsWith('SELECT')) everSelected = true;
+  }
+
+  if (cand.status === 'REJECTED') everRejected = true;
+  if (cand.status === 'ON_HOLD') everOnHold = true;
+
+  const roundMap = {};
+  for (const r of rounds) {
+    const existing = roundMap[r.roundNum];
+    if (!existing) {
+      roundMap[r.roundNum] = r;
+    } else {
+      if (r.source === 'interview_feedback' && (r.rating !== null || r.comments)) {
+        roundMap[r.roundNum] = { ...existing, ...r, status: r.status || existing.status };
+      } else if (r.status && !existing.status) {
+        roundMap[r.roundNum] = { ...existing, ...r };
+      }
+    }
+  }
+
+  const distinctRoundNums = Object.keys(roundMap).map(Number).sort((a, b) => a - b);
+  const conductedRoundNums = distinctRoundNums.filter(n => {
+    const r = roundMap[n];
+    return !r.isPlaceholder && r.status && r.status !== 'SCHEDULED' && r.status !== 'RESCHEDULED';
+  });
+
+  const currentRoundNum = conductedRoundNums.length > 0
+    ? conductedRoundNums[conductedRoundNums.length - 1]
+    : (distinctRoundNums.length > 0 ? distinctRoundNums[distinctRoundNums.length - 1] : 0);
+  const latestRound = roundMap[currentRoundNum];
+
+  let currentOutcome = null;
+  let currentOutcomeCategory = 'OTHER';
+
+  if (cand.customFields?.r2_outcome && currentRoundNum >= 2) {
+    currentOutcome = cand.customFields.r2_outcome;
+  } else if (latestRound?.status && latestRound.status !== 'SCHEDULED' && latestRound.status !== 'RESCHEDULED') {
+    currentOutcome = latestRound.status;
+  } else if (cand.status && cand.status !== 'ACTIVE') {
+    currentOutcome = cand.status;
+  } else if (latestRound?.status) {
+    currentOutcome = latestRound.status;
+  } else {
+    currentOutcome = cand.status || 'ACTIVE';
+  }
+
+  const normOutcome = String(currentOutcome || '').toUpperCase();
+  if (normOutcome.startsWith('REJECT')) {
+    currentOutcomeCategory = 'REJECTED';
+    currentOutcome = 'Rejected';
+    recordMatchRule('Outcome - Rejected', 'INCLUDE', 'REJECTED', 1, 'Rejected candidate');
+  } else if (normOutcome.includes('HOLD')) {
+    currentOutcomeCategory = 'ON_HOLD';
+    currentOutcome = 'On Hold';
+    recordMatchRule('Outcome - On Hold', 'INCLUDE', 'ON_HOLD', 1, 'On Hold candidate');
+  } else if (normOutcome.startsWith('SELECT')) {
+    currentOutcomeCategory = 'SELECTED';
+    currentOutcome = 'Selected';
+    recordMatchRule('Outcome - Excluded (Other)', 'EXCLUDE', 'SELECTED', 1, 'Selected candidate');
+  } else if (normOutcome.includes('JOIN') || normOutcome.includes('NO_SHOW') || normOutcome.includes('RESPOND')) {
+    currentOutcomeCategory = 'DIDNT_JOIN';
+    currentOutcome = "Didn't Join / No-Show";
+    recordMatchRule('Outcome - Excluded (Other)', 'EXCLUDE', 'DIDNT_JOIN', 1, 'Did not join / No-show');
+  } else if (normOutcome === 'COMPLETED_NO_OUTCOME') {
+    currentOutcomeCategory = 'COMPLETED_NO_OUTCOME';
+    currentOutcome = 'Completed (No Outcome)';
+    recordMatchRule('Outcome - Excluded (Other)', 'EXCLUDE', 'COMPLETED_NO_OUTCOME', 1, 'Completed round without recorded outcome');
+  } else if (normOutcome === 'PENDING' || normOutcome === 'SCHEDULED' || normOutcome === 'RESCHEDULED') {
+    currentOutcomeCategory = 'PENDING';
+    currentOutcome = 'Pending / Scheduled';
+    recordMatchRule('Outcome - Excluded (Other)', 'EXCLUDE', 'PENDING', 1, 'Pending / Scheduled interview');
+  } else {
+    recordMatchRule('Outcome - Excluded (Other)', 'EXCLUDE', normOutcome || 'ACTIVE', 1, 'Other active candidate');
+  }
+
+  const historyParts = [];
+  for (const rNum of distinctRoundNums) {
+    const r = roundMap[rNum];
+    const stat = r.status || 'No Outcome';
+    const rat = (r.rating !== null && r.rating !== undefined) ? ` (${r.rating})` : '';
+    historyParts.push(`R${rNum}: ${stat}${rat}`);
+  }
+  const historyString = historyParts.join(' → ') || 'No Rounds Recorded';
+
+  return {
+    currentOutcomeCategory,
+    currentOutcome,
+    currentRoundNum,
+    currentRoundDate: latestRound?.date || cand.updatedAt,
+    currentPanelist: latestRound?.panelist || cand.customFields?.r2_panelist || '',
+    currentRating: latestRound?.rating !== null ? latestRound?.rating : (cand.customFields?.r2_rating || null),
+    currentReason: latestRound?.comments || '',
+    currentDoj: latestRound?.doj || cand.doj || '',
+    totalRounds: distinctRoundNums.length,
+    historyString,
+    everOnHold,
+    everRejected,
+    everSelected
+  };
+}
+
+function formatCandidateRow(c, courseEval, outcomeEval, phoneCountMap, emailCountMap) {
+  const cf = (c.customFields && typeof c.customFields === 'object') ? c.customFields : {};
+  const pInfo = parsePhone(c.phoneNormalized || c.phone);
+  const eInfo = parseEmail(c.email);
+  const isDupPhone = pInfo.isValid && (phoneCountMap[pInfo.normalized] > 1);
+  const isDupEmail = eInfo.isValid && (emailCountMap[eInfo.raw.toLowerCase()] > 1);
+
+  const firstApp = c.applications && c.applications.length > 0 ? c.applications[0] : null;
+  const job = firstApp?.job;
+
+  const recruiter = c.assignedRecruiterName || c.assignedRecruiter?.fullName || c.createdBy?.fullName || '';
+  const resumeLink = c.resumeLinkOriginal || c.resumeLinkDownload || '';
+  const college = c.college || cf.college_name || '';
+  const yearBatch = c.graduationYear || cf.batch_year || cf.year || '';
+  const drive = cf.source || cf.import_source || '';
+  const languages = cf.languages || cf.languages_known_verbatim || '';
+  const priorExp = c.totalExperienceYears ? `${c.totalExperienceYears} yrs` : (cf.prior_experience_verbatim || cf.professionalExperience || '');
+  const familyBg = cf.family || cf.family_background_verbatim || '';
+  const locParts = [c.location, c.area].filter(Boolean);
+  const locationArea = locParts.join(', ');
+  const needsContact = pInfo.isMissing && eInfo.isMissing;
+
+  const flags = [];
+  if (isDupPhone) flags.push('Duplicate phone');
+  if (isDupEmail) flags.push('Duplicate email');
+  if (pInfo.isPlaceholder || eInfo.isPlaceholder) flags.push('Placeholder contact');
+  if (pInfo.isMissing) flags.push('Missing phone');
+  if (eInfo.isMissing) flags.push('Missing email');
+  if (needsContact || cf.needs_contact_details) flags.push('needs_contact_details');
+  if (courseEval.tier === 'REVIEW' || courseEval.isDiscrepancy) flags.push('Course ambiguous');
+
+  if (outcomeEval.currentOutcome === 'Selected' && outcomeEval.currentRating !== null && outcomeEval.currentRating <= 4) {
+    flags.push('Outcome / rating contradiction (Selected at rating <= 4)');
+  }
+  if (outcomeEval.currentOutcome === 'Rejected' && outcomeEval.currentRating !== null && outcomeEval.currentRating >= 8) {
+    flags.push('Outcome / rating contradiction (Rejected at rating >= 8)');
+  }
+
+  return {
+    candidateId: c.id,
+    fullName: sanitizeExcelValue(c.fullName),
+    phoneRaw: pInfo.raw,
+    phoneNormalized: pInfo.normalized,
+    email: sanitizeExcelValue(c.email === 'N/A' || c.email === 'na' ? '' : c.email),
+    phoneValid: pInfo.isValid ? 'Yes' : 'No',
+    emailValid: eInfo.isValid ? 'Yes' : 'No',
+    needsContactDetails: (needsContact || cf.needs_contact_details) ? 'Yes' : 'No',
+    courseFamily: courseEval.family || '',
+    courseAsStored: sanitizeExcelValue(courseEval.original),
+    fieldFound: courseEval.fieldFound || '',
+    matchTier: courseEval.tier,
+    yearBatch: sanitizeExcelValue(yearBatch),
+    college: sanitizeExcelValue(college),
+    drive: sanitizeExcelValue(drive),
+    currentOutcome: outcomeEval.currentOutcome,
+    currentRoundNo: outcomeEval.currentRoundNum ? String(outcomeEval.currentRoundNum) : '',
+    currentRoundDate: toISTDate(outcomeEval.currentRoundDate),
+    panelist: sanitizeExcelValue(outcomeEval.currentPanelist),
+    rating: outcomeEval.currentRating !== null ? outcomeEval.currentRating : '',
+    reason: sanitizeExcelValue(outcomeEval.currentReason),
+    doj: sanitizeExcelValue(outcomeEval.currentDoj),
+    totalRounds: outcomeEval.totalRounds,
+    roundHistory: outcomeEval.historyString,
+    everOnHold: outcomeEval.everOnHold ? 'Yes' : 'No',
+    everRejected: outcomeEval.everRejected ? 'Yes' : 'No',
+    role: sanitizeExcelValue(c.jobTitle || c.preferredRole || job?.title || ''),
+    jobId: job?.id || '',
+    locationArea: sanitizeExcelValue(locationArea),
+    languages: sanitizeExcelValue(languages),
+    priorExperience: sanitizeExcelValue(priorExp),
+    familyBackground: sanitizeExcelValue(familyBg),
+    source: sanitizeExcelValue(c.source || drive || ''),
+    recruiterOwner: sanitizeExcelValue(recruiter),
+    resumeLink: sanitizeExcelValue(resumeLink),
+    createdAt: toISTDate(c.createdAt),
+    updatedAt: toISTDate(c.updatedAt),
+    flags: flags.join(', ')
+  };
+}
+
+async function runBcaMcaExport(cliOptions) {
+  const { todayStr, cityArg, familiesArg } = cliOptions || parseCliArgs();
+  console.log(`Starting BCA/MCA On Hold & Rejected Export Pipeline (Date: ${todayStr})...`);
+
+  // Enforce read-only session
+  await prisma.$executeRawUnsafe('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY;');
+
+  const exportsDir = path.resolve(__dirname, '../../exports');
+  if (!fs.existsSync(exportsDir)) {
+    fs.mkdirSync(exportsDir, { recursive: true });
+  }
+
+  // Pre-calculate contact frequencies across all active candidates
+  console.log('Calculating contact frequencies across active database records...');
+  const allContacts = await prisma.candidate.findMany({
+    where: { isDeleted: false, is_test_data: false },
+    select: { id: true, phone: true, phoneNormalized: true, email: true }
+  });
+
+  const phoneCountMap = {};
+  const emailCountMap = {};
+
+  for (const c of allContacts) {
+    const p = parsePhone(c.phoneNormalized || c.phone);
+    if (p.isValid) {
+      phoneCountMap[p.normalized] = (phoneCountMap[p.normalized] || 0) + 1;
+    }
+    const e = parseEmail(c.email);
+    if (e.isValid) {
+      emailCountMap[e.raw.toLowerCase()] = (emailCountMap[e.raw.toLowerCase()] || 0) + 1;
+    }
+  }
+
+  const softDeletedCount = await prisma.candidate.count({ where: { isDeleted: true } });
+  const testDataCount = await prisma.candidate.count({ where: { is_test_data: true } });
+
+  const CHUNK_SIZE = 500;
+  let lastId = null;
+  let hasMore = true;
+  let totalEvaluated = 0;
+
+  const matchRulesStats = {};
+  function recordMatchRule(category, tier, keyword, count = 1, note = '') {
+    let cleanKw = String(keyword || '').trim();
+    if (!cleanKw || cleanKw === '-' || cleanKw === '--') cleanKw = '(blank / dash)';
+    if (cleanKw.startsWith('=') || cleanKw.startsWith('+') || cleanKw.startsWith('-') || cleanKw.startsWith('@')) {
+      cleanKw = `'${cleanKw}`;
+    }
+    const key = `${category}||${tier}||${cleanKw}`;
+    if (!matchRulesStats[key]) {
+      matchRulesStats[key] = { category, tier, keyword: cleanKw, count: 0, note };
+    }
+    matchRulesStats[key].count += count;
+  }
+
+  const bcaOnHoldRows = [];
+  const bcaRejectedRows = [];
+  const mcaOnHoldRows = [];
+  const mcaRejectedRows = [];
+  const everHeldOrRejectedRows = [];
+  const needsReviewRows = [];
+  const qualityIssues = [];
+
+  const notIncludedCounts = {
+    SELECTED: 0,
+    PENDING: 0,
+    DIDNT_JOIN: 0,
+    COMPLETED_NO_OUTCOME: 0,
+    OTHER: 0
+  };
+  let excludedNonTargetCourses = 0;
+
+  console.log('Streaming candidates in chunks of 500...');
+
+  while (hasMore) {
+    const chunk = await prisma.candidate.findMany({
+      take: CHUNK_SIZE,
+      skip: lastId ? 1 : 0,
+      cursor: lastId ? { id: lastId } : undefined,
+      orderBy: { id: 'asc' },
+      where: {
+        isDeleted: false,
+        is_test_data: false
+      },
+      include: {
+        applications: {
+          where: { isDeleted: false },
+          include: {
+            job: true,
+            interviews: {
+              orderBy: { scheduledStart: 'desc' }
+            }
+          }
+        },
+        interviewFeedbacks: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            submittedBy: { select: { fullName: true } }
+          }
+        },
+        assignedRecruiter: { select: { fullName: true } },
+        createdBy: { select: { fullName: true } }
+      }
+    });
+
+    if (chunk.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    totalEvaluated += chunk.length;
+    lastId = chunk[chunk.length - 1].id;
+
+    for (const c of chunk) {
+      const courseEval = evaluateCourseBcaMca(c, recordMatchRule);
+      const outcomeEval = evaluateOutcomesBcaMca(c, recordMatchRule);
+
+      if (courseEval.tier === 'EXCLUDE') {
+        excludedNonTargetCourses++;
+        continue;
+      }
+
+      const row = formatCandidateRow(c, courseEval, outcomeEval, phoneCountMap, emailCountMap);
+
+      // Track Data Quality issues
+      if (row.needsContactDetails === 'Yes') {
+        qualityIssues.push({
+          candidateId: c.id,
+          fullName: row.fullName,
+          phone: row.phoneRaw,
+          email: row.email,
+          courseFamily: row.courseFamily,
+          issueType: 'Missing Contact Details',
+          details: 'Campus drive candidate with no phone or email recorded (needs_contact_details = Yes)'
+        });
+      }
+      if (row.flags.includes('Duplicate phone')) {
+        qualityIssues.push({
+          candidateId: c.id,
+          fullName: row.fullName,
+          phone: row.phoneRaw,
+          email: row.email,
+          courseFamily: row.courseFamily,
+          issueType: 'Duplicate Phone',
+          details: `Phone ${row.phoneNormalized} appears multiple times in database`
+        });
+      }
+      if (row.flags.includes('Duplicate email')) {
+        qualityIssues.push({
+          candidateId: c.id,
+          fullName: row.fullName,
+          phone: row.phoneRaw,
+          email: row.email,
+          courseFamily: row.courseFamily,
+          issueType: 'Duplicate Email',
+          details: `Email ${row.email} appears multiple times in database`
+        });
+      }
+      if (row.flags.includes('Outcome / rating contradiction')) {
+        qualityIssues.push({
+          candidateId: c.id,
+          fullName: row.fullName,
+          phone: row.phoneRaw,
+          email: row.email,
+          courseFamily: row.courseFamily,
+          issueType: 'Outcome / Rating Contradiction',
+          details: `Candidate outcome is ${row.currentOutcome} at rating ${row.rating} (Reason: ${row.reason.slice(0, 50)})`
+        });
+      }
+
+      // Check if Ever on hold or rejected
+      if (outcomeEval.everOnHold || outcomeEval.everRejected) {
+        everHeldOrRejectedRows.push(row);
+      }
+
+      // If REVIEW tier: goes to Needs Review sheet
+      if (courseEval.tier === 'REVIEW') {
+        needsReviewRows.push({ ...row, reviewReason: courseEval.reason });
+        // If candidate is also currently On Hold or Rejected, add to respective sheet with Match Tier: REVIEW
+        if (courseEval.family === 'BCA') {
+          if (outcomeEval.currentOutcomeCategory === 'ON_HOLD') bcaOnHoldRows.push(row);
+          else if (outcomeEval.currentOutcomeCategory === 'REJECTED') bcaRejectedRows.push(row);
+        } else if (courseEval.family === 'MCA') {
+          if (outcomeEval.currentOutcomeCategory === 'ON_HOLD') mcaOnHoldRows.push(row);
+          else if (outcomeEval.currentOutcomeCategory === 'REJECTED') mcaRejectedRows.push(row);
+        }
+        continue;
+      }
+
+      // Confirmed INCLUDE BCA / MCA
+      if (courseEval.family === 'BCA') {
+        if (outcomeEval.currentOutcomeCategory === 'ON_HOLD') {
+          bcaOnHoldRows.push(row);
+        } else if (outcomeEval.currentOutcomeCategory === 'REJECTED') {
+          bcaRejectedRows.push(row);
+        } else {
+          notIncludedCounts[outcomeEval.currentOutcomeCategory] = (notIncludedCounts[outcomeEval.currentOutcomeCategory] || 0) + 1;
+        }
+      } else if (courseEval.family === 'MCA') {
+        if (outcomeEval.currentOutcomeCategory === 'ON_HOLD') {
+          mcaOnHoldRows.push(row);
+        } else if (outcomeEval.currentOutcomeCategory === 'REJECTED') {
+          mcaRejectedRows.push(row);
+        } else {
+          notIncludedCounts[outcomeEval.currentOutcomeCategory] = (notIncludedCounts[outcomeEval.currentOutcomeCategory] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  // Sort rows
+  const sortByDateDesc = (a, b) => {
+    const da = a.currentRoundDate ? a.currentRoundDate.getTime() : 0;
+    const db = b.currentRoundDate ? b.currentRoundDate.getTime() : 0;
+    return db - da;
+  };
+
+  bcaOnHoldRows.sort(sortByDateDesc);
+  bcaRejectedRows.sort(sortByDateDesc);
+  mcaOnHoldRows.sort(sortByDateDesc);
+  mcaRejectedRows.sort(sortByDateDesc);
+  everHeldOrRejectedRows.sort(sortByDateDesc);
+  needsReviewRows.sort(sortByDateDesc);
+
+  // Combined All (current)
+  const allCurrentRows = [...bcaOnHoldRows, ...bcaRejectedRows, ...mcaOnHoldRows, ...mcaRejectedRows];
+  allCurrentRows.sort(sortByDateDesc);
+
+  console.log(`BCA On Hold: ${bcaOnHoldRows.length}`);
+  console.log(`BCA Rejected: ${bcaRejectedRows.length}`);
+  console.log(`MCA On Hold: ${mcaOnHoldRows.length}`);
+  console.log(`MCA Rejected: ${mcaRejectedRows.length}`);
+  console.log(`All Current: ${allCurrentRows.length}`);
+  console.log(`Ever Held or Rejected: ${everHeldOrRejectedRows.length}`);
+  console.log(`Needs Review: ${needsReviewRows.length}`);
+
+  // Create Excel workbook
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Antigravity ATS Export Engine';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const candidateColumns = [
+    { header: 'Candidate ID', key: 'candidateId', width: 26 },
+    { header: 'Full Name', key: 'fullName', width: 24 },
+    { header: 'Phone (as stored)', key: 'phoneRaw', width: 18 },
+    { header: 'Phone Normalised', key: 'phoneNormalized', width: 18 },
+    { header: 'Email', key: 'email', width: 28 },
+    { header: 'Phone Valid?', key: 'phoneValid', width: 14 },
+    { header: 'Email Valid?', key: 'emailValid', width: 14 },
+    { header: 'Needs Contact Details?', key: 'needsContactDetails', width: 22 },
+    { header: 'Course Family', key: 'courseFamily', width: 16 },
+    { header: 'Course as Stored', key: 'courseAsStored', width: 24 },
+    { header: 'Field Found In', key: 'fieldFound', width: 26 },
+    { header: 'Match Tier', key: 'matchTier', width: 14 },
+    { header: 'Year / Batch', key: 'yearBatch', width: 16 },
+    { header: 'College / University', key: 'college', width: 28 },
+    { header: 'Drive', key: 'drive', width: 26 },
+    { header: 'Current Outcome', key: 'currentOutcome', width: 18 },
+    { header: 'Round Number', key: 'currentRoundNo', width: 16 },
+    { header: 'Date of Round', key: 'currentRoundDate', width: 16 },
+    { header: 'Panelist', key: 'panelist', width: 22 },
+    { header: 'Rating', key: 'rating', width: 12 },
+    { header: 'Reason (Feedback Comment)', key: 'reason', width: 60 },
+    { header: 'DOJ as Recorded', key: 'doj', width: 16 },
+    { header: 'Total Rounds', key: 'totalRounds', width: 14 },
+    { header: 'Round History', key: 'roundHistory', width: 38 },
+    { header: 'Ever On Hold?', key: 'everOnHold', width: 14 },
+    { header: 'Ever Rejected?', key: 'everRejected', width: 14 },
+    { header: 'Role Applied For', key: 'role', width: 24 },
+    { header: 'Job ID', key: 'jobId', width: 24 },
+    { header: 'Location / Area', key: 'locationArea', width: 24 },
+    { header: 'Languages', key: 'languages', width: 24 },
+    { header: 'Prior Experience', key: 'priorExperience', width: 28 },
+    { header: 'Family Background', key: 'familyBackground', width: 28 },
+    { header: 'Source', key: 'source', width: 22 },
+    { header: 'Recruiter / Owner', key: 'recruiterOwner', width: 22 },
+    { header: 'Resume Link', key: 'resumeLink', width: 30 },
+    { header: 'Created Date', key: 'createdAt', width: 16 },
+    { header: 'Last Updated', key: 'updatedAt', width: 16 },
+    { header: 'Flags', key: 'flags', width: 36 }
+  ];
+
+  function writeCandidateSheet(sheet, rows, isReviewSheet = false) {
+    if (isReviewSheet) {
+      sheet.columns = [...candidateColumns, { header: 'Review Reason', key: 'reviewReason', width: 45 }];
+    } else {
+      sheet.columns = candidateColumns;
+    }
+
+    rows.forEach(r => {
+      const row = sheet.addRow(r);
+
+      // Explicit string format for phone numbers
+      const phoneColIdx = sheet.getColumn('phoneRaw').number;
+      const phoneNormColIdx = sheet.getColumn('phoneNormalized').number;
+      const reasonColIdx = sheet.getColumn('reason').number;
+
+      const pCell = row.getCell(phoneColIdx);
+      pCell.value = String(r.phoneRaw || '');
+      pCell.numFmt = '@';
+
+      const pNormCell = row.getCell(phoneNormColIdx);
+      pNormCell.value = String(r.phoneNormalized || '');
+      pNormCell.numFmt = '@';
+
+      // Date formats
+      const roundDateColIdx = sheet.getColumn('currentRoundDate').number;
+      const createdColIdx = sheet.getColumn('createdAt').number;
+      const updatedColIdx = sheet.getColumn('updatedAt').number;
+
+      if (r.currentRoundDate) row.getCell(roundDateColIdx).numFmt = 'DD-MM-YYYY';
+      if (r.createdAt) row.getCell(createdColIdx).numFmt = 'DD-MM-YYYY';
+      if (r.updatedAt) row.getCell(updatedColIdx).numFmt = 'DD-MM-YYYY';
+
+      // Alignment and text wrapping for comments
+      row.getCell(reasonColIdx).alignment = { wrapText: true, vertical: 'top' };
+    });
+
+    applySheetStyles(sheet);
+  }
+
+  // --- SHEET 1: Summary ---
+  const summarySheet = workbook.addWorksheet('Summary');
+  summarySheet.columns = [
+    { header: 'Metric', key: 'metric', width: 44 },
+    { header: 'Value', key: 'val', width: 22 },
+    { header: 'Description / Notes', key: 'desc', width: 62 }
+  ];
+
+  // College & Drive Breakdown
+  const driveCounts = {};
+  allCurrentRows.forEach(r => {
+    const d = r.college || r.drive || 'Off-Campus / Direct';
+    driveCounts[d] = (driveCounts[d] || 0) + 1;
+  });
+
+  // Role Breakdown
+  const roleCounts = {};
+  allCurrentRows.forEach(r => {
+    const ro = r.role || 'Unspecified';
+    roleCounts[ro] = (roleCounts[ro] || 0) + 1;
+  });
+
+  // Month Breakdown
+  const monthCounts = {};
+  allCurrentRows.forEach(r => {
+    let m = 'Undated';
+    if (r.currentRoundDate) {
+      const d = new Date(r.currentRoundDate);
+      m = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+    monthCounts[m] = (monthCounts[m] || 0) + 1;
+  });
+
+  const notIncludedTotal = notIncludedCounts.SELECTED + notIncludedCounts.PENDING + notIncludedCounts.DIDNT_JOIN + notIncludedCounts.COMPLETED_NO_OUTCOME + notIncludedCounts.OTHER;
+  // Candidates in needsReview that are not already on main sheets
+  const inMainSheets = new Set(allCurrentRows.map(r => r.candidateId));
+  const standaloneNeedsReviewCount = needsReviewRows.filter(r => !inMainSheets.has(r.candidateId)).length;
+  const reconciliationSum = allCurrentRows.length + notIncludedTotal + standaloneNeedsReviewCount + excludedNonTargetCourses;
+
+  const summaryData = [
+    { metric: 'Run Date & Time (IST)', val: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), desc: 'Script execution timestamp' },
+    { metric: 'Export Mode', val: 'BCA & MCA Candidates (On Hold & Rejected)', desc: 'TalentOS ATS Parameterized Export' },
+    { metric: 'Target Course Filter', val: 'BCA, MCA', desc: 'Degrees included under evaluation rules' },
+    { metric: 'Target Outcome Filter', val: 'On Hold, Rejected', desc: 'Current candidate status / latest round outcome' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'Total Active DB Candidates Evaluated', val: totalEvaluated, desc: 'Active records scanned with keyset streaming (isDeleted=false, is_test_data=false)' },
+    { metric: 'Soft-Deleted Records Excluded', val: softDeletedCount, desc: 'Excluded records with isDeleted = true' },
+    { metric: 'Archived Test Records Excluded', val: testDataCount, desc: 'Excluded records flagged is_test_data = true' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'CURRENT OUTCOME SUMMARY (Main Sheets):', val: '', desc: '' },
+    { metric: '  • BCA – On Hold (Current)', val: bcaOnHoldRows.length, desc: 'BCA candidates currently On Hold (Sheet: BCA – On Hold)' },
+    { metric: '  • BCA – Rejected (Current)', val: bcaRejectedRows.length, desc: 'BCA candidates currently Rejected (Sheet: BCA – Rejected)' },
+    { metric: '  • MCA – On Hold (Current)', val: mcaOnHoldRows.length, desc: 'MCA candidates currently On Hold (Sheet: MCA – On Hold)' },
+    { metric: '  • MCA – Rejected (Current)', val: mcaRejectedRows.length, desc: 'MCA candidates currently Rejected (Sheet: MCA – Rejected)' },
+    { metric: '  • Total Confirmed People Included (All current)', val: allCurrentRows.length, desc: 'All four sheets combined, 1 row per person (Sheet: All (current))' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'EVER HELD OR REJECTED (Historical):', val: '', desc: '' },
+    { metric: '  • Ever Held or Rejected in Any Round', val: everHeldOrRejectedRows.length, desc: 'Candidates ever On Hold or Rejected, including those later Selected (Sheet: Ever Held or Rejected)' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'AMBIGUOUS / REVIEW TIER:', val: '', desc: '' },
+    { metric: '  • Course Ambiguous (Needs Review)', val: needsReviewRows.length, desc: 'Course discrepancies between candidate and feedback, or in comments only (Sheet: Needs Review)' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'BCA & MCA CANDIDATES NOT INCLUDED (Other Outcomes):', val: notIncludedTotal, desc: 'Confirmed BCA/MCA candidates with outcomes other than On Hold or Rejected' },
+    { metric: '  • Selected (Current)', val: notIncludedCounts.SELECTED, desc: 'Candidates selected in their current/latest round' },
+    { metric: '  • Pending / Scheduled / Rescheduled', val: notIncludedCounts.PENDING, desc: 'Candidates with interviews pending, scheduled, or rescheduled' },
+    { metric: '  • Didn\'t Join / No-Show / Not Responded', val: notIncludedCounts.DIDNT_JOIN, desc: 'Candidates who did not attend or join' },
+    { metric: '  • Completed Round (No Outcome Stored)', val: notIncludedCounts.COMPLETED_NO_OUTCOME, desc: 'Completed lifecycle without an evaluation outcome' },
+    { metric: '  • Other Active Candidates (No Interviews)', val: notIncludedCounts.OTHER, desc: 'Imported/added candidates with no interview rounds conducted' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'EXCLUDED NON-TARGET DEGREES:', val: excludedNonTargetCourses, desc: 'Engineering (B.Tech/BE), Commerce (B.Com), Business (BBA/MBA), MSc' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'RECONCILIATION SUM CHECK', val: `${reconciliationSum} / ${totalEvaluated}`, desc: `Included (${allCurrentRows.length}) + Not Included (${notIncludedTotal}) + Standalone Review (${standaloneNeedsReviewCount}) + Excluded (${excludedNonTargetCourses}) = Total Evaluated (${totalEvaluated})` },
+    { metric: '', val: '', desc: '' },
+    { metric: 'DATA QUALITY METRICS:', val: '', desc: '' },
+    { metric: '  • Data Quality Issues Flagged', val: qualityIssues.length, desc: 'Missing contacts, contradictions, duplicate contacts (Sheet: Data Quality)' },
+    { metric: '  • Candidates with No Phone or Email', val: allCurrentRows.filter(r => r.needsContactDetails === 'Yes').length, desc: 'Campus drive records flagged needs_contact_details' },
+    { metric: '', val: '', desc: '' },
+    { metric: 'BREAKDOWN BY COLLEGE / DRIVE (Current Included):', val: '', desc: '' },
+    ...Object.entries(driveCounts).map(([col, cnt]) => ({
+      metric: `  • ${col}`, val: cnt, desc: `Candidates from ${col}`
+    })),
+    { metric: '', val: '', desc: '' },
+    { metric: 'BREAKDOWN BY ROLE APPLIED (Current Included):', val: '', desc: '' },
+    ...Object.entries(roleCounts).map(([ro, cnt]) => ({
+      metric: `  • ${ro}`, val: cnt, desc: `Candidates applied for ${ro}`
+    })),
+    { metric: '', val: '', desc: '' },
+    { metric: 'BREAKDOWN BY MONTH (Latest Round Date):', val: '', desc: '' },
+    ...Object.entries(monthCounts).map(([mo, cnt]) => ({
+      metric: `  • ${mo}`, val: cnt, desc: `Candidates evaluated in ${mo}`
+    }))
+  ];
+
+  summaryData.forEach(r => summarySheet.addRow(r));
+  applySheetStyles(summarySheet, true);
+
+  // --- SHEET 2: BCA – On Hold ---
+  const bcaHoldSheet = workbook.addWorksheet('BCA – On Hold');
+  writeCandidateSheet(bcaHoldSheet, bcaOnHoldRows);
+
+  // --- SHEET 3: BCA – Rejected ---
+  const bcaRejSheet = workbook.addWorksheet('BCA – Rejected');
+  writeCandidateSheet(bcaRejSheet, bcaRejectedRows);
+
+  // --- SHEET 4: MCA – On Hold ---
+  const mcaHoldSheet = workbook.addWorksheet('MCA – On Hold');
+  writeCandidateSheet(mcaHoldSheet, mcaOnHoldRows);
+
+  // --- SHEET 5: MCA – Rejected ---
+  const mcaRejSheet = workbook.addWorksheet('MCA – Rejected');
+  writeCandidateSheet(mcaRejSheet, mcaRejectedRows);
+
+  // --- SHEET 6: All (current) ---
+  const allCurrentSheet = workbook.addWorksheet('All (current)');
+  writeCandidateSheet(allCurrentSheet, allCurrentRows);
+
+  // --- SHEET 7: Ever Held or Rejected ---
+  const everSheet = workbook.addWorksheet('Ever Held or Rejected');
+  writeCandidateSheet(everSheet, everHeldOrRejectedRows);
+
+  // --- SHEET 8: Needs Review ---
+  const reviewSheet = workbook.addWorksheet('Needs Review');
+  writeCandidateSheet(reviewSheet, needsReviewRows, true);
+
+  // --- SHEET 9: Data Quality ---
+  const dqSheet = workbook.addWorksheet('Data Quality');
+  dqSheet.columns = [
+    { header: 'Candidate ID', key: 'candidateId', width: 28 },
+    { header: 'Full Name', key: 'fullName', width: 26 },
+    { header: 'Phone', key: 'phone', width: 18 },
+    { header: 'Email', key: 'email', width: 30 },
+    { header: 'Course Family', key: 'courseFamily', width: 16 },
+    { header: 'Issue Type', key: 'issueType', width: 28 },
+    { header: 'Details', key: 'details', width: 65 }
+  ];
+  qualityIssues.forEach(qi => {
+    const row = dqSheet.addRow(qi);
+    row.getCell(3).numFmt = '@';
+  });
+  applySheetStyles(dqSheet);
+
+  // --- SHEET 10: Match Rules ---
+  const rulesSheet = workbook.addWorksheet('Match Rules');
+  rulesSheet.columns = [
+    { header: 'Rule Category', key: 'category', width: 28 },
+    { header: 'Match Tier', key: 'tier', width: 16 },
+    { header: 'Spelling / Keyword / Pattern', key: 'keyword', width: 45 },
+    { header: 'Candidates Count', key: 'count', width: 18 },
+    { header: 'Rule Reference / Note', key: 'note', width: 55 }
+  ];
+  const sortedRules = Object.values(matchRulesStats).sort((a, b) => b.count - a.count);
+  sortedRules.forEach(r => rulesSheet.addRow(r));
+  applySheetStyles(rulesSheet);
+
+  // Save Excel workbook
+  const outFilename = `BCA_MCA_OnHold_Rejected_Candidates_${todayStr}.xlsx`;
+  const outPath = path.join(exportsDir, outFilename);
+  console.log(`Saving workbook to: ${outPath}...`);
+  await workbook.xlsx.writeFile(outPath);
+
+  console.log(`\nExport successful! Saved: ${outPath}`);
+  console.log(`Summary Counts:`);
+  console.log(`- BCA – On Hold: ${bcaOnHoldRows.length}`);
+  console.log(`- BCA – Rejected: ${bcaRejectedRows.length}`);
+  console.log(`- MCA – On Hold: ${mcaOnHoldRows.length}`);
+  console.log(`- MCA – Rejected: ${mcaRejectedRows.length}`);
+  console.log(`- All (current) Total: ${allCurrentRows.length}`);
+  console.log(`- Ever Held or Rejected: ${everHeldOrRejectedRows.length}`);
+  console.log(`- Needs Review: ${needsReviewRows.length}`);
+  console.log(`- Data Quality Issues: ${qualityIssues.length}`);
+  console.log(`- Candidates Not Included: ${notIncludedTotal}`);
+  console.log(`- Excluded Non-Target Degrees: ${excludedNonTargetCourses}`);
+  console.log(`- Reconciliation Check: ${reconciliationSum} / ${totalEvaluated} (${reconciliationSum === totalEvaluated ? 'PASSED' : 'MISMATCH'})`);
+  console.log(`- File size: ${(fs.statSync(outPath).size / 1024 / 1024).toFixed(2)} MB`);
+
+  return {
+    outPath,
+    bcaOnHoldCount: bcaOnHoldRows.length,
+    bcaRejectedCount: bcaRejectedRows.length,
+    mcaOnHoldCount: mcaOnHoldRows.length,
+    mcaRejectedCount: mcaRejectedRows.length,
+    allCurrentCount: allCurrentRows.length,
+    everHeldOrRejectedCount: everHeldOrRejectedRows.length,
+    needsReviewCount: needsReviewRows.length,
+    qualityCount: qualityIssues.length
+  };
+}
+
+async function runExport() {
+  const cliOptions = parseCliArgs();
+  if (cliOptions.coursesArg || cliOptions.outcomesArg) {
+    return runBcaMcaExport(cliOptions);
+  }
+  return runCityExport(cliOptions);
+}
+
 runExport()
   .catch(err => {
     console.error('Export error:', err);
@@ -1320,3 +2250,4 @@ runExport()
   .finally(async () => {
     await prisma.$disconnect();
   });
+

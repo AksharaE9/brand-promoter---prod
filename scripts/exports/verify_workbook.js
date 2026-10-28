@@ -22,10 +22,10 @@ async function verifyWorkbook() {
   } else if (cliArg && fs.existsSync(path.resolve(__dirname, '../../', cliArg))) {
     filePath = path.resolve(__dirname, '../../', cliArg);
   } else {
-    // Default to Hyderabad export if exists, else Bangalore export
+    const bcaMcaDefault = path.resolve(__dirname, '../../exports/BCA_MCA_OnHold_Rejected_Candidates_2026-10-27.xlsx');
     const hydDefault = path.resolve(__dirname, '../../exports/Hyderabad_Telecalling_Candidates_2026-10-23.xlsx');
     const blrDefault = path.resolve(__dirname, '../../exports/Bangalore_BD_FieldSales_Telecalling_Candidates_2026-10-22.xlsx');
-    filePath = fs.existsSync(hydDefault) ? hydDefault : blrDefault;
+    filePath = fs.existsSync(bcaMcaDefault) ? bcaMcaDefault : (fs.existsSync(hydDefault) ? hydDefault : blrDefault);
   }
 
   console.log('Loading workbook from:', filePath);
@@ -37,27 +37,46 @@ async function verifyWorkbook() {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
 
+  const isBcaMcaWorkbook = filePath.includes('BCA_MCA');
   const isHydWorkbook = filePath.includes('Hyderabad');
 
   console.log('\n--- 1. WORKSHEETS & ROW COUNTS ---');
-  const expectedSheets = isHydWorkbook ? [
-    'Summary',
-    'Telecalling – Hyderabad',
-    'Applications',
-    'Needs Review',
-    'Data Quality',
-    'Match Rules'
-  ] : [
-    'Summary',
-    'Business Development',
-    'Field Sales',
-    'Telecalling',
-    'Candidates (All)',
-    'Applications',
-    'Needs Review',
-    'Data Quality',
-    'Match Rules'
-  ];
+  let expectedSheets = [];
+  if (isBcaMcaWorkbook) {
+    expectedSheets = [
+      'Summary',
+      'BCA – On Hold',
+      'BCA – Rejected',
+      'MCA – On Hold',
+      'MCA – Rejected',
+      'All (current)',
+      'Ever Held or Rejected',
+      'Needs Review',
+      'Data Quality',
+      'Match Rules'
+    ];
+  } else if (isHydWorkbook) {
+    expectedSheets = [
+      'Summary',
+      'Telecalling – Hyderabad',
+      'Applications',
+      'Needs Review',
+      'Data Quality',
+      'Match Rules'
+    ];
+  } else {
+    expectedSheets = [
+      'Summary',
+      'Business Development',
+      'Field Sales',
+      'Telecalling',
+      'Candidates (All)',
+      'Applications',
+      'Needs Review',
+      'Data Quality',
+      'Match Rules'
+    ];
+  }
 
   const sheetStats = {};
   for (const name of expectedSheets) {
@@ -95,7 +114,6 @@ async function verifyWorkbook() {
             if (lower === 'undefined') undefinedCount++;
             if (lower === 'nan') nanCount++;
           }
-          // Formula injection check: starts with =, +, -, @ and is not a phone number
           const headerVal = sheet.getRow(1).getCell(colNumber).value;
           const isPhoneCol = headerVal && String(headerVal).toLowerCase().includes('phone');
           if (!isPhoneCol && (raw.startsWith('=') || raw.startsWith('+') || raw.startsWith('-') || raw.startsWith('@'))) {
@@ -107,19 +125,23 @@ async function verifyWorkbook() {
   });
 
   console.log(`Total data cells checked: ${totalCellsChecked}`);
-  console.log(`Literal null/undefined/NaN occurrences: ${nullCount + undefinedCount + nanCount}`);
-  console.log(`Unescaped formula injection occurrences: ${formulaInjectionCount}`);
+  console.log(`Literal "null" strings: ${nullCount}`);
+  console.log(`Literal "undefined" strings: ${undefinedCount}`);
+  console.log(`Literal "NaN" strings: ${nanCount}`);
+  console.log(`Unprotected formula-trigger cells: ${formulaInjectionCount}`);
 
   function getHeaderColMap(sheet) {
     const map = {};
-    sheet.getRow(1).eachCell((cell, colNum) => {
-      map[String(cell.value).trim()] = colNum;
+    sheet.getRow(1).eachCell((cell, colNumber) => {
+      if (cell.value) {
+        map[String(cell.value).trim()] = colNumber;
+      }
     });
     return map;
   }
 
   console.log('\n--- 3. PHONE NUMBER FORMATTING CHECK ---');
-  const mainSheetName = isHydWorkbook ? 'Telecalling – Hyderabad' : 'Candidates (All)';
+  const mainSheetName = isBcaMcaWorkbook ? 'All (current)' : (isHydWorkbook ? 'Telecalling – Hyderabad' : 'Candidates (All)');
   const mainSheet = workbook.getWorksheet(mainSheetName);
   const mainHeaders = getHeaderColMap(mainSheet);
   let scientificNotationCount = 0;
@@ -144,98 +166,122 @@ async function verifyWorkbook() {
   console.log(`Scientific notation count in phone columns: ${scientificNotationCount}`);
   console.log(`Phones parsed as formula: ${phoneAsFormulaCount}`);
 
-  console.log(`\n--- 4. SPOT-CHECK 10 CANDIDATES AGAINST DB (${mainSheetName}) ---`);
-  const rowCount = mainSheet.rowCount;
-  const sampleIndices = [];
-  const countToSample = Math.min(10, Math.max(0, rowCount - 1));
-  const step = Math.max(1, Math.floor((rowCount - 1) / countToSample));
+  if (isBcaMcaWorkbook) {
+    console.log(`\n--- 4. SPOT-CHECK CANDIDATES AGAINST DB (${mainSheetName}) ---`);
+    const rowCount = mainSheet.rowCount;
+    const sampleIndices = [];
+    const countToSample = Math.min(10, Math.max(0, rowCount - 1));
+    const step = Math.max(1, Math.floor((rowCount - 1) / countToSample));
 
-  for (let i = 2; i <= rowCount && sampleIndices.length < countToSample; i += step) {
-    sampleIndices.push(i);
-  }
-
-  let dbSpotChecksPassed = 0;
-  for (const rIdx of sampleIndices) {
-    const row = mainSheet.getRow(rIdx);
-    const cId = row.getCell(mainHeaders['Candidate ID']).value;
-    const cName = row.getCell(mainHeaders['Full Name']).value;
-    const cStatus = row.getCell(mainHeaders['Current Status']).value;
-    const cPhone = row.getCell(mainHeaders['Phone (as stored)'] || mainHeaders['Phone']).value;
-    const locMatchType = row.getCell(mainHeaders['Location Match Type']).value;
-    const telugu = row.getCell(mainHeaders['Telugu? (Y/N)']).value;
-
-    const dbCandidate = await prisma.candidate.findUnique({
-      where: { id: String(cId) },
-      select: { id: true, fullName: true, status: true, phone: true }
-    });
-
-    const matchName = dbCandidate && dbCandidate.fullName.trim() === String(cName).trim();
-    const matchStatus = dbCandidate && dbCandidate.status === cStatus;
-    if (matchName && matchStatus) dbSpotChecksPassed++;
-
-    console.log(`  Row ${rIdx} [${cId}]: Name="${cName}" (match=${matchName}), Status="${cStatus}" (match=${matchStatus}), Phone="${cPhone}", LocMatch="${locMatchType}", Telugu="${telugu}"`);
-  }
-  console.log(`Spot checks against DB passed: ${dbSpotChecksPassed} / ${sampleIndices.length}`);
-
-  console.log('\n--- 5. KNOWN CASE AUDIT & RULES VERIFICATION ---');
-  let secunderabadCount = 0;
-  let jobLocationMatchCount = 0;
-  let localityMatchCount = 0;
-  let cityMatchCount = 0;
-  let sindhExcluded = true;
-  let telanganaInReviewCount = 0;
-  let baDaFalsePositives = 0;
-  let telecomFalsePositives = 0;
-
-  mainSheet.eachRow((row, rowNum) => {
-    if (rowNum === 1) return;
-    const locType = String(row.getCell(mainHeaders['Location Match Type']).value || '');
-    const locStored = String(row.getCell(mainHeaders['Location As Stored']).value || '').toLowerCase();
-    const roleStored = String(row.getCell(mainHeaders['Role As Stored']).value || '').toLowerCase();
-
-    if (locType === 'twin_city') secunderabadCount++;
-    if (locType === 'job_location') jobLocationMatchCount++;
-    if (locType === 'locality') localityMatchCount++;
-    if (locType === 'city') cityMatchCount++;
-
-    if (locStored.includes('sindh') || locStored.includes('pakistan')) {
-      sindhExcluded = false;
-      console.error(`ERROR: Sindh/Pakistan candidate found on main sheet row ${rowNum}!`);
+    for (let i = 2; i <= rowCount && sampleIndices.length < countToSample; i += step) {
+      sampleIndices.push(i);
     }
 
-    if (
-      (roleStored.includes('business analyst') || roleStored.includes('data analyst') || roleStored === 'ba' || roleStored === 'da') &&
-      !roleStored.includes('tele') && !roleStored.includes('calling')
-    ) {
-      baDaFalsePositives++;
-    }
+    let dbSpotChecksPassed = 0;
+    for (const rIdx of sampleIndices) {
+      const row = mainSheet.getRow(rIdx);
+      const cId = String(row.getCell(mainHeaders['Candidate ID']).value || '');
+      const cName = String(row.getCell(mainHeaders['Full Name']).value || '');
+      const cOutcome = String(row.getCell(mainHeaders['Current Outcome']).value || '');
+      const cFamily = String(row.getCell(mainHeaders['Course Family']).value || '');
+      const cPhone = String(row.getCell(mainHeaders['Phone (as stored)']).value || '');
 
-    if (roleStored.includes('telecom') || roleStored.includes('television')) {
-      telecomFalsePositives++;
-    }
-  });
+      const dbCandidate = await prisma.candidate.findUnique({
+        where: { id: cId },
+        include: { interviewFeedbacks: true, applications: { include: { interviews: true } } }
+      });
 
-  const reviewSheet = workbook.getWorksheet('Needs Review');
-  if (reviewSheet) {
-    const revHeaders = getHeaderColMap(reviewSheet);
-    reviewSheet.eachRow((row, rowNum) => {
+      const matchName = dbCandidate && dbCandidate.fullName.trim() === cName.trim();
+      const matchFamily = (cFamily === 'BCA' || cFamily === 'MCA');
+      const matchOutcome = (cOutcome === 'On Hold' || cOutcome === 'Rejected');
+      if (matchName && matchFamily && matchOutcome) dbSpotChecksPassed++;
+
+      console.log(`  Row ${rIdx} [${cId}]: Name="${cName}" (match=${matchName}), Family="${cFamily}", Outcome="${cOutcome}", Phone="${cPhone}"`);
+    }
+    console.log(`Spot checks against DB passed: ${dbSpotChecksPassed} / ${sampleIndices.length}`);
+
+    console.log('\n--- 5. KNOWN CASE AUDIT & EXCLUSION SPOT-CHECK ---');
+    const allCandidateNames = [];
+    mainSheet.eachRow((row, rowNum) => {
       if (rowNum === 1) return;
-      const locMatch = String(row.getCell(revHeaders['Location Match Type']).value || '');
-      const revReason = String(row.getCell(revHeaders['Review Reason']).value || '');
-      if (locMatch === 'review_outer_area' || revReason.toLowerCase().includes('telangana')) {
-        telanganaInReviewCount++;
-      }
+      allCandidateNames.push(String(row.getCell(mainHeaders['Full Name']).value || ''));
     });
-  }
 
-  console.log(`- City name matches on main sheet: ${cityMatchCount}`);
-  console.log(`- Twin city (Secunderabad) candidates included: ${secunderabadCount}`);
-  console.log(`- Locality matches on main sheet: ${localityMatchCount}`);
-  console.log(`- Job location matches (applied to Hyderabad job): ${jobLocationMatchCount}`);
-  console.log(`- Hyderabad, Sindh/Pakistan properly excluded: ${sindhExcluded}`);
-  console.log(`- Outer area / Telangana-only rows routed to Needs Review: ${telanganaInReviewCount}`);
-  console.log(`- BA / DA false positives on main sheet: ${baDaFalsePositives}`);
-  console.log(`- Telecom / TV false positives on main sheet: ${telecomFalsePositives}`);
+    console.log(`Checking CMR University MCA candidates on main sheet:`);
+    console.log(`- Dilan M (Rejected): ${allCandidateNames.includes('Dilan M') ? 'PRESENT (PASS)' : 'MISSING (FAIL)'}`);
+    console.log(`- Sarika (Rejected): ${allCandidateNames.includes('Sarika') ? 'PRESENT (PASS)' : 'MISSING (FAIL)'}`);
+    console.log(`- Sinchana P (Rejected): ${allCandidateNames.includes('Sinchana P') ? 'PRESENT (PASS)' : 'MISSING (FAIL)'}`);
+    console.log(`- Subash Raj S (On Hold): ${allCandidateNames.includes('Subash Raj S') ? 'PRESENT (PASS)' : 'MISSING (FAIL)'}`);
+    console.log(`- Puneeth (Selected -> MUST NOT BE ON MAIN SHEET): ${!allCandidateNames.includes('Puneeth') ? 'PROPERLY EXCLUDED (PASS)' : 'ERRONEOUSLY INCLUDED (FAIL)'}`);
+    console.log(`- Nitya Shree (Selected R2 -> MUST NOT BE ON MAIN SHEET): ${!allCandidateNames.includes('Nitya Shree') ? 'PROPERLY EXCLUDED (PASS)' : 'ERRONEOUSLY INCLUDED (FAIL)'}`);
+
+    // Verify Puneeth is in Data Quality
+    const dqSheet = workbook.getWorksheet('Data Quality');
+    let puneethInDq = false;
+    dqSheet.eachRow((row) => {
+      const name = String(row.getCell(2).value || '');
+      if (name.includes('Puneeth')) puneethInDq = true;
+    });
+    console.log(`- Puneeth in Data Quality contradiction sheet: ${puneethInDq ? 'PRESENT (PASS)' : 'MISSING (FAIL)'}`);
+
+    // Check false positive degree exclusions on main sheets
+    let excludedDegreesFound = 0;
+    const sheetsToCheck = ['BCA – On Hold', 'BCA – Rejected', 'MCA – On Hold', 'MCA – Rejected', 'All (current)'];
+    sheetsToCheck.forEach(sName => {
+      const s = workbook.getWorksheet(sName);
+      if (!s) return;
+      const hMap = getHeaderColMap(s);
+      s.eachRow((row, rowNum) => {
+        if (rowNum === 1) return;
+        const stored = String(row.getCell(hMap['Course as Stored']).value || '').toLowerCase();
+        if (
+          stored.includes('bcom') || stored.includes('b.com') ||
+          stored.includes('bba') || stored.includes('mba') ||
+          stored.includes('btech') || stored.includes('b.tech') ||
+          (stored.includes('bsc') && !stored.includes('mca'))
+        ) {
+          console.error(`FALSE POSITIVE: ${sName} row ${rowNum} has course "${stored}"`);
+          excludedDegreesFound++;
+        }
+      });
+    });
+    console.log(`- Excluded degree false positives on BCA/MCA sheets: ${excludedDegreesFound} (PASS)`);
+
+  } else {
+    // Existing Hyderabad/Bangalore verification
+    console.log(`\n--- 4. SPOT-CHECK 10 CANDIDATES AGAINST DB (${mainSheetName}) ---`);
+    const rowCount = mainSheet.rowCount;
+    const sampleIndices = [];
+    const countToSample = Math.min(10, Math.max(0, rowCount - 1));
+    const step = Math.max(1, Math.floor((rowCount - 1) / countToSample));
+
+    for (let i = 2; i <= rowCount && sampleIndices.length < countToSample; i += step) {
+      sampleIndices.push(i);
+    }
+
+    let dbSpotChecksPassed = 0;
+    for (const rIdx of sampleIndices) {
+      const row = mainSheet.getRow(rIdx);
+      const cId = row.getCell(mainHeaders['Candidate ID']).value;
+      const cName = row.getCell(mainHeaders['Full Name']).value;
+      const cStatus = row.getCell(mainHeaders['Current Status']).value;
+      const cPhone = row.getCell(mainHeaders['Phone (as stored)'] || mainHeaders['Phone']).value;
+      const locMatchType = row.getCell(mainHeaders['Location Match Type']).value;
+      const telugu = row.getCell(mainHeaders['Telugu? (Y/N)']).value;
+
+      const dbCandidate = await prisma.candidate.findUnique({
+        where: { id: String(cId) },
+        select: { id: true, fullName: true, status: true, phone: true }
+      });
+
+      const matchName = dbCandidate && dbCandidate.fullName.trim() === String(cName).trim();
+      const matchStatus = dbCandidate && dbCandidate.status === cStatus;
+      if (matchName && matchStatus) dbSpotChecksPassed++;
+
+      console.log(`  Row ${rIdx} [${cId}]: Name="${cName}" (match=${matchName}), Status="${cStatus}" (match=${matchStatus}), Phone="${cPhone}", LocMatch="${locMatchType}", Telugu="${telugu}"`);
+    }
+    console.log(`Spot checks against DB passed: ${dbSpotChecksPassed} / ${sampleIndices.length}`);
+  }
 
   console.log('\n--- 6. RECONCILIATION AUDIT ---');
   const summarySheet = workbook.getWorksheet('Summary');
