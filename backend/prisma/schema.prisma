@@ -237,6 +237,7 @@ model Candidate {
   parsedResume        ParsedResume?
   matchScores         MatchScore[]
   resumeParseJobs     ResumeParseJob[]
+  externalAssessments ExternalAssessmentResult[]
 
   @@index([organizationId])
   @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
@@ -478,6 +479,7 @@ model Interview {
   updatedAt        DateTime       @updatedAt
 
   application      Application?   @relation(fields: [applicationId], references: [id])
+  externalAssessments ExternalAssessmentResult[]
 
   @@index([applicationId])
   @@index([scheduledStart])
@@ -1205,5 +1207,110 @@ model SkillsTaxonomy {
   @@index([category])
   @@index([normalizedTerm])
   @@map("skills_taxonomies")
+}
+
+// ─────────────────────────────────────────────
+// External Assessments / Integrations (Recruit AI, HireIQ, etc.)
+// ─────────────────────────────────────────────
+
+model IntegrationProvider {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "recruit_ai"
+  name        String
+  enabled     Boolean  @default(true)
+  config      Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("integration_providers")
+}
+
+model ExternalAssessmentResult {
+  id                     String    @id @default(cuid())
+  provider               String    @default("recruit_ai")
+  providerResultId       String    @map("provider_result_id")
+  providerInterviewId    String?   @map("provider_interview_id")
+  providerCandidateId    String?   @map("provider_candidate_id")
+  externalReference      String?   @map("external_reference")
+
+  candidateId            String?   @map("candidate_id")
+  interviewRoundId       String?   @map("interview_round_id")
+
+  matchMethod            String?   @map("match_method") // external_ref | email | phone | manual
+  matchConfidence        String?   @map("match_confidence") // HIGH | MEDIUM | LOW
+
+  status                 String    @default("COMPLETED") // COMPLETED | NO_SHOW | EXPIRED | CANCELLED | IN_PROGRESS
+
+  scoreRaw               Float?    @map("score_raw")
+  scoreScale             Float?    @default(100) @map("score_scale")
+  scoreNormalised100     Float?    @map("score_normalised_100")
+  ratingOutOf10          Float?    @map("rating_out_of_10")
+
+  recommendationRaw      String?   @map("recommendation_raw")
+  recommendationNormalised String? @map("recommendation_normalised") // strong_yes | yes | maybe | no | not_assessed
+
+  competencyScores       Json?     @map("competency_scores")
+  summary                String?   @db.Text
+  transcriptRef          String?   @map("transcript_ref")
+  recordingUrl           String?   @map("recording_url")
+  recordingExpiresAt     DateTime? @map("recording_expires_at")
+  integrityFlags         Json?     @map("integrity_flags")
+
+  startedAt              DateTime? @map("started_at")
+  completedAt            DateTime? @map("completed_at")
+  providerUpdatedAt      DateTime? @map("provider_updated_at")
+  providerVersion        String?   @map("provider_version")
+
+  rawPayload             Json?     @map("raw_payload")
+  payloadHash            String?   @map("payload_hash")
+
+  reviewStatus           String    @default("pending_review") @map("review_status") // pending_review | outcome_confirmed | dismissed
+  reviewedById           String?   @map("reviewed_by_id")
+  reviewedAt             DateTime? @map("reviewed_at")
+  decisionOutcome        String?   @map("decision_outcome") // SELECTED | REJECTED | ON_HOLD
+
+  organizationId         String    @default("defaultOrg") @map("organization_id")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  candidate              Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  interview              Interview? @relation(fields: [interviewRoundId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerResultId])
+  @@index([candidateId])
+  @@index([interviewRoundId])
+  @@index([externalReference])
+  @@index([reviewStatus])
+  @@index([organizationId])
+  @@map("external_assessment_results")
+}
+
+model IntegrationInboxEvent {
+  id             String    @id @default(cuid())
+  provider       String    @default("recruit_ai")
+  eventId        String    @unique @map("event_id")
+  type           String
+  receivedAt     DateTime  @default(now()) @map("received_at")
+  signatureValid Boolean   @default(true) @map("signature_valid")
+  processedAt    DateTime? @map("processed_at")
+  attempts       Int       @default(0)
+  lastError      String?   @db.Text @map("last_error")
+  status         String    @default("queued") // queued | processed | failed | ignored
+  payload        Json
+
+  @@index([provider, status])
+  @@index([receivedAt])
+  @@map("integration_inbox_events")
+}
+
+model IntegrationSyncState {
+  id                    String    @id @default(cuid())
+  provider              String    @unique
+  lastSuccessfulCursor  String?   @map("last_successful_cursor")
+  lastSyncAt            DateTime? @map("last_sync_at")
+  lastError             String?   @db.Text @map("last_error")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  @@map("integration_sync_states")
 }
 

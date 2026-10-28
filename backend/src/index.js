@@ -98,6 +98,8 @@ async function bootstrap() {
         startResumeHealthCheck();
         const { startQualityCheckReconciliation } = require("./jobs/qualityCheckReconciliation");
         startQualityCheckReconciliation();
+        const { initPoller } = require("./modules/integrations/recruit-ai/pollerService");
+        initPoller();
         console.log('[Workers] In-process background workers loaded successfully.');
       } catch (err) {
         console.warn("[Workers] Background workers failed to load:", err.message);

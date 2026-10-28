@@ -438,6 +438,12 @@ async function writeRound(roundId, updatePayload, performedBy, orgId, currentDat
     
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+      if (updatePayload.scheduledStart || updatePayload.status === 'RESCHEDULED') {
+        try {
+          const { dispatchScheduledInterview } = require('../modules/integrations/recruit-ai/outboundDispatcher');
+          dispatchScheduledInterview(updated).catch(e => console.warn('[RecruitAI Dispatcher] Dispatch failed:', e.message));
+        } catch (err) {}
+      }
     });
     
     sse.broadcastToOrg(orgId, 'SCHEDULING_UPDATE', {
@@ -478,6 +484,10 @@ async function createRound(roundData, orgId, createdBy) {
     
     setImmediate(() => {
       inv.interview(orgId).catch(err => console.error('[CacheInvalidation] interview error:', err.message));
+      try {
+        const { dispatchScheduledInterview } = require('../modules/integrations/recruit-ai/outboundDispatcher');
+        dispatchScheduledInterview(created).catch(e => console.warn('[RecruitAI Dispatcher] Dispatch failed:', e.message));
+      } catch (err) {}
     });
     
     sse.broadcastToOrg(orgId, 'ROUND_CREATED', {

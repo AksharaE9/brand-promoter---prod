@@ -236,6 +236,9 @@ app.use('/api/matching', apiLimiter, cc(0), require('./modules/matching/routes')
 // ── External API (v1) ──────────────────────────────────────────────────────
 app.use('/api/v1/ext', require('./modules/ext/routes'));
 
+// ── Integrations: Recruit AI / HireIQ (v1) ─────────────────────────────────
+app.use('/api/v1/integrations/recruit-ai', require('./modules/integrations/recruit-ai/routes'));
+
 app.use(notFound);
 app.use(errorHandler);
 
