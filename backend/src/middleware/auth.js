@@ -144,6 +144,7 @@ async function invalidateUserCache(userId) {
 
 module.exports = {
   auth,
+  requireAuth: auth,
   requireRoles,
   invalidateUserCache,
 };

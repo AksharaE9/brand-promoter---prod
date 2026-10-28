@@ -3,15 +3,15 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../../config/db');
-const { requireAuth, requireRoles } = require('../../middlewares/auth');
-const { ApiError } = require('../../utils/apiError');
+const { auth, requireRoles } = require('../../middleware/auth');
+const { ApiError } = require('../../utils/errors');
 const { enqueueParseJob, executeJob } = require('./jobQueue');
 const { resolveCandidateRole } = require('./roleResolver');
 const { normalizeTerm } = require('./seedJds');
 const { scoreAllRoles } = require('./scorer');
 
 // All matching routes require authentication
-router.use(requireAuth);
+router.use(auth);
 
 /**
  * GET /api/matching/candidates/:candidateId/analysis
