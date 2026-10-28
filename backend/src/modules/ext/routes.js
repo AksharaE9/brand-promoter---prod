@@ -29,6 +29,7 @@ const {
   toDriveDto,
   toJobDto,
   toTeamMemberDto,
+  toHireIqInterviewDto,
 } = require('./dtos');
 const { verifySignedResumeToken } = require('./apiKeyService');
 const { getOpenApiSpec } = require('./openapi');
@@ -228,6 +229,61 @@ router.get('/candidates/:id', requireScope('candidates:read'), asyncHandler(asyn
   });
 }));
 
+// GET /api/v1/ext/candidates/:id/resume
+router.get('/candidates/:id/resume', requireScope('resumes:read'), asyncHandler(async (req, res) => {
+  const orgId = req.apiClient.orgId;
+
+  const candidate = await prisma.candidate.findFirst({
+    where: {
+      id: req.params.id,
+      organizationId: orgId,
+      isDeleted: false,
+    },
+    include: {
+      resumeFile: {
+        select: {
+          id: true,
+          originalName: true,
+          mimeType: true,
+          fileData: true,
+        }
+      }
+    }
+  });
+
+  if (!candidate) {
+    throw new ApiError(404, 'Candidate not found', 'NOT_FOUND');
+  }
+
+  // 1. Direct PostgreSQL file_metas (BYTEA storage)
+  if (candidate.resumeFile?.fileData && candidate.resumeFile.fileData.length > 0) {
+    const fileMeta = candidate.resumeFile;
+    const safeName = (fileMeta.originalName || `${candidate.fullName.replace(/\s+/g, '_')}_resume.pdf`).replace(/[^\w.-]/g, '_');
+    res.setHeader('Content-Type', fileMeta.mimeType || 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeName)}"`);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    return streamDbFile(fileMeta.fileData, res);
+  }
+
+  // 2. External redirect (Google Drive / direct external cloud link)
+  const extUrl = candidate.resumeLinkOriginal || candidate.resumeLinkDownload;
+  if (extUrl && /^https?:\/\//i.test(extUrl.trim())) {
+    return res.redirect(302, extUrl.trim());
+  }
+
+  // 3. Terminal missing file
+  return res.status(404).json({
+    success: false,
+    code: 'RESUME_FILE_MISSING',
+    message: 'The candidate does not have a readable resume file in storage.',
+    error: {
+      code: 'RESUME_FILE_MISSING',
+      message: 'Resume file not found in storage for this candidate.',
+      requestId: req.id,
+    }
+  });
+}));
+
 // GET /api/v1/ext/candidates/:id/interviews
 router.get('/candidates/:id/interviews', requireScope('interviews:read'), asyncHandler(async (req, res) => {
   const orgId = req.apiClient.orgId;
@@ -261,9 +317,11 @@ router.get('/candidates/:id/interviews', requireScope('interviews:read'), asyncH
   });
 }));
 
-// GET /api/v1/ext/interviews
+// GET /api/v1/ext/interviews (HireIQ Main Feed — Part 3.1 & 3.2)
 router.get('/interviews', requireScope('interviews:read'), asyncHandler(async (req, res) => {
   const orgId = req.apiClient.orgId;
+  const hasPii = req.apiClient.scopes.includes('candidates:read:pii');
+  const hasResume = req.apiClient.scopes.includes('resumes:read');
 
   const limitParam = parseInt(req.query.limit, 10);
   const limit = Math.min(Math.max(isNaN(limitParam) ? 50 : limitParam, 1), 100);
@@ -272,14 +330,38 @@ router.get('/interviews', requireScope('interviews:read'), asyncHandler(async (r
     organizationId: orgId,
   };
 
-  if (req.query.outcome) {
-    where.outcome = req.query.outcome.toUpperCase();
-  }
-  if (req.query.round) {
-    where.roundNo = parseInt(req.query.round, 10);
+  // 1. Status Filter: scheduled (default) | completed | cancelled | all
+  const statusParam = (req.query.status || '').toLowerCase().trim();
+  if (statusParam === 'completed') {
+    where.status = 'COMPLETED';
+  } else if (statusParam === 'cancelled') {
+    where.status = { in: ['CANCELLED', 'NO_SHOW'] };
+  } else if (statusParam === 'all') {
+    // No status filter
+  } else if (statusParam === 'scheduled') {
+    where.status = { in: ['SCHEDULED', 'RESCHEDULED'] };
+  } else if (!req.query.updatedSince) {
+    // Default to scheduled when updatedSince is not passed
+    where.status = { in: ['SCHEDULED', 'RESCHEDULED'] };
   }
 
-  // Date filters in IST: from / to e.g. 2026-10-27
+  // 2. Round filter (e.g. 1, 2)
+  if (req.query.round) {
+    const rNo = parseInt(req.query.round, 10);
+    if (!isNaN(rNo)) where.roundNo = rNo;
+  }
+
+  // 3. Role filter (job ID or role text)
+  if (req.query.role) {
+    const roleTerm = String(req.query.role).trim();
+    where.OR = [
+      { jobTitle: { contains: roleTerm, mode: 'insensitive' } },
+      { jobId: roleTerm },
+      { candidateName: { contains: roleTerm, mode: 'insensitive' } },
+    ];
+  }
+
+  // 4. Date filters in IST: from / to e.g. 2026-10-28
   if (req.query.from || req.query.to) {
     where.scheduledStart = {};
     if (req.query.from) {
@@ -291,8 +373,24 @@ router.get('/interviews', requireScope('interviews:read'), asyncHandler(async (r
       const toDate = new Date(`${req.query.to}T23:59:59.999+05:30`);
       where.scheduledStart.lte = toDate;
     }
+  } else if (!req.query.updatedSince && !req.query.role && !req.query.round) {
+    // Default: today -> today + 14 days in IST
+    const nowUtc = new Date();
+    const istOffsetMs = 5.5 * 3600 * 1000;
+    const todayIst = new Date(nowUtc.getTime() + istOffsetMs);
+    const pad = (n) => String(n).padStart(2, '0');
+    const todayStr = `${todayIst.getUTCFullYear()}-${pad(todayIst.getUTCMonth() + 1)}-${pad(todayIst.getUTCDate())}`;
+
+    const future14Ist = new Date(todayIst.getTime() + 14 * 24 * 3600 * 1000);
+    const futureStr = `${future14Ist.getUTCFullYear()}-${pad(future14Ist.getUTCMonth() + 1)}-${pad(future14Ist.getUTCDate())}`;
+
+    where.scheduledStart = {
+      gte: new Date(`${todayStr}T00:00:00+05:30`),
+      lte: new Date(`${futureStr}T23:59:59.999+05:30`),
+    };
   }
 
+  // 5. Polling filter: updatedSince ISO timestamp
   if (req.query.updatedSince) {
     where.updatedAt = { gte: new Date(req.query.updatedSince) };
   }
@@ -311,6 +409,25 @@ router.get('/interviews', requireScope('interviews:read'), asyncHandler(async (r
 
   const interviews = await prisma.interview.findMany({
     where,
+    include: {
+      application: {
+        include: {
+          candidate: {
+            include: {
+              resumeFile: {
+                select: {
+                  id: true,
+                  originalName: true,
+                  mimeType: true,
+                  fileData: true,
+                }
+              }
+            }
+          },
+          job: true
+        }
+      }
+    },
     orderBy: [
       { updatedAt: 'desc' },
       { id: 'desc' },
@@ -324,13 +441,66 @@ router.get('/interviews', requireScope('interviews:read'), asyncHandler(async (r
   const lastItem = returnRows[returnRows.length - 1];
   const nextCursor = (hasMore && lastItem) ? encodeCursor(lastItem.updatedAt, lastItem.id) : null;
 
+  const host = req.get('host');
+  const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+  const baseUrl = `${proto}://${host}`;
+
+  const data = returnRows.map(i => toHireIqInterviewDto(i, hasPii, hasResume, baseUrl));
+
   res.json({
-    data: returnRows.map(toInterviewDto),
+    data,
     page: {
       nextCursor,
       limit,
-      hasMore,
     },
+    meta: {
+      requestId: req.id,
+    }
+  });
+}));
+
+// GET /api/v1/ext/interviews/:id (Single Interview DTO)
+router.get('/interviews/:id', requireScope('interviews:read'), asyncHandler(async (req, res) => {
+  const orgId = req.apiClient.orgId;
+  const hasPii = req.apiClient.scopes.includes('candidates:read:pii');
+  const hasResume = req.apiClient.scopes.includes('resumes:read');
+
+  const interview = await prisma.interview.findFirst({
+    where: {
+      id: req.params.id,
+      organizationId: orgId,
+    },
+    include: {
+      application: {
+        include: {
+          candidate: {
+            include: {
+              resumeFile: {
+                select: {
+                  id: true,
+                  originalName: true,
+                  mimeType: true,
+                  fileData: true,
+                }
+              }
+            }
+          },
+          job: true
+        }
+      }
+    }
+  });
+
+  if (!interview) {
+    throw new ApiError(404, 'Interview not found', 'NOT_FOUND');
+  }
+
+  const host = req.get('host');
+  const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+  const baseUrl = `${proto}://${host}`;
+
+  res.json({
+    data: toHireIqInterviewDto(interview, hasPii, hasResume, baseUrl),
     meta: {
       requestId: req.id,
     }

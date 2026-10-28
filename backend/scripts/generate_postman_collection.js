@@ -123,26 +123,53 @@ const collection = {
             },
           },
         },
-      ],
-    },
-    {
-      name: 'Interviews & Evaluations',
-      item: [
         {
-          name: 'List Interviews (Paginated)',
+          name: 'Get Candidate Resume Stream',
           request: {
             method: 'GET',
             url: {
-              raw: '{{baseUrl}}/api/v1/ext/interviews?limit=50',
+              raw: '{{baseUrl}}/api/v1/ext/candidates/:id/resume',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'candidates', ':id', 'resume'],
+              variable: [{ key: 'id', value: 'cmvqbje7d005rtbqoy2wvmg7c' }],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Interviews & Evaluations (HireIQ Feed)',
+      item: [
+        {
+          name: 'List Scheduled Interviews (Main Feed)',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/interviews?limit=50&status=scheduled',
               host: ['{{baseUrl}}'],
               path: ['api', 'v1', 'ext', 'interviews'],
               query: [
                 { key: 'limit', value: '50' },
-                { key: 'outcome', value: 'SELECTED', disabled: true },
+                { key: 'status', value: 'scheduled' },
+                { key: 'from', value: '2026-10-28', disabled: true },
+                { key: 'to', value: '2026-11-10', disabled: true },
                 { key: 'round', value: '1', disabled: true },
-                { key: 'from', value: '2026-10-27', disabled: true },
-                { key: 'to', value: '2026-10-27', disabled: true },
+                { key: 'role', value: '', disabled: true },
+                { key: 'updatedSince', value: '2026-10-27T00:00:00+05:30', disabled: true },
+                { key: 'cursor', value: '', disabled: true },
               ],
+            },
+          },
+        },
+        {
+          name: 'Get Single Interview by ID',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/interviews/:id',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'interviews', ':id'],
+              variable: [{ key: 'id', value: 'cmv_interview_id' }],
             },
           },
         },

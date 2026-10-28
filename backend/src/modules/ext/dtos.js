@@ -271,6 +271,243 @@ function toTeamMemberDto(member) {
   };
 }
 
+/**
+ * ── HireIQ Integration DTOs (Part 3.2 Specification) ─────────────────────────
+ */
+
+/**
+ * Validates candidate email and assigns emailStatus.
+ * Returns null email if placeholder or invalid, or if hasPiiScope is false.
+ */
+function validateCandidateEmail(rawEmail, hasPiiScope = false) {
+  if (!rawEmail) return { email: null, emailStatus: 'missing' };
+  const trimmed = String(rawEmail).trim().toLowerCase();
+  if (!trimmed || trimmed === 'n/a' || trimmed === 'na' || trimmed === '-' || trimmed === 'null' || trimmed === 'none') {
+    return { email: null, emailStatus: 'missing' };
+  }
+
+  const placeholderPatterns = ['dummy', 'test@', 'example.com', 'none@', 'na@', 'noemail', 'fake', 'placeholder'];
+  if (placeholderPatterns.some(p => trimmed.includes(p))) {
+    return { email: null, emailStatus: 'placeholder' };
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) {
+    return { email: null, emailStatus: 'invalid' };
+  }
+
+  // Valid email format
+  return {
+    email: hasPiiScope ? trimmed : null,
+    emailStatus: 'valid'
+  };
+}
+
+/**
+ * Formats schedule in IST with +05:30 offset.
+ */
+function formatIstSchedule(scheduledStart, durationMinutes = 30, slot = 'Slot 1', mode = 'ONLINE', meetingLink = null) {
+  if (!scheduledStart) {
+    return {
+      date: null,
+      startTime: null,
+      endTime: null,
+      durationMinutes: durationMinutes || 30,
+      slot: slot || 'Slot 1',
+      timezone: 'Asia/Kolkata',
+      startsAt: null,
+      endsAt: null,
+      mode: mode || 'ONLINE',
+      meetingLink: meetingLink || null
+    };
+  }
+
+  const utcDate = new Date(scheduledStart);
+  const duration = Number(durationMinutes) || 30;
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+
+  const startIst = new Date(utcDate.getTime() + istOffsetMs);
+  const endUtc = new Date(utcDate.getTime() + (duration * 60 * 1000));
+  const endIst = new Date(endUtc.getTime() + istOffsetMs);
+
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const startY = startIst.getUTCFullYear();
+  const startM = pad(startIst.getUTCMonth() + 1);
+  const startD = pad(startIst.getUTCDate());
+  const startH = pad(startIst.getUTCHours());
+  const startMin = pad(startIst.getUTCMinutes());
+  const startS = pad(startIst.getUTCSeconds());
+
+  const endY = endIst.getUTCFullYear();
+  const endM = pad(endIst.getUTCMonth() + 1);
+  const endD = pad(endIst.getUTCDate());
+  const endH = pad(endIst.getUTCHours());
+  const endMin = pad(endIst.getUTCMinutes());
+  const endS = pad(endIst.getUTCSeconds());
+
+  const date = `${startY}-${startM}-${startD}`;
+  const startTime = `${startH}:${startMin}`;
+  const endTime = `${endH}:${endMin}`;
+  const startsAt = `${date}T${startTime}:${startS}+05:30`;
+  const endsAt = `${endY}-${endM}-${endD}T${endTime}:${endS}+05:30`;
+
+  return {
+    date,
+    startTime,
+    endTime,
+    durationMinutes: duration,
+    slot: slot || 'Slot 1',
+    timezone: 'Asia/Kolkata',
+    startsAt,
+    endsAt,
+    mode: mode || 'ONLINE',
+    meetingLink: meetingLink || null
+  };
+}
+
+/**
+ * Resolves resume status and links for HireIQ
+ */
+function resolveHireIqResume(candidate, hasResumeScope = false, baseUrl = '') {
+  if (!candidate) {
+    return {
+      status: 'none',
+      fileName: null,
+      mimeType: null,
+      downloadUrl: null,
+      externalUrl: null,
+      isSharedFolder: false
+    };
+  }
+
+  // 1. Available in DB storage
+  if (candidate.resumeFile?.fileData && candidate.resumeFile.fileData.length > 0) {
+    const rawName = candidate.resumeFile.originalName || `${(candidate.fullName || 'candidate').replace(/\s+/g, '_')}_resume.pdf`;
+    return {
+      status: 'available',
+      fileName: rawName,
+      mimeType: candidate.resumeFile.mimeType || 'application/pdf',
+      downloadUrl: hasResumeScope ? `${baseUrl}/api/v1/ext/candidates/${candidate.id}/resume` : null,
+      externalUrl: null,
+      isSharedFolder: false
+    };
+  }
+
+  // 2. External Link (e.g. Google Drive)
+  const extUrl = candidate.resumeLinkOriginal || candidate.resumeLinkDownload;
+  if (extUrl && /^https?:\/\//i.test(extUrl.trim())) {
+    const trimmedUrl = extUrl.trim();
+    const isSharedFolder = trimmedUrl.includes('/folders/') || trimmedUrl.includes('drive.google.com/drive/u/');
+    return {
+      status: 'external_link',
+      fileName: null,
+      mimeType: null,
+      downloadUrl: null,
+      externalUrl: trimmedUrl,
+      isSharedFolder
+    };
+  }
+
+  // 3. File missing (resumeFileId exists but data was not found)
+  if (candidate.resumeFileId) {
+    return {
+      status: 'file_missing',
+      fileName: null,
+      mimeType: null,
+      downloadUrl: null,
+      externalUrl: null,
+      isSharedFolder: false
+    };
+  }
+
+  // 4. None
+  return {
+    status: 'none',
+    fileName: null,
+    mimeType: null,
+    downloadUrl: null,
+    externalUrl: null,
+    isSharedFolder: false
+  };
+}
+
+/**
+ * Converts an interview record to HireIQ DTO (Part 3.2)
+ * Strictly allow-listed: candidate, role, round, schedule, interviewers, status, resume, updatedAt.
+ */
+function toHireIqInterviewDto(interview, hasPiiScope = false, hasResumeScope = false, baseUrl = '') {
+  if (!interview) return null;
+
+  const candidate = interview.application?.candidate || interview.candidate;
+  const candName = cleanString(interview.candidateName || candidate?.fullName);
+  const { email, emailStatus } = validateCandidateEmail(candidate?.email, hasPiiScope);
+
+  // Role
+  const interviewRole = cleanString(interview.jobTitle || interview.application?.job?.title) || 'General';
+  const appliedRole = cleanString(candidate?.preferredRole || candidate?.jobTitle || interviewRole);
+  const jobId = interview.jobId || interview.application?.jobId || null;
+
+  // Round
+  const roundNumber = interview.roundNo || 1;
+  const roundLabel = cleanString(interview.round) || (roundNumber === 1 ? 'Round 1' : (roundNumber === 2 ? 'Round 2' : 'Final Round'));
+
+  // Schedule
+  const mode = cleanString(interview.mode) || 'ONLINE';
+  const meetingLink = cleanString(interview.meetingLink || interview.zohoLink);
+  const schedule = formatIstSchedule(interview.scheduledStart, interview.durationMinutes, 'Slot 1', mode, meetingLink);
+
+  // Interviewers (array of display names only, no internal emails or user IDs)
+  let interviewers = [];
+  if (interview.interviewerNames) {
+    interviewers = interview.interviewerNames.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (Array.isArray(interview.interviewerIds) && interview.interviewerIds.length > 0) {
+    interviewers = interview.interviewerIds.map(s => String(s).trim()).filter(Boolean);
+  }
+  if (interviewers.length === 0) {
+    interviewers = ['Panelist'];
+  }
+
+  // Status
+  const status = (cleanString(interview.status) || 'scheduled').toLowerCase();
+
+  // Resume
+  const resume = resolveHireIqResume(candidate, hasResumeScope, baseUrl);
+
+  // UpdatedAt in IST (+05:30)
+  const updatedAtUtc = interview.updatedAt ? new Date(interview.updatedAt) : new Date();
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const updIst = new Date(updatedAtUtc.getTime() + istOffsetMs);
+  const pad = (n) => String(n).padStart(2, '0');
+  const updDate = `${updIst.getUTCFullYear()}-${pad(updIst.getUTCMonth() + 1)}-${pad(updIst.getUTCDate())}`;
+  const updTime = `${pad(updIst.getUTCHours())}:${pad(updIst.getUTCMinutes())}:${pad(updIst.getUTCSeconds())}`;
+  const updatedAt = `${updDate}T${updTime}+05:30`;
+
+  return {
+    interviewId: interview.id,
+    candidate: {
+      id: candidate?.id || interview.candidateId || null,
+      name: candName,
+      email,
+      emailStatus
+    },
+    role: {
+      interviewRole,
+      appliedRole,
+      jobId
+    },
+    round: {
+      number: roundNumber,
+      label: roundLabel
+    },
+    schedule,
+    interviewers,
+    status,
+    resume,
+    updatedAt
+  };
+}
+
 module.exports = {
   cleanString,
   formatDateIso,
@@ -283,4 +520,8 @@ module.exports = {
   toDriveDto,
   toJobDto,
   toTeamMemberDto,
+  validateCandidateEmail,
+  formatIstSchedule,
+  resolveHireIqResume,
+  toHireIqInterviewDto,
 };
