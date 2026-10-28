@@ -7,6 +7,9 @@ const { logAudit } = require("../../utils/audit");
 const router = express.Router();
 router.use(auth);
 
+// API Keys administration
+router.use('/api-keys', require('./apiKeyAdminRoutes'));
+
 const DEFAULT_ORG_ID = "defaultOrg";
 
 // Organization settings are stored in Redis as JSON since they're a small blob

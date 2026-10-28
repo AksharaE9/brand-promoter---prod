@@ -230,6 +230,8 @@ app.use('/api/analytics', analyticsLimiter, cc(0), require('./modules/analytics/
 app.use('/api/scheduling', apiLimiter, cc(0), schedulingRoutes);
 app.use('/api/quality-checks', apiLimiter, cc(0), require('./modules/quality-check/routes'));
 
+// ── External API (v1) ──────────────────────────────────────────────────────
+app.use('/api/v1/ext', require('./modules/ext/routes'));
 
 app.use(notFound);
 app.use(errorHandler);

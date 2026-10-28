@@ -973,3 +973,65 @@ model PostedFile {
   @@map("posted_files")
 }
 
+// ─────────────────────────────────────────────
+// External API Keys & Audit
+// ─────────────────────────────────────────────
+
+model ApiKey {
+  id                 String       @id @default(cuid())
+  orgId              String       @default("defaultOrg") @map("org_id")
+  name               String
+  prefix             String       @unique
+  keyHash            String       @map("key_hash")
+  scopes             Json
+  environment        String       @default("live")
+  allowedIps         Json?        @map("allowed_ips")
+  rateLimitPerMinute Int          @default(60) @map("rate_limit_per_minute")
+  expiresAt          DateTime?    @map("expires_at")
+  createdById        String       @map("created_by_id")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  lastUsedAt         DateTime?    @map("last_used_at")
+  lastUsedIp         String?      @map("last_used_ip")
+  revokedAt          DateTime?    @map("revoked_at")
+  revokedById        String?      @map("revoked_by_id")
+  revokeReason       String?      @map("revoke_reason")
+
+  usageDaily         ApiKeyUsageDaily[]
+  auditEvents        ApiKeyAuditEvent[]
+
+  @@index([keyHash])
+  @@index([orgId, revokedAt, expiresAt])
+  @@map("api_keys")
+}
+
+model ApiKeyUsageDaily {
+  id              String   @id @default(cuid())
+  apiKeyId        String   @map("api_key_id")
+  date            String
+  route           String
+  statusClass     String   @map("status_class")
+  count           Int      @default(0)
+  p95LatencyMs    Float    @default(0) @map("p95_latency_ms")
+
+  apiKey          ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, date, route, statusClass])
+  @@index([apiKeyId, date])
+  @@map("api_key_usage_daily")
+}
+
+model ApiKeyAuditEvent {
+  id              String   @id @default(cuid())
+  apiKeyId        String   @map("api_key_id")
+  action          String
+  actorId         String   @map("actor_id")
+  ip              String?
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  apiKey          ApiKey   @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@map("api_key_audit_events")
+}
+

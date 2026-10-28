@@ -10,7 +10,8 @@
  * Safe to re-run — all statements use IF NOT EXISTS.
  * ─────────────────────────────────────────────────────────────────────────
  */
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const prisma = require('../config/db');
 
 const indexes = [
@@ -472,6 +473,82 @@ const indexes = [
     sql: `CREATE INDEX IF NOT EXISTS idx_qc_decision_decided_by
           ON quality_check_decisions (decided_by_id);`,
   },
+  // ── External API Keys, Daily Usage & Audit Events ──────────────────────────
+  {
+    name: 'tbl_api_keys',
+    sql: `CREATE TABLE IF NOT EXISTS api_keys (
+      id VARCHAR(36) PRIMARY KEY,
+      org_id VARCHAR(64) NOT NULL DEFAULT 'defaultOrg',
+      name VARCHAR(255) NOT NULL,
+      prefix VARCHAR(64) NOT NULL UNIQUE,
+      key_hash VARCHAR(128) NOT NULL,
+      scopes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      environment VARCHAR(32) NOT NULL DEFAULT 'live',
+      allowed_ips JSONB,
+      rate_limit_per_minute INTEGER NOT NULL DEFAULT 60,
+      expires_at TIMESTAMPTZ,
+      created_by_id VARCHAR(36) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_used_at TIMESTAMPTZ,
+      last_used_ip VARCHAR(64),
+      revoked_at TIMESTAMPTZ,
+      revoked_by_id VARCHAR(36),
+      revoke_reason TEXT
+    );`,
+  },
+  {
+    name: 'idx_api_keys_hash',
+    sql: `CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash);`,
+  },
+  {
+    name: 'idx_api_keys_org_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_api_keys_org_status ON api_keys (org_id, revoked_at, expires_at);`,
+  },
+  {
+    name: 'tbl_api_key_usage_daily',
+    sql: `CREATE TABLE IF NOT EXISTS api_key_usage_daily (
+      id VARCHAR(36) PRIMARY KEY,
+      api_key_id VARCHAR(36) NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      date VARCHAR(16) NOT NULL,
+      route VARCHAR(255) NOT NULL,
+      status_class VARCHAR(16) NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      p95_latency_ms DOUBLE PRECISION NOT NULL DEFAULT 0,
+      CONSTRAINT uq_api_key_usage_daily UNIQUE (api_key_id, date, route, status_class)
+    );`,
+  },
+  {
+    name: 'idx_api_key_usage_daily_lookup',
+    sql: `CREATE INDEX IF NOT EXISTS idx_api_key_usage_daily_lookup ON api_key_usage_daily (api_key_id, date);`,
+  },
+  {
+    name: 'tbl_api_key_audit_events',
+    sql: `CREATE TABLE IF NOT EXISTS api_key_audit_events (
+      id VARCHAR(36) PRIMARY KEY,
+      api_key_id VARCHAR(36) NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      action VARCHAR(64) NOT NULL,
+      actor_id VARCHAR(36) NOT NULL,
+      ip VARCHAR(64),
+      metadata JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );`,
+  },
+  {
+    name: 'idx_api_key_audit_events_key_created',
+    sql: `CREATE INDEX IF NOT EXISTS idx_api_key_audit_events_key_created ON api_key_audit_events (api_key_id, created_at DESC);`,
+  },
+  {
+    name: 'idx_interviews_org_updated',
+    sql: `CREATE INDEX IF NOT EXISTS idx_interviews_org_updated ON interviews ("organizationId", "updatedAt" DESC);`,
+  },
+  {
+    name: 'idx_college_drives_org_updated',
+    sql: `CREATE INDEX IF NOT EXISTS idx_college_drives_org_updated ON college_drives ("organizationId", "isDeleted", "updatedAt" DESC);`,
+  },
+  {
+    name: 'idx_jobs_org_updated',
+    sql: `CREATE INDEX IF NOT EXISTS idx_jobs_org_updated ON jobs ("organizationId", "updatedAt" DESC);`,
+  },
 ];
 
 // Post-index: run ANALYZE so the PostgreSQL query planner picks up new stats
@@ -486,6 +563,9 @@ const analyzeStatements = [
   'ANALYZE report_errors',
   'ANALYZE quality_checks',
   'ANALYZE quality_check_decisions',
+  'ANALYZE api_keys',
+  'ANALYZE api_key_usage_daily',
+  'ANALYZE api_key_audit_events',
 ];
 
 

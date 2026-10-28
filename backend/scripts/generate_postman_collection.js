@@ -1,0 +1,242 @@
+'use strict';
+
+/**
+ * backend/scripts/generate_postman_collection.js
+ *
+ * Generates Postman Collection v2.1 for TalentOS External API.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const collection = {
+  info: {
+    name: 'TalentOS External API (v1)',
+    description: 'Postman Collection for TalentOS ATS external REST API. Authenticated with API Key Bearer tokens.',
+    schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+  },
+  auth: {
+    type: 'bearer',
+    bearer: [
+      {
+        key: 'token',
+        value: '{{apiKey}}',
+        type: 'string',
+      },
+    ],
+  },
+  variable: [
+    {
+      key: 'baseUrl',
+      value: 'https://brandpromoter-backend.onrender.com',
+      type: 'string',
+    },
+    {
+      key: 'apiKey',
+      value: 'tos_live_...',
+      type: 'string',
+    },
+  ],
+  item: [
+    {
+      name: 'System',
+      item: [
+        {
+          name: 'Health Check (Public)',
+          request: {
+            auth: { type: 'noauth' },
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/health',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'health'],
+            },
+          },
+        },
+        {
+          name: 'OpenAPI 3.1 Spec (Public)',
+          request: {
+            auth: { type: 'noauth' },
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/openapi.json',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'openapi.json'],
+            },
+          },
+        },
+        {
+          name: 'Key Introspection (/me)',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/me',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'me'],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Candidates',
+      item: [
+        {
+          name: 'List Candidates (Paginated)',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/candidates?limit=50',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'candidates'],
+              query: [
+                { key: 'limit', value: '50' },
+                { key: 'cursor', value: '', disabled: true },
+                { key: 'status', value: 'INTERVIEWING', disabled: true },
+                { key: 'driveId', value: '', disabled: true },
+                { key: 'updatedSince', value: '', disabled: true },
+              ],
+            },
+          },
+        },
+        {
+          name: 'Get Candidate Profile by ID',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/candidates/:id',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'candidates', ':id'],
+              variable: [{ key: 'id', value: 'cmvqbje7d005rtbqoy2wvmg7c' }],
+            },
+          },
+        },
+        {
+          name: 'Get Candidate Interviews & Feedback',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/candidates/:id/interviews',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'candidates', ':id', 'interviews'],
+              variable: [{ key: 'id', value: 'cmvqbje7d005rtbqoy2wvmg7c' }],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Interviews & Evaluations',
+      item: [
+        {
+          name: 'List Interviews (Paginated)',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/interviews?limit=50',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'interviews'],
+              query: [
+                { key: 'limit', value: '50' },
+                { key: 'outcome', value: 'SELECTED', disabled: true },
+                { key: 'round', value: '1', disabled: true },
+                { key: 'from', value: '2026-10-27', disabled: true },
+                { key: 'to', value: '2026-10-27', disabled: true },
+              ],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Campus Hiring Drives',
+      item: [
+        {
+          name: 'List Campus Drives with Counts',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/drives',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'drives'],
+            },
+          },
+        },
+        {
+          name: 'Get Enrolled Candidates for Drive',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/drives/:id/candidates',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'drives', ':id', 'candidates'],
+              variable: [{ key: 'id', value: 'cmvroi7hn0001tbj4vb66z7ql' }],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Jobs & Team',
+      item: [
+        {
+          name: 'List Active Jobs',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/jobs',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'jobs'],
+            },
+          },
+        },
+        {
+          name: 'List Telecalling & Scheduling Team',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/team-members',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'team-members'],
+            },
+          },
+        },
+      ],
+    },
+    {
+      name: 'Analytics & Sync',
+      item: [
+        {
+          name: 'ATS Summary Statistics',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/stats/summary',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'stats', 'summary'],
+            },
+          },
+        },
+        {
+          name: 'Incremental Sync Changes Feed',
+          request: {
+            method: 'GET',
+            url: {
+              raw: '{{baseUrl}}/api/v1/ext/changes?since=2026-10-27T00:00:00Z',
+              host: ['{{baseUrl}}'],
+              path: ['api', 'v1', 'ext', 'changes'],
+              query: [
+                { key: 'since', value: '2026-10-27T00:00:00Z' },
+                { key: 'resource', value: 'candidates', disabled: true },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  ],
+};
+
+const outPath = path.resolve(__dirname, '../TalentOS_External_API_v1.postman_collection.json');
+fs.writeFileSync(outPath, JSON.stringify(collection, null, 2), 'utf8');
+console.log(`Generated Postman collection at: ${outPath}`);

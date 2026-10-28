@@ -13,6 +13,7 @@ const OrganizationTab = lazyWithRetry(() => import('../components/Settings/Organ
 const ContactTab = lazyWithRetry(() => import('../components/Settings/ContactTab'), 'ContactTab');
 const PreferencesTab = lazyWithRetry(() => import('../components/Settings/PreferencesTab'), 'PreferencesTab');
 const SecurityTab = lazyWithRetry(() => import('../components/Settings/SecurityTab'), 'SecurityTab');
+const ApiKeysTab = lazyWithRetry(() => import('../components/Settings/ApiKeysTab'), 'ApiKeysTab');
 
 const timezoneOptions = [
   { value: 'Asia/Kolkata', label: 'India Standard Time (IST) - Asia/Kolkata' },
@@ -44,6 +45,8 @@ const Settings = () => {
       setActiveTab('PREFS');
     } else if (lower.includes('security') || lower.includes('password')) {
       setActiveTab('SECURITY');
+    } else if (lower.includes('api') || lower.includes('key') || lower.includes('token') || lower.includes('webhook')) {
+      setActiveTab('API_KEYS');
     }
   };
 
@@ -455,6 +458,14 @@ const Settings = () => {
           >
             Security & Sessions
           </button>
+          {(isSuperAdmin || me?.role === 'ADMIN') && (
+            <button 
+              className={`pb-2 text-sm font-bold border-b-2 transition-all ${activeTab === 'API_KEYS' ? 'border-[#1f52cc] text-[#1f52cc]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+              onClick={() => { setActiveTab('API_KEYS'); setError(''); setBanner(''); }}
+            >
+              API Keys
+            </button>
+          )}
         </div>
 
         {/* Tab Contents */}
@@ -525,6 +536,9 @@ const Settings = () => {
                 handleRevokeSession={handleRevokeSession}
                 handleRevokeOtherSessions={handleRevokeOtherSessions}
               />
+            )}
+            {activeTab === 'API_KEYS' && (isSuperAdmin || me?.role === 'ADMIN') && (
+              <ApiKeysTab isSuperAdmin={isSuperAdmin} />
             )}
           </React.Suspense>
 
