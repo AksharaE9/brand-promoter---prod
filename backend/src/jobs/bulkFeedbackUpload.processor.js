@@ -260,7 +260,7 @@ async function batchInsertFeedback(batchItems, context) {
       const { canonicalRound, dataPayload, candidateMatch, rawNumber } = item;
       let candidateId = candidateMatch ? candidateMatch.id : null;
       const selectionStatus = dataPayload.selectionStatus || dataPayload.status || 'HOLD';
-      const overallRating = dataPayload.overallRating !== undefined && dataPayload.overallRating !== null
+      const overallRating = (dataPayload.overallRating !== undefined && dataPayload.overallRating !== null && String(dataPayload.overallRating).trim() !== '' && !isNaN(Number(dataPayload.overallRating)))
         ? Number(dataPayload.overallRating)
         : null;
 

@@ -3,7 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse');
-const XLSX = require('xlsx');
 const { resolveHeader } = require('./headerAliasMap');
 const { normalizeString } = require('./cellNormalizer');
 
@@ -117,6 +116,8 @@ function parseCsvFile(filePath, rowCallback) {
  * XLSX file parser (using raw: false to ensure text cell extraction)
  */
 async function parseXlsxFile(filePath, rowCallback) {
+  // Track 5: Lazy-load xlsx on demand inside file parser
+  const XLSX = require('xlsx');
   // SEC: Harden XLSX parsing against known vulnerabilities in SheetJS community edition:
   // - GHSA-4r6h-8v6p-xvw6 (prototype pollution): use defval + raw:false, never eval formulas
   // - GHSA-5pgg-2g8v-p4x9 (ReDoS): cellFormula:false disables the ReDoS-vulnerable formula parsing

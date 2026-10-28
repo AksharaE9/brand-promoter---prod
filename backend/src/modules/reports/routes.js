@@ -1,6 +1,4 @@
 const express = require("express");
-const PDFDocument = require("pdfkit");
-const XLSX = require("xlsx");
 const { stringify } = require("csv-stringify/sync");
 const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
@@ -477,7 +475,8 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
     res.setHeader("Content-Disposition", `attachment; filename="${filename}.csv"`);
     res.send(csvContent);
   } else {
-    // Excel format
+    // Excel format (Track 5: lazy-load XLSX on demand)
+    const XLSX = require("xlsx");
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, "Report");
@@ -497,7 +496,7 @@ router.get("/recruiter-activity", requireRoles("SUPER_ADMIN", "RECRUITER"), asyn
   res.json({ success: true, data: rows });
 }));
 
-router.get("/hiring-progress", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
+router.get(["/hiring-progress", "/overview"], requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(async (req, res) => {
   const myOrg = req.user.organizationId || "defaultOrg";
   const cacheKey = `reports_hiring_progress_${myOrg}`;
   const rows = await getCached(cacheKey, () => buildHiringProgress(myOrg), REPORT_CACHE_TTL * 1000);

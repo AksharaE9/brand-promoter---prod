@@ -1,0 +1,34 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Amogh SR | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb2xzz0001tboganh7d1nh | R1 -> SELECTED | MATCH
+Bhagyalakshmi P S | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb3fqn000atbogdjb8d4ed | R1 -> REJECTED | MATCH
+Chethana N | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb3i55000jtbogj3wu5vjv | R1 -> ON_HOLD | MATCH
+Darshan M | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb3wjd000stbog7r2vfjmr | R1 -> ON_HOLD | MATCH
+Dhanushree D | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb43o60011tboghjosrer1 | R1 -> SELECTED | MATCH
+Hemchand N | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb4h4k001atbog9hpx7isc | R1 -> ON_HOLD | MATCH
+Supriya BG | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb4jyq001jtbog8j851djm | R1 -> ON_HOLD | MATCH
+Ibrahim Khaleelullah M | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb4n6s001stbogja7kjink | R1 -> REJECTED | MATCH
+Jishnu N Yadav | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb52vn0021tbogh4fgqkrs | R1 -> REJECTED | MATCH
+Kushal R | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb56da002atbogf0uduh41 | R1 -> REJECTED | MATCH
+Mallikarjun | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb5cyw002jtbog82fw5r5u | R1 -> SELECTED | MATCH
+Mohit Kumar | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb5ndp002stbog7iy86has | R1 -> ON_HOLD | MATCH
+Yashwanth K | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb5qdp0031tboglo1qbetd | R1 -> ON_HOLD | MATCH
+Sanmith Vishesh | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb64kz003atbogg5iemfa2 | R1 -> ON_HOLD | MATCH
+Pragna Shree M G | execute_job_a_cmr.js | R1 -> ON_HOLD | cmvqb6848003jtbogm86memii | R1 -> ON_HOLD | MATCH
+Vishnu Kant Singh | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb6c0f003stbog4fnfve5o | R1 -> SELECTED | MATCH
+Karan | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb6edh0041tbogpxevmtoz | R1 -> REJECTED | MATCH
+Vinayak S Tatti | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb6ies004atbog496qnndt | R1 -> SELECTED | MATCH
+Vinayaka R Desai | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb6t8r004jtbogc1rvnpxq | R1 -> REJECTED | MATCH
+Umme Rabiya | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb71t9004stbogn6l0m883 | R1 -> SELECTED | MATCH
+Ankita | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb74f70051tboganvs836h | R1 -> REJECTED | MATCH
+Nishant Yadav | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb78fy005atbogblbruqny | R1 -> REJECTED | MATCH
+Mohammad Kaif Tenkasali | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb7asi005jtbogje5ql186 | R1 -> SELECTED | MATCH
+Poojitha Sivakumar S | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb7esr005stbogp9bjr0gn | R1 -> SELECTED | MATCH
+Arman Prasad | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb7k7z0061tbog43b14ixm | R1 -> REJECTED | MATCH
+M Anushri | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb7wom006atbog3myv46ol | R1 -> SELECTED | MATCH
+Abhinaya S | execute_job_a_cmr.js | R1 -> SELECTED | cmvqb7z2j006jtbogpuasapq8 | R1 -> SELECTED | MATCH
+Varshini M | execute_job_a_cmr.js | R1 -> REJECTED | cmvqb833m006stboga4r6bc4f | R1 -> REJECTED | MATCH
+Dilan M | execute_job_a_cmr.js | R1 -> SELECTED; R2 -> REJECTED | cmvqb85iy0071tbogs2e0x18g | R1 -> SELECTED; R2 -> REJECTED | MATCH
+Sarika | execute_job_a_cmr.js | R1 -> SELECTED; R2 -> REJECTED | cmvqb8baj007etbog00krh2yr | R1 -> SELECTED; R2 -> REJECTED | MATCH
+Sinchana P | execute_job_a_cmr.js | R1 -> SELECTED; R2 -> REJECTED | cmvqb8q0d007rtbogqvqg2tk1 | R1 -> SELECTED; R2 -> REJECTED | MATCH
+Subash Raj S | execute_job_a_cmr.js | R1 -> SELECTED; R2 -> ON_HOLD | cmvqb8wps0084tbogwgk305k6 | R1 -> SELECTED; R2 -> ON_HOLD | MATCH
+Puneeth | execute_job_a_cmr.js | R1 -> SELECTED; R2 -> SELECTED | cmvqb99ao008htbogoep5pvhc | R1 -> SELECTED; R2 -> SELECTED | MATCH

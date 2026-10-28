@@ -1,7 +1,6 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const XLSX = require("xlsx");
 const prisma = require("../../config/db");
 const { uploadFileToCloudinary } = require("../../config/cloudinary"); // legacy stub — kept for backward compat with old http:// records
 const { isDbStorageKey, makeStorageKey, streamDbFile, verifyDbFile, makeContentDisposition, getSafeExtension, fixUtf8Filename } = require("../../utils/dbStorage");
@@ -359,6 +358,7 @@ router.post(
 
     validateFile(req.file, 'bulkData');
 
+    const XLSX = require("xlsx");
     let allRows = [];
     // SEC: Harden XLSX parsing — disable formulas (prevents ReDoS + prototype pollution CVEs)
     const workbook = XLSX.read(req.file.buffer, { type: "buffer", raw: false, cellFormula: false, bookVBA: false, bookFiles: false, defval: '' });

@@ -47,13 +47,29 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
   : [];
 
-// ── Performance: Compression ──────────────────────────────────────────────
+// ── Performance: Compression (Track 4) ──────────────────────────────────────
 app.use(compression({
   level: 6,
-  threshold: 512,
+  threshold: 1024,
   filter: (req, res) => {
     if (req.headers['x-no-compression']) return false;
-    if (req.path.includes('/sse/stream')) return false;
+    const accept = req.headers.accept || '';
+    if (accept.includes('text/event-stream') || req.path?.includes('/sse')) return false;
+
+    // Skip already compressed files
+    const url = (req.path || '').toLowerCase();
+    if (
+      url.endsWith('.pdf') ||
+      url.endsWith('.png') ||
+      url.endsWith('.jpg') ||
+      url.endsWith('.jpeg') ||
+      url.endsWith('.docx') ||
+      url.endsWith('.xlsx') ||
+      url.endsWith('.zip')
+    ) {
+      return false;
+    }
+
     return compression.filter(req, res);
   },
   chunkSize: 16 * 1024,
@@ -105,6 +121,7 @@ app.use(
 );
 
 app.use(timingMiddleware);
+app.use(require('./middleware/serverTiming'));
 app.use(dedupMiddleware);
 app.use(pushHints);
 
@@ -121,11 +138,15 @@ app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use('/uploads', auth, express.static(path.join(__dirname, '..', 'uploads'), { maxAge: '1d' }));
 
 const { concurrencyLimiter } = require('./middleware/concurrencyLimiter');
+const { loadSheddingMiddleware, heavyEndpointConcurrency, requestTimeout } = require('./middleware/loadShedding');
+const { getEventLoopMetrics, getRouteMetricsSummary } = require('./utils/perfContext');
 
 // ── Global Middleware for all /api routes ──────────────────────────────────
+app.use('/api', requestTimeout(25000));
 app.use('/api', globalLimiter);
 app.use('/api', responseSizeLogger);
 app.use('/api', concurrencyLimiter);
+app.use('/api', loadSheddingMiddleware);
 
 // ── Health endpoints ──────────────────────────────────────────────────────
 const prisma = require('./config/db');
@@ -138,8 +159,21 @@ try {
   // Fallback if not generated yet
 }
 
-// Start background database keep-alive ping to prevent Neon Postgres autosuspend (runs every 4 minutes)
+// Background database keep-alive ping
+// Under PERF_WINDOWED_KEEPALIVE=true, ping is windowed to business hours 08:00 - 21:00 IST Mon-Sat (Track 7.2)
+function shouldRunDbKeepAlive() {
+  if (process.env.PERF_WINDOWED_KEEPALIVE !== 'true') return true;
+  const now = new Date();
+  const istOffsetMs = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffsetMs);
+  const day = istTime.getUTCDay(); // 0 is Sunday
+  if (day === 0) return false;
+  const hour = istTime.getUTCHours();
+  return hour >= 8 && hour < 21;
+}
+
 setInterval(async () => {
+  if (!shouldRunDbKeepAlive()) return;
   try {
     await prisma.$queryRaw`SELECT 1`;
   } catch (err) {
@@ -166,7 +200,7 @@ app.get('/api/health', async (req, res) => {
     dbStatus = `unhealthy: ${err.message}`;
   }
 
-  res.json({
+  const responseData = {
     success: true,
     message: 'ATS Backend is running',
     timestamp: new Date().toISOString(),
@@ -175,6 +209,23 @@ app.get('/api/health', async (req, res) => {
       database: dbStatus,
       sse: sse.getStats(),
     },
+  };
+
+  // Expose event loop delay and memory for authorized inspection or admin detail (Part 1.2)
+  if (req.query.detail === 'admin' || req.headers['x-perf-debug'] === process.env.LOADTEST_BYPASS_SECRET) {
+    responseData.diagnostics = getEventLoopMetrics();
+  }
+
+  res.json(responseData);
+});
+
+app.get('/api/health/perf-metrics', auth, requireRoles('SUPER_ADMIN'), (req, res) => {
+  res.json({
+    success: true,
+    diagnostics: getEventLoopMetrics(),
+    routes: getRouteMetricsSummary(),
+    cache: getCacheMetrics(),
+    uptime: process.uptime(),
   });
 });
 

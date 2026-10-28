@@ -1,0 +1,26 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Rakshita | inject_rrce_candidates.js | R1 -> REJECTED | cmvqbje7d005rtbqoy2wvmg7c | R1 -> REJECTED | MATCH
+Chaithra | inject_rrce_candidates.js | R1 -> REJECTED | cmvrolp7v0002tb08gmoeghpl | R1 -> REJECTED | MATCH
+Prajval Raj K | inject_rrce_candidates.js | R1 -> SELECTED | cmvroltwy000ctb08qm7nxwxf | R1 -> SELECTED | MATCH
+Jeevitha S | inject_rrce_candidates.js | R1 -> REJECTED | cmvrolwut000mtb08jwb5rjix | R1 -> REJECTED | MATCH
+Ananya G | inject_rrce_candidates.js | R1 -> REJECTED | cmvrolzkq000wtb08m9cye3qy | R1 -> REJECTED | MATCH
+Sahil Pandey | inject_rrce_candidates.js | R1 -> SELECTED | cmvrom2bk0016tb0836om6nc9 | R1 -> SELECTED | MATCH
+Abinaya V | inject_rrce_candidates.js | R1 -> REJECTED | cmvrom55p001gtb08l3nan6ec | R1 -> REJECTED | MATCH
+Bala Jee | inject_rrce_candidates.js | R1 -> SELECTED | cmvrom7w9001qtb08gtstpd1c | R1 -> SELECTED | MATCH
+Shreya B Pujar | inject_rrce_candidates.js | R1 -> SELECTED | cmvromat70020tb08bc4kgwg6 | R1 -> SELECTED | MATCH
+Tejaswini L S | inject_rrce_candidates.js | R1 -> REJECTED | cmvromdj4002atb08i6g8gc22 | R1 -> REJECTED | MATCH
+Navin A | inject_rrce_candidates.js | R1 -> REJECTED | cmvromggm002ktb08c8m5ceh2 | R1 -> REJECTED | MATCH
+Ragini Sharma | inject_rrce_candidates.js | R1 -> REJECTED | cmvromigs002ttb08dsnq2j1o | R1 -> REJECTED | MATCH
+Varshitha B | inject_rrce_candidates.js | R1 -> REJECTED | cmvroml5x0033tb08s48yk1jn | R1 -> REJECTED | MATCH
+Deeksha D P | inject_rrce_candidates.js | R1 -> REJECTED | cmvromoay003dtb08usydfd1f | R1 -> REJECTED | MATCH
+Lavanya K R | inject_rrce_candidates.js | R1 -> SELECTED | cmvromr0v003ntb08i19ax5t3 | R1 -> SELECTED | MATCH
+Harshith K C | inject_rrce_candidates.js | R1 -> REJECTED | cmvromu0p003xtb0892jn737t | R1 -> REJECTED | MATCH
+Mallikarjun RK | inject_rrce_candidates.js | R1 -> REJECTED | cmvromx1a0047tb08rul380se | R1 -> REJECTED | MATCH
+Harshith Gowda R | inject_rrce_candidates.js | R1 -> REJECTED | cmvromzyk004htb08yuh2ytbp | R1 -> REJECTED | MATCH
+Namith D S | inject_rrce_candidates.js | R1 -> SELECTED | cmvron2xh004rtb08mctumu18 | R1 -> SELECTED | MATCH
+Arjun H | inject_rrce_candidates.js | R1 -> REJECTED | cmvron5pl0051tb08edhnfs7m | R1 -> REJECTED | MATCH
+Madhu Shree J | inject_rrce_candidates.js | R1 -> REJECTED | cmvron8gv005btb08c86406m1 | R1 -> REJECTED | MATCH
+Pruthvi K L | inject_rrce_candidates.js | R1 -> REJECTED | cmvronb6o005ltb08do00x144 | R1 -> REJECTED | MATCH
+Thanusha R | inject_rrce_candidates.js | R1 -> REJECTED | cmvrone4o005vtb08w4qiswyd | R1 -> REJECTED | MATCH
+Manoj Kumar R | inject_rrce_candidates.js | R1 -> SELECTED | cmvrongv30065tb08hlghkx29 | R1 -> SELECTED | MATCH
+Sanjana Desai | inject_rrce_candidates.js | R1 -> SELECTED | cmvronjma006ftb08cqdxrff9 | R1 -> SELECTED | MATCH

@@ -8,9 +8,12 @@
 class L1Cache {
   constructor() {
     this.store = new Map();
+    this.inFlight = new Map();
     this.maxCount = 500; // max 500 entries
-    this.maxSizeBytes = 25 * 1024 * 1024; // 25MB total footprint cap
+    this.maxSizeBytes = 20 * 1024 * 1024; // 20MB total footprint cap (Track 3)
     this.currentSizeBytes = 0;
+    this.hits = 0;
+    this.misses = 0;
 
     // Clean expired entries every 10 seconds
     const timer = setInterval(() => this._evictExpired(), 10_000);
@@ -21,15 +24,48 @@ class L1Cache {
 
   get(key) {
     const entry = this.store.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this._deleteEntry(key);
+    if (!entry) {
+      this.misses++;
       return null;
     }
+    if (Date.now() > entry.expiresAt) {
+      this._deleteEntry(key);
+      this.misses++;
+      return null;
+    }
+    this.hits++;
     // Refresh insertion order (LRU)
     this.store.delete(key);
     this.store.set(key, entry);
     return entry.data;
+  }
+
+  /**
+   * Single-flight cache retrieval:
+   * Concurrent misses for the same key share a single execution of fetchFn.
+   */
+  async getOrSet(key, fetchFn, ttlMs) {
+    const cached = this.get(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    if (this.inFlight.has(key)) {
+      return await this.inFlight.get(key);
+    }
+
+    const promise = Promise.resolve()
+      .then(() => fetchFn())
+      .then((data) => {
+        this.set(key, data, ttlMs);
+        return data;
+      })
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+
+    this.inFlight.set(key, promise);
+    return await promise;
   }
 
   set(key, data, ttlMs) {
@@ -102,11 +138,16 @@ class L1Cache {
   }
 
   getStats() {
+    const totalRequests = this.hits + this.misses;
+    const hitRate = totalRequests > 0 ? ((this.hits / totalRequests) * 100).toFixed(1) + '%' : '0.0%';
     return {
       size: this.store.size,
       maxCount: this.maxCount,
       currentSizeMB: (this.currentSizeBytes / (1024 * 1024)).toFixed(2),
       maxSizeMB: (this.maxSizeBytes / (1024 * 1024)).toFixed(0),
+      hits: this.hits,
+      misses: this.misses,
+      hitRate,
       keys: [...this.store.keys()].slice(0, 20),
     };
   }

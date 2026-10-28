@@ -1,0 +1,8 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Divya R Revankar | execute_job_b_sync.js | R1 -> SELECTED | cmuzbju1v0004tbbs3a6x8vv8 | R1 -> SELECTED | MATCH
+Syed Sarosh Abbas | execute_job_b_sync.js | R1 -> SELECTED | cmuzbjz32000etbbspat3x55k | R1 -> SELECTED | MATCH
+Deepika Desai | execute_job_b_sync.js | R1 -> SELECTED; R2 -> SELECTED | cmuzbk20b000otbbsuvkwqx4z | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Ishaq Ahmed Patel | execute_job_b_sync.js | R1 -> SELECTED | cmuzbk4xo000ytbbspdyvlrae | R1 -> SELECTED | MATCH
+Syed Shahid | execute_job_b_sync.js | R1 -> SELECTED | cmuzbk7x50018tbbsskgsdylp | R1 -> SELECTED | MATCH
+Sanjana K Kubasada | execute_job_b_sync.js | R1 -> SELECTED | cmuzbkblz001itbbsngai65y5 | R1 -> SELECTED | MATCH
+Aditi Shenoy | execute_job_b_sync.js | R1 -> SELECTED | cmuzbkf0d001stbbsn5nahurx | R1 -> SELECTED | MATCH

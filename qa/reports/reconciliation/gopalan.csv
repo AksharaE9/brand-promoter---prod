@@ -1,0 +1,32 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+PRIYA RP | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6ebr90001tby0nnmss6vt | R1 -> REJECTED | MATCH
+DIVYASHREE RM | Gopalan_College_R1.xlsx | R1 -> SELECTED (Source: GOPALAN_R1) | cmuz6edgk0004tby0170mht3e | R1 -> SELECTED; R2 -> ON_HOLD | CHANGED_AFTER_IMPORT
+RAJESH G | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6eehc0009tby04w2klyac | R1 -> SELECTED | MATCH
+NITHELAN JAYAKUMAR | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6efjl000ctby08sbz2jo8 | R1 -> SELECTED | MATCH
+MADDELA TARUN | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6eh14000ltby0eamtl7ra | R1 -> REJECTED | MATCH
+Angel beulah k | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6einr000qtby0iokli391 | R1 -> SELECTED | MATCH
+SHREEYA R | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6ekaq000vtby04l6vrz1r | R1 -> REJECTED | MATCH
+P mohan | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6elbe0010tby0jr4pzmgs | R1 -> SELECTED | MATCH
+pavan s | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6emjg0015tby02c5z8w4m | R1 -> SELECTED | MATCH
+MM Bharath | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6enk6001atby0731w7ilp | R1 -> SELECTED | MATCH
+SAGAR R | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6eol0001ftby0id0qf9nw | R1 -> SELECTED | MATCH
+bandi vaishnavi | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6eplm001ktby0skk8zt9j | R1 -> REJECTED | MATCH
+Chiranjeevi A | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6eqmg001ptby01hw0ajtm | R1 -> REJECTED | MATCH
+Gagana C | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6ern9001utby0fjyiibg7 | R1 -> SELECTED | MATCH
+Thanishashri S | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6esw3001ztby0ok1mf6iy | R1 -> REJECTED | MATCH
+Abdul Shuaib | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6etws0024tby0bqqrvj0b | R1 -> REJECTED | MATCH
+Srinivas S | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6euxm0029tby0if7g0v88 | R1 -> REJECTED | MATCH
+Akhila G | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6evyl002etby0pnqpcxsu | R1 -> SELECTED | MATCH
+Mohammed Anas | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6ewzc002jtby0lttnqdp3 | R1 -> REJECTED | MATCH
+Abhishek Mannatharaj | Gopalan_College_R1.xlsx | R1 -> ON_HOLD | cmuz6ey09002otby01654nyc0 | R1 -> ON_HOLD | MATCH
+Sakthi Mageshwari V | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6eytq002ttby06ek5pll0 | R1 -> SELECTED | MATCH
+Kavya S Iraanavar | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6ezvz002ytby06fmikk4f | R1 -> REJECTED | MATCH
+Vishika Satish Panchgalle | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6f0yv0033tby02sijnv89 | R1 -> SELECTED | MATCH
+Anushree M N | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f1zj0038tby0dhb25ha7 | R1 -> REJECTED | MATCH
+B Brunda | Gopalan_College_R1.xlsx | R1 -> SELECTED; R2 -> REJECTED | cmuz6f309003dtby0qc992yin | R1 -> SELECTED; R2 -> SELECTED | OUTCOME_MISMATCH
+A S Pallavi | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f488003itby0awyws3wy | R1 -> REJECTED | MATCH
+Yogesh Shankar | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f592003ntby0spp5mlox | R1 -> REJECTED | MATCH
+Rupa Shree H V | Gopalan_College_R1.xlsx | R1 -> SELECTED | cmuz6f69p003stby0irwwmh9t | R1 -> SELECTED | MATCH
+Chandra Prakash V | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f7ar003xtby0zr58k7d1 | R1 -> REJECTED | MATCH
+Nijikal Pranitha | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f8bl0042tby04qywkvki | R1 -> REJECTED | MATCH
+Anurag Anthony | Gopalan_College_R1.xlsx | R1 -> REJECTED | cmuz6f9cb0047tby07d3o4cuu | R1 -> REJECTED | MATCH

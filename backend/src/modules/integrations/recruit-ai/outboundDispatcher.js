@@ -6,7 +6,7 @@
  * Dispatches scheduled and rescheduled interviews to Recruit AI / HireIQ:
  * Target: POST https://187.127.137.103/api/integrations/talentos/schedule
  * (or configured via RECRUITAI_SCHEDULE_WEBHOOK_URL in .env)
- * Header: x-api-key: hireiq_live_79aF2xK9_mQ8vL4wP1zX3cR6yB0jH5eT2
+ * Header: x-api-key: <RECRUITAI_API_KEY>
  *
  * Overriding constraint: Asynchronous, non-blocking. Never aborts TalentOS scheduling.
  */

@@ -1,0 +1,92 @@
+[
+  {
+    "name": "Q01: Candidates Paginated with Active Filter & Deleted Guard",
+    "execTimeMs": 0.263,
+    "planTimeMs": 2.486,
+    "planText": "Limit  (cost=0.28..4.65 rows=50 width=92) (actual time=0.076..0.198 rows=50.00 loops=1)\n  Buffers: shared hit=22\n  ->  Index Scan using idx_candidates_updated_at on candidates  (cost=0.28..196.50 rows=2246 width=92) (actual time=0.075..0.192 rows=50.00 loops=1)\n        Index Cond: ((\"organizationId\" = 'defaultOrg'::text) AND (\"isDeleted\" = false))\n        Index Searches: 1\n        Buffers: shared hit=22\nPlanning:\n  Buffers: shared hit=777\nPlanning Time: 2.486 ms\nExecution Time: 0.263 ms"
+  },
+  {
+    "name": "Q02: Candidates Filtered by College and Course",
+    "execTimeMs": 0.97,
+    "planTimeMs": 0.392,
+    "planText": "Limit  (cost=0.00..161.83 rows=46 width=62) (actual time=0.109..0.952 rows=47.00 loops=1)\n  Buffers: shared hit=127\n  ->  Seq Scan on candidates  (cost=0.00..161.83 rows=46 width=62) (actual time=0.108..0.946 rows=47.00 loops=1)\n        Filter: ((NOT \"isDeleted\") AND (college ~~* '%Jain%'::text) AND (\"organizationId\" = 'defaultOrg'::text))\n        Rows Removed by Filter: 2275\n        Buffers: shared hit=127\nPlanning:\n  Buffers: shared hit=8\nPlanning Time: 0.392 ms\nExecution Time: 0.970 ms"
+  },
+  {
+    "name": "Q03: Candidates Joined with Applications & Job Titles",
+    "execTimeMs": 0.394,
+    "planTimeMs": 2.163,
+    "planText": "Limit  (cost=1.20..11.40 rows=50 width=86) (actual time=0.063..0.266 rows=50.00 loops=1)\n  Buffers: shared hit=106\n  ->  Nested Loop Left Join  (cost=1.20..429.06 rows=2098 width=86) (actual time=0.062..0.261 rows=50.00 loops=1)\n        Buffers: shared hit=106\n        ->  Merge Join  (cost=1.05..363.57 rows=2098 width=94) (actual time=0.041..0.159 rows=50.00 loops=1)\n              Merge Cond: (c.id = a.\"candidateId\")\n              Buffers: shared hit=58\n              ->  Index Scan using candidates_pkey on candidates c  (cost=0.28..215.17 rows=2246 width=37) (actual time=0.012..0.043 rows=55.00 loops=1)\n                    Filter: ((NOT \"isDeleted\") AND (\"organizationId\" = 'defaultOrg'::text))\n                    Index Searches: 1\n                    Buffers: shared hit=8\n              ->  Index Scan using \"applications_candidateId_idx\" on applications a  (cost=0.28..116.39 rows=2169 width=81) (actual time=0.023..0.076 rows=50.00 loops=1)\n                    Index Searches: 1\n                    Buffers: shared hit=50\n        ->  Memoize  (cost=0.15..0.17 rows=1 width=37) (actual time=0.002..0.002 rows=1.00 loops=50)\n              Cache Key: a.\"jobId\"\n              Cache Mode: logical\n              Hits: 26  Misses: 24  Evictions: 0  Overflows: 0  Memory Usage: 4kB\n              Buffers: shared hit=48\n              ->  Index Scan using jobs_pkey on jobs j  (cost=0.14..0.16 rows=1 width=37) (actual time=0.002..0.002 rows=1.00 loops=24)\n                    Index Cond: (id = a.\"jobId\")\n                    Index Searches: 24\n                    Buffers: shared hit=48\nPlanning:\n  Buffers: shared hit=459\nPlanning Time: 2.163 ms\nExecution Time: 0.394 ms"
+  },
+  {
+    "name": "Q04: Interviews by Organization and Scheduled Start Window (Next 14 Days)",
+    "execTimeMs": 0.047,
+    "planTimeMs": 0.787,
+    "planText": "Index Scan using idx_interviews_scheduled_date on interviews  (cost=0.29..2.51 rows=1 width=73) (actual time=0.030..0.030 rows=0.00 loops=1)\n  Index Cond: ((\"organizationId\" = 'defaultOrg'::text) AND (\"scheduledStart\" >= now()) AND (\"scheduledStart\" <= (now() + '14 days'::interval)))\n  Index Searches: 1\n  Buffers: shared hit=5\nPlanning:\n  Buffers: shared hit=262\nPlanning Time: 0.787 ms\nExecution Time: 0.047 ms"
+  },
+  {
+    "name": "Q05: Interviews Filtered by Status with Feedback Lookups",
+    "execTimeMs": 0.145,
+    "planTimeMs": 0.321,
+    "planText": "Limit  (cost=0.28..8.04 rows=50 width=412) (actual time=0.033..0.113 rows=50.00 loops=1)\n  Buffers: shared hit=30\n  ->  Index Scan using \"interviews_organizationId_status_scheduledStart_idx\" on interviews  (cost=0.28..253.19 rows=1630 width=412) (actual time=0.032..0.108 rows=50.00 loops=1)\n        Index Cond: ((\"organizationId\" = 'defaultOrg'::text) AND (status = 'COMPLETED'::text))\n        Index Searches: 1\n        Buffers: shared hit=30\nPlanning:\n  Buffers: shared hit=9\nPlanning Time: 0.321 ms\nExecution Time: 0.145 ms"
+  },
+  {
+    "name": "Q06: InterviewFeedbacks SelectionStatus & OverallRating Aggregation",
+    "execTimeMs": 13.656,
+    "planTimeMs": 0.452,
+    "planText": "HashAggregate  (cost=79.01..79.08 rows=6 width=25) (actual time=13.606..13.609 rows=6.00 loops=1)\n  Group Key: \"selectionStatus\"\n  Batches: 1  Memory Usage: 32kB\n  Buffers: shared hit=68\n  ->  Seq Scan on interview_feedbacks  (cost=0.00..74.29 rows=629 width=17) (actual time=0.033..13.271 rows=640.00 loops=1)\n        Buffers: shared hit=68\nPlanning:\n  Buffers: shared hit=120\nPlanning Time: 0.452 ms\nExecution Time: 13.656 ms"
+  },
+  {
+    "name": "Q07: CollegeDrive Candidates Enrolled Lookup",
+    "execTimeMs": 0.072,
+    "planTimeMs": 0.457,
+    "planText": "Nested Loop  (cost=0.15..13.53 rows=34 width=62) (actual time=0.034..0.048 rows=27.00 loops=1)\n  Buffers: shared hit=5\n  ->  Seq Scan on college_drives cd  (cost=0.00..1.34 rows=1 width=42) (actual time=0.018..0.018 rows=1.00 loops=1)\n        Filter: (id = 'cmv7plef60000tbak7gdyv00e'::text)\n        Rows Removed by Filter: 26\n        Buffers: shared hit=1\n  ->  Index Scan using \"college_drive_candidates_driveId_idx\" on college_drive_candidates cdc  (cost=0.15..11.85 rows=34 width=68) (actual time=0.015..0.024 rows=27.00 loops=1)\n        Index Cond: (\"driveId\" = 'cmv7plef60000tbak7gdyv00e'::text)\n        Index Searches: 1\n        Buffers: shared hit=4\nPlanning:\n  Buffers: shared hit=141\nPlanning Time: 0.457 ms\nExecution Time: 0.072 ms"
+  },
+  {
+    "name": "Q08: Quality Checks Queue (Pending Approvals)",
+    "execTimeMs": 0.271,
+    "planTimeMs": 0.808,
+    "planText": "Sort  (cost=69.36..69.44 rows=33 width=59) (actual time=0.209..0.211 rows=33.00 loops=1)\n  Sort Key: qc.entered_queue_at DESC\n  Sort Method: quicksort  Memory: 27kB\n  Buffers: shared hit=103\n  ->  Nested Loop  (cost=0.28..68.53 rows=33 width=59) (actual time=0.048..0.171 rows=33.00 loops=1)\n        Buffers: shared hit=100\n        ->  Seq Scan on quality_checks qc  (cost=0.00..1.51 rows=33 width=72) (actual time=0.025..0.031 rows=33.00 loops=1)\n              Filter: (((organization_id)::text = 'defaultOrg'::text) AND (status = 'PENDING'::\"QualityCheckStatus\"))\n              Rows Removed by Filter: 1\n              Buffers: shared hit=1\n        ->  Index Scan using candidates_pkey on candidates c  (cost=0.28..2.03 rows=1 width=37) (actual time=0.004..0.004 rows=1.00 loops=33)\n              Index Cond: (id = (qc.candidate_id)::text)\n              Index Searches: 33\n              Buffers: shared hit=99\nPlanning:\n  Buffers: shared hit=135\nPlanning Time: 0.808 ms\nExecution Time: 0.271 ms"
+  },
+  {
+    "name": "Q09: External Assessment Results Verification",
+    "execTimeMs": 0.151,
+    "planTimeMs": 0.443,
+    "planText": "Limit  (cost=2.37..2.38 rows=1 width=176) (actual time=0.130..0.131 rows=0.00 loops=1)\n  Buffers: shared hit=5 read=1 dirtied=2\n  ->  Sort  (cost=2.37..2.38 rows=1 width=176) (actual time=0.129..0.129 rows=0.00 loops=1)\n        Sort Key: created_at DESC\n        Sort Method: quicksort  Memory: 25kB\n        Buffers: shared hit=5 read=1 dirtied=2\n        ->  Index Scan using idx_ext_assess_org_id on external_assessment_results  (cost=0.14..2.36 rows=1 width=176) (actual time=0.114..0.115 rows=0.00 loops=1)\n              Index Cond: (organization_id = 'defaultOrg'::text)\n              Index Searches: 1\n              Buffers: shared hit=2 read=1 dirtied=2\nPlanning:\n  Buffers: shared hit=170\nPlanning Time: 0.443 ms\nExecution Time: 0.151 ms"
+  },
+  {
+    "name": "Q10: Candidates Full Name Search with Case-Insensitive Pattern",
+    "execTimeMs": 0.336,
+    "planTimeMs": 1.068,
+    "planText": "Limit  (cost=18.18..19.29 rows=1 width=69) (actual time=0.153..0.177 rows=9.00 loops=1)\n  Buffers: shared hit=21 read=1\n  ->  Bitmap Heap Scan on candidates  (cost=18.18..19.29 rows=1 width=69) (actual time=0.152..0.175 rows=9.00 loops=1)\n        Recheck Cond: (\"fullName\" ~~* '%Sharma%'::text)\n        Filter: ((NOT \"isDeleted\") AND (\"organizationId\" = 'defaultOrg'::text))\n        Heap Blocks: exact=9\n        Buffers: shared hit=21 read=1\n        ->  Bitmap Index Scan on idx_candidates_name_trgm_v2  (cost=0.00..18.18 rows=1 width=0) (actual time=0.120..0.121 rows=9.00 loops=1)\n              Index Cond: (\"fullName\" ~~* '%Sharma%'::text)\n              Index Searches: 1\n              Buffers: shared hit=12 read=1\nPlanning:\n  Buffers: shared hit=10\nPlanning Time: 1.068 ms\nExecution Time: 0.336 ms"
+  },
+  {
+    "name": "Q11: Candidate Duplicate Detection by Normalized Phone",
+    "execTimeMs": 0.927,
+    "planTimeMs": 0.322,
+    "planText": "GroupAggregate  (cost=0.28..122.88 rows=617 width=19) (actual time=0.899..0.899 rows=0.00 loops=1)\n  Group Key: phone_normalized\n  Filter: (count(*) > 1)\n  Rows Removed by Filter: 2003\n  Buffers: shared hit=362 read=14 dirtied=10\n  ->  Index Only Scan using idx_candidates_phone_normalized_unique on candidates  (cost=0.28..89.73 rows=2005 width=11) (actual time=0.081..0.516 rows=2003.00 loops=1)\n        Heap Fetches: 391\n        Index Searches: 1\n        Buffers: shared hit=362 read=14 dirtied=10\nPlanning:\n  Buffers: shared hit=7\nPlanning Time: 0.322 ms\nExecution Time: 0.927 ms"
+  },
+  {
+    "name": "Q12: Dashboard Metric Multi-Count Subqueries",
+    "execTimeMs": 1.288,
+    "planTimeMs": 0.536,
+    "planText": "Result  (cost=281.73..281.74 rows=1 width=24) (actual time=1.219..1.221 rows=1.00 loops=1)\n  Buffers: shared hit=609\n  InitPlan 1\n    ->  Aggregate  (cost=97.63..97.64 rows=1 width=8) (actual time=0.391..0.391 rows=1.00 loops=1)\n          Buffers: shared hit=39\n          ->  Index Only Scan using idx_candidates_org_deleted on candidates  (cost=0.28..92.01 rows=2246 width=0) (actual time=0.038..0.289 rows=2246.00 loops=1)\n                Index Cond: ((\"organizationId\" = 'defaultOrg'::text) AND (\"isDeleted\" = false))\n                Heap Fetches: 528\n                Index Searches: 1\n                Buffers: shared hit=39\n  InitPlan 2\n    ->  Aggregate  (cost=180.86..180.87 rows=1 width=8) (actual time=0.772..0.772 rows=1.00 loops=1)\n          Buffers: shared hit=568\n          ->  Index Only Scan using \"interviews_organizationId_status_scheduledStart_idx\" on interviews  (cost=0.28..176.78 rows=1630 width=0) (actual time=0.026..0.696 rows=1633.00 loops=1)\n                Index Cond: ((\"organizationId\" = 'defaultOrg'::text) AND (status = 'COMPLETED'::text))\n                Heap Fetches: 874\n                Index Searches: 1\n                Buffers: shared hit=568\n  InitPlan 3\n    ->  Aggregate  (cost=3.22..3.23 rows=1 width=8) (actual time=0.050..0.051 rows=1.00 loops=1)\n          Buffers: shared hit=2\n          ->  Seq Scan on jobs  (cost=0.00..3.03 rows=78 width=0) (actual time=0.021..0.045 rows=78.00 loops=1)\n                Filter: (\"isActive\" AND (\"organizationId\" = 'defaultOrg'::text))\n                Rows Removed by Filter: 4\n                Buffers: shared hit=2\nPlanning:\n  Buffers: shared hit=9\nPlanning Time: 0.536 ms\nExecution Time: 1.288 ms"
+  },
+  {
+    "name": "Q13: Orphan Interviews Integrity Guard",
+    "execTimeMs": 1.934,
+    "planTimeMs": 0.482,
+    "planText": "Hash Anti Join  (cost=142.04..412.82 rows=9 width=48) (actual time=1.233..1.901 rows=1.00 loops=1)\n  Hash Cond: (i.\"candidateId\" = c.id)\n  Buffers: shared hit=479\n  ->  Seq Scan on interviews i  (cost=0.00..261.81 rows=2372 width=48) (actual time=0.013..0.700 rows=2372.00 loops=1)\n        Filter: (\"candidateId\" IS NOT NULL)\n        Rows Removed by Filter: 9\n        Buffers: shared hit=238\n  ->  Hash  (cost=113.02..113.02 rows=2322 width=24) (actual time=0.759..0.760 rows=2322.00 loops=1)\n        Buckets: 4096  Batches: 1  Memory Usage: 160kB\n        Buffers: shared hit=241\n        ->  Index Only Scan using candidates_pkey on candidates c  (cost=0.28..113.02 rows=2322 width=24) (actual time=0.006..0.422 rows=2322.00 loops=1)\n              Heap Fetches: 542\n              Index Searches: 1\n              Buffers: shared hit=241\nPlanning:\n  Buffers: shared hit=17\nPlanning Time: 0.482 ms\nExecution Time: 1.934 ms"
+  },
+  {
+    "name": "Q14: Candidates with Resumes in PostgreSQL FileMeta",
+    "execTimeMs": 0.15,
+    "planTimeMs": 0.842,
+    "planText": "Limit  (cost=0.73..3.15 rows=50 width=111) (actual time=0.020..0.116 rows=50.00 loops=1)\n  Buffers: shared hit=48\n  ->  Merge Join  (cost=0.73..109.54 rows=2247 width=111) (actual time=0.019..0.111 rows=50.00 loops=1)\n        Merge Cond: (c.\"resumeFileId\" = fm.id)\n        Buffers: shared hit=48\n        ->  Index Scan using \"candidates_resumeFileId_idx\" on candidates c  (cost=0.28..181.97 rows=2247 width=62) (actual time=0.008..0.040 rows=50.00 loops=1)\n              Filter: (NOT \"isDeleted\")\n              Rows Removed by Filter: 1\n              Index Searches: 1\n              Buffers: shared hit=39\n        ->  Index Scan using file_metas_pkey on file_metas fm  (cost=0.28..61.08 rows=1086 width=99) (actual time=0.005..0.031 rows=55.00 loops=1)\n              Index Searches: 1\n              Buffers: shared hit=9\nPlanning:\n  Buffers: shared hit=64\nPlanning Time: 0.842 ms\nExecution Time: 0.150 ms"
+  },
+  {
+    "name": "Q15: Completed Interviews without Outcome (QA-002 Review Set)",
+    "execTimeMs": 1.243,
+    "planTimeMs": 0.206,
+    "planText": "Sort  (cost=284.56..286.50 rows=777 width=78) (actual time=1.166..1.202 rows=411.00 loops=1)\n  Sort Key: \"createdAt\"\n  Sort Method: quicksort  Memory: 61kB\n  Buffers: shared hit=1154\n  ->  Index Scan using \"interviews_organizationId_status_scheduledStart_idx\" on interviews  (cost=0.28..247.25 rows=777 width=78) (actual time=0.095..1.048 rows=411.00 loops=1)\n        Index Cond: (status = 'COMPLETED'::text)\n        Filter: (outcome IS NULL)\n        Rows Removed by Filter: 1222\n        Index Searches: 2\n        Buffers: shared hit=1154\nPlanning:\n  Buffers: shared hit=3\nPlanning Time: 0.206 ms\nExecution Time: 1.243 ms"
+  }
+]

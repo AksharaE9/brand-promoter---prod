@@ -18,6 +18,7 @@ const { verifyWebhookSignature, processAssessmentPayload } = require('./inboxSer
 const { runReconciliationSync, fetchFromRecruitAi } = require('./pollerService');
 const { ApiError, asyncHandler } = require('../../../utils/errors');
 const sse = require('../../../utils/sse');
+const { generatePullReport } = require('./pullReportService');
 
 // ── Inbound Webhook Receiver ────────────────────────────────────────────────
 // POST /api/v1/integrations/recruit-ai/webhook
@@ -220,6 +221,84 @@ router.post('/confirm-outcome', asyncHandler(async (req, res) => {
   });
 }));
 
+// POST /api/v1/integrations/recruit-ai/bulk-confirm
+// Bulk confirm multiple AI recommendations into official candidate hiring outcomes
+router.post('/bulk-confirm', asyncHandler(async (req, res) => {
+  const { confirmations } = req.body;
+
+  if (!Array.isArray(confirmations) || confirmations.length === 0) {
+    throw new ApiError(400, 'confirmations must be a non-empty array of { resultId, outcome, notes }', 'INVALID_PARAMETER');
+  }
+
+  const validOutcomes = ['SELECTED', 'REJECTED', 'ON_HOLD'];
+  const processed = [];
+  const errors = [];
+
+  for (const item of confirmations) {
+    try {
+      const { resultId, outcome, notes } = item;
+      if (!resultId || !outcome || !validOutcomes.includes(outcome.toUpperCase())) {
+        errors.push({ resultId, error: 'Invalid resultId or outcome' });
+        continue;
+      }
+
+      const upperOutcome = outcome.toUpperCase();
+      const result = await prisma.externalAssessmentResult.findUnique({
+        where: { id: resultId },
+        include: { interview: true }
+      });
+
+      if (!result) {
+        errors.push({ resultId, error: 'Not found' });
+        continue;
+      }
+
+      const updatedResult = await prisma.externalAssessmentResult.update({
+        where: { id: resultId },
+        data: {
+          reviewStatus: 'outcome_confirmed',
+          reviewedById: req.user.id,
+          reviewedAt: new Date(),
+          decisionOutcome: upperOutcome
+        }
+      });
+
+      if (result.interviewRoundId) {
+        await prisma.interview.update({
+          where: { id: result.interviewRoundId },
+          data: {
+            outcome: upperOutcome,
+            outcomeSetAt: new Date(),
+            notes: notes ? `${result.interview?.notes || ''}\n[Recruiter Note]: ${notes}`.trim() : result.interview?.notes
+          }
+        });
+      }
+
+      processed.push({ resultId, outcome: upperOutcome, candidateId: result.candidateId });
+    } catch (err) {
+      errors.push({ resultId: item.resultId, error: err.message });
+    }
+  }
+
+  try {
+    sse.broadcast('ai_result_bulk_confirmed', {
+      count: processed.length,
+      confirmedBy: req.user.fullName || req.user.email
+    });
+  } catch (e) {}
+
+  res.json({
+    success: true,
+    data: {
+      confirmedCount: processed.length,
+      errorCount: errors.length,
+      processed,
+      errors
+    },
+    message: `Bulk confirmed ${processed.length} outcomes successfully.`
+  });
+}));
+
 // POST /api/v1/integrations/recruit-ai/relink
 // Manually link an unmatched result to a candidate
 router.post('/relink', asyncHandler(async (req, res) => {
@@ -358,6 +437,26 @@ router.post('/sync', requireRoles('SUPER_ADMIN', 'ADMIN'), asyncHandler(async (r
   res.json({
     success: result.success !== false,
     data: result
+  });
+}));
+
+// GET /api/v1/integrations/recruit-ai/pull-report
+// Generates or downloads the Recruit AI Pull Report
+router.get('/pull-report', requireRoles('SUPER_ADMIN', 'ADMIN'), asyncHandler(async (req, res) => {
+  const report = await generatePullReport({
+    fromDate: req.query.from,
+    toDate: req.query.to,
+    organizationId: req.user?.organizationId || 'defaultOrg'
+  });
+
+  if (req.query.format === 'markdown' || req.query.format === 'md') {
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    return res.send(report.markdown);
+  }
+
+  res.json({
+    success: true,
+    data: report
   });
 }));
 

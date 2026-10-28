@@ -1,5 +1,4 @@
 const express = require("express");
-const XLSX = require("xlsx");
 const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { memoryUpload } = require("../../middleware/upload");
@@ -124,7 +123,7 @@ const { validateDriveDescription } = require("../../config/driveConstants");
 // --- DRIVES ---
 
 router.get(
-  "/drives",
+  ["/", "/drives"],
   requireRoles(...CAN_ACCESS),
   asyncHandler(async (req, res) => {
     const { collegeId, search } = req.query;
@@ -428,6 +427,7 @@ router.post(
 
     let allRows = [];
     try {
+      const XLSX = require("xlsx");
       // SEC: Harden XLSX parsing — disable formulas (prevents ReDoS + prototype pollution)
       const workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true, cellNF: false, cellText: false, cellFormula: false, bookVBA: false, bookFiles: false, defval: '' });
       for (const sheetName of workbook.SheetNames) {

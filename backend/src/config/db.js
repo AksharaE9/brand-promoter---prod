@@ -7,22 +7,32 @@
 
 const { PrismaClient } = require('@prisma/client');
 
-// Optimize connection parameters for serverless Neon DB to handle cold starts.
-// pool_timeout=45 and connect_timeout=45 allow up to 45 seconds for cold-start database compute spin-ups.
+// Optimize connection parameters for database connections.
+// Under PERF_POOLER_OPTIMIZED, connection_limit defaults to 8 (sized for single-process 512MB RAM)
+// instead of 25 to avoid connection thrashing and excess memory per connection.
 function getOptimizedDbUrl(dbUrl) {
   if (!dbUrl) return dbUrl;
   let optimized = dbUrl;
+  const isPerfOptimized = process.env.PERF_POOLER_OPTIMIZED === 'true';
+  const connectionLimit = isPerfOptimized
+    ? (process.env.DB_CONNECTION_LIMIT || '8')
+    : (process.env.DB_CONNECTION_LIMIT || '25');
+
   if (!optimized.includes('connection_limit')) {
     const separator = optimized.includes('?') ? '&' : '?';
-    optimized = `${optimized}${separator}connection_limit=25`;
+    optimized = `${optimized}${separator}connection_limit=${connectionLimit}`;
   }
   if (!optimized.includes('pool_timeout')) {
     const separator = optimized.includes('?') ? '&' : '?';
-    optimized = `${optimized}${separator}pool_timeout=45`;
+    optimized = `${optimized}${separator}pool_timeout=${isPerfOptimized ? '20' : '45'}`;
   }
   if (!optimized.includes('connect_timeout')) {
     const separator = optimized.includes('?') ? '&' : '?';
     optimized = `${optimized}${separator}connect_timeout=45`;
+  }
+  if (isPerfOptimized && (optimized.includes('-pooler') || process.env.DB_PGBOUNCER === 'true') && !optimized.includes('pgbouncer=true')) {
+    const separator = optimized.includes('?') ? '&' : '?';
+    optimized = `${optimized}${separator}pgbouncer=true`;
   }
   return optimized;
 }
@@ -58,11 +68,23 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Transparent database query retry middleware to handle transient Neon DB connection drops / resets.
+let perfStorage = null;
+try {
+  perfStorage = require('../utils/perfContext').perfContextStorage;
+} catch (_) {}
+
 prisma.$use(async (params, next) => {
+  const ctx = perfStorage ? perfStorage.getStore() : null;
+  const t0 = process.hrtime.bigint();
   let retries = 3;
   while (retries > 0) {
     try {
-      return await next(params);
+      const result = await next(params);
+      if (ctx) {
+        ctx.dbCount++;
+        ctx.dbDuration += Number(process.hrtime.bigint() - t0) / 1e6;
+      }
+      return result;
     } catch (err) {
       const isConnectionError =
         err.code === 'P1001' || // Can't reach database

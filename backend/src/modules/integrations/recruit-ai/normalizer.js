@@ -19,24 +19,37 @@ function computePayloadHash(payload) {
   return crypto.createHash('sha256').update(str).digest('hex');
 }
 
+function parseNumericScore(val) {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '-' || trimmed.toUpperCase() === 'NA' || trimmed.toUpperCase() === 'NULL') {
+      return null;
+    }
+    const num = Number(trimmed);
+    return isNaN(num) ? null : num;
+  }
+  return null;
+}
+
 function normalizeScore(scoreObj, rawScoreFallback) {
   let raw = null;
   let scaleMax = 100;
 
-  if (typeof scoreObj === 'number') {
-    raw = scoreObj;
+  if (typeof scoreObj === 'number' || typeof scoreObj === 'string') {
+    raw = parseNumericScore(scoreObj);
   } else if (scoreObj && typeof scoreObj === 'object') {
-    if (typeof scoreObj.raw === 'number') raw = scoreObj.raw;
-    else if (typeof scoreObj.score === 'number') raw = scoreObj.score;
-    else if (typeof scoreObj.total === 'number') raw = scoreObj.total;
+    const candidateVal = scoreObj.raw !== undefined ? scoreObj.raw : (scoreObj.score !== undefined ? scoreObj.score : scoreObj.total);
+    raw = parseNumericScore(candidateVal);
     
     if (typeof scoreObj.scaleMax === 'number' && scoreObj.scaleMax > 0) {
       scaleMax = scoreObj.scaleMax;
     } else if (typeof scoreObj.outOf === 'number' && scoreObj.outOf > 0) {
       scaleMax = scoreObj.outOf;
     }
-  } else if (typeof rawScoreFallback === 'number') {
-    raw = rawScoreFallback;
+  } else if (rawScoreFallback !== undefined) {
+    raw = parseNumericScore(rawScoreFallback);
   }
 
   if (raw === null || isNaN(raw)) {
@@ -65,17 +78,18 @@ function normalizeRecommendation(rec) {
   if (!rec || typeof rec !== 'string') return 'not_assessed';
   const clean = rec.trim().toLowerCase().replace(/[\s-]+/g, '_');
 
+  // Negative recommendations must be checked before "hire" to avoid false positive on "no_hire"
+  if (/(^|_)(no_hire|no|reject|rejected|fail|failed|not_recommended)(_|$)/.test(clean)) {
+    return 'no';
+  }
   if (/(^|_)(strong_yes|strongly_hire|strong_hire)(_|$)/.test(clean)) {
     return 'strong_yes';
   }
-  if (/(^|_)(yes|hire|select|pass)(_|$)/.test(clean)) {
+  if (/(^|_)(yes|hire|select|selected|pass)(_|$)/.test(clean)) {
     return 'yes';
   }
   if (/(^|_)(maybe|borderline|hold|review)(_|$)/.test(clean)) {
     return 'maybe';
-  }
-  if (/(^|_)(no|reject|fail)(_|$)/.test(clean)) {
-    return 'no';
   }
   return 'not_assessed';
 }

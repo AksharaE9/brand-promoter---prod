@@ -9,6 +9,21 @@ const { rateLimit, MemoryStore } = require('express-rate-limit');
  * external network Redis dependencies.
  * ─────────────────────────────────────────────────────────────────────────
  */
+function isLoadTestBypassed(req) {
+  const secret = process.env.LOADTEST_BYPASS_SECRET;
+  const windowUntil = process.env.LOADTEST_WINDOW_UNTIL;
+  if (!secret || !windowUntil) return false;
+
+  const headerSecret = req.headers['x-load-test'];
+  if (!headerSecret || headerSecret !== secret) return false;
+
+  const expiry = new Date(windowUntil).getTime();
+  if (isNaN(expiry) || Date.now() > expiry) return false;
+
+  console.log(`[RateLimiter] [LOAD_TEST_BYPASS] path=${req.originalUrl || req.url} ip=${req.ip} time=${new Date().toISOString()}`);
+  return true;
+}
+
 function createLimiter(windowMs, max, prefix) {
   return rateLimit({
     windowMs,
@@ -17,6 +32,7 @@ function createLimiter(windowMs, max, prefix) {
     legacyHeaders:   false,
     validate: false,
     store: new MemoryStore(),
+    skip: isLoadTestBypassed,
     keyGenerator: (req) => {
       const clientIpOrOrg = (req.user?.organizationId || req.ip || 'unknown').replace(/:/g, '_');
       const userId = (req.user?.id || 'anon').replace(/:/g, '_');
@@ -37,6 +53,7 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new MemoryStore(),
+  skip: isLoadTestBypassed,
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many requests. Please slow down and try again shortly.' });
   },
@@ -48,6 +65,7 @@ const heavyEndpointLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: new MemoryStore(),
+  skip: isLoadTestBypassed,
   handler: (req, res) => {
     res.status(429).json({ message: 'Too many requests on this endpoint. Please slow down and try again shortly.' });
   },
@@ -62,3 +80,4 @@ module.exports = {
   globalLimiter,
   heavyEndpointLimiter,
 };
+

@@ -1,0 +1,44 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Shamitha Krishna A | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cff20003tbtonkmhv4rs | R1 -> SELECTED | MATCH
+Rakshitha S | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6ci4q000ctbton5idf2u9 | R1 -> SELECTED | MATCH
+Ekta V Dhanunjaya | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cjtk000ltbtoiph6re32 | R1 -> SELECTED | MATCH
+Amrutha | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6clij000utbtouzwxoh4e | R1 -> SELECTED | MATCH
+Vijetha A naik | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cn7h0013tbto50ks9ctg | R1 -> SELECTED | MATCH
+Gaanavi B | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cp3f001ctbto58408thh | R1 -> SELECTED | MATCH
+Theertha varshini D | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cqsl001ltbtogkjdilsz | R1 -> SELECTED | MATCH
+Divya S B | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cshh001utbto4eor7h5c | R1 -> SELECTED | MATCH
+Bindu Shree S | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cu690023tbtosvfjkr45 | R1 -> SELECTED | MATCH
+Raksha G | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cvv7002ctbtoau2hqi8g | R1 -> SELECTED | MATCH
+Devansh Verma | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6cxkd002ltbtor1mkq5dx | R1 -> SELECTED | MATCH
+Sohan M | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6czcm002utbtohkesrhni | R1 -> SELECTED | MATCH
+Apeksha S | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d18i0033tbtoqofzdwy8 | R1 -> SELECTED | MATCH
+Vaishnavi | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d2xg003ctbto6b09eqgx | R1 -> SELECTED | MATCH
+Nisarga | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d4m9003ltbto4sb7rcq7 | R1 -> SELECTED | MATCH
+Pragathi GS | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d6b9003utbtojibyttzq | R1 -> SELECTED | MATCH
+Yashwant kumar | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d82b0043tbto734paux4 | R1 -> SELECTED | MATCH
+shamya MJ | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6d9qy004ctbtome35x98h | R1 -> SELECTED | MATCH
+swati | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6dbg4004ltbtozw1pp9pc | R1 -> SELECTED | MATCH
+chai l jain | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6ddcn004utbto23vivdux | R1 -> SELECTED | MATCH
+Bhumika S | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6df1a0053tbto2vx68a9i | R1 -> SELECTED | MATCH
+harshitha M Mary | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6dgpx005ctbto5acypsmy | R1 -> SELECTED | MATCH
+Sushmita TK | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6diei005ltbtoa80h3gnq | R1 -> SELECTED | MATCH
+hitha Sh | BGS_College_Drive.xlsx | R1 -> SELECTED | cmuf6dk5a005utbto1zxux9fd | R1 -> SELECTED | MATCH
+Yashaswini gowda | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dlvi0063tbtouvu4qvne | R1 -> REJECTED | MATCH
+N reddy Kumari | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dnmd006ctbtoa8c2jwo3 | R1 -> REJECTED | MATCH
+Priyanka | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dpib006ltbtogrh4snwt | R1 -> REJECTED | MATCH
+Dyuti | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dr7j006utbto2hsf4x5p | R1 -> REJECTED | MATCH
+Nithyashree T R | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dsxw0073tbtot3mpbtzl | R1 -> REJECTED | MATCH
+Punya H | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dumm007ctbto0e0vzrnh | R1 -> REJECTED | MATCH
+Shubha D C | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dwbn007ltbtowk0fz1ty | R1 -> REJECTED | MATCH
+Sneha S | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dy0r007utbto9b9hl9xb | R1 -> REJECTED | MATCH
+Deekshitha M | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6dzpu0083tbtopqcc4098 | R1 -> REJECTED | MATCH
+Vinutha V | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6e1m2008ctbtoyc38sko0 | R1 -> REJECTED | MATCH
+saniya B K | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6e3bc008ltbto3i5sbn3m | R1 -> REJECTED | MATCH
+manushree | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6e501008utbto06hv1hjp | R1 -> REJECTED | MATCH
+Sachin j | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6e6op0093tbton82akso5 | R1 -> REJECTED | MATCH
+Niranjan k | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6e8hc009ctbto2avkg23f | R1 -> REJECTED | MATCH
+Abilash PA | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6ea6i009ltbtolnbkl40r | R1 -> REJECTED | MATCH
+Arvind | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6ebv5009utbtoaeqyxgno | R1 -> REJECTED | MATCH
+PRATHIBHA KS | BGS_College_Drive.xlsx | R1 -> REJECTED | cmuf6edth00a3tbtoljdionit | R1 -> REJECTED | MATCH
+Santosh khul (Selected sheet) | BGS_College_Drive.xlsx (Selected Row 22) | R1 -> SELECTED, rating: 6 | None (Skipped at import via is_held flag) | None | MISSING_CANDIDATE
+Santosh khul (Rejected sheet) | BGS_College_Drive.xlsx (Rejected Row 18) | R1 -> REJECTED, rating: 2 | None (Skipped at import via is_held flag) | None | MISSING_CANDIDATE

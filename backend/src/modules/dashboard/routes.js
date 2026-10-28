@@ -171,7 +171,7 @@ const getDashboardSummary = asyncHandler(async (req, res) => {
  * GET /dashboard/summary
  * Consolidated single dashboard summary API.
  */
-router.get("/summary", requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), getDashboardSummary);
+router.get(["/summary", "/stats"], requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"), getDashboardSummary);
 
 /**
  * GET /dashboard/init

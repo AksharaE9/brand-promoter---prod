@@ -1,6 +1,5 @@
 'use strict';
 
-const XLSX = require('xlsx');
 const { resolveHeader } = require('./headerAliasMap');
 
 /**
@@ -10,6 +9,8 @@ const { resolveHeader } = require('./headerAliasMap');
  * and resolves column headers using resolveHeader alias map.
  */
 function parseSheetBuffer(buffer, options = {}) {
+  // Track 5: Lazy-load xlsx on demand inside parser function
+  const XLSX = require('xlsx');
   const workbook = XLSX.read(buffer, { type: 'buffer', raw: false });
   const allRows = [];
   const errors = [];

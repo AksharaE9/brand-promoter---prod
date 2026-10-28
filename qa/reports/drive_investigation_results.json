@@ -1,0 +1,4443 @@
+{
+  "nmit": {
+    "drive": {
+      "id": "cmv7plef60000tbak7gdyv00e",
+      "title": "Nitte Meenakshi Campus Recruitment Drive 2026",
+      "collegeId": "cmv7lh1ie001apitw887ey0gr",
+      "dateFrom": "2026-10-14",
+      "dateTo": "2026-10-14",
+      "status": "ACTIVE",
+      "description": null,
+      "notes": "Shared resume folder: https://drive.google.com/drive/folders/1COBnP2YYRRjsSaSfmDlnv6W3PIxMnMYm?usp=sharing",
+      "ownerId": "cYEZblWdN7gubrQvLgYj",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [
+        "cmrnjjhvp0092lg2ry71l2zkt",
+        "cmrx56ou6001kmy2rk7zgf7jd",
+        "cmraj3ajx000yng2sxof83z7m"
+      ],
+      "isDeleted": false,
+      "createdAt": "2026-10-14T06:08:34.621Z",
+      "updatedAt": "2026-10-14T06:08:34.621Z"
+    },
+    "totalCdc": 27,
+    "candidates": [
+      {
+        "id": "cmv7pll0o0002tbak6sjhyicv",
+        "name": "MADDINENI PAVAN TEJA",
+        "phone": "9676627354",
+        "email": "maddinenipavanteja@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pln1t0005tbakbluyo51q",
+        "name": "NAG PRATHIK",
+        "phone": "8892686763",
+        "email": "nagprathikmg@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:41:17.283Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Panelist: Jeevan\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:41:18.617Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7plo2s000atbak0nk93wuh",
+        "name": "KALATUR SOMESH",
+        "phone": "7032834889",
+        "email": "kalathursomesh@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plpax000dtbakim5nnehn",
+        "name": "JENAN AE",
+        "phone": "8870290345",
+        "email": "jenanjn98@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plqrx000mtbak2ysih69q",
+        "name": "ARTI MADHAVAN",
+        "phone": "7695053005",
+        "email": "artimadhavan@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plsaz000rtbakmp1bsnna",
+        "name": "sujith",
+        "phone": "9741356702",
+        "email": "N/A",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:12.295Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Status: Selected\nDOJ: Nov 17th\nArea: Yelahanka\nAlias: Sujith Manjunath Mogaveera",
+            "updatedAt": "2026-10-27T06:40:14.781Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7pltcs000wtbakjc683d83",
+        "name": "Nandini yadav",
+        "phone": "7477866711",
+        "email": "ynandinime@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plwgf0011tbakho8mb670",
+        "name": "Kushal Surya Hm",
+        "phone": "8073081622",
+        "email": "kushalsurya2004@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plxj40016tbakwees980h",
+        "name": "Vinayak g sanamani",
+        "phone": "7676435781",
+        "email": "N/A",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7plzho001btbak8xhxgxsv",
+        "name": "Chinmay Deepak Chandavar",
+        "phone": "6366896901",
+        "email": "chinmaydc2@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pm0od001gtbak8isw40gi",
+        "name": "Kusheen Dhar",
+        "phone": null,
+        "email": "kusheendhar@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:04.848Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Year: 2026\nCourse: CSE\nParents: J&K fatther is a professor\nFrom: J&K\nRating: 8\nDOJ: 15th november\nSelection status: selected",
+            "updatedAt": "2026-10-27T06:40:06.655Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmv7pm25w001ltbaksm31johp",
+        "name": "Ahmed Syed Mohammed",
+        "phone": "9742861722",
+        "email": "a13syed@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pm37w001qtbakha7ers0q",
+        "name": "Sudhiksha Balaji",
+        "phone": "7899164933",
+        "email": "sudikshabalaji73@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pm48n001vtbakc80ylkgw",
+        "name": "Jesto Gigi Kadavi",
+        "phone": "8289801960",
+        "email": "jestogigi2020@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:41:24.146Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7.5\nDOJ: Post 11th November\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:41:26.704Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmv7pm5ax0020tbakqa10d6wj",
+        "name": "Paarvathi G",
+        "phone": "7022325758",
+        "email": "paarthvigirish@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:37.565Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6\nDOJ: 19th oct\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:40:41.400Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmv7pm6f60025tbakhk1w3iwz",
+        "name": "Gagan Narasimha Reddy A K",
+        "phone": "7795165136",
+        "email": "gagan29nak@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pm7hv002atbak1qoo5srb",
+        "name": "Puja Kumari",
+        "phone": "7801943791",
+        "email": "pujakumarik292@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pm8i7002ftbakq8jkzt92",
+        "name": "Megha",
+        "phone": "8951244759",
+        "email": "samegha95@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:27.822Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Role: OP,s\nRating: 6\nDOJ: 1st of november\nSelection status: selected",
+            "updatedAt": "2026-10-27T06:40:28.603Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          },
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7pm9iv002ktbakm0sf2aj7",
+        "name": "Dhruthi SL",
+        "phone": "8867272208",
+        "email": "druthisl2004@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:24.074Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Role: Data Analyst Intern (Enrolled as Operations)\nStatus: Selected\nDOJ: Nov 17th",
+            "updatedAt": "2026-10-27T06:40:24.853Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7pmb28002ptbaksz5s4bg5",
+        "name": "Ayush madnapotra",
+        "phone": "9031288430",
+        "email": "ayushmadanpotra129@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:39:48.904Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Role: Data Analyst Intern\nLocation: Bangalore\nArea: Yelahanka\nDOJ: From Jan\nStatus: Selected",
+            "updatedAt": "2026-10-27T06:39:53.757Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7pmch6002utbak7luin210",
+        "name": "Tejaswini Reddy U",
+        "phone": "8217089494",
+        "email": "tejaswini.urimindi@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pmdqv002ztbak46lrzbya",
+        "name": "Sai Prateesh",
+        "phone": "8618012764",
+        "email": "saipratheesh15@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:55.862Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Panelist: Jeevan\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:41:02.773Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmv7pmf6v0034tbakqitnw4km",
+        "name": "DV Asmitha",
+        "phone": "9449173452",
+        "email": "dvasmita123@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pmftz0037tbak8p252a60",
+        "name": "Himanshu Singh",
+        "phone": null,
+        "email": "N/A",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pmgv9003etbakgjwdcg60",
+        "name": "Anirudh",
+        "phone": "8015439632",
+        "email": "anirudh0706@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Placeholder] Inferred SELECTED — Candidate progressed to Round 2 evaluation.",
+            "updatedAt": "2026-10-27T06:40:52.297Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6\nDOJ: 22nd oct\nSelection status: selcted",
+            "updatedAt": "2026-10-27T06:40:53.101Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmv7pmi8l003jtbak68vakh8y",
+        "name": "Adkosh",
+        "phone": "9353564002",
+        "email": "javaliadhoksh22005@gmail.com",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmv7pq9d50019tb9gjdxola5v",
+        "name": "Himanshu Singh",
+        "phone": null,
+        "email": "N/A",
+        "source": "Vinay's Lead",
+        "interviews": [],
+        "feedbacks": []
+      }
+    ]
+  },
+  "jain": {
+    "drive": {
+      "id": "cmrvvgvnj0007mt29fxu60ik8",
+      "title": "JAIN CMS INTERNSHIP FAIR",
+      "collegeId": "cmrvvg6bu0006mt2958sykr80",
+      "dateFrom": "2026-07-22",
+      "dateTo": null,
+      "status": "ACTIVE",
+      "description": null,
+      "notes": null,
+      "ownerId": "re56ljEGsGX6xyVRsB9N",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-07-22T09:20:40.185Z",
+      "updatedAt": "2026-07-22T09:20:40.185Z"
+    },
+    "totalCdc": 29,
+    "candidates": [
+      {
+        "id": "cmrvq6ae8003zmt297aiuoibu",
+        "name": "Aayushi",
+        "phone": "9131182894",
+        "email": "gungunaayushi@gmail.com",
+        "source": "Employee Details Form",
+        "createdAt": "2026-07-22T06:52:28.064Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null}",
+            "updatedAt": "2026-07-23T15:46:28.279Z"
+          }
+        ],
+        "feedbacks": []
+      },
+      {
+        "id": "cmrvqd08o004fmt291lp6srh0",
+        "name": "Himani Yadav",
+        "phone": "8792675049",
+        "email": "himaniyadav233@gmail.com",
+        "source": "Employee Details Form",
+        "createdAt": "2026-07-22T06:57:41.496Z",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmrvv3l500001mt29avg02lg2",
+        "name": "Ayushi SAH",
+        "phone": "8373959915",
+        "email": "ayushisah1010@gmail.com",
+        "source": "Jain drive ",
+        "createdAt": "2026-07-22T09:10:20.100Z",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmrvvhmyx0008mt29plyvmcl9",
+        "name": "KOWSHICK S",
+        "phone": "8903850238",
+        "email": "kowsh008@gmail.com",
+        "source": "College Drive",
+        "createdAt": "2026-07-22T09:21:15.658Z",
+        "interviews": [],
+        "feedbacks": []
+      },
+      {
+        "id": "cmrvviyyy000amt29qk0997uz",
+        "name": "SHANVI PARASRAMKA",
+        "phone": "741187199",
+        "email": "shanviparassramka@gmail.com",
+        "source": "College Drive",
+        "createdAt": "2026-07-22T09:22:17.867Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "SCHEDULED",
+            "outcome": null,
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null}",
+            "updatedAt": "2026-07-22T13:18:03.764Z"
+          }
+        ],
+        "feedbacks": []
+      },
+      {
+        "id": "cmrvvkosg000dmt29632cjcot",
+        "name": "TANISHA TIWARI",
+        "phone": "6201949073",
+        "email": "tiwaritanishaa28@gmail.com",
+        "source": "College Drive",
+        "createdAt": "2026-07-22T09:23:37.985Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null}",
+            "updatedAt": "2026-07-31T07:18:04.127Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmrxo4mkx0029my296ngu4drs",
+        "name": "Himaja Bogarvu",
+        "phone": "9663934560",
+        "email": "b.v.himaja@gmail.com",
+        "source": "College Drive",
+        "createdAt": "2026-07-23T15:30:43.666Z",
+        "interviews": [
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null}",
+            "updatedAt": "2026-07-23T15:40:43.372Z"
+          }
+        ],
+        "feedbacks": []
+      },
+      {
+        "id": "cmvhn5lgf0001tbqs0f01dhzv",
+        "name": "Pengaluru Dinishitha",
+        "phone": null,
+        "email": "N/A",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:57:59.775Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Technically not sounding good, practical knowledge not great, fumbled much\n[Year/Degree] BE (2027)\n[College/Current Area] College hostel\n[Location/State] Andhra Pradesh\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Business man now farmer\n[Prior Experience/Projects] Codesoft, Code Alpha, Prostate cancer detection\n[DL / Bike] NA\n[Flags] needs_contact_details, no_resume",
+            "updatedAt": "2026-10-21T04:58:00.829Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmvhn5t76000btbqs72251p5b",
+        "name": "Boggavarapu Suriya",
+        "phone": "9483603470",
+        "email": "suri.varapu@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:09.811Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Logically he answers well, confident in his answers, technically above average\n[Year/Degree] BE (2027)\n[College/Current Area] College hostel\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Dad pharma company\n[Prior Experience/Projects] Zedio development\n[DL / Bike] NA",
+            "updatedAt": "2026-10-21T04:58:10.338Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Panelists: Revanth & Sneha\nRating: 6.5\nDOJ: Immediate\nSelection status: selected",
+            "updatedAt": "2026-10-27T06:41:51.871Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn5xac000ltbqsjjbkg6kk",
+        "name": "HARSH PILLAI",
+        "phone": "7480089403",
+        "email": "pillaiharsh86@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:15.108Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Answers not convincing, not logical, didn't write the query, was asking some question, he was telling different thing, couldn't answer the query\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Vajarahaali\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Mom pathologist lab, Jain dad\n[Prior Experience/Projects] MAIN flow\n[DL / Bike] NA\n[Excel Name Spelling] Harsh Pillai",
+            "updatedAt": "2026-10-21T04:58:15.632Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmvhn617l000vtbqsc8vdz2q7",
+        "name": "SHAIK SHAH BABA",
+        "phone": "9346786685",
+        "email": "shaikshahbaba13092023@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:20.194Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Logically he is good in analytical thinking. Will be a good fit, stays in JP Nagar can commute easily to the location\n[Year/Degree] BE (2027)\n[College/Current Area] JP Nagar\n[Location/State] Andhra Pradesh\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Father business\n[Prior Experience/Projects] Commonwealth Bank (Excel sheets)\n[DL / Bike] NA\n[Flags] name_spelling_variation\n[Excel Name Spelling] Shaikh Shah Baba",
+            "updatedAt": "2026-10-21T06:40:34.013Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null,\"backdated\":true,\"feedbackDelayedAlertSent\":true}",
+            "updatedAt": "2026-10-21T06:40:34.017Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmvhn67120015tbqsid77rlb8",
+        "name": "MOHAMMED FARIS NOOR",
+        "phone": "6360165354",
+        "email": "fn9710695@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:27.734Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Doesn't sound well in answering, over confident\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] JP Nagar\n[Location/State] JP Nagar\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Prior Experience/Projects] No\n[DL / Bike] NA\n[Excel Name Spelling] Mohammed Faris Noor",
+            "updatedAt": "2026-10-21T04:58:28.267Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6cad001ftbqs8xn4vdr4",
+        "name": "DHANUSH INAPAGOLLA",
+        "phone": "8328592840",
+        "email": "dhanush.07115@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:34.549Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Doesn't sound well in answering, doesn't sound well technically. Wasn't confident while answering\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Near college\n[Location/State] College PG\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Dad and mom teacher\n[Prior Experience/Projects] Aquasentry\n[DL / Bike] NA\n[Excel Name Spelling] Dhanush Inapagolla",
+            "updatedAt": "2026-10-21T04:58:35.095Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6gd2001ptbqs436tvbrw",
+        "name": "RIFAH ALAM",
+        "phone": "9113124527",
+        "email": "rifahalam18@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:39.830Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Candidate is good wants to explore BA. DA and BA can be given. She asked if not BA can DA be given. Good fit\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Thalagatpurra\n[Location/State] College PG\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Prior Experience/Projects] Techie QA, RD Infro Technology\n[DL / Bike] NA\n[Flags] decimal_rating_7.5, open_to_da\n[Excel Name Spelling] Rifah Alam",
+            "updatedAt": "2026-10-21T04:58:40.355Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 8\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:42:10.227Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6ju7001ztbqspym4atml",
+        "name": "TARUN JOSHI",
+        "phone": "7456806457",
+        "email": "tarun.sde.code@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:44.335Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Candidate is good, has come from Uttarakhand, answered well, wrote the query also well\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Harohalli\n[Location/State] College PG\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Dad construction business\n[DL / Bike] NA\n[Excel Name Spelling] Tarun Joshi",
+            "updatedAt": "2026-10-21T04:58:44.859Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7.5\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:42:22.997Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6mf00029tbqsb0iggpa0",
+        "name": "CHANDAMURI KASI REDDY",
+        "phone": "7780277256",
+        "email": "Chandamuri.kasireddy81@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:47.676Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Technically good answered well little bit struggles but answered in logical way\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Harohalli\n[Location/State] Haohalli\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Parents handloom weavers\n[DL / Bike] NA\n[Excel Name Spelling] Chandamuri Kasi Reddy",
+            "updatedAt": "2026-10-21T04:58:48.200Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null}",
+            "updatedAt": "2026-10-21T09:40:29.621Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6p0d002jtbqs2i2grn97",
+        "name": "V KUSUMA",
+        "phone": "6301705903",
+        "email": "vkusuma249@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:51.037Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Technically good answered well. Good knowledge. Has query knowledge\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Hostel\n[Location/State] Andhra Pradesh\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[Family Background] Father is TDTC\n[DL / Bike] NA\n[Excel Name Spelling] V Kusuma",
+            "updatedAt": "2026-10-21T04:58:51.561Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6.5\nDOJ: December\nSelection status: selected",
+            "updatedAt": "2026-10-27T06:41:46.755Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6rmp002ttbqsr0tmntaw",
+        "name": "SANJAY E",
+        "phone": "6381050169",
+        "email": "sanjayelaiyaraja@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:54.433Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Technically good answered well. Good knowledge. Has query knowledge\n[Tentative DOJ] Immediately\n[Year/Degree] BE (2027)\n[College/Current Area] Hostel\n[Location/State] Andhra Pradesh\n[Origin Place] Bangalore\n[Languages Known] Kannada, English\n[DL / Bike] NA\n[Excel Name Spelling] Sanjay E",
+            "updatedAt": "2026-10-21T04:58:54.960Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Role change: R1 BA Intern -> R2 DA Intern\nRating: 7.5\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:42:29.786Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6u6j0033tbqspi4mgc5x",
+        "name": "SUVAM KURMI",
+        "phone": "7439016177",
+        "email": "suvamkurmisuvam@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:58:57.739Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Sounds serious and confident, has technical knowledge\n[Tentative DOJ] November 1\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English\n[Family Background] Dad - real estate, Mom - house wife\n[Prior Experience/Projects] Internship at Cotton Solutions\n[Available Timings] 9:30 - 7:00\n[Flags] round_written_as_2nd, name_spelling_variation\n[Excel Name Spelling] Suvam Kurmiw",
+            "updatedAt": "2026-10-21T04:58:58.263Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6wx4003dtbqshp7dnuet",
+        "name": "PRANAV DHAASAIYA",
+        "phone": "9629986730",
+        "email": "pranavdhaasaiya13@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:01.288Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Sounds serious and confident, has technical knowledge\n[Tentative DOJ] December\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi, Tamil\n[Family Background] Dad - railway engineer contractor, Mom - house wife\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation\n[Excel Name Spelling] Pranav Dhaasaiyam",
+            "updatedAt": "2026-10-21T04:59:01.816Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 8.5\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:41:57.117Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn6zjm003ntbqsvdglvc3v",
+        "name": "DHRUVANTH R",
+        "phone": "9686485136",
+        "email": "dhruvanthr26@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:04.690Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Seems hardworking and enthusiastic\n[Tentative DOJ] Immediate\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Kannada, Hindi\n[Family Background] Dad - provision store\n[Available Timings] 9:30 - 7:00\n[Flags] secondary_email_23btris011@jainuniversity.ac.in\n[Excel Name Spelling] Dhruvanth R",
+            "updatedAt": "2026-10-21T04:59:05.214Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 8.5\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:41:54.459Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8.5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn724a003xtbqshpivbb02",
+        "name": "G Prudvi Siva Naga Meher",
+        "phone": "6301072325",
+        "email": "meherprudvi12@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:08.026Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Other candidates were better\n[Tentative DOJ] November\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Telugu, Hindi\n[Family Background] Dad - shop, Mom - house wife\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation\n[Excel Name Spelling] Prudivi Siva Naga Meher",
+            "updatedAt": "2026-10-21T04:59:08.557Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmvhn74qp0047tbqs2hdr0iiy",
+        "name": "INFANT PRESHITH P",
+        "phone": "6363096588",
+        "email": "infantpreshith@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:11.424Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Answered all the questions correctly\n[Tentative DOJ] 1st week of November\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Kannada\n[Family Background] Dad - farming, Mom - farming\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation, rating_outcome_anomaly_rated_5_selected\n[Excel Name Spelling] Infant Pershith",
+            "updatedAt": "2026-10-21T06:40:50.085Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null,\"backdated\":true,\"feedbackDelayedAlertSent\":true}",
+            "updatedAt": "2026-10-21T06:40:50.087Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 5
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmvhn77bn004htbqsi9lkw3nr",
+        "name": "HARSHAN R",
+        "phone": "8838161876",
+        "email": "harshan2k21@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:14.770Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Other candidates were better than him\n[Tentative DOJ] For next week\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Tamil\n[Family Background] Dad - businessman, Mom - housewife\n[Available Timings] 9:30 - 7:00\n[Excel Name Spelling] Harshan R",
+            "updatedAt": "2026-10-21T04:59:15.300Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmvhn7a2x004rtbqsn458zu74",
+        "name": "SOUMYA SINGH",
+        "phone": "9341793952",
+        "email": "itsoumya1234@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:18.345Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Did not answer most of the questions\n[Tentative DOJ] December\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi\n[Family Background] Dad - government employee, Mom - housewife\n[Available Timings] 9:30 - 7:00\n[Flags] rating_outcome_anomaly_rated_8_rejected\n[Excel Name Spelling] Soumya Singh",
+            "updatedAt": "2026-10-21T04:59:18.872Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmvhn7cpw0051tbqsw7py3cjy",
+        "name": "ISHITA JAIN",
+        "phone": "7850031379",
+        "email": "ishitaamin11@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:21.764Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Answered all the questions\n[Tentative DOJ] After 11th November\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi, Marwadi, Assamese\n[Family Background] Dad - businessman, Mom - business\n[Available Timings] 9:30 - 7:00\n[Excel Name Spelling] Ishita Jain",
+            "updatedAt": "2026-10-21T04:59:22.286Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 8\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:42:01.895Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmvhn7f9w005btbqsemeiu9qz",
+        "name": "Shaik Mohammed Sanaan",
+        "phone": "6303767372",
+        "email": "shaiksanan1234@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:25.076Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Answered all the questions\n[Tentative DOJ] Immediate\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi, Japanese, Urdu\n[Family Background] Dad - fruit merchant, Mom - housewife\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation\n[Excel Name Spelling] Shaikh Mohammed Sanaan",
+            "updatedAt": "2026-10-21T04:59:25.601Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null,\"backdated\":true,\"feedbackDelayedAlertSent\":true}",
+            "updatedAt": "2026-10-21T06:52:00.331Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmvhn7ht6005ltbqshr592hbb",
+        "name": "Asmita Singh",
+        "phone": "9241589563",
+        "email": "i.am.asmita.91@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:28.362Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Answered all the questions\n[Tentative DOJ] Immediate\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi, Kannada\n[Family Background] Dad - bank employee, Mom - housewife\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation\n[Excel Name Spelling] Ashmita Singh",
+            "updatedAt": "2026-10-21T04:59:28.891Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 8\nDOJ: Immediate\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:42:26.700Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmvhn7kuj005vtbqslstg52gw",
+        "name": "ADITI S PRASAD",
+        "phone": "6364630879",
+        "email": "aditisprasad16@gmail.com",
+        "source": "JAIN_DRIVE_IMPORT_2026-10-21",
+        "createdAt": "2026-10-21T04:59:32.300Z",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Felt like the other candidates were better\n[Tentative DOJ] Within a week or two\n[Location/State] Bangalore\n[Origin Place] Bangalore\n[Languages Known] English, Hindi, Kannada, Telugu\n[Family Background] Dad - business manager, Mom - tech\n[Available Timings] 9:30 - 7:00\n[Flags] name_spelling_variation\n[Excel Name Spelling] Adithi S Prasad",
+            "updatedAt": "2026-10-21T04:59:32.835Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mvj": {
+    "drive": {
+      "id": "cmuz7juab0001tb7s3mch2uk3",
+      "title": "MVJ College of Engineering",
+      "collegeId": "cmuz7jtgf0000tb7sctej5pkk",
+      "dateFrom": "2026-10-01",
+      "dateTo": "2026-10-01",
+      "status": "COMPLETED",
+      "description": "Campus drive for MVJ College of Engineering conducted on 01 Oct 2026.",
+      "notes": null,
+      "ownerId": "cYEZblWdN7gubrQvLgYj",
+      "organizationId": "defaultOrg",
+      "recruiters": [
+        "cYEZblWdN7gubrQvLgYj",
+        "re56ljEGsGX6xyVRsB9N"
+      ],
+      "linkedJobs": [
+        "cmrnjjhvp0092lg2ry71l2zkt"
+      ],
+      "isDeleted": false,
+      "createdAt": "2026-10-08T07:21:19.380Z",
+      "updatedAt": "2026-10-08T07:21:19.380Z"
+    },
+    "totalCdc": 51,
+    "candidates": [
+      {
+        "id": "cmuz7kq1h0001tb5w2nfx8gzy",
+        "name": "Pravya Pavithran",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] She is an average candidate she doesn't have much technical knowledge she is still learning ( MTech Student)\n[DOJ] Immediate\n[Family] Father - medical shop mother - housewife Brother - 2nd pu\n[From] Bangalore\n[Languages] English Malayalam Kannada\n[Experience] Ai/ML Intern\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Pg near to clg",
+            "updatedAt": "2026-10-08T07:22:04.247Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7ktyq000atb5wnd2iaj5o",
+        "name": "Sneha K",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Average candidate no much knowledge about the role\n[DOJ] Immediate\n[Family] Dad Brother\n[From] Bangalore\n[Languages] English Tamil Telugu Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Puram",
+            "updatedAt": "2026-10-08T07:22:07.512Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7kwa4000jtb5wg1aceqok",
+        "name": "Sanjana Reddy",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] She has good knowledge and she is willing to learn as well\n[DOJ] Immediate\n[Family] Father - Dentist Mother - Home maker Sister\n[From] Bangalore\n[Languages] Telugu Hindi English Tamil\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Near to clg",
+            "updatedAt": "2026-10-08T07:22:10.469Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7kyka000stb5wnnvgelvs",
+        "name": "Spandana Indira R",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] She is underconfident and the answers are not upto the mark comm is kinda average\n[DOJ] Immediate\n[Family] Mom - Teacher Father - Unemplotyed Sister - Engineering\n[From] Bangalore\n[Languages] English Kannada Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Chansandra",
+            "updatedAt": "2026-10-08T07:22:13.441Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7l11u0011tb5wtvf0coxh",
+        "name": "Rahul B S",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] He is a good candidate has great tech knowledge and is a good fit\n[DOJ] Immediate\n[Family] Father - Business Mother - House wife\n[From] Bangalore\n[Languages] English Kannada Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Chansandra\n[Skills] Full stack SQL Superbase firebase python java c++\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:16.670Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7l3cf001atb5w2igizlyr",
+        "name": "Tarun E",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] He is a good candidate he has the will to learn and he has good knowledge as well\n[DOJ] Immediate\n[Family] Father - Admin Manager Mother - Teacher Sister - Amazon ( Taxation)\n[From] Bangalore\n[Languages] English Tamil Kannada Hindi\n[Experience] Freelance Web Developer\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Banaswadi\n[Skills] SQL Excel\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:19.634Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7l5n5001jtb5wk1m7qj1m",
+        "name": "Ananya Bera",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Doesn't have much knowledge and is not a good fit for the role\n[DOJ] Immediate\n[Family] Father - Goldsmith Mother- Home maker Brother - Bsc\n[From] Bangalore\n[Languages] Hindii English Bengali Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Near College",
+            "updatedAt": "2026-10-08T07:22:22.629Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7l7xy001stb5wmcgj924n",
+        "name": "A K Renu",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] She has a pretty good knowledge and is willing to learn as well\n[DOJ] Immediate\n[Family] Father - Home Business Mother - Home Business\n[From] Bangalore\n[Languages] Telugu tamil kannada English Hindi\n[Experience] Titan ( Jewelry sales handling ) Data Analyst Intern - 2 Months\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Beldur",
+            "updatedAt": "2026-10-08T07:22:25.590Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7la8s0021tb5wg1hbtr6e",
+        "name": "Kushal P",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] He is a good candidate with good tech knowledge and can do better if given training\n[DOJ] Immediate\n[Family] Father - Astrologer Mother - Supervisor\n[From] Bangalore\n[Languages] Kannada English Marathi\n[Experience] Data science intern\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Attibele\n[Skills] PowerBi Tableau SQL Excel\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:28.581Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7.7\nDOJ: Immediate\nSelection status: selected\nRemarks: select candidate only if necessary",
+            "updatedAt": "2026-10-27T06:38:59.386Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7.7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lcja002atb5wl2k557p7",
+        "name": "Harshitha P",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good candidate Good tech skills can do better with training\n[DOJ] Immediate\n[Family] Dad - Not working Mom - Teacher\n[From] Bangalore\n[Languages] English Hindi Kannada Telugu\n[Experience] Handling websites (Software Developer Intern)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Puram\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:31.542Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lf0w002jtb5w62cywljy",
+        "name": "Darshan K",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] He is a good candidate comm is good and is interested in this role and is willing to learn as well\n[DOJ] Immediate\n[Family] Father - Farmer Mother - ome maker Sister - BCA Degree ( Comp Govt exams)\n[From] Bangalore\n[Languages] Kannada English Telugu Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Near college\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:34.762Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6\nDOJ: December\nSelection status: selected",
+            "updatedAt": "2026-10-27T06:39:14.522Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lhb3002stb5wmhvrh30j",
+        "name": "K Deepthi",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Has no much knowledge regarding the role not a good fit compared to other candidates in the clg\n[DOJ] Dec\n[Family] Father - UltraTech Mom - Home maker\n[From] Bangalore\n[Languages] English Hindi Telugu Kannada\n[Experience] None ( Has an offer in hand)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Pg near college",
+            "updatedAt": "2026-10-08T07:22:37.748Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7ljmc0031tb5wlhp3xmt3",
+        "name": "Diya Mariam Oommen",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Has a average technical skills but is willing to learn has decent knowledge\n[DOJ] Immediate\n[Family] Father - IBM Mom - TCS\n[From] Bangalore\n[Languages] Malayalam English Hindi\n[Experience] RDA Lab ( UI/UX Intern)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Malleshpalya\n[Skills] Full stack, web development\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:40.716Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7.9\nDOJ: December 2026 (6 months)\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:38:42.258Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7.9
+          }
+        ]
+      },
+      {
+        "id": "cmuz7llws003atb5wkxr452si",
+        "name": "Chandan D P",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] No much knowledge about the role not a good fit\n[DOJ] Immediate\n[Family] Father - Farmer Mother - Home maker\n[From] Bangalore\n[Languages] Kannada Hindi Telugu English\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Pg\n[Skills] PowerBi SQL Tableau",
+            "updatedAt": "2026-10-08T07:22:43.721Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lo8m003jtb5wd1xvarm0",
+        "name": "S C Mahalakshmi",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] She is not much interested and she says she can join by jan\n[DOJ] Jan ( Can join by Jan)\n[Family] Father - farmer Mother - Hoome maker\n[From] Bangalore\n[Languages] Kannada English Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Near to clg",
+            "updatedAt": "2026-10-08T07:22:46.731Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lqnz003stb5wloimi97e",
+        "name": "Poorvitha R",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] She is a good candidate has good knowledge\n[DOJ] Immediate\n[Family] Father - Mother - Sister - Working\n[From] Bangalore\n[Languages] Kannada English Hindi Tamil Telugu\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Puram\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:22:49.906Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Panelist: Jeevan\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:39:21.232Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lt770041tb5w9tk5mo5l",
+        "name": "Tejaswini Ravi Matti",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] She is an average candidate and she is expecting 15k stipend\n[DOJ] Not Immediate\n[Family] Father - Ex army Mom - Home maker\n[From] Bangalore\n[Languages] English hindi kannada\n[Experience] Freelancing\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Near to clg",
+            "updatedAt": "2026-10-08T07:22:53.127Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lvhg004atb5wsjjafur3",
+        "name": "Srinidhi S",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] She is an average candidate has no much knowledge answers are not upto the mark\n[DOJ] Immediate\n[Family] Father - Mnaager Mother - Hhouse wife Sister - medical\n[From] Bangalore\n[Languages] Kannada Telugu English Hindi Tamil\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Avalahalli",
+            "updatedAt": "2026-10-08T07:22:56.109Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7lxsd004jtb5wjbtjr4ku",
+        "name": "Y Charan",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "ON_HOLD",
+            "notes": "[Comments] He is a good candidate but the joining is January\n[DOJ] Jan\n[Family] Grandfather Sister - Student Mom - Home maker\n[From] Bangalore\n[Languages] English Kannada Telugu Hindi\n[Experience] Full stack developer intern\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Pg near to the clg",
+            "updatedAt": "2026-10-08T07:22:59.088Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "ON_HOLD",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7m02o004stb5wvvrhh4ja",
+        "name": "Thanu Pal R",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "ON_HOLD",
+            "notes": "[Comments] She has no knowledge about the role but is willing to learn\n[DOJ] If college permits then immediate\n[Family] Father - Interior Worker Mother - House wife 2 siblings\n[From] Bangalore\n[Languages] English Hindi Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Varthur",
+            "updatedAt": "2026-10-08T07:23:02.060Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "ON_HOLD",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7m2dj0051tb5w48cqgxw5",
+        "name": "Basavaraj B",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Average candidate decent knowledge about the t=role and skills\n[DOJ] Immediate\n[Family] Mom - House wife Father - JSW Steels 2 sisters\n[From] Bangalore\n[Languages] Kannada English Hindi Telugu\n[Experience] 2 internships\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Whitefield",
+            "updatedAt": "2026-10-08T07:23:05.068Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7m4pu005atb5wnpcen8r3",
+        "name": "Barath K",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Answers are not upto the mark didn't know few answers compared to others ( Doesn't come into the top fit)\n[DOJ] By Dec\n[Family] father - Accountant Bbrother - studying Mom - House wife\n[From] Bangalore\n[Languages] Kannada Tamil English Telugu Hindi\n[Experience] AI/ML Intern ( Online)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Rammuurthi Nagar",
+            "updatedAt": "2026-10-08T07:23:08.148Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7m7a3005jtb5w3dbnlfkq",
+        "name": "Sudeep",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Answered all the technical questions in manual way doesn't have much tech knowledge not a good fit\n[DOJ] By Nov\n[Family] Father - Agriculture Mother - House wife Brother - MBBS\n[From] Bangalore\n[Languages] English Hindi Kannada\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Whitefield",
+            "updatedAt": "2026-10-08T07:23:11.420Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7m9lu005stb5w5jm36suz",
+        "name": "Vidhi Jain",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Has a decent knowledge and is willing to learn as well\n[DOJ] Depends on clg\n[Family] Father - Jewelry Business Mother - Home maker\n[From] Bangalore\n[Languages] Hindi English Kannada Marwadi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Jayanagar\n[Skills] Python SQL",
+            "updatedAt": "2026-10-08T07:23:14.412Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mbww0061tb5w32obx2es",
+        "name": "Prabhyot Singh",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] He is a good candidate with good technical skills\n[DOJ] Immediate ( Depending to clg)\n[Family] Father - Business Mother - House wife Sister - Lab sicence\n[From] Bangalore\n[Languages] English Hindi Punjab Urdu\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Chanasandra\n[Tags] Starred (*)",
+            "updatedAt": "2026-10-08T07:23:17.391Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7me7a006atb5w8xkp2p1h",
+        "name": "Arushi Shetty",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED ALL QUESTIONS. GOOD FIT FOR DA\n[Family] mom is working wipro , dad is real estate\n[From] Bangalore\n[Languages] English and kannada\n[Experience] INTERNSHIP AT HAL\n[Location] Banaglore\n[Area] HAL itself\n[Course] BE 7th semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:20.472Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "ON_HOLD",
+            "notes": "BE in CSE, 7th Sem\nFrom Bangalore, Dad - Real Estate Business, Mom - Wipro\nInternship @ HAL -> Worked on HR Management Software\nStatus: On Hold - Good Experience, but wont be joining till Jan",
+            "updatedAt": "2026-10-27T06:38:23.926Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "ON_HOLD",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mgke006jtb5wgl44ct8p",
+        "name": "Shubham Sharma",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED ALL QUESTIONS. GOOD FIT FOR DA.ALREADY HIS FRIENDS WORKED HERE . EXEMPLARY KNOWLEDGE\n[Family] mom is housewife , tailoring at home , nikime software develeoper\n[From] Bangalore\n[Languages] English\n[Experience] INTERNSHIP AT bharat electronics\n[Location] Banaglore\n[Area] cv ramanagar\n[Course] Bachelor of engineering 7th semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:23.474Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mj3e006stb5wpcjjnocx",
+        "name": "Massil nisar",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED ALL QUESTIONS.SLOW AND STEADY BUT CAN LEARN\n[Family] father works in a bank , dentist\n[From] Bangalore\n[Languages] English\n[Experience] INTERNSHIP AT bharat electronics\n[Location] Banaglore\n[Area] hennur\n[Course] Bachelor of engineering 7th semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:26.796Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mlgs0071tb5w8x5sl4l7",
+        "name": "Soumya Badiger",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED ALL QUESTIONS.HOWEVER SHE IS IN BELAGAUM ASKING FOR WFH.\n[DOJ] Classes till october 15\n[Family] dad govt job\n[From] Bangalore\n[Languages] English\n[Experience] prodigy infotech\n[Location] Belagum\n[Course] Bachelor of engineering 7th semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:29.770Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7\nDOJ: Mid of dec\nSelection status: selected\nNote: Reversal from R1 Rejected (7.5) to R2 Selected (7)",
+            "updatedAt": "2026-10-27T06:38:31.564Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 7.5
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mnrs007atb5w3xmiw5hx",
+        "name": "Ankita Charan Pahadi",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED all technical skills. However she has applied for one more company round 3 is tomorrow depending on that result she will decide\n[DOJ] Classes till october 15\n[Family] dad is working in jbl , home maker\n[From] Bangalore\n[Languages] English\n[Experience] no\n[Location] Bangalore\n[Course] bachelor of engineering 4 TH semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:32.772Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mq23007jtb5wqli6bbvt",
+        "name": "Aishwarya",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED all technical questions. Found she has the willingness to do this job. Found she would be genuine in her job.\n[DOJ] Classes till october 15\n[Family] dad is goldsmith\n[From] Chitradurga\n[Languages] English\n[Experience] no\n[Location] Bangalore\n[Area] government hostel\n[Course] bachelor of engineering 4 TH semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:35.726Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Course BE\nRole DA\nPrior experience none\nFamily gold smith dad and mom is a housewife\nLocation Bengaluru\nArea Whitefield\nDoj november\nSelected\n7.5k stipend",
+            "updatedAt": "2026-10-27T06:38:27.069Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mscb007stb5w8rie54gd",
+        "name": "Anwin Tom Reji",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] CANDIDATE IS TECHNICALLY GOOD , ASNWERED all technical questions.He says he is advanced in excel sql. Good fit\n[Family] dad working bangalore\n[From] Kerala\n[Languages] English\n[Experience] no , game fusion project\n[Location] Bangalore\n[Area] hosokte\n[Course] bachelor of engineering 4 TH semester\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:38.675Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 9
+          }
+        ]
+      },
+      {
+        "id": "cmuz7muml0081tb5womz72n4e",
+        "name": "Harsha Hokrane",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Answered and answers were convincing and logical. With bit fine tuning she can excel.\n[Family] Father is agriculture , solar contractor\n[From] Bengaluru\n[Languages] English\n[Experience] no ,\n[Location] Bangalore\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:41.666Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mx52008atb5wl0oq1dsc",
+        "name": "Harshitha Ys",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] has done excel and advanced excel. Answered logically for a practical question.\n[Family] FATHER IS EMPLOYEE INS SUZUKI , MOM IS HOUSEWIFE\n[From] Bengaluru\n[Languages] English\n[Experience] HUMAN IT AS DATA ANALYST\n[Location] Bangalore\n[Area] KR PURAM\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:44.903Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7mzfr008jtb5wnz8pnf8m",
+        "name": "Syeda Shifa Reyan",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] decent knowledge but fumbled in technical part\n[From] Bengaluru\n[Languages] English\n[Experience] no\n[Location] Bangalore\n[Area] jaya mahal\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:47.891Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7n1qp008stb5w8srawrw4",
+        "name": "Harish Subray Gouda",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] good candidate , found the willingness to learn things. He can excel\n[From] Shimoga\n[Languages] English\n[Experience] no\n[Location] Pg\n[Area] whitefield\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:50.880Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7n41h0091tb5w15jtpma8",
+        "name": "Kulusum Fathima",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] good domain knowledge , was ready to show formulas on sheet. Good domain knowledge\n[Family] having own business\n[From] Bangalore\n[Languages] English\n[Experience] junior cloud computing intern\n[Location] Pg\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:53.933Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7n6eo009atb5wu1d3vnsa",
+        "name": "Khanank juttiyavar",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] good domain knowledge , logical answers answered for questions\n[Family] it freelancer\n[From] Bangalore\n[Languages] English\n[Experience] junior cloud computing intern\n[Location] Pg\n[Area] ramurthy nagar\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:56.906Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7n8ot009jtb5wkj9jw164",
+        "name": "Pavan Kumar Itekar",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] technically not sound , struggles to answers. Fumbled to answer on technical aspects\n[From] Bangalore\n[Languages] English\n[Experience] full stack developer intern\n[Location] Pg\n[Area] white field\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:23:59.939Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nb86009stb5wx46x4p4z",
+        "name": "V Nivetha",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] excellent knowledge , worked more data aspects\n[Family] Dad jmc president\n[From] Bangalore\n[Languages] English\n[Location] Pg\n[Area] gunjur\n[Course] bachelor of engineering 7 TH SEMESTER\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:03.156Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7ndj100a1tb5wgsj6vtqq",
+        "name": "Raagav Krishnan",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] excellent knowledge , more projects , answered practical questions. Good knowledge. Stays in indiranagar\n[Family] father is ops mgr fidelity , home maker\n[From] Bangalore\n[Languages] English\n[Location] Pg\n[Area] indiranagar\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:06.135Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nft900aatb5wosrm3n0w",
+        "name": "Sanket Hegade",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good knowledge if trained well he can do well\n[Family] father is farmer , home mker wife\n[From] Bangalore\n[Languages] English\n[Location] Pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:09.085Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7ni3800ajtb5wvuf52oxc",
+        "name": "Sharan Rb",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good knowledge , excellent technical knowledge\n[Family] -\n[From] Bangalore\n[Languages] English\n[Location] Pg\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:12.053Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 9
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nkdb00astb5wvpvppdc4",
+        "name": "Manushree Mahesh Nadhilal",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good knowledge , excellent technical knowledge. Can do well\n[Family] - mom tailor\n[From] North Karnataka\n[Languages] English\n[Location] Pg\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:15.012Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nmon00b1tb5wzstploup",
+        "name": "Neha N",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good knowledge , excellent technical knowledge. Can do well\n[Family] mom house wife , dad farmer\n[From] Kolar\n[Languages] English\n[Location] Pg\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:18.009Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6.6\nDOJ: December\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:39:42.670Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6.6
+          }
+        ]
+      },
+      {
+        "id": "cmuz7np6v00batb5wrhvqfyfx",
+        "name": "Sana",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] DECENT KNOWLEDGE CAN DO WELL IF TRAINED.\n[Family] FATHER IS LADIES TAILOR , MOM HOUSEWIFE\n[From] Kolar\n[Languages] English\n[Experience] NO\n[Location] Marathalli\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:21.244Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Panelist: Jeevan\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:39:37.487Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": null
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nrhu00bjtb5w9soiywxi",
+        "name": "Johanaz Nadaf",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] DECENT KNOWLEDGE CAN DO WELL IF TRAINED.\n[Family] dad is cici engineer , mom house wife\n[From] Jamkandi\n[Languages] English\n[Experience] NO\n[Location] Marathalli\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:24.257Z"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 6.8\nDOJ: November 15th\nSelection status: Selected",
+            "updatedAt": "2026-10-27T06:38:55.172Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 6.8
+          }
+        ]
+      },
+      {
+        "id": "cmuz7ntsf00bstb5w9kakhaxp",
+        "name": "Ganesh Vallabh M",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] DECENT KNOWLEDGE CAN DO WELL IF TRAINED.\n[From] Jamkandi\n[Languages] English\n[Experience] NO\n[Location] Marathalli\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:27.212Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nw2a00c1tb5wippnnb51",
+        "name": "Sashikanth",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] DECENT KNOWLEDGE CAN DO WELL IF TRAINED\n[Family] father assistant construction company\n[From] Sarjapaur\n[Languages] English\n[Experience] NO\n[Location] Sarja Pura\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:30.145Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7nyc100catb5wgesandf5",
+        "name": "Nikhil He",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] technically not sounding good , answers were one line. Not convincing\n[Family] dad is teacher, mom house wife\n[From] Marathalli\n[Languages] English\n[Experience] NO\n[Location] Sarja Pura\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:33.100Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz7o0oj00cjtb5wnz2z5jee",
+        "name": "Preetham",
+        "phone": null,
+        "email": "N/A",
+        "source": "Campus Drive - MVJ",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] technically sounding good , answers were good. Worked on college placement launch pad. Very technical candidate\n[Family] dad is marketing business\n[From] Belagavi\n[Languages] English\n[Experience] NO\n[Location] Pg\n[Area] pg\n[Course] Bachelor of engineering\n[Batch Year] 2027",
+            "updatedAt": "2026-10-08T07:24:36.171Z"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 9
+          }
+        ]
+      }
+    ]
+  },
+  "bgs": {
+    "drive": {
+      "id": "cmuf6cedk0001tbtowqe1rvph",
+      "title": "BGS College Drive 2026",
+      "collegeId": "cmuf6cd910000tbtoczlliz47",
+      "dateFrom": "2026-09-24",
+      "dateTo": "2026-09-24",
+      "status": "COMPLETED",
+      "description": "Single college drive covering Round 1 interviews for 43 candidates at BGS College",
+      "notes": null,
+      "ownerId": "cYEZblWdN7gubrQvLgYj",
+      "organizationId": "defaultOrg",
+      "recruiters": [
+        "cYEZblWdN7gubrQvLgYj",
+        "cmsh5at0900ddo52srakohs4b"
+      ],
+      "linkedJobs": [
+        "cmrnjjhvp0092lg2ry71l2zkt",
+        "cmrx56ou6001kmy2rk7zgf7jd"
+      ],
+      "isDeleted": false,
+      "createdAt": "2026-09-24T06:52:09.032Z",
+      "updatedAt": "2026-09-24T06:52:09.032Z"
+    },
+    "totalCdc": 41,
+    "candidates": [
+      {
+        "id": "cmuf6cff20003tbtonkmhv4rs",
+        "name": "Shamitha Krishna A",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":2,\"college\":\"BGS College\",\"rating\":7.5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6ci4q000ctbton5idf2u9",
+        "name": "Rakshitha S",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":3,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cjtk000ltbtoiph6re32",
+        "name": "Ekta V Dhanunjaya",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":4,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6clij000utbtouzwxoh4e",
+        "name": "Amrutha",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":5,\"college\":\"BGS College\",\"rating\":6}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cn7h0013tbto50ks9ctg",
+        "name": "Vijetha A naik",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":6,\"college\":\"BGS College\",\"rating\":7.5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cp3f001ctbto58408thh",
+        "name": "Gaanavi B",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":7,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cqsl001ltbtogkjdilsz",
+        "name": "Theertha varshini D",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":8,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cshh001utbto4eor7h5c",
+        "name": "Divya S B",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":9,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cu690023tbtosvfjkr45",
+        "name": "Bindu Shree S",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":10,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cvv7002ctbtoau2hqi8g",
+        "name": "Raksha G",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":11,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6cxkd002ltbtor1mkq5dx",
+        "name": "Devansh Verma",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":12,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6czcm002utbtohkesrhni",
+        "name": "Sohan M",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":13,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d18i0033tbtoqofzdwy8",
+        "name": "Apeksha S",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":14,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d2xg003ctbto6b09eqgx",
+        "name": "Vaishnavi",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":15,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d4m9003ltbto4sb7rcq7",
+        "name": "Nisarga",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":16,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d6b9003utbtojibyttzq",
+        "name": "Pragathi GS",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":17,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d82b0043tbto734paux4",
+        "name": "Yashwant kumar",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":18,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6d9qy004ctbtome35x98h",
+        "name": "shamya MJ",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":19,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dbg4004ltbtozw1pp9pc",
+        "name": "swati",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":20,\"college\":\"BGS College\",\"rating\":8}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuf6ddcn004utbto23vivdux",
+        "name": "chai l jain",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":21,\"college\":\"BGS College\",\"rating\":9}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 9
+          }
+        ]
+      },
+      {
+        "id": "cmuf6df1a0053tbto2vx68a9i",
+        "name": "Bhumika S",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":23,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dgpx005ctbto5acypsmy",
+        "name": "harshitha M Mary",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":24,\"college\":\"BGS College\",\"rating\":9}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 9
+          }
+        ]
+      },
+      {
+        "id": "cmuf6diei005ltbtoa80h3gnq",
+        "name": "Sushmita TK",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":25,\"college\":\"BGS College\",\"rating\":8}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dk5a005utbto1zxux9fd",
+        "name": "hitha Sh",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Selected_BGS_College.xlsx\",\"source_row\":26,\"college\":\"BGS College\",\"rating\":8}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 8
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dlvi0063tbtouvu4qvne",
+        "name": "Yashaswini gowda",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":2,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dnmd006ctbtoa8c2jwo3",
+        "name": "N reddy Kumari",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":3,\"college\":\"BGS College\",\"rating\":3}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 3
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dpib006ltbtogrh4snwt",
+        "name": "Priyanka",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":4,\"college\":\"BGS College\",\"rating\":3}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 3
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dr7j006utbto2hsf4x5p",
+        "name": "Dyuti",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":5,\"college\":\"BGS College\",\"rating\":6}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dsxw0073tbtot3mpbtzl",
+        "name": "Nithyashree T R",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":6,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dumm007ctbto0e0vzrnh",
+        "name": "Punya H",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":7,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dwbn007ltbtowk0fz1ty",
+        "name": "Shubha D C",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":8,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dy0r007utbto9b9hl9xb",
+        "name": "Sneha S",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":9,\"college\":\"BGS College\",\"rating\":6}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuf6dzpu0083tbtopqcc4098",
+        "name": "Deekshitha M",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":10,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6e1m2008ctbtoyc38sko0",
+        "name": "Vinutha V",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":11,\"college\":\"BGS College\",\"rating\":7}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuf6e3bc008ltbto3i5sbn3m",
+        "name": "saniya B K",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":12,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6e501008utbto06hv1hjp",
+        "name": "manushree",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":13,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6e6op0093tbton82akso5",
+        "name": "Sachin j",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":14,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6e8hc009ctbto2avkg23f",
+        "name": "Niranjan k",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":15,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6ea6i009ltbtolnbkl40r",
+        "name": "Abilash PA",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":16,\"college\":\"BGS College\",\"rating\":5}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuf6ebv5009utbtoaeqyxgno",
+        "name": "Arvind",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":17,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuf6edth00a3tbtoljdionit",
+        "name": "PRATHIBHA KS",
+        "phone": null,
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "Round 1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "{\"source\":\"BGS_COLLEGE_DRIVE_IMPORT\",\"source_file\":\"Rejected_BGS_College.xlsx\",\"source_row\":19,\"college\":\"BGS College\",\"rating\":4}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      }
+    ]
+  },
+  "gopalan": {
+    "drive": {
+      "id": "cmuz0za1t0007r6todef66vk3",
+      "title": "Gopalan Engineering",
+      "collegeId": "cmuz0xdgq0006r6toxfxxnsw7",
+      "dateFrom": "2026-10-07",
+      "dateTo": "2026-10-08",
+      "status": "COMPLETED",
+      "description": null,
+      "notes": null,
+      "ownerId": "cYEZblWdN7gubrQvLgYj",
+      "organizationId": "defaultOrg",
+      "recruiters": [],
+      "linkedJobs": [],
+      "isDeleted": false,
+      "createdAt": "2026-10-08T04:17:22.337Z",
+      "updatedAt": "2026-10-08T06:47:09.023Z"
+    },
+    "totalCdc": 31,
+    "candidates": [
+      {
+        "id": "cmuz6ebr90001tby0nnmss6vt",
+        "name": "PRIYA RP",
+        "phone": "9611438464",
+        "email": "priya.rp.cse@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] NOT A GREAT FIT IN TECHNICAL ASPECT , NEED MORE FINE TUNING , BUT DESPERATE FOR AN OPPORTUNITY CAN GIVE A CHANCE AND TRY\n[DOJ] POST DECEMBER 20 TH\n[Family] single parent , sister is in doctor\n[From] mysuru\n[Languages] kannada , english\n[Location] Banaglore\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6edgk0004tby0170mht3e",
+        "name": "DIVYASHREE RM",
+        "phone": "7019691887",
+        "email": "divyashree.kjm@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] NOT A GREAT FIT IN TECHNICAL ASPECT , NEED MORE FINE TUNING.\n[DOJ] POST DECEMBER 20 TH\n[Family] DAD IS RAILWAY EMPLOYEE , MOM HOUSEIWFE\n[From] KR PURAM\n[Languages] kannada , english\n[Experience] Cybersecurity diplomat tech pvt\n[Location] Bangalore\n[Area] KR PURAM\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          },
+          {
+            "roundNo": 2,
+            "round": "Round 2",
+            "status": "COMPLETED",
+            "outcome": "ON_HOLD",
+            "notes": "{\"phoneFollowUp\":null,\"emailFollowUp\":null,\"nextSchedule\":null,\"morningFollowUp\":null,\"backdated\":true,\"feedbackDelayedAlertSent\":true}"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 6
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "ON_HOLD",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eehc0009tby04w2klyac",
+        "name": "RAJESH G",
+        "phone": "8073439040",
+        "email": "rajesh752791@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] GOOD TECHNICAL ASPECT , HAS WORKED ON PROJECTS WHERE HE CLEARED EXPLANATION. WILL BE GOOD FIT. EXCELLENCY IN TECHNICAL KNOWLEDGE AND GAVE COVINICING ANSWER.\n[DOJ] POST DECEMBER 20 TH\n[Family] Government officer seshadripuram , mom house wife\n[From] hoskote\n[Languages] kannada , english\n[Experience] IT DESK\n[Location] Bangalore\n[Area] HOSKOTE\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6efjl000ctby08sbz2jo8",
+        "name": "NITHELAN JAYAKUMAR",
+        "phone": "8904572607",
+        "email": "nithelanjayakumar@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] GOOD TECHNICAL ASPECT , HAS WORKED ON PROJECTS WHERE HE CLEARED EXPLANATION. WILL BE GOOD FIT. EXCELLENCY IN TECHNICAL KNOWLEDGE AND GAVE COVINICING ANSWER.CAN DO WELL.\n[DOJ] POST DECEMBER 20 TH\n[Family] DAD IS EMBIDEED ENGINEER , MOM HOUSE WIFE\n[From] AECS MARATHALLI\n[Languages] kannada , english\n[Experience] GENOL\n[Location] Bangalore\n[Area] Marathalli\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eh14000ltby0eamtl7ra",
+        "name": "MADDELA TARUN",
+        "phone": "9663053076",
+        "email": "maddelatarun59@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] NOT GREAT IN TECH KNOWLEDEG EVEN THOUGH HE SAYS HE SAYS HE IS TECH ENTHUSISAST. MIGHT BE RELUCTANT TO COME TO OFFICE FOR WORK. FELT HE IS EXPECTING REMOTE JOB. WHEN INFORMED ABOUT TIMINGS HE WAS BIT SKEPTICAL\n[DOJ] POST DECEMBER 20 TH\n[Family] Father is govt employee , mom housewife\n[From] MARATHALLI\n[Languages] kannada , english\n[Location] Bangalore\n[Area] Marathalli\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz6einr000qtby0iokli391",
+        "name": "Angel beulah k",
+        "phone": "7019846982",
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good with technical sills , gave queries when asked , seeking for a opportunity , can do well if given an oppurtunity\n[DOJ] POST DECEMBER 20 TH\n[Family] mom housewife , gm in food industry lois metal\n[From] banaswadi\n[Languages] kannada , english\n[Experience] no\n[Location] Bangalore\n[Area] kanakanagar\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6ekaq000vtby04l6vrz1r",
+        "name": "SHREEYA R",
+        "phone": "7760675422",
+        "email": "shreeyar713@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] not having good knowledge\n[DOJ] POST DECEMBER 20 TH\n[Family] dad is farmer . mom house wife\n[Languages] kannada , english\n[Experience] no\n[Location] Bangalore\n[Area] - hostel\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6elbe0010tby0jr4pzmgs",
+        "name": "P mohan",
+        "phone": "9606629280",
+        "email": "pmohan2104@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[DOJ] POST DECEMBER 20 TH\n[Family] dad hotel business\n[From] white field\n[Languages] kannada , english\n[Experience] no\n[Location] Bangalore\n[Area] - white field\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6emjg0015tby02c5z8w4m",
+        "name": "pavan s",
+        "phone": "8070383421",
+        "email": "docps15@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[DOJ] POST DECEMBER 20 TH\n[Family] dad is agriculture  , mom house wife\n[From] white field\n[Languages] kannada , english\n[Experience] no\n[Location] Bangalore\n[Area] - white field\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6enk6001atby0731w7ilp",
+        "name": "MM Bharath",
+        "phone": "7975871167",
+        "email": "bharatha9483@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[DOJ] POST DECEMBER 20 TH\n[Family] dad farmer , mom house wife\n[From] white field\n[Languages] kannada , english\n[Experience] no\n[Location] shimoga\n[Area] - hoodi\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eol0001ftby0id0qf9nw",
+        "name": "SAGAR R",
+        "phone": "6362881306",
+        "email": "sagar181721@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] having good knowledge , can do well if trained.\n[DOJ] POST DECEMBER 20 TH\n[Family] Father plumber , tea stall\n[From] white field\n[Languages] kannada , english\n[Experience] no\n[Location] bommasandra\n[Area] - bommasandra\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eplm001ktby0skk8zt9j",
+        "name": "bandi vaishnavi",
+        "phone": "9346785196",
+        "email": "bvaishnavi.hls@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] poor knowledge didnt answer well\n[DOJ] POST DECEMBER 20 TH\n[Family] dad farmer\n[From] ananthpur\n[Languages] kannada , english\n[Experience] no\n[Location] ayappanagar\n[Area] - ayappanagar\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eqmg001ptby01hw0ajtm",
+        "name": "Chiranjeevi A",
+        "phone": "7019190860",
+        "email": "its.chiru07@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] not great , didnt explain weLL\n[DOJ] POST DECEMBER 20 TH\n[Family] dad works in business , mom teacher\n[From] Vinay Shetty &lt;vinayshetty157@gmail.com&gt;\n[Languages] kannada , english\n[Experience] no\n[Area] -\n[DL / Bike] na\n[Course in Notes] BE 7th semester\n[Year in Notes] 2027"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 6
+          }
+        ]
+      },
+      {
+        "id": "cmuz6ern9001utby0fjyiibg7",
+        "name": "Gagana C",
+        "phone": "8050859858",
+        "email": "gaganachandrashekar05@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] She is a decent candidate has average knowledge couldnt answer few questions\n[DOJ] Immediate\n[Family] Father - Banking sector Mother - House wife Sister - Studying in this college\n[From] Bangalore\n[Languages] English Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Puram"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6esw3001ztby0ok1mf6iy",
+        "name": "Thanishashri S",
+        "phone": "6385432694",
+        "email": "thanishasri042@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Has basic knowledge not upto the mark\n[DOJ] Immediate\n[Family] Father - jewelry shop owner mom - house wife brother - animator\n[From] Bangalore\n[Languages] English Kannada Tamil\n[Experience] AI developer in Tihranix\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Rajpalya"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6etws0024tby0bqqrvj0b",
+        "name": "Abdul Shuaib",
+        "phone": "7892698624",
+        "email": "abdulshuaib08@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Average candidate basic knowledge not a good fit for the role\n[DOJ] Immediate\n[Family] Father - State Govt Mother - Teacher Sister - 10th\n[From] Bangalore\n[Languages] Hindi English Kannada Tamil\n[Experience] Online internship - Clean Data\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Kodialli"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6euxm0029tby0if7g0v88",
+        "name": "Srinivas S",
+        "phone": "7619446545",
+        "email": "mr.seenaofficial@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Not a good fit doesn't know most of the topics\n[DOJ] December\n[Family] Father - Computer Operator Mother - House wife  Sister - BCom ( Employee Axis Bank)\n[From] Bangalore\n[Languages] Telugu Kannada English Hindi Tamil\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Kadugodi"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6evyl002etby0pnqpcxsu",
+        "name": "Akhila G",
+        "phone": "8073557585",
+        "email": "akhilakunnu2005@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] She is a good candidate with decent knowledge and is willing to learn as well\n[DOJ] December (Nov full month exams)\n[Family] Mom - House wife Dad - Manager\n[From] Bangalore\n[Languages] English Telugu Tamil Kannada Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Indiranagar"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6ewzc002jtby0lttnqdp3",
+        "name": "Mohammed Anas",
+        "phone": "9008892112",
+        "email": "im.mohammedanas01@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] No knowledge about the role is under confident ( not a good fit)\n[DOJ] December\n[Family] Father - Govt Mother - House wife Brother - Graduated ( working as soft developer) Sister - working (SAP)\n[From] Bangalore\n[Languages] English Hindi Urdu Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Whitefield"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 3
+          }
+        ]
+      },
+      {
+        "id": "cmuz6ey09002otby01654nyc0",
+        "name": "Abhishek Mannatharaj",
+        "phone": "7483076739",
+        "email": "abhishek.mannatharaj@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "ON_HOLD",
+            "notes": "[Comments] He currently has stipend of 15k and full time they are offering 5.5-6 but full time isn't guaranteed also he will join us only if the full time is guaranteed ( he said he will discuss with the parents regarding this and get back to us)\n[DOJ] Jan ( Currently doing internship in some company)\n[Family] Father - Oracle Mom - House wife Sister - working\n[From] Bangalore\n[Languages] English Tamil Kannada Hindi\n[Experience] 2 internships ( Software developer Intern and Cybersecurity Intern)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Kunadanahalli"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "ON_HOLD",
+            "rating": 8.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6eytq002ttby06ek5pll0",
+        "name": "Sakthi Mageshwari V",
+        "phone": "8971221509",
+        "email": "N/A",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good candidate decent knowledge needs training\n[DOJ] Immediate\n[Family] Father - IBM Mom - House wife Sister - 9th\n[From] Bangalore\n[Languages] English Tamil Hindi\n[Experience] Enduro Technologies ( Visulaization of frontend)\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Kundanahalli"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 6.5
+          }
+        ]
+      },
+      {
+        "id": "cmuz6ezvz002ytby06fmikk4f",
+        "name": "Kavya S Iraanavar",
+        "phone": "8088656072",
+        "email": "kavyasirannanavar@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Doesnt know basics not a good fit for the role\n[DOJ] Immediate\n[Family] Father - Govt Teacher Mother - House wife Sister Brother\n[From] Bangalore\n[Languages] English Hindi Kannada Telugu Tamil\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Hostel"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f0yv0033tby02sijnv89",
+        "name": "Vishika Satish Panchgalle",
+        "phone": "8431217851",
+        "email": "vish200416@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[DOJ] within 15 days\n[Family] Father - NCCL( Store manager) Mother - House wife brother - 3rd year\n[From] Bangalore\n[Languages] Marathi Hindi English Kannada\n[Experience] Software developer Intern 2 months\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Dasarahalli"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f1zj0038tby0dhb25ha7",
+        "name": "Anushree M N",
+        "phone": "7019028618",
+        "email": "mnanushree19@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Not a good fit 0 knowledge\n[DOJ] Immediate\n[Family] Father - Agriculture Mother - House wife Brother\n[From] Bangalore\n[Languages] Kannada English\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Medalli"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 2
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f309003dtby0qc992yin",
+        "name": "B Brunda",
+        "phone": "8197283013",
+        "email": "brundabbrunda53@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Is a good candidate if given training she can do well\n[DOJ] Immediate\n[Family] Father - Business Mother - Govt Employee Sister - Studying\n[From] Bangalore\n[Languages] English Kannada Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Devanahalli"
+          },
+          {
+            "roundNo": 2,
+            "round": "ROUND_2",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "Rating: 7\nDOJ: Immediate\nSelection status: Selected"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          },
+          {
+            "round": "ROUND_2",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f488003itby0awyws3wy",
+        "name": "A S Pallavi",
+        "phone": "9611443106",
+        "email": "pallavisuresh199@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Not a good fit answers are not upto the mark\n[DOJ] Immediate\n[Family] Father - Business Mother - House wife Brother - BCA\n[From] Bangalore\n[Languages] English Kannada Tamil Telugu Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Malluru"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f592003ntby0spp5mlox",
+        "name": "Yogesh Shankar",
+        "phone": "6360846057",
+        "email": "yogeshshankar697@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] 0 knowledge not a good fit for the role\n[DOJ] Immediate\n[Family] Father - Govt Employee Mother - House wife Sister - Abroad\n[From] Bangalore\n[Languages] Kannada English Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Tumkur"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 2
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f69p003stby0irwwmh9t",
+        "name": "Rupa Shree H V",
+        "phone": "9741095149",
+        "email": "rupashree18004@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "SELECTED",
+            "notes": "[Comments] Good candidate with decent knowledge if given training he can do better\n[DOJ] Immediate\n[Family] Father - Business Mother - House wife 2 siblings\n[From] Bangalore\n[Languages] English telugu tamil kannada\n[Experience] Frontend developer\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Mahadevpura"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "SELECTED",
+            "rating": 7
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f7ar003xtby0zr58k7d1",
+        "name": "Chandra Prakash V",
+        "phone": "8123124024",
+        "email": "chandra1710052@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] No good knowledge not a good fit\n[DOJ] Immediate\n[Family] Father - Army Mother - House wife Sister - Computer ( IT company)\n[From] Bangalore\n[Languages] English hindi Telugu kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] Varthur"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f8bl0042tby04qywkvki",
+        "name": "Nijikal Pranitha",
+        "phone": "9845649134",
+        "email": "nijikalpranitha5@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[Comments] Not a good fit answers are basic needs to have more tech skills ( not a good fit)\n[DOJ] Immediate\n[Family] Father - Business Mother - House wife brother - Infosys\n[From] Bangalore\n[Languages] Telugu Kannada English Hindi\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Puram"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 4
+          }
+        ]
+      },
+      {
+        "id": "cmuz6f9cb0047tby07d3o4cuu",
+        "name": "Anurag Anthony",
+        "phone": "6361526351",
+        "email": "anthonya9901@gmail.com",
+        "interviews": [
+          {
+            "roundNo": 1,
+            "round": "ROUND_1",
+            "status": "COMPLETED",
+            "outcome": "REJECTED",
+            "notes": "[DOJ] Immediate\n[Family] Father - Farmer Mother - Teacher Sister - Working\n[From] Mysore\n[Languages] English Kannada\n[Experience] None\n[Timings] 9:30-7:00\n[Location] Bangalore\n[Area] KR Nagara ( Mysore)\n[Remarks] (is from different college)"
+          }
+        ],
+        "feedbacks": [
+          {
+            "round": "ROUND_1",
+            "selectionStatus": "REJECTED",
+            "rating": 3
+          }
+        ]
+      }
+    ]
+  }
+}

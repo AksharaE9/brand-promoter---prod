@@ -87,6 +87,8 @@ async function checkRound1FeedbackAlerts() {
       NOT: [
         { result: 'NOT_RESPONDED' },
         { notes: { contains: '"backdated":true' } },
+        { notes: { contains: 'QA_LOOP3_' } },
+        { candidateName: { contains: 'QA_LOOP3_' } },
       ],
       round1SMSAlertSent: false,
       scheduledStart: { lte: oneHourAgo },
@@ -235,6 +237,8 @@ async function checkRound2FeedbackAlerts() {
       NOT: [
         { result: 'NOT_RESPONDED' },
         { notes: { contains: '"backdated":true' } },
+        { notes: { contains: 'QA_LOOP3_' } },
+        { candidateName: { contains: 'QA_LOOP3_' } },
       ],
       round2EmailAlertSent: false,
       scheduledStart: { lte: now },

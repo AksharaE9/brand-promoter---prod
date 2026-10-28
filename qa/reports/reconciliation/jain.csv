@@ -1,0 +1,31 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Pengaluru Dinishitha | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn5lgf0001tbqs0f01dhzv | R1 -> REJECTED | MATCH
+Boggavarapu Suriya | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn5t76000btbqs72251p5b | R1 -> SELECTED; R2 -> SELECTED | MATCH
+HARSH PILLAI | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn5xac000ltbqsjjbkg6kk | R1 -> REJECTED | MATCH
+SHAIK SHAH BABA | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> REJECTED | cmvhn617l000vtbqsc8vdz2q7 | R1 -> SELECTED; R2 -> REJECTED | MATCH
+MOHAMMED FARIS NOOR | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn67120015tbqsid77rlb8 | R1 -> REJECTED | MATCH
+DHANUSH INAPAGOLLA | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn6cad001ftbqs8xn4vdr4 | R1 -> REJECTED | MATCH
+RIFAH ALAM | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn6gd2001ptbqs436tvbrw | R1 -> SELECTED; R2 -> SELECTED | MATCH
+TARUN JOSHI | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn6ju7001ztbqspym4atml | R1 -> SELECTED; R2 -> SELECTED | MATCH
+CHANDAMURI KASI REDDY | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> REJECTED | cmvhn6mf00029tbqsb0iggpa0 | R1 -> SELECTED; R2 -> REJECTED | MATCH
+V KUSUMA | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn6p0d002jtbqs2i2grn97 | R1 -> SELECTED; R2 -> SELECTED | MATCH
+SANJAY E | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> ON_HOLD | cmvhn6rmp002ttbqsr0tmntaw | R1 -> SELECTED; R2 -> SELECTED | OUTCOME_MISMATCH
+SUVAM KURMI | Jain_College_Round1.xlsx | R1 -> SELECTED | cmvhn6u6j0033tbqspi4mgc5x | R1 -> SELECTED | MATCH
+PRANAV DHAASAIYA | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> ON_HOLD | cmvhn6wx4003dtbqshp7dnuet | R1 -> SELECTED; R2 -> SELECTED | OUTCOME_MISMATCH
+DHRUVANTH R | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> ON_HOLD | cmvhn6zjm003ntbqsvdglvc3v | R1 -> SELECTED; R2 -> SELECTED | OUTCOME_MISMATCH
+G Prudvi Siva Naga Meher | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn724a003xtbqshpivbb02 | R1 -> REJECTED | MATCH
+INFANT PRESHITH P | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn74qp0047tbqs2hdr0iiy | R1 -> SELECTED; R2 -> SELECTED | MATCH
+HARSHAN R | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn77bn004htbqsi9lkw3nr | R1 -> REJECTED | MATCH
+SOUMYA SINGH | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn7a2x004rtbqsn458zu74 | R1 -> REJECTED | MATCH
+ISHITA JAIN | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn7cpw0051tbqsw7py3cjy | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Shaik Mohammed Sanaan | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn7f9w005btbqsemeiu9qz | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Asmita Singh | Jain_College_Round1.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmvhn7ht6005ltbqshr592hbb | R1 -> SELECTED; R2 -> SELECTED | MATCH
+ADITI S PRASAD | Jain_College_Round1.xlsx | R1 -> REJECTED | cmvhn7kuj005vtbqslstg52gw | R1 -> REJECTED | MATCH
+Harsha Vardhan Reddy | WhatsApp HR Chat - Oct 2026 | R1 -> SELECTED; R2 -> ON_HOLD | cmvqbkmqn006vtbqoh70ai6v4 | Candidate exists in DB with ON_HOLD but not linked to CollegeDrive | MISSING_CANDIDATE
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvq6ae8003zmt297aiuoibu | R1 -> SELECTED | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvqd08o004fmt291lp6srh0 | No interviews | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvv3l500001mt29avg02lg2 | No interviews | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvvhmyx0008mt29plyvmcl9 | No interviews | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvviyyy000amt29qk0997uz | R1 -> null | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrvvkosg000dmt29632cjcot | R1 -> REJECTED | EXTRA_IN_DB
+None (Pre-existing July CMS Candidate) | CMS Internship Fair (2026-07-22) | Pre-existing July drive record | cmrxo4mkx0029my296ngu4drs | R2 -> SELECTED | EXTRA_IN_DB

@@ -1,0 +1,36 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Aishwarya | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul50xht0002tbnsaz8t2vpn | R1 -> SELECTED | MATCH
+Suhas B N | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51099000btbnsnnutawiz | R1 -> REJECTED | MATCH
+Vybhavee S | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul511zq000ktbnsj2hw9i97 | R1 -> REJECTED | MATCH
+Yaschitha | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul513s3000ttbnsxj69hezd | R1 -> REJECTED | MATCH
+Gaganashree M V | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul515lz0012tbns75kt4dbq | R1 -> REJECTED | MATCH
+B Bharat | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul517jn001btbnssizp4hcr | R1 -> REJECTED | MATCH
+Kiran B N | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul519ae001ktbnsfnd47g6s | R1 -> SELECTED | MATCH
+Lekhana N | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51b0j001ttbns1u1i5ju9 | R1 -> REJECTED | MATCH
+Prajwal Mirji | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51cqc0022tbnsd4dmlyra | R1 -> SELECTED | MATCH
+Mukund Jogi | Cambridge_College_Drive.xlsx | R1 -> ON_HOLD | cmul51eg9002btbns1yjhxg2j | R1 -> ON_HOLD | MATCH
+Prarthana K P | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51g6t002ktbnsonb28wr4 | R1 -> SELECTED | MATCH
+Shree Nayana | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51hwv002ttbns6u4z6saw | R1 -> SELECTED | MATCH
+Sangeetha | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51ju80032tbnsg36o7mvk | R1 -> SELECTED | MATCH
+Sinchana Dayanand Patgar | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51lkr003btbnsw5xrw0x5 | R1 -> REJECTED | MATCH
+Pramitha | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51nax003ktbnsmgrq51zu | R1 -> REJECTED | MATCH
+Madhavilatha Ramagouni | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51p0p003ttbnscn5zu020 | R1 -> SELECTED | MATCH
+Meghana Oleti | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51qqg0042tbns5tr4e18a | R1 -> REJECTED | MATCH
+Goddumarri nanda Kishore | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51sh0004btbnsqwfmyd0r | R1 -> REJECTED | MATCH
+Ganesh | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul51u6y004ktbns35pvt6ez | R1 -> REJECTED | MATCH
+Amrutha A Hegde | Cambridge_College_Drive.xlsx | R1 -> ON_HOLD | cmul51w4a004ttbnsfzbna017 | R1 -> ON_HOLD | MATCH
+R ullas | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51xu30052tbnsr4bygteh | R1 -> SELECTED | MATCH
+Soumya Ranjan Nayak | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul51zkd005btbnsgg4r6g4b | R1 -> SELECTED | MATCH
+anuvamshi BN | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul521ae005ktbns1qh55yen | R1 -> SELECTED | MATCH
+Ashritha Kanakairi | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul52318005ttbnsr3hvjlj8 | R1 -> REJECTED | MATCH
+Balaji | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul524rg0062tbnsokt7dkwm | R1 -> REJECTED | MATCH
+Soubhagyalaxmi Sanganaouda Patil | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul526hc006btbnstzions6o | R1 -> REJECTED | MATCH
+Shriya | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul528es006ktbnss52ll33a | R1 -> REJECTED | MATCH
+Rekhashree D | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul52a4o006ttbnsfmxmr37e | R1 -> REJECTED | MATCH
+Venashree | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul52bvf0072tbns1yvgkqk4 | R1 -> SELECTED | MATCH
+Pooja | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul52dl1007btbns26cxkgyu | R1 -> REJECTED | MATCH
+Shashank Kn | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul52fbq007ktbnsm8e6vc2z | R1 -> SELECTED | MATCH
+Nithin | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul52h1p007ttbnsx0t5roij | R1 -> SELECTED | MATCH
+Sujith Kumar S | Cambridge_College_Drive.xlsx | R1 -> SELECTED | cmul52it50082tbnsau1db7vg | R1 -> SELECTED | MATCH
+Medha Dattta H | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul52kqg008btbnsipwcwxab | R1 -> REJECTED | MATCH
+Lubaa Farooqui | Cambridge_College_Drive.xlsx | R1 -> REJECTED | cmul52mga008ktbns22uqj76d | R1 -> REJECTED | MATCH

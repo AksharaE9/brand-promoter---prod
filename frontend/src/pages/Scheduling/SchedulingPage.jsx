@@ -42,9 +42,10 @@ export default function SchedulingPage() {
       return await schedulingLeadApi.getAdminOverview(selectedDate, { fresh: true });
     },
     enabled: Boolean(isAdmin),
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
-    staleTime: 5_000,
+    refetchInterval: () => (typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 60_000),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
   });
 
   const adminError = adminQueryError ? adminQueryError.message : '';

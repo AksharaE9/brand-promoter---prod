@@ -1,0 +1,27 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+MADDINENI PAVAN TEJA | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pll0o0002tbak6sjhyicv | None | MATCH
+NAG PRATHIK | nmit_26_rows.csv | R1 -> SELECTED; R2 -> REJECTED, rating: null, panelist: Jeevan, date: 2026-10-15 | cmv7pln1t0005tbakbluyo51q | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:41:17.283Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:41:18.617Z | OUTCOME_MISMATCH
+KALATUR SOMESH | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plo2s000atbak0nk93wuh | None | MATCH
+JENAN AE | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plpax000dtbakim5nnehn | None | MATCH
+ARTI MADHAVAN | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plqrx000mtbak2ysih69q | None | MATCH
+sujith | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plsaz000rtbakmp1bsnna | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:12.295Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:14.781Z | MATCH
+Nandini yadav | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pltcs000wtbakjc683d83 | None | MATCH
+Kushal Surya Hm | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plwgf0011tbakho8mb670 | None | MATCH
+Vinayak g sanamani | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plxj40016tbakwees980h | None | MATCH
+Chinmay Deepak Chandavar | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plzho001btbak8xhxgxsv | None | MATCH
+Kusheen Dhar | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7plzho001btbak8xhxgxsv;cmv7pm0od001gtbak8isw40gi | None | DUPLICATE_CANDIDATE
+Ahmed Syed Mohammed | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm25w001ltbaksm31johp | None | MATCH
+Sudhiksha Balaji | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm37w001qtbakha7ers0q | None | MATCH
+Jesto Gigi Kadavi | nmit_26_rows.csv | R1 -> SELECTED; R2 -> REJECTED, rating: 7.5, panelist: Ananth, date: 2026-10-17 | cmv7pm48n001vtbakc80ylkgw | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:41:24.146Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:41:26.704Z | OUTCOME_MISMATCH
+Paarvathi G | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm5ax0020tbakqa10d6wj | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:37.565Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:41.400Z | MATCH
+Gagan Narasimha Reddy A K | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm6f60025tbakhk1w3iwz | None | MATCH
+Puja Kumari | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm7hv002atbak1qoo5srb | None | MATCH
+Megha | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pm8i7002ftbakq8jkzt92 | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:27.822Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:28.603Z | MATCH
+Dhruthi SL | nmit_26_rows.csv | R1 -> SELECTED; R2 -> ON_HOLD, rating: null, panelist: Vinay, date: 2026-10-15 | cmv7pm9iv002ktbakm0sf2aj7 | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:24.074Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:24.853Z | OUTCOME_MISMATCH
+Ayush madnapotra | nmit_26_rows.csv | R1 -> SELECTED; R2 -> REJECTED, rating: null, panelist: Vinay, date: 2026-10-15 | cmv7pmb28002ptbaksz5s4bg5 | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:39:48.904Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:39:53.757Z | OUTCOME_MISMATCH
+Tejaswini Reddy U | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pmch6002utbak7luin210 | None | MATCH
+Sai Prateesh | nmit_26_rows.csv | R1 -> SELECTED; R2 -> ON_HOLD, rating: null, panelist: Jeevan, date: 2026-10-15 | cmv7pmdqv002ztbak46lrzbya | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:55.862Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:41:02.773Z | OUTCOME_MISMATCH
+DV Smitha | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pmf6v0034tbakqitnw4km | None | MATCH
+Himanshu Singh | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pmftz0037tbak8p252a60;cmv7pq9d50019tb9gjdxola5v | None | DUPLICATE_CANDIDATE
+Anirudh | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pmgv9003etbakgjwdcg60 | R1 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:52.297Z; R2 -> SELECTED, rating: -, panelist: Vinay, date: 2026-10-27T06:40:53.101Z | MATCH
+Adkosh | nmit_26_rows.csv | R1 -> SELECTED, rating: 7, panelist: Vinay Shetty, date: 2026-10-14 | cmv7pmi8l003jtbak68vakh8y | None | MATCH

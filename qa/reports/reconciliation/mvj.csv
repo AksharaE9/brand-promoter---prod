@@ -1,0 +1,52 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Pravya Pavithran | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7kq1h0001tb5w2nfx8gzy | R1 -> REJECTED | MATCH
+Sneha K | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7ktyq000atb5wnd2iaj5o | R1 -> REJECTED | MATCH
+Sanjana Reddy | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7kwa4000jtb5wg1aceqok | R1 -> SELECTED | MATCH
+Spandana Indira R | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7kyka000stb5wnnvgelvs | R1 -> REJECTED | MATCH
+Rahul B S | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7l11u0011tb5wtvf0coxh | R1 -> SELECTED | MATCH
+Tarun E | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7l3cf001atb5w2igizlyr | R1 -> SELECTED | MATCH
+Ananya Bera | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7l5n5001jtb5wk1m7qj1m | R1 -> REJECTED | MATCH
+A K Renu | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7l7xy001stb5wmcgj924n | R1 -> SELECTED | MATCH
+Kushal P | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7la8s0021tb5wg1hbtr6e | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Harshitha P | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7lcja002atb5wl2k557p7 | R1 -> SELECTED | MATCH
+Darshan K | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7lf0w002jtb5w62cywljy | R1 -> SELECTED; R2 -> SELECTED | MATCH
+K Deepthi | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7lhb3002stb5wmhvrh30j | R1 -> REJECTED | MATCH
+Diya Mariam Oommen | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7ljmc0031tb5wlhp3xmt3 | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Chandan D P | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7llws003atb5wkxr452si | R1 -> REJECTED | MATCH
+S C Mahalakshmi | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7lo8m003jtb5wd1xvarm0 | R1 -> REJECTED | MATCH
+Poorvitha R | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7lqnz003stb5wloimi97e | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Tejaswini Ravi Matti | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7lt770041tb5w9tk5mo5l | R1 -> REJECTED | MATCH
+Srinidhi S | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7lvhg004atb5wsjjafur3 | R1 -> REJECTED | MATCH
+Y Charan | MVJ_College_R1_R2.xlsx | R1 -> ON_HOLD | cmuz7lxsd004jtb5wjbtjr4ku | R1 -> ON_HOLD | MATCH
+Thanu Pal R | MVJ_College_R1_R2.xlsx | R1 -> ON_HOLD | cmuz7m02o004stb5wvvrhh4ja | R1 -> ON_HOLD | MATCH
+Basavaraj B | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7m2dj0051tb5w48cqgxw5 | R1 -> SELECTED | MATCH
+Barath K | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7m4pu005atb5wnpcen8r3 | R1 -> REJECTED | MATCH
+Sudeep | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7m7a3005jtb5w3dbnlfkq | R1 -> REJECTED | MATCH
+Vidhi Jain | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7m9lu005stb5w5jm36suz | R1 -> SELECTED | MATCH
+Prabhyot Singh | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mbww0061tb5w32obx2es | R1 -> SELECTED | MATCH
+Arushi Shetty | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> ON_HOLD | cmuz7me7a006atb5w8xkp2p1h | R1 -> SELECTED; R2 -> ON_HOLD | MATCH
+Shubham Sharma | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mgke006jtb5wgl44ct8p | R1 -> SELECTED | MATCH
+Massil nisar | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mj3e006stb5wpcjjnocx | R1 -> SELECTED | MATCH
+Soumya Badiger | MVJ_College_R1_R2.xlsx | R1 -> REJECTED; R2 -> SELECTED (Reversal) | cmuz7mlgs0071tb5w8x5sl4l7 | R1 -> REJECTED; R2 -> SELECTED | MATCH
+Ankita Charan Pahadi | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mnrs007atb5w3xmiw5hx | R1 -> SELECTED | MATCH
+Aishwarya | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7mq23007jtb5wqli6bbvt | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Anwin Tom Reji | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mscb007stb5w8rie54gd | R1 -> SELECTED | MATCH
+Harsha Hokrane | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7muml0081tb5womz72n4e | R1 -> SELECTED | MATCH
+Harshitha Ys | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7mx52008atb5wl0oq1dsc | R1 -> SELECTED | MATCH
+Syeda Shifa Reyan | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7mzfr008jtb5wnz8pnf8m | R1 -> REJECTED | MATCH
+Harish Subray Gouda | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7n1qp008stb5w8srawrw4 | R1 -> SELECTED | MATCH
+Kulusum Fathima | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7n41h0091tb5w15jtpma8 | R1 -> SELECTED | MATCH
+Khanank juttiyavar | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7n6eo009atb5wu1d3vnsa | R1 -> SELECTED | MATCH
+Pavan Kumar Itekar | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7n8ot009jtb5wkj9jw164 | R1 -> REJECTED | MATCH
+V Nivetha | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7nb86009stb5wx46x4p4z | R1 -> SELECTED | MATCH
+Raagav Krishnan | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7ndj100a1tb5wgsj6vtqq | R1 -> SELECTED | MATCH
+Sanket Hegade | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7nft900aatb5wosrm3n0w | R1 -> SELECTED | MATCH
+Sharan Rb | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7ni3800ajtb5wvuf52oxc | R1 -> SELECTED | MATCH
+Manushree Mahesh Nadhilal | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7nkdb00astb5wvpvppdc4 | R1 -> SELECTED | MATCH
+Neha N | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7nmon00b1tb5wzstploup | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Sana | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7np6v00batb5wrhvqfyfx | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Johanaz Nadaf | MVJ_College_R1_R2.xlsx | R1 -> SELECTED; R2 -> SELECTED | cmuz7nrhu00bjtb5w9soiywxi | R1 -> SELECTED; R2 -> SELECTED | MATCH
+Ganesh Vallabh M | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7ntsf00bstb5w9kakhaxp | R1 -> SELECTED | MATCH
+Sashikanth | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7nw2a00c1tb5wippnnb51 | R1 -> REJECTED | MATCH
+Nikhil He | MVJ_College_R1_R2.xlsx | R1 -> REJECTED | cmuz7nyc100catb5wgesandf5 | R1 -> REJECTED | MATCH
+Preetham | MVJ_College_R1_R2.xlsx | R1 -> SELECTED | cmuz7o0oj00cjtb5wnz2z5jee | R1 -> SELECTED | MATCH

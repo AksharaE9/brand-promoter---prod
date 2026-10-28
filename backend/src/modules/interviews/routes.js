@@ -1,7 +1,6 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
-const PDFDocument = require("pdfkit");
 const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { upload, offerLetterUpload } = require("../../middleware/upload");
@@ -126,6 +125,7 @@ router.get(
     res.setHeader("Content-Disposition", `attachment; filename="interviews-${date}.pdf"`);
     res.setHeader("Content-Type", "application/pdf");
 
+    const PDFDocument = require("pdfkit");
     const doc = new PDFDocument({ margin: 50 });
     doc.pipe(res);
 
@@ -254,7 +254,7 @@ async function prewarmRounds(rounds) {
 
 // ── GET all rounds (list) ──
 router.get(
-  '/',
+  ['/', '/schedule'],
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const requestStart = Date.now();
@@ -840,7 +840,9 @@ router.post(
     }
 
     const selectionStatus = data.selectionStatus || data.status || "HOLD";
-    const overallRating = data.overallRating !== undefined && data.overallRating !== null ? Number(data.overallRating) : null;
+    const overallRating = (data.overallRating !== undefined && data.overallRating !== null && String(data.overallRating).trim() !== '' && !isNaN(Number(data.overallRating)))
+      ? Number(data.overallRating)
+      : null;
 
     const offerLetterDocumentUrl = data.offerLetterDocument ? (typeof data.offerLetterDocument === 'string' ? data.offerLetterDocument : JSON.stringify(data.offerLetterDocument)) : null;
     const offerLetterEmailAttachmentUrl = data.offerLetterEmailAttachment ? (typeof data.offerLetterEmailAttachment === 'string' ? data.offerLetterEmailAttachment : JSON.stringify(data.offerLetterEmailAttachment)) : null;
@@ -2213,9 +2215,16 @@ router.patch(
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
     const { roundId } = req.params;
+    const outcome = req.body && req.body.outcome ? String(req.body.outcome).trim().toUpperCase() : 'PENDING';
     const result = await cache.writeRound(
       roundId,
-      { status: "COMPLETED", updatedAt: new Date().toISOString() },
+      {
+        status: "COMPLETED",
+        outcome,
+        result: outcome,
+        outcomeSetAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
       req.user.id,
       req.user.organizationId || "defaultOrg"
     );

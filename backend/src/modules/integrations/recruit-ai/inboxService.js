@@ -159,16 +159,24 @@ async function processAssessmentPayload(payload, eventId = null, organizationId 
     update: upsertData
   });
 
-  // 4. Update Candidate Interview Round status if matched
+  // 4. Update Candidate Interview Round status if matched (Rule 0.6: Never overwrite human data)
   if (interviewRoundId) {
     try {
-      await prisma.interview.update({
+      const existingInterview = await prisma.interview.findUnique({
         where: { id: interviewRoundId },
-        data: {
-          status: normalizedStatus === 'COMPLETED' ? 'COMPLETED' : 'NO_SHOW'
-          // Note: hiring outcome remains human-in-the-loop per prompt principles
-        }
+        select: { id: true, status: true, outcome: true, feedback: true }
       });
+
+      // Only update status if no human outcome has been recorded yet
+      if (existingInterview && !existingInterview.outcome) {
+        await prisma.interview.update({
+          where: { id: interviewRoundId },
+          data: {
+            status: normalizedStatus === 'COMPLETED' ? 'COMPLETED' : (normalizedStatus === 'NO_SHOW' ? 'NO_SHOW' : existingInterview.status)
+            // Note: hiring outcome remains human-in-the-loop per prompt principles
+          }
+        });
+      }
     } catch (err) {
       console.warn(`[InboxService] Could not update interview ${interviewRoundId}:`, err.message);
     }

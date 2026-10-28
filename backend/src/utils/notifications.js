@@ -6,6 +6,16 @@ const { sendToUser } = require('./sse');
  */
 async function sendNotification({ userId, title, message, link = null, type = 'INFO' }) {
   try {
+    // QA_LOOP3_ Outbound message suppression guard
+    if (
+      (title && String(title).includes('QA_LOOP3_')) ||
+      (message && String(message).includes('QA_LOOP3_')) ||
+      (link && String(link).includes('QA_LOOP3_'))
+    ) {
+      console.log(`[OUTBOUND_SUPPRESSION] Message containing QA_LOOP3_ suppressed: title="${title}"`);
+      return { suppressed: true, reason: 'QA_LOOP3_TAG' };
+    }
+
     const notification = await prisma.notification.create({
       data: {
         userId,

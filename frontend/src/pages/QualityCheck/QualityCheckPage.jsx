@@ -71,8 +71,10 @@ export default function QualityCheckPage() {
   const { data: countData } = useQuery({
     queryKey: ['quality-checks', 'counts'],
     queryFn: () => apiGet('/quality-checks/counts'),
-    refetchInterval: 30_000,
-    staleTime: 10_000,
+    refetchInterval: () => (typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 60_000),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
   });
 
   const counts = countData?.counts || { pending: 0, onHold: 0, decided: 0 };
@@ -89,9 +91,10 @@ export default function QualityCheckPage() {
       apiGet(
         `/quality-checks?status=${activeTab}&search=${encodeURIComponent(search)}&limit=100`,
       ),
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
-    staleTime: 10_000,
+    refetchInterval: () => (typeof document !== 'undefined' && document.visibilityState === 'hidden' ? false : 60_000),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
   });
 
   const rawItems = queueData?.items || [];

@@ -3,8 +3,6 @@ const prisma = require("../../config/db");
 const { auth, requireRoles } = require("../../middleware/auth");
 const { asyncHandler, ApiError } = require("../../utils/errors");
 const { logAudit } = require("../../utils/audit");
-const xlsx = require("xlsx");
-const PDFDocument = require("pdfkit");
 const multer = require("multer");
 const { MAX_UPLOAD_BYTES } = require("../../config/uploadLimits");
 
@@ -359,6 +357,7 @@ router.post(
     if (!req.file) throw new ApiError(400, "No file uploaded");
 
     const { mapProductImportRow } = require("../../lib/productImport");
+    const xlsx = require("xlsx");
 
     const workbook = xlsx.read(req.file.buffer, {
       type: "buffer",
@@ -453,6 +452,7 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!req.file) throw new ApiError(400, "No file uploaded");
 
+    const xlsx = require("xlsx");
     const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) throw new ApiError(400, "Spreadsheet has no sheets");

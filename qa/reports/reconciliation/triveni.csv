@@ -1,0 +1,25 @@
+expected_name | source_file | expected rounds | db_candidate_id(s) | db rounds | status
+Chethan A | inject_triveni_candidates.js | R1 -> SELECTED | cmumk3yg60002tbsgxdemq4r8 | R1 -> SELECTED | MATCH
+Aditya SJ | inject_triveni_candidates.js | R1 -> SELECTED | cmumk42si000btbsgcg5draej | R1 -> SELECTED | MATCH
+Harshith Gowda | inject_triveni_candidates.js | R1 -> SELECTED | cmumk44r8000ktbsgmzaf1gcn | R1 -> SELECTED | MATCH
+Rajith C | inject_triveni_candidates.js | R1 -> SELECTED | cmumk46hb000ttbsg0imf5d97 | R1 -> SELECTED | MATCH
+Aditya SK | inject_triveni_candidates.js | R1 -> SELECTED | cmumk48d90012tbsgz754plma | R1 -> SELECTED | MATCH
+Yashwanth S | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4a27001btbsgbclcpkus | R1 -> SELECTED | MATCH
+Rahul Gowda | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4bty001ktbsgygxrtwrp | R1 -> SELECTED | MATCH
+Vinay C | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4dj8001ttbsghib8ljvl | R1 -> SELECTED | MATCH
+Lekhana | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4f7y0022tbsghhl0f7ll | R1 -> SELECTED | MATCH
+Hemashree | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4gwv002btbsgf1ksb5jr | R1 -> SELECTED | MATCH
+Roshni Mishra | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4ill002ktbsgg21xqs28 | R1 -> SELECTED | MATCH
+Manasa J | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4kh9002ttbsgahz0qc2f | R1 -> SELECTED | MATCH
+Prathigna | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4m5y0032tbsguf1thfu9 | R1 -> SELECTED | MATCH
+Tanushree | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4nut003btbsg22o9iycr | R1 -> SELECTED | MATCH
+Nandini | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4pjf003ktbsg9n1wig3i | R1 -> SELECTED | MATCH
+Monisha | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4r96003ttbsgrs8grzb8 | R1 -> SELECTED | MATCH
+Deepu R | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4sxu0042tbsgh8emp5c0 | R1 -> SELECTED | MATCH
+Prajwal Gowda M | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4urj004btbsgosf1co0i | R1 -> SELECTED | MATCH
+Joyce | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4wob004ktbsgywegrt3r | R1 -> SELECTED | MATCH
+Veeranjaneya | inject_triveni_candidates.js | R1 -> SELECTED | cmumk4yf1004ttbsgkhceaavg | R1 -> SELECTED | MATCH
+Dhanush M | inject_triveni_candidates.js | R1 -> REJECTED | cmumk506i0052tbsgqxz7hlbv | R1 -> REJECTED | MATCH
+Manasa | inject_triveni_candidates.js | R1 -> REJECTED | cmumk51v3005btbsgbtonnovd | R1 -> REJECTED | MATCH
+Radha | inject_triveni_candidates.js | R1 -> REJECTED | cmumk53jz005ktbsg0qqyflz8 | R1 -> REJECTED | MATCH
+Yashwini C | inject_triveni_candidates.js | R1 -> REJECTED | cmumk558z005ttbsga30dnqtb | R1 -> REJECTED | MATCH
