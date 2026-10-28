@@ -125,7 +125,7 @@ function requireScope(scope) {
     }
 
     const clientScopes = Array.isArray(req.apiClient.scopes) ? req.apiClient.scopes : [];
-    if (!clientScopes.includes(scope)) {
+    if (!clientScopes.includes(scope) && !clientScopes.includes('*')) {
       return next(new ApiError(403, `This endpoint requires the '${scope}' scope.`, 'API_KEY_INSUFFICIENT_SCOPE', {
         requiredScope: scope,
         grantedScopes: clientScopes,
