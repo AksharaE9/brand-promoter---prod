@@ -910,6 +910,14 @@ router.post(
       } catch (auditErr) {
         console.error('[Candidates:CreateResume] Audit log failed (non-fatal):', auditErr.message);
       }
+      if (resumeFileId) {
+        try {
+          const { enqueueParseJob } = require('../matching/jobQueue');
+          enqueueParseJob({ candidateId: candidate.id, fileMetaId: resumeFileId }).catch(err => {
+            console.warn('[Candidates:CreateResume] Async resume parse enqueue error:', err.message);
+          });
+        } catch (_) {}
+      }
       sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
         candidateId: candidate.id,
         candidate,
@@ -1447,6 +1455,15 @@ router.post(
     });
 
     await inv.candidate(orgId, id);
+
+    setImmediate(() => {
+      try {
+        const { enqueueParseJob } = require('../matching/jobQueue');
+        enqueueParseJob({ candidateId: id, fileMetaId: tempFileMeta.id }).catch(err => {
+          console.warn('[Candidates:UploadResume] Async resume parse enqueue error:', err.message);
+        });
+      } catch (_) {}
+    });
 
     res.json({ success: true, data: { resumeFileId: tempFileMeta.id, storageKey: makeStorageKey(tempFileMeta.id) } });
   }),

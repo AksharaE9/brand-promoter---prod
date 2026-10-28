@@ -13,6 +13,7 @@ import { ScheduleModal } from '../components/Interview/ScheduleModal';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import { validateUploadFile } from '../lib/fileValidation';
 import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
+import ResumeAnalysisTab from '../components/Candidate/ResumeAnalysisTab';
 
 /** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
 function resolveResumeAction(candidate) {
@@ -722,6 +723,11 @@ const CandidateProfile = () => {
                     )}
                   </div>
                 </div>
+              </Reveal>
+              
+              {/* Resume Parsing & Deterministic JD Match Engine */}
+              <Reveal delay={0.03}>
+                <ResumeAnalysisTab candidate={candidate} onContactAccepted={() => loadAll(false)} />
               </Reveal>
 
               <Reveal delay={0.05}>

@@ -1,0 +1,496 @@
+{
+  "jds": [
+    {
+      "key": "operations",
+      "title": "Operations Intern",
+      "company": null,
+      "location": "Bengaluru",
+      "mode": "In-Person",
+      "status": "active",
+      "raw_text": "Operations Intern \n \nAbout the Role  \nWe are looking for dynamic and motivated Interns who are eager to learn and gain hands-on experience across \nBusiness Enhancement, Vendor interaction and Onboarding, Logistics and Inter-Department operations. This \ninternship is designed to give you 360° exposure to business operations while allowing you to explore which field \nexcites you the most. This internship is designed to help you discover your strengths across different business \nfunctions, while preparing you for full-time opportunities.  \nKey Responsibilities  \n• Assist the operations team in planning and execution of daily task and projects.  \n• Maintain reports and ensure smooth day-to-day functioning.  \n• Collaborate with different departments for cross-functional learning and efficiency.  \n• Support in process improvement initiatives to enhance operational productivity.  \n• Monitor resources, timelines, and deliverables to ensure compliance with organizational goals.  \n \nWho Can Apply  \n• Fresh graduates or final-year students from Business, Management, or Commerce background.  \n• Strong communication, presentation, and interpersonal skills.  \n• Ability to multitask and take ownership of responsibilities.  \n• Interest in building a long-term career in Operations.  \n \nWhy Join Us?  \n• Exposure to production, Logistics, and business operations.  \n• Steep learning curve and mentorship from professionals.  \n• Opportunity for career progression into managerial roles based on performance.  \n  \n \n ",
+      "structured_requirements": {
+        "core": "Plan and execute daily tasks; maintain reports; cross-department coordination; process improvement; monitor resources and timelines; vendor onboarding and logistics",
+        "must_have": [
+          {
+            "skill": "Communication",
+            "weight": 1.0,
+            "category": "leadership_signals"
+          },
+          {
+            "skill": "Coordination",
+            "weight": 1.0,
+            "category": "operations"
+          },
+          {
+            "skill": "Reporting / record keeping",
+            "weight": 1.0,
+            "category": "operations"
+          },
+          {
+            "skill": "Multitasking / ownership",
+            "weight": 1.0,
+            "category": "operations"
+          }
+        ],
+        "nice_to_have": [
+          {
+            "skill": "MS Excel",
+            "weight": 0.8,
+            "category": "operations"
+          },
+          {
+            "skill": "Process improvement",
+            "weight": 0.7,
+            "category": "operations"
+          },
+          {
+            "skill": "Vendor management",
+            "weight": 0.7,
+            "category": "operations"
+          },
+          {
+            "skill": "Logistics / supply chain",
+            "weight": 0.7,
+            "category": "operations"
+          },
+          {
+            "skill": "Inventory management",
+            "weight": 0.6,
+            "category": "operations"
+          },
+          {
+            "skill": "Scheduling",
+            "weight": 0.6,
+            "category": "operations"
+          },
+          {
+            "skill": "Presentation",
+            "weight": 0.5,
+            "category": "leadership_signals"
+          },
+          {
+            "skill": "Documentation",
+            "weight": 0.5,
+            "category": "operations"
+          }
+        ],
+        "education": {
+          "degrees": [
+            "BBA",
+            "BCom",
+            "MBA",
+            "BMS",
+            "BBM",
+            "MCom"
+          ],
+          "fields": [
+            "Business",
+            "Management",
+            "Commerce"
+          ],
+          "min_credit_other_degree": 50,
+          "eligibility": [
+            "fresher",
+            "final_year"
+          ]
+        }
+      },
+      "weights": {
+        "education": 20,
+        "experience": 25,
+        "skills": 20,
+        "communicationLeadership": 15,
+        "semantic": 10,
+        "careerInterest": 10,
+        "locationAvailability": 0
+      },
+      "aliases": {
+        "include": [
+          "operations",
+          "ops",
+          "ops intern",
+          "operations intern",
+          "operations executive",
+          "operations associate",
+          "operations trainee",
+          "operations coordinator",
+          "business operations",
+          "business operations intern",
+          "logistics intern",
+          "vendor management intern",
+          "tech+ops",
+          "tech + ops",
+          "ops full time",
+          "operations & marketing",
+          "operations & hr"
+        ],
+        "review": [
+          "process associate",
+          "back office",
+          "hr and operations",
+          "hr and ops",
+          "hr and operations intern"
+        ]
+      }
+    },
+    {
+      "key": "bde",
+      "title": "Business Development Executive Intern",
+      "company": null,
+      "location": "Bengaluru",
+      "mode": "In-Person",
+      "status": "active",
+      "raw_text": "Business Development Executive Intern \n \nAbout the Role  \nWe are looking for an energetic and enthusiastic BDE Intern who is passionate about business development and \noperations, enjoys interacting with people, and contributes to strengthening brand visibility across both B2B and \nB2C channels. In this role, you will directly connect with business clients and retail customers, highlighting product \nor service features and driving sales growth through strategic engagement.  \nAs a key representative in the B2B and B2C space, you will focus on building long-term consumer relationships, \nensuring personalized brand experiences, and maximizing indirect sales conversions. This is an excellent opportunity \nfor young professionals to build a rewarding career across multiple sales ecosystems.  \n \nKey Responsibilities  \n• Assist in planning and coordinating daily business operations.  \n• Approach customers and business partners to explain product offerings and value propositions across B2B \nand B2C segments.  \n• Assist in marketing and promotional activities.  \n• Collaborate with the sales team to generate leads and build client relationships.  \n• Coordinate with cross-functional teams to improve efficiency and promote innovation.  \n• Identify and suggest new business opportunities for company growth.  \n• Prepare business reports and track performance. \n \n Who Can Apply  \n• Fresh graduates or final-year students from Business, Management, or Commerce background.  \n• Strong communication, presentation, and interpersonal skills.  \n• Ability to multitask and take ownership of responsibilities.  \n• Interest in building a long-term career in Business Development, Marketing, and Operations.  \n \nWhy Join Us?  \n• Exposure to production, sales, marketing, and business operations.  \n• Steep learning curve and mentorship from professionals.  \n• Opportunity for career progression into managerial roles based on performance in short span.  \n ",
+      "structured_requirements": {
+        "core": "Approach B2B & B2C clients; explain offerings and value propositions; generate leads and build client relationships; marketing and promotions; identify opportunities; prepare business reports",
+        "must_have": [
+          {
+            "skill": "Communication",
+            "weight": 1.0,
+            "category": "leadership_signals"
+          },
+          {
+            "skill": "Client interaction",
+            "weight": 1.0,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Lead generation",
+            "weight": 1.0,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Relationship building",
+            "weight": 1.0,
+            "category": "sales_bd"
+          }
+        ],
+        "nice_to_have": [
+          {
+            "skill": "B2B / B2C sales",
+            "weight": 0.8,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Pitching",
+            "weight": 0.8,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Marketing / promotions",
+            "weight": 0.7,
+            "category": "marketing"
+          },
+          {
+            "skill": "Market research",
+            "weight": 0.6,
+            "category": "marketing"
+          },
+          {
+            "skill": "Reporting",
+            "weight": 0.6,
+            "category": "operations"
+          },
+          {
+            "skill": "Negotiation",
+            "weight": 0.6,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "CRM",
+            "weight": 0.5,
+            "category": "sales_bd"
+          }
+        ],
+        "education": {
+          "degrees": [
+            "BBA",
+            "BCom",
+            "MBA",
+            "BMS",
+            "BBM",
+            "MCom"
+          ],
+          "fields": [
+            "Business",
+            "Management",
+            "Commerce"
+          ],
+          "min_credit_other_degree": 50,
+          "eligibility": [
+            "fresher",
+            "final_year"
+          ]
+        }
+      },
+      "weights": {
+        "education": 15,
+        "experience": 25,
+        "skills": 25,
+        "communicationLeadership": 15,
+        "semantic": 10,
+        "careerInterest": 10,
+        "locationAvailability": 0
+      },
+      "aliases": {
+        "include": [
+          "bde",
+          "bde intern",
+          "bd",
+          "bd intern",
+          "bd executive",
+          "business development",
+          "business development intern",
+          "business development executive",
+          "business development executive intern",
+          "client acquisition intern",
+          "corporate sales intern",
+          "b2b sales intern",
+          "bde full time",
+          "bde (looking for full time role)",
+          "bde & marketing",
+          "bde, marketing"
+        ],
+        "review": [
+          "bde/sme",
+          "sme intern",
+          "inside sales",
+          "bda",
+          "bde/marketing"
+        ]
+      }
+    },
+    {
+      "key": "sales_marketing",
+      "title": "Sales and Marketing Intern",
+      "company": "Atlasia",
+      "location": "Multiple",
+      "mode": "Hybrid",
+      "status": "active",
+      "raw_text": "SALES\n \nAND\n \nMARKETING\n \nINTERN\n \n–\n \nJOB\n \nDESCRIPTION\n \nPosition\n \nDetails\n \n●\n \nRole:\n \nSales\n \nand\n \nMarketing\n \nIntern\n \n●\n \nCompany:\n \nAtlasia\n \n●\n \nEmployment\n \nType:\n \nInternship\n \n●\n \nLocation:\n \nMultiple\n \n●\n \nMode:\n \nHybrid\n \nAbout\n \nthe\n \nRole\n \nAtlasia\n \nis\n \nlooking\n \nfor\n \nan\n \nenergetic\n \nand\n \nenthusiastic\n \nSales\n \nand\n \nMarketing\n \nIntern\n \nwho\n \nis\n \ninterested\n \nin\n \nlearning\n \nabout\n \nsales,\n \nmarketing,\n \nbusiness\n \ndevelopment,\n \nand\n \nbusiness\n \noperations\n \nthrough\n \nhands-on\n \nindustry\n \nexperience.\n \nThe\n \nrole\n \ninvolves\n \ninteracting\n \nwith\n \nbusiness\n \nclients\n \nand\n \nretail\n \ncustomers,\n \nunderstanding\n \ntheir\n \nrequirements,\n \npresenting\n \nproduct\n \nand\n \nservice\n \nofferings,\n \ngenerating\n \nleads,\n \nand\n \nsupporting\n \nbusiness\n \ngrowth\n \ninitiatives.\n \nThe\n \nintern\n \nwill\n \ngain\n \npractical\n \nexposure\n \nto\n \nB2B\n \nand\n \nB2C\n \nsales,\n \ncustomer\n \nengagement,\n \nlead\n \ngeneration,\n \nmarketing\n \nactivities,\n \nand\n \non-ground\n \nbusiness\n \nexecution.\n \nThis\n \ninternship\n \nis\n \nideal\n \nfor\n \ncandidates\n \nwho\n \nwant\n \nto\n \ndevelop\n \npractical\n \nbusiness\n \nskills,\n \nimprove\n \ntheir\n \ncommunication\n \nabilities,\n \nand\n \ngain\n \nreal-world\n \ncorporate\n \nexperience.\n \nKey\n \nResponsibilities\n \n●\n \nAssist\n \nin\n \nplanning\n \nand\n \ncoordinating\n \ndaily\n \nsales\n \nand\n \nbusiness\n \nactivities.\n \n●\n \nEngage\n \nwith\n \ncustomers\n \nand\n \nbusiness\n \npartners\n \nto\n \nexplain\n \nproduct\n \nofferings\n \nand\n \nvalue\n \npropositions\n \nacross\n \nB2B\n \nand\n \nB2C\n \nsegments.\n \n●\n \nIdentify\n \npotential\n \ncustomers\n \nand\n \nexplore\n \nnew\n \nbusiness\n \nopportunities.\n \n●\n \nGenerate\n \nleads\n \nand\n \nconduct\n \nregular\n \nfollow-ups\n \nwith\n \nprospective\n \ncustomers.\n \n●\n \nAssist\n \nin\n \nexecuting\n \nmarketing\n \ncampaigns,\n \npromotional\n \nactivities,\n \nand\n \nbrand-building\n \ninitiatives.\n \n●\n \nBuild\n \nand\n \nmaintain\n \nrelationships\n \nwith\n \ncustomers\n \nand\n \nbusiness\n \npartners.\n \n●\n \nSupport\n \nthe\n \nsales\n \nand\n \nmarketing\n \nteam\n \nin\n \nachieving\n \nassigned\n \ntargets.\n \n●\n \nMaintain\n \nlead\n \nrecords,\n \nupdate\n \ncustomer\n \ninformation,\n \nand\n \nprepare\n \ndaily\n \nactivity\n \nreports.\n \n●\n \nTrack\n \nsales\n \nperformance\n \nand\n \nassist\n \nin\n \npreparing\n \nbusiness\n \nreports.\n \n\n●\n \nCoordinate\n \nwith\n \nteam\n \nmembers\n \nto\n \nimprove\n \nbusiness\n \nprocesses\n \nand\n \noperational\n \nefficiency.\n \n●\n \nParticipate\n \nin\n \nfieldwork,\n \ncustomer\n \nvisits,\n \nand\n \non-ground\n \nmarketing\n \nactivities.\n \n●\n \nUnderstand\n \ncustomer\n \nrequirements\n \nand\n \ncommunicate\n \nrelevant\n \nproduct\n \nor\n \nservice\n \ninformation.\n \n●\n \nImplement\n \nfeedback\n \nfrom\n \nsupervisors\n \nand\n \ncontinuously\n \nimprove\n \nsales\n \nand\n \ncommunication\n \nskills.\n \nWho\n \nCan\n \nApply?\n \n●\n \nStudents,\n \nfresh\n \ngraduates,\n \nand\n \ncandidates\n \npursuing\n \ndegrees\n \nin\n \nBusiness,\n \nManagement,\n \nCommerce,\n \nMarketing,\n \nor\n \nrelated\n \nfields.\n \n●\n \nCandidates\n \nwith\n \ngood\n \ncommunication\n \nand\n \ninterpersonal\n \nskills.\n \n●\n \nIndividuals\n \nwho\n \nare\n \ncomfortable\n \ninteracting\n \nwith\n \ncustomers\n \nand\n \nbusiness\n \npartners.\n \n●\n \nCandidates\n \nwilling\n \nto\n \nlearn\n \nthrough\n \npractical\n \nassignments\n \nand\n \nreal-world\n \nbusiness\n \nactivities.\n \n●\n \nIndividuals\n \nwith\n \na\n \nproactive,\n \ntarget-oriented,\n \nand\n \npositive\n \nattitude.\n \n●\n \nCandidates\n \nwho\n \ncan\n \ntake\n \nownership\n \nof\n \nassigned\n \ntasks\n \nand\n \nwork\n \neffectively\n \nin\n \na\n \nteam.\n \n●\n \nIndividuals\n \ninterested\n \nin\n \nbuilding\n \na\n \ncareer\n \nin\n \nSales,\n \nMarketing,\n \nBusiness\n \nDevelopment,\n \nor\n \nOperations.\n \nKey\n \nSkills\n \nRequired\n \n●\n \nGood\n \nverbal\n \nand\n \nwritten\n \ncommunication\n \nskills.\n \n●\n \nStrong\n \ninterpersonal\n \nand\n \nrelationship-building\n \nabilities.\n \n●\n \nInterest\n \nin\n \nsales,\n \nmarketing,\n \nand\n \nbusiness\n \ndevelopment.\n \n●\n \nBasic\n \ncustomer\n \nhandling\n \nand\n \nfollow-up\n \nskills.\n \n●\n \nWillingness\n \nto\n \nlearn\n \nsales\n \nand\n \nnegotiation\n \ntechniques.\n \n●\n \nGood\n \norganizational\n \nand\n \ntime-management\n \nskills.\n \n●\n \nAbility\n \nto\n \nmaintain\n \nrecords\n \nand\n \nprovide\n \nregular\n \nupdates.\n \n●\n \nWillingness\n \nto\n \nparticipate\n \nin\n \nfield\n \nactivities\n \nwhen\n \nrequired.\n \n●\n \nAdaptability,\n \ninitiative,\n \nand\n \na\n \nresults-oriented\n \nmindset.\n \nWhy\n \nJoin\n \nAtlasia?\n \n●\n \nGain\n \nhands-on\n \nexposure\n \nto\n \nsales,\n \nmarketing,\n \nbusiness\n \ndevelopment,\n \nand\n \nbusiness\n \noperations.\n \n●\n \nWork\n \non\n \nreal\n \nbusiness\n \nassignments\n \nand\n \ncustomer\n \ninteractions.\n \n●\n \nDevelop\n \npractical\n \ncommunication,\n \nnegotiation,\n \nand\n \ncustomer-handling\n \nskills.\n \n●\n \nUnderstand\n \nB2B\n \nand\n \nB2C\n \nsales\n \nprocesses.\n \n●\n \nLearn\n \nlead\n \ngeneration,\n \nsales\n \npipeline\n \nmanagement,\n \nand\n \nfollow-up\n \nstrategies.\n \n●\n \nReceive\n \nguidance\n \nand\n \nfeedback\n \nfrom\n \nexperienced\n \nprofessionals.\n \n\n●\n \nBuild\n \nprofessional\n \nconfidence\n \nand\n \nindustry-relevant\n \nskills.\n \n●\n \nExplore\n \nopportunities\n \nfor\n \ncareer\n \ngrowth\n \nbased\n \non\n \nperformance\n \nand\n \norganizational\n \nrequirements.\n \nAbout\n \nAtlasia\n \nAtlasia\n \nis\n \nan\n \nEdTech\n \ncompany\n \nfocused\n \non\n \nbridging\n \nthe\n \ngap\n \nbetween\n \nacademic\n \nlearning\n \nand\n \nindustry\n \nrequirements\n \nthrough\n \npractical\n \ntraining,\n \nindustry-oriented\n \nprograms,\n \nand\n \nhands-on\n \nlearning\n \nexperiences.\n \nAtlasia\n \naims\n \nto\n \nequip\n \nlearners\n \nwith\n \nthe\n \nskills,\n \nconfidence,\n \nand\n \nknowledge\n \nrequired\n \nto\n \nsucceed\n \nin\n \nthe\n \nprofessional\n \nworld.\n \nThe\n \norganization\n \nemphasizes\n \npractical\n \nexposure,\n \ncontinuous\n \nlearning,\n \nand\n \nthe\n \ndevelopment\n \nof\n \nindustry-relevant\n \ncapabilities\n \nthrough\n \nreal-world\n \nbusiness\n \nactivities.\n \nCareer\n \nGrowth\n \nAt\n \nAtlasia,\n \ninterns\n \nhave\n \nthe\n \nopportunity\n \nto\n \nlearn\n \nthrough\n \npractical\n \nassignments,\n \ncustomer\n \ninteractions,\n \nand\n \non-ground\n \nbusiness\n \nactivities.\n \nInterns\n \nwho\n \ndemonstrate\n \nstrong\n \nperformance,\n \ninitiative,\n \naccountability,\n \nand\n \nconsistent\n \ncontribution\n \nmay\n \nbe\n \nconsidered\n \nfor\n \nextended\n \nresponsibilities\n \nor\n \nfull-time\n \nemployment\n \nopportunities,\n \nsubject\n \nto\n \nperformance\n \nand\n \norganizational\n \nrequirements.\n \n ",
+      "structured_requirements": {
+        "core": "Engage customers across B2B & B2C; generate leads & conduct follow-ups; marketing campaigns; fieldwork & customer visits; target achievement; lead records & daily reports; negotiation",
+        "must_have": [
+          {
+            "skill": "Communication",
+            "weight": 1.0,
+            "category": "leadership_signals"
+          },
+          {
+            "skill": "Customer handling",
+            "weight": 1.0,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Lead generation & follow-up",
+            "weight": 1.0,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Interest in sales / marketing",
+            "weight": 1.0,
+            "category": "career_interest"
+          }
+        ],
+        "nice_to_have": [
+          {
+            "skill": "Field work",
+            "weight": 0.8,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "B2B / B2C sales",
+            "weight": 0.8,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Campaigns / brand building",
+            "weight": 0.7,
+            "category": "marketing"
+          },
+          {
+            "skill": "Negotiation",
+            "weight": 0.7,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Targets achieved",
+            "weight": 0.6,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Activity reports",
+            "weight": 0.6,
+            "category": "operations"
+          },
+          {
+            "skill": "Pipeline management",
+            "weight": 0.5,
+            "category": "sales_bd"
+          },
+          {
+            "skill": "Time management",
+            "weight": 0.5,
+            "category": "leadership_signals"
+          }
+        ],
+        "education": {
+          "degrees": [
+            "BBA",
+            "BCom",
+            "MBA",
+            "BMS",
+            "BBM",
+            "MCom"
+          ],
+          "fields": [
+            "Business",
+            "Management",
+            "Commerce",
+            "Marketing"
+          ],
+          "min_credit_other_degree": 50,
+          "eligibility": [
+            "fresher",
+            "final_year",
+            "student"
+          ]
+        }
+      },
+      "weights": {
+        "education": 15,
+        "experience": 25,
+        "skills": 25,
+        "communicationLeadership": 15,
+        "semantic": 10,
+        "careerInterest": 10,
+        "locationAvailability": 0
+      },
+      "aliases": {
+        "include": [
+          "sales and marketing",
+          "sales & marketing",
+          "sales and marketing intern",
+          "sales & marketing intern",
+          "sales marketing",
+          "s&m",
+          "s and m",
+          "sales intern",
+          "marketing intern",
+          "marketing",
+          "marketing executive intern",
+          "field sales",
+          "field sales associate",
+          "fse",
+          "marketing intern (field)",
+          "marketing intern (telecalling)",
+          "kiosk sales executive",
+          "kiosk sales executive - events",
+          "shop event",
+          "sales and marketing executive",
+          "sales and marketing executive intern"
+        ],
+        "review": [
+          "telecaller",
+          "telesales",
+          "tele sales",
+          "telecalling",
+          "tele calling",
+          "telemarketing",
+          "digital marketing intern",
+          "social media intern",
+          "brand promoter",
+          "bp",
+          "tele calling executive",
+          "telecalling full time"
+        ]
+      }
+    }
+  ],
+  "exclusions": [
+    {
+      "term": "Data Analyst",
+      "reason": "Data analytics technical role"
+    },
+    {
+      "term": "DA",
+      "reason": "Data Analyst shortform"
+    },
+    {
+      "term": "Data Analyst Intern",
+      "reason": "Data analytics technical role"
+    },
+    {
+      "term": "Business Analyst",
+      "reason": "Business analytics technical role"
+    },
+    {
+      "term": "BA",
+      "reason": "Business Analyst shortform"
+    },
+    {
+      "term": "BA Intern",
+      "reason": "Business Analyst shortform"
+    },
+    {
+      "term": "BA & Operations",
+      "reason": "Business Analyst role"
+    },
+    {
+      "term": "HR Intern",
+      "reason": "Human Resources role"
+    },
+    {
+      "term": "HR",
+      "reason": "Human Resources role"
+    },
+    {
+      "term": "Human Resource",
+      "reason": "Human Resources role"
+    },
+    {
+      "term": "Human Resource Executive",
+      "reason": "Human Resources role"
+    },
+    {
+      "term": "Human Resource Intern",
+      "reason": "Human Resources role"
+    },
+    {
+      "term": "Recruiter",
+      "reason": "Recruitment role"
+    },
+    {
+      "term": "Software Developer",
+      "reason": "Technical software engineering role"
+    },
+    {
+      "term": "Developer",
+      "reason": "Technical software engineering role"
+    },
+    {
+      "term": "Web Developer",
+      "reason": "Technical software engineering role"
+    },
+    {
+      "term": "QA Engineer",
+      "reason": "Quality Assurance engineering role"
+    },
+    {
+      "term": "Test Software Engineer",
+      "reason": "Quality Assurance engineering role"
+    },
+    {
+      "term": "CI Test Engineer",
+      "reason": "Quality Assurance engineering role"
+    },
+    {
+      "term": "Salesforce Developer",
+      "reason": "Technical engineering role"
+    },
+    {
+      "term": "Field Engineer",
+      "reason": "Telecom/hardware engineering role"
+    }
+  ]
+}

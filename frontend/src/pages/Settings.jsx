@@ -14,6 +14,7 @@ const ContactTab = lazyWithRetry(() => import('../components/Settings/ContactTab
 const PreferencesTab = lazyWithRetry(() => import('../components/Settings/PreferencesTab'), 'PreferencesTab');
 const SecurityTab = lazyWithRetry(() => import('../components/Settings/SecurityTab'), 'SecurityTab');
 const ApiKeysTab = lazyWithRetry(() => import('../components/Settings/ApiKeysTab'), 'ApiKeysTab');
+const JdMatchingTab = lazyWithRetry(() => import('../components/Settings/JdMatchingTab'), 'JdMatchingTab');
 
 const timezoneOptions = [
   { value: 'Asia/Kolkata', label: 'India Standard Time (IST) - Asia/Kolkata' },
@@ -466,6 +467,14 @@ const Settings = () => {
               API Keys
             </button>
           )}
+          {(isSuperAdmin || me?.role === 'ADMIN') && (
+            <button 
+              className={`pb-2 text-sm font-bold border-b-2 transition-all ${activeTab === 'JD_MATCHING' ? 'border-[#1f52cc] text-[#1f52cc]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+              onClick={() => { setActiveTab('JD_MATCHING'); setError(''); setBanner(''); }}
+            >
+              JD & Match Matrix
+            </button>
+          )}
         </div>
 
         {/* Tab Contents */}
@@ -539,6 +548,9 @@ const Settings = () => {
             )}
             {activeTab === 'API_KEYS' && (isSuperAdmin || me?.role === 'ADMIN') && (
               <ApiKeysTab isSuperAdmin={isSuperAdmin} />
+            )}
+            {activeTab === 'JD_MATCHING' && (isSuperAdmin || me?.role === 'ADMIN') && (
+              <JdMatchingTab />
             )}
           </React.Suspense>
 

@@ -234,6 +234,9 @@ model Candidate {
   contactAttempts     CandidateContactAttempt[]
   internalReports     CandidateInternalReport[]
   qualityChecks       QualityCheck[]
+  parsedResume        ParsedResume?
+  matchScores         MatchScore[]
+  resumeParseJobs     ResumeParseJob[]
 
   @@index([organizationId])
   @@index([organizationId, isDeleted, status], map: "idx_candidates_org_status")
@@ -1033,5 +1036,174 @@ model ApiKeyAuditEvent {
 
   @@index([apiKeyId, createdAt(sort: Desc)])
   @@map("api_key_audit_events")
+}
+
+// ─────────────────────────────────────────────
+// Resume Parsing & Job Description Matching
+// ─────────────────────────────────────────────
+
+model JobDescription {
+  id                 String                  @id @default(cuid())
+  jobId              String?                 @map("job_id")
+  title              String
+  company            String?
+  location           String?
+  mode               String?
+  status             String                  @default("draft") // draft | active | archived
+  currentVersionId   String?                 @map("current_version_id")
+  organizationId     String                  @default("defaultOrg") @map("organization_id")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  versions           JobDescriptionVersion[]
+  aliases            RoleAlias[]
+  exclusions         RoleExclusion[]
+  matchScores        MatchScore[]
+
+  @@index([organizationId, status])
+  @@index([title])
+  @@map("job_descriptions")
+}
+
+model JobDescriptionVersion {
+  id                     String         @id @default(cuid())
+  jdId                   String         @map("jd_id")
+  version                Int            @default(1)
+  rawText                String         @db.Text @map("raw_text")
+  structuredRequirements Json           @map("structured_requirements")
+  weights                Json
+  createdBy              String?        @map("created_by")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  activatedAt            DateTime?      @map("activated_at")
+
+  jobDescription         JobDescription @relation(fields: [jdId], references: [id], onDelete: Cascade)
+  matchScores            MatchScore[]
+
+  @@index([jdId, version])
+  @@map("job_description_versions")
+}
+
+model RoleAlias {
+  id              String         @id @default(cuid())
+  jdId            String         @map("jd_id")
+  alias           String
+  normalizedAlias String         @map("normalized_alias")
+  kind            String         @default("include") // include | review
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  jobDescription  JobDescription @relation(fields: [jdId], references: [id], onDelete: Cascade)
+
+  @@index([jdId])
+  @@index([normalizedAlias])
+  @@map("role_aliases")
+}
+
+model RoleExclusion {
+  id             String          @id @default(cuid())
+  jdId           String?         @map("jd_id")
+  term           String
+  normalizedTerm String          @map("normalized_term")
+  reason         String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  jobDescription JobDescription? @relation(fields: [jdId], references: [id], onDelete: Cascade)
+
+  @@index([normalizedTerm])
+  @@map("role_exclusions")
+}
+
+model ParsedResume {
+  id            String    @id @default(cuid())
+  candidateId   String    @unique @map("candidate_id")
+  fileMetaId    String?   @map("file_meta_id")
+  fileHash      String?   @map("file_hash")
+  parserVersion String    @default("1.0.0") @map("parser_version")
+  contact       Json
+  education     Json
+  experience    Json
+  projects      Json?
+  leadership    Json?
+  skills        Json
+  achievements  Json?
+  certifications Json?
+  languages     Json?
+  summary       String?   @db.Text
+  derived       Json
+  meta          Json
+  rawText       String?   @db.Text @map("raw_text")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  candidate     Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@index([fileMetaId])
+  @@index([fileHash])
+  @@map("parsed_resumes")
+}
+
+model MatchScore {
+  id                    String                @id @default(cuid())
+  candidateId           String                @map("candidate_id")
+  jdId                  String                @map("jd_id")
+  jdVersionId           String                @map("jd_version_id")
+  parserVersion         String                @default("1.0.0") @map("parser_version")
+  scorerVersion         String                @default("1.0.0") @map("scorer_version")
+  overall               Float
+  ratingOutOf10         Float                 @map("rating_out_of_10")
+  band                  String
+  subScores             Json                  @map("sub_scores")
+  matchedRequirements   Json                  @map("matched_requirements")
+  missingMustHaves      Json                  @map("missing_must_haves")
+  flags                 Json
+  explanation           String?               @db.Text
+  isPrimary             Boolean               @default(false) @map("is_primary")
+  computedAt            DateTime              @default(now()) @map("computed_at")
+
+  candidate             Candidate             @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobDescription        JobDescription        @relation(fields: [jdId], references: [id], onDelete: Cascade)
+  jobDescriptionVersion JobDescriptionVersion @relation(fields: [jdVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jdId, jdVersionId])
+  @@index([candidateId, isPrimary])
+  @@index([jdId, overall(sort: Desc)])
+  @@index([band])
+  @@map("match_scores")
+}
+
+model ResumeParseJob {
+  id             String    @id @default(cuid())
+  candidateId    String    @map("candidate_id")
+  fileMetaId     String?   @map("file_meta_id")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  status         String    @default("QUEUED") // QUEUED | RUNNING | COMPLETED | FAILED | SKIPPED_NO_JD | UNSUPPORTED_FORMAT
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3) @map("max_attempts")
+  lastError      String?   @db.Text @map("last_error")
+  durationMs     Int?      @map("duration_ms")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  candidate      Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([candidateId])
+  @@map("resume_parse_jobs")
+}
+
+model SkillsTaxonomy {
+  id             String   @id @default(cuid())
+  category       String   // sales_bd | marketing | operations | leadership_signals
+  term           String
+  normalizedTerm String   @map("normalized_term")
+  synonyms       Json
+  weight         Float    @default(1.0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([category])
+  @@index([normalizedTerm])
+  @@map("skills_taxonomies")
 }
 

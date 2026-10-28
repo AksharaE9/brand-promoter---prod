@@ -549,6 +549,197 @@ const indexes = [
     name: 'idx_jobs_org_updated',
     sql: `CREATE INDEX IF NOT EXISTS idx_jobs_org_updated ON jobs ("organizationId", "updatedAt" DESC);`,
   },
+
+  // ── Resume Parsing & Job Description Matching Tables ──────────────────────
+  {
+    name: 'tbl_job_descriptions',
+    sql: `CREATE TABLE IF NOT EXISTS job_descriptions (
+      id VARCHAR(50) PRIMARY KEY,
+      job_id VARCHAR(50),
+      title VARCHAR(255) NOT NULL,
+      company VARCHAR(255),
+      location VARCHAR(255),
+      mode VARCHAR(100),
+      status VARCHAR(50) NOT NULL DEFAULT 'draft',
+      current_version_id VARCHAR(50),
+      organization_id VARCHAR(100) NOT NULL DEFAULT 'defaultOrg',
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_job_descriptions_org_status',
+    sql: `CREATE INDEX IF NOT EXISTS idx_job_descriptions_org_status ON job_descriptions (organization_id, status);`,
+  },
+  {
+    name: 'idx_job_descriptions_title',
+    sql: `CREATE INDEX IF NOT EXISTS idx_job_descriptions_title ON job_descriptions (title);`,
+  },
+  {
+    name: 'tbl_job_description_versions',
+    sql: `CREATE TABLE IF NOT EXISTS job_description_versions (
+      id VARCHAR(50) PRIMARY KEY,
+      jd_id VARCHAR(50) NOT NULL REFERENCES job_descriptions(id) ON DELETE CASCADE,
+      version INTEGER NOT NULL DEFAULT 1,
+      raw_text TEXT NOT NULL,
+      structured_requirements JSONB NOT NULL DEFAULT '{}'::jsonb,
+      weights JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_by VARCHAR(100),
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      activated_at TIMESTAMP WITH TIME ZONE
+    );`,
+  },
+  {
+    name: 'idx_jd_versions_jd_version',
+    sql: `CREATE INDEX IF NOT EXISTS idx_jd_versions_jd_version ON job_description_versions (jd_id, version);`,
+  },
+  {
+    name: 'tbl_role_aliases',
+    sql: `CREATE TABLE IF NOT EXISTS role_aliases (
+      id VARCHAR(50) PRIMARY KEY,
+      jd_id VARCHAR(50) NOT NULL REFERENCES job_descriptions(id) ON DELETE CASCADE,
+      alias VARCHAR(255) NOT NULL,
+      normalized_alias VARCHAR(255) NOT NULL,
+      kind VARCHAR(50) NOT NULL DEFAULT 'include',
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_role_aliases_jd_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_role_aliases_jd_id ON role_aliases (jd_id);`,
+  },
+  {
+    name: 'idx_role_aliases_normalized',
+    sql: `CREATE INDEX IF NOT EXISTS idx_role_aliases_normalized ON role_aliases (normalized_alias);`,
+  },
+  {
+    name: 'tbl_role_exclusions',
+    sql: `CREATE TABLE IF NOT EXISTS role_exclusions (
+      id VARCHAR(50) PRIMARY KEY,
+      jd_id VARCHAR(50) REFERENCES job_descriptions(id) ON DELETE CASCADE,
+      term VARCHAR(255) NOT NULL,
+      normalized_term VARCHAR(255) NOT NULL,
+      reason VARCHAR(255),
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_role_exclusions_normalized',
+    sql: `CREATE INDEX IF NOT EXISTS idx_role_exclusions_normalized ON role_exclusions (normalized_term);`,
+  },
+  {
+    name: 'tbl_parsed_resumes',
+    sql: `CREATE TABLE IF NOT EXISTS parsed_resumes (
+      id VARCHAR(50) PRIMARY KEY,
+      candidate_id VARCHAR(50) NOT NULL UNIQUE REFERENCES candidates(id) ON DELETE CASCADE,
+      file_meta_id VARCHAR(50),
+      file_hash VARCHAR(100),
+      parser_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+      contact JSONB NOT NULL DEFAULT '{}'::jsonb,
+      education JSONB NOT NULL DEFAULT '[]'::jsonb,
+      experience JSONB NOT NULL DEFAULT '[]'::jsonb,
+      projects JSONB DEFAULT '[]'::jsonb,
+      leadership JSONB DEFAULT '[]'::jsonb,
+      skills JSONB NOT NULL DEFAULT '{}'::jsonb,
+      achievements JSONB DEFAULT '[]'::jsonb,
+      certifications JSONB DEFAULT '[]'::jsonb,
+      languages JSONB DEFAULT '[]'::jsonb,
+      summary TEXT,
+      derived JSONB NOT NULL DEFAULT '{}'::jsonb,
+      meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+      raw_text TEXT,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_parsed_resumes_candidate_id',
+    sql: `CREATE INDEX IF NOT EXISTS idx_parsed_resumes_candidate_id ON parsed_resumes (candidate_id);`,
+  },
+  {
+    name: 'idx_parsed_resumes_file_hash',
+    sql: `CREATE INDEX IF NOT EXISTS idx_parsed_resumes_file_hash ON parsed_resumes (file_hash);`,
+  },
+  {
+    name: 'tbl_match_scores',
+    sql: `CREATE TABLE IF NOT EXISTS match_scores (
+      id VARCHAR(50) PRIMARY KEY,
+      candidate_id VARCHAR(50) NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      jd_id VARCHAR(50) NOT NULL REFERENCES job_descriptions(id) ON DELETE CASCADE,
+      jd_version_id VARCHAR(50) NOT NULL REFERENCES job_description_versions(id) ON DELETE CASCADE,
+      parser_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+      scorer_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+      overall DOUBLE PRECISION NOT NULL,
+      rating_out_of_10 DOUBLE PRECISION NOT NULL,
+      band VARCHAR(50) NOT NULL,
+      sub_scores JSONB NOT NULL DEFAULT '{}'::jsonb,
+      matched_requirements JSONB NOT NULL DEFAULT '[]'::jsonb,
+      missing_must_haves JSONB NOT NULL DEFAULT '[]'::jsonb,
+      flags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      explanation TEXT,
+      is_primary BOOLEAN NOT NULL DEFAULT false,
+      computed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      CONSTRAINT uq_match_score_cand_jd_ver UNIQUE (candidate_id, jd_id, jd_version_id)
+    );`,
+  },
+  {
+    name: 'idx_match_scores_candidate_primary',
+    sql: `CREATE INDEX IF NOT EXISTS idx_match_scores_candidate_primary ON match_scores (candidate_id, is_primary);`,
+  },
+  {
+    name: 'idx_match_scores_jd_overall',
+    sql: `CREATE INDEX IF NOT EXISTS idx_match_scores_jd_overall ON match_scores (jd_id, overall DESC);`,
+  },
+  {
+    name: 'idx_match_scores_band',
+    sql: `CREATE INDEX IF NOT EXISTS idx_match_scores_band ON match_scores (band);`,
+  },
+  {
+    name: 'tbl_resume_parse_jobs',
+    sql: `CREATE TABLE IF NOT EXISTS resume_parse_jobs (
+      id VARCHAR(50) PRIMARY KEY,
+      candidate_id VARCHAR(50) NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      file_meta_id VARCHAR(50),
+      idempotency_key VARCHAR(120) UNIQUE,
+      status VARCHAR(50) NOT NULL DEFAULT 'QUEUED',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 3,
+      last_error TEXT,
+      duration_ms INTEGER,
+      started_at TIMESTAMP WITH TIME ZONE,
+      completed_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_resume_parse_jobs_status_created',
+    sql: `CREATE INDEX IF NOT EXISTS idx_resume_parse_jobs_status_created ON resume_parse_jobs (status, created_at);`,
+  },
+  {
+    name: 'idx_resume_parse_jobs_candidate',
+    sql: `CREATE INDEX IF NOT EXISTS idx_resume_parse_jobs_candidate ON resume_parse_jobs (candidate_id);`,
+  },
+  {
+    name: 'tbl_skills_taxonomies',
+    sql: `CREATE TABLE IF NOT EXISTS skills_taxonomies (
+      id VARCHAR(50) PRIMARY KEY,
+      category VARCHAR(100) NOT NULL,
+      term VARCHAR(255) NOT NULL,
+      normalized_term VARCHAR(255) NOT NULL,
+      synonyms JSONB NOT NULL DEFAULT '[]'::jsonb,
+      weight DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );`,
+  },
+  {
+    name: 'idx_skills_taxonomies_category',
+    sql: `CREATE INDEX IF NOT EXISTS idx_skills_taxonomies_category ON skills_taxonomies (category);`,
+  },
+  {
+    name: 'idx_skills_taxonomies_normalized',
+    sql: `CREATE INDEX IF NOT EXISTS idx_skills_taxonomies_normalized ON skills_taxonomies (normalized_term);`,
+  },
 ];
 
 // Post-index: run ANALYZE so the PostgreSQL query planner picks up new stats
@@ -566,6 +757,14 @@ const analyzeStatements = [
   'ANALYZE api_keys',
   'ANALYZE api_key_usage_daily',
   'ANALYZE api_key_audit_events',
+  'ANALYZE job_descriptions',
+  'ANALYZE job_description_versions',
+  'ANALYZE role_aliases',
+  'ANALYZE role_exclusions',
+  'ANALYZE parsed_resumes',
+  'ANALYZE match_scores',
+  'ANALYZE resume_parse_jobs',
+  'ANALYZE skills_taxonomies',
 ];
 
 
