@@ -55,6 +55,15 @@ function checkDirectory(dir) {
 }
 
 const srcDir = path.resolve(__dirname, '../src');
+const versionPath = path.join(srcDir, 'version.json');
+if (!fs.existsSync(versionPath)) {
+  try {
+    require('./generate-version');
+  } catch (e) {
+    fs.writeFileSync(versionPath, JSON.stringify({ commit: 'unknown', deployedAt: new Date().toISOString() }), 'utf8');
+  }
+}
+
 console.log(`[CheckSyntax] Validating JS syntax in ${srcDir}...`);
 const totalErrors = checkDirectory(srcDir);
 
