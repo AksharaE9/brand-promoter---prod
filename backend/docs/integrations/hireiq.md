@@ -5,7 +5,7 @@
 **Authentication Header:** `x-api-key: <key>` *(case-insensitive header)* or `Authorization: Bearer <key>`  
 **Timezone Standard:** All dates and times are in **Indian Standard Time (IST, UTC+05:30)**  
 **Protocol Requirement:** HTTPS only (plain HTTP is rejected)  
-**Access Model:** Scoped, read-only, non-expiring/renewable token bucket (60 requests/minute)
+**Access Model:** Scoped, read-only, non-expiring token bucket (60 requests/minute)
 
 ---
 
@@ -60,7 +60,7 @@ curl -s "https://brandpromoter-backend.onrender.com/api/v1/ext/me" \
     ],
     "environment": "live",
     "rateLimitPerMinute": 60,
-    "expiresAt": "2027-01-26T08:00:00.000Z"
+    "expiresAt": null
   },
   "meta": {
     "requestId": "req_be_7fa83d2..."
