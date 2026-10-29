@@ -15,6 +15,7 @@ import { validateUploadFile } from '../lib/fileValidation';
 import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 import ResumeAnalysisTab from '../components/Candidate/ResumeAnalysisTab';
 import MatchScoreChip from '../components/Candidate/MatchScoreChip';
+import SectionErrorBoundary from '../components/SectionErrorBoundary';
 
 /** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
 function resolveResumeAction(candidate) {
@@ -595,10 +596,11 @@ const CandidateProfile = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <Reveal>
-                <div className="os-card p-6 flex flex-wrap items-start gap-6 relative overflow-hidden bg-gradient-to-br from-white to-[#f8fafc]">
-                  <div className="absolute top-0 right-0 p-4 opacity-40 pointer-events-none">
-                    <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">REF: {candidate.id.slice(-8)}</div>
-                  </div>
+                <SectionErrorBoundary sectionName="Profile Header" candidateId={candidate.id} onRetry={() => loadAll(false)}>
+                  <div className="os-card p-6 flex flex-wrap items-start gap-6 relative overflow-hidden bg-gradient-to-br from-white to-[#f8fafc]">
+                    <div className="absolute top-0 right-0 p-4 opacity-40 pointer-events-none">
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-slate-400">REF: {candidate.id.slice(-8)}</div>
+                    </div>
                   <div className="relative group">
                     {candidate.profilePhotoFile?.storageKey ? (
                       <img className="w-28 h-28 rounded-3xl object-cover shadow-xl border-4 border-white" src={candidate.profilePhotoFile.storageKey} alt={candidate.fullName} />
@@ -731,40 +733,45 @@ const CandidateProfile = () => {
                     )}
                   </div>
                 </div>
-              </Reveal>
+              </SectionErrorBoundary>
+            </Reveal>
               
               {/* Resume Parsing & Deterministic JD Match Engine */}
               <Reveal delay={0.03}>
-                <ResumeAnalysisTab candidate={candidate} onContactAccepted={() => loadAll(false)} />
+                <SectionErrorBoundary sectionName="Resume Analysis" candidateId={candidate.id} onRetry={() => loadAll(false)}>
+                  <ResumeAnalysisTab candidate={candidate} onContactAccepted={() => loadAll(false)} />
+                </SectionErrorBoundary>
               </Reveal>
 
               <Reveal delay={0.05}>
-                <div className="os-card p-6">
-                  <h2 className="text-xl font-bold font-[Manrope] mb-6 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-blue-600">assessment</span>
-                    Technical Assessments & Feedback
-                  </h2>
-                  <div className="space-y-6">
-                    {interviews.length === 0 ? (
-                      <div className="py-12 text-center bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">
-                        <span className="material-symbols-outlined text-4xl text-slate-300">history_edu</span>
-                        <p className="text-sm text-slate-400 mt-2">No assigned interview feedback yet.</p>
-                      </div>
-                    ) : (
-                      interviews.map((iv, idx) => (
-                        <InterviewItem 
-                          key={iv.id} 
-                          iv={iv} 
-                          idx={idx} 
-                          onUpdateLinks={handleUpdateLinks} 
-                          onUploadRecording={handleUploadRecording} 
-                          navigate={navigate}
-                          currentUser={currentUser}
-                        />
-                      ))
-                    )}
+                <SectionErrorBoundary sectionName="Technical Assessments" candidateId={candidate.id} onRetry={() => loadAll(false)}>
+                  <div className="os-card p-6">
+                    <h2 className="text-xl font-bold font-[Manrope] mb-6 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-blue-600">assessment</span>
+                      Technical Assessments & Feedback
+                    </h2>
+                    <div className="space-y-6">
+                      {interviews.length === 0 ? (
+                        <div className="py-12 text-center bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200">
+                          <span className="material-symbols-outlined text-4xl text-slate-300">history_edu</span>
+                          <p className="text-sm text-slate-400 mt-2">No assigned interview feedback yet.</p>
+                        </div>
+                      ) : (
+                        interviews.map((iv, idx) => (
+                          <InterviewItem 
+                            key={iv.id} 
+                            iv={iv} 
+                            idx={idx} 
+                            onUpdateLinks={handleUpdateLinks} 
+                            onUploadRecording={handleUploadRecording} 
+                            navigate={navigate}
+                            currentUser={currentUser}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
-                </div>
+                </SectionErrorBoundary>
               </Reveal>
             </div>
 
@@ -795,7 +802,8 @@ const CandidateProfile = () => {
                </Reveal>
 
                <Reveal delay={0.15}>
-                 <div className="os-card p-5">
+                 <SectionErrorBoundary sectionName="Documentation" candidateId={candidate.id} onRetry={() => loadAll(false)}>
+                   <div className="os-card p-5">
                    <h3 className="text-xs uppercase tracking-[.14em] font-bold mb-4 text-[#76839f]">Documentation</h3>
                    {resumeAction ? (
                      <div className="space-y-2">
@@ -832,6 +840,7 @@ const CandidateProfile = () => {
                      </label>
                    )}
                  </div>
+                 </SectionErrorBoundary>
                </Reveal>
             </div>
           </div>

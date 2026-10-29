@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { apiGet, apiPost } from '../../lib/api';
+import { renderItemText } from './MatchScoreChip';
 
 const BAND_COLORS = {
   Strong: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800' },
@@ -311,20 +312,29 @@ export default function ResumeAnalysisTab({ candidate, onContactAccepted }) {
             <p className="text-xs text-slate-400 py-3">No direct keywords matched in resume text.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {primaryScore.matchedRequirements.map((m, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setActiveEvidence(activeEvidence?.skill === m.skill ? null : m)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
-                    activeEvidence?.skill === m.skill
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                  }`}
-                >
-                  {m.skill}
-                  <span className="text-[10px] opacity-75 ml-1">({m.category})</span>
-                </button>
-              ))}
+              {primaryScore.matchedRequirements.map((m, idx) => {
+                const label = renderItemText(m, primaryScore?.id);
+                if (!label) return null;
+                const skillKey = (typeof m === 'object' && (m.skill || m.label)) || label;
+                const category = (typeof m === 'object' && m.category) ? m.category : 'Skill';
+                const isSelected = activeEvidence && ((activeEvidence.skill || activeEvidence.label) === skillKey);
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveEvidence(isSelected ? null : (typeof m === 'object' ? m : { skill: label, label, category }))}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${
+                      isSelected
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
+                    {label}
+                    <span className="text-[10px] opacity-75 ml-1">({category})</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -332,11 +342,13 @@ export default function ResumeAnalysisTab({ candidate, onContactAccepted }) {
           {activeEvidence && (
             <div className="mt-4 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-900">
               <div className="font-bold mb-1 flex items-center justify-between">
-                <span>Resume Quote for "{activeEvidence.skill}":</span>
-                <span className="text-[10px] uppercase font-semibold text-emerald-700">{activeEvidence.strength} match</span>
+                <span>Resume Quote for "{renderItemText(activeEvidence, primaryScore?.id)}":</span>
+                <span className="text-[10px] uppercase font-semibold text-emerald-700">
+                  {typeof activeEvidence === 'object' && activeEvidence.strength ? `${activeEvidence.strength} match` : 'match'}
+                </span>
               </div>
               <p className="italic bg-white p-2 rounded-lg border border-emerald-100">
-                "{activeEvidence.evidence || 'Mentioned in resume profile'}"
+                "{((typeof activeEvidence === 'object' && activeEvidence.evidence) || 'Mentioned in resume profile')}"
               </p>
             </div>
           )}
@@ -356,26 +368,35 @@ export default function ResumeAnalysisTab({ candidate, onContactAccepted }) {
             </div>
           ) : (
             <div className="space-y-2">
-              {primaryScore.missingMustHaves.map((m, idx) => (
-                <div key={idx} className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
-                  <span className="font-semibold">{m.skill}</span>
-                  <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-md font-bold uppercase">
-                    {m.category}
-                  </span>
-                </div>
-              ))}
+              {primaryScore.missingMustHaves.map((m, idx) => {
+                const label = renderItemText(m, primaryScore?.id);
+                if (!label) return null;
+                const category = (typeof m === 'object' && m.category) ? m.category : 'Must-Have';
+                return (
+                  <div key={idx} className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-900">
+                    <span className="font-semibold">{label}</span>
+                    <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-md font-bold uppercase">
+                      {category}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
           {primaryScore?.flags && primaryScore.flags.length > 0 && (
             <div className="mt-4 pt-3 border-t border-slate-100">
               <div className="text-[10px] uppercase font-bold tracking-wider text-rose-500 mb-2">Resume Alerts</div>
-              {primaryScore.flags.map((flag, idx) => (
-                <div key={idx} className="text-xs text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-100 mb-1 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-sm">flag</span>
-                  {flag}
-                </div>
-              ))}
+              {primaryScore.flags.map((flag, idx) => {
+                const flagText = renderItemText(flag, primaryScore?.id) || (typeof flag === 'object' ? (flag.label || flag.code || '') : String(flag));
+                if (!flagText) return null;
+                return (
+                  <div key={idx} className="text-xs text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-100 mb-1 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm">flag</span>
+                    {flagText}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

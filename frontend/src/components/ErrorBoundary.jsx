@@ -1,4 +1,5 @@
 import React from 'react';
+import { buildApiUrl } from '../lib/api';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -18,16 +19,22 @@ class ErrorBoundary extends React.Component {
 
     try {
       if (typeof window !== 'undefined' && window.fetch) {
-        fetch('/api/client-errors', {
+        const errorMsg = error?.message || String(error);
+        const route = window.location.pathname;
+        const dedupeKey = `ce_dedupe_${route}_${errorMsg.slice(0, 50)}`;
+        if (sessionStorage.getItem(dedupeKey)) return;
+        sessionStorage.setItem(dedupeKey, '1');
+
+        fetch(buildApiUrl('/client-errors'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             level: 'error',
-            message: error?.message || String(error),
+            message: errorMsg,
             stack: error?.stack || null,
             componentStack: errorInfo?.componentStack || null,
-            route: window.location.pathname,
-            buildHash: import.meta.env.VITE_BUILD_HASH || 'dev',
+            route,
+            build: import.meta.env.VITE_BUILD_HASH || 'dev',
             buildTime: import.meta.env.VITE_BUILD_TIME || null,
             timestamp: new Date().toISOString(),
           }),

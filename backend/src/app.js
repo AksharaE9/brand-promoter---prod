@@ -290,6 +290,9 @@ app.use('/api/v1/ext', require('./modules/ext/routes'));
 // ── Integrations: Recruit AI / HireIQ (v1) ─────────────────────────────────
 app.use('/api/v1/integrations/recruit-ai', require('./modules/integrations/recruit-ai/routes'));
 
+// ── Client Error Reporting ──────────────────────────────────────────────────
+app.use('/api/client-errors', require('./modules/clientErrors/routes'));
+
 app.use(notFound);
 app.use(errorHandler);
 

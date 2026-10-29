@@ -213,7 +213,8 @@ function attachMatchScoreToCandidate(c) {
   if (primaryScore) {
     state = 'SCORED';
   } else if (latestJob && (latestJob.status === 'RUNNING' || latestJob.status === 'QUEUED')) {
-    state = 'QUEUED';
+    const isStuck = latestJob.createdAt && (Date.now() - new Date(latestJob.createdAt).getTime() > 10 * 60 * 1000);
+    state = isStuck ? 'FAILED' : 'QUEUED';
   } else if (latestJob && latestJob.status === 'FAILED') {
     state = 'FAILED';
   } else if (latestJob && latestJob.status === 'UNSUPPORTED_FORMAT') {
@@ -221,7 +222,16 @@ function attachMatchScoreToCandidate(c) {
   } else if (!hasResume) {
     state = 'NO_RESUME';
   } else {
-    state = 'QUEUED';
+    state = 'NO_JD';
+  }
+
+  function extractItemLabel(item) {
+    if (!item) return '';
+    if (typeof item === 'string') return item.trim();
+    if (typeof item === 'object') {
+      return String(item.label || item.skill || item.requirement || item.title || '').trim();
+    }
+    return String(item).trim();
   }
 
   const matchScore = primaryScore ? {
@@ -231,8 +241,12 @@ function attachMatchScoreToCandidate(c) {
     state: 'SCORED',
     betterFitRole: betterFitRole?.title || null,
     jdTitle: primaryScore.jobDescription?.title || null,
-    topStrengths: Array.isArray(primaryScore.matchedRequirements) ? primaryScore.matchedRequirements.slice(0, 3) : [],
-    topMissing: Array.isArray(primaryScore.missingMustHaves) ? primaryScore.missingMustHaves.slice(0, 2) : [],
+    topStrengths: Array.isArray(primaryScore.matchedRequirements)
+      ? primaryScore.matchedRequirements.map(extractItemLabel).filter(Boolean).slice(0, 3)
+      : [],
+    topMissing: Array.isArray(primaryScore.missingMustHaves)
+      ? primaryScore.missingMustHaves.map(extractItemLabel).filter(Boolean).slice(0, 2)
+      : [],
   } : (state === 'NO_JD' ? null : {
     rating10: null,
     score100: null,

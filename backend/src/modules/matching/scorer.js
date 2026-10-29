@@ -45,6 +45,9 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
   const missingMustHaves = [];
 
   const rawTextLower = (parsedResume.rawText || '').toLowerCase();
+  if (rawTextLower.trim().length < 50) {
+    flags.push({ code: 'LOW_TEXT_PARSE', label: 'Insufficient readable text in resume' });
+  }
   const summaryLower = (parsedResume.summary || '').toLowerCase();
   const expLower = Array.isArray(parsedResume.experience)
     ? parsedResume.experience.map(e => (e.bullets || []).join(' ') + ' ' + (e.title || '')).join(' ').toLowerCase()
@@ -148,6 +151,7 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
       evidenceSnippet = `Demonstrated in practical experience / leadership`;
       matchedMustCount++;
       matchedRequirements.push({
+        label: skillName,
         skill: skillName,
         category,
         evidence: evidenceSnippet,
@@ -158,6 +162,7 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
       evidenceSnippet = `Found in skills profile / resume text`;
       matchedMustCount++;
       matchedRequirements.push({
+        label: skillName,
         skill: skillName,
         category,
         evidence: evidenceSnippet,
@@ -165,8 +170,11 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
       });
     } else {
       missingMustHaves.push({
+        label: skillName,
         skill: skillName,
-        category
+        category,
+        evidence: '',
+        strength: 'medium'
       });
     }
   }
@@ -178,6 +186,7 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
     if (expLower.includes(skillNorm) || leadLower.includes(skillNorm)) {
       matchedNiceCount++;
       matchedRequirements.push({
+        label: skillName,
         skill: skillName,
         category,
         evidence: `Demonstrated in practical experience`,
@@ -186,6 +195,7 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
     } else if (skillsList.some(s => s.toLowerCase().includes(skillNorm)) || rawTextLower.includes(skillNorm)) {
       matchedNiceCount++;
       matchedRequirements.push({
+        label: skillName,
         skill: skillName,
         category,
         evidence: `Listed in skills section`,

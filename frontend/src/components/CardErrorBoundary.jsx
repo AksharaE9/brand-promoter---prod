@@ -1,4 +1,5 @@
 import React from 'react';
+import { buildApiUrl } from '../lib/api';
 
 /**
  * CardErrorBoundary — Scoped error boundary for individual list cards.
@@ -17,19 +18,25 @@ export default class CardErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error(`[CardErrorBoundary] Error in ${this.props.resourceName || 'card'}:`, error, errorInfo);
     
-    // Automatic telemetry
+    // Automatic telemetry with deduplication
     try {
       if (typeof window !== 'undefined' && window.fetch) {
-        fetch('/api/client-errors', {
+        const errorMsg = error?.message || String(error);
+        const route = window.location.pathname;
+        const dedupeKey = `ce_dedupe_${route}_${errorMsg.slice(0, 50)}`;
+        if (sessionStorage.getItem(dedupeKey)) return;
+        sessionStorage.setItem(dedupeKey, '1');
+
+        fetch(buildApiUrl('/client-errors'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             level: 'warn',
             type: 'CardRenderError',
-            message: error?.message || String(error),
+            message: errorMsg,
             componentStack: errorInfo?.componentStack || null,
-            route: window.location.pathname,
-            buildHash: import.meta.env.VITE_BUILD_HASH || 'dev',
+            route,
+            build: import.meta.env.VITE_BUILD_HASH || 'dev',
             timestamp: new Date().toISOString(),
           }),
         }).catch(() => {});

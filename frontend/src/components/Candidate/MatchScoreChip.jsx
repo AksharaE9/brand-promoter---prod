@@ -39,18 +39,60 @@ const BAND_CONFIG = {
   }
 };
 
+const warnedScoreIds = new Set();
+
 /**
- * Shared MatchScoreChip Component
- *
- * @param {object} props
- * @param {object} [props.matchScore] - The match score object { rating10, score100, band, state, betterFitRole, jdTitle, topStrengths, topMissing }
- * @param {string} [props.candidateId] - Candidate ID
- * @param {boolean} [props.compact=false] - Render compact variant for tables / lists
- * @param {boolean} [props.isAdmin=false] - Whether current user is admin (shows retry on FAILED, unmapped hint)
- * @param {function} [props.onRetry] - Callback when retry is clicked
- * @param {string} [props.className=''] - Extra classes
+ * Defensive item text renderer.
+ * Returns a string for: a string, {label}, {skill}, {requirement}, a number, or null.
+ * Anything else -> '', plus a console.warn with the score ID once.
  */
-export default function MatchScoreChip({
+export function renderItemText(item, scoreId = null) {
+  if (item == null) return '';
+  if (typeof item === 'string') return item.trim();
+  if (typeof item === 'number') return String(item);
+  if (typeof item === 'object') {
+    if (typeof item.label === 'string' && item.label) return item.label.trim();
+    if (typeof item.skill === 'string' && item.skill) return item.skill.trim();
+    if (typeof item.requirement === 'string' && item.requirement) return item.requirement.trim();
+    if (typeof item.name === 'string' && item.name) return item.name.trim();
+    if (typeof item.text === 'string' && item.text) return item.text.trim();
+    if (typeof item.code === 'string' && item.code) return item.code.trim();
+  }
+  const warnKey = `${scoreId || 'unknown'}:${typeof item}`;
+  if (!warnedScoreIds.has(warnKey)) {
+    warnedScoreIds.add(warnKey);
+    console.warn(`[renderItemText] Unhandled item shape for score ${scoreId || 'N/A'}:`, item);
+  }
+  return '';
+}
+
+/**
+ * Tiny boundary that ensures an unexpected chip render error only hides the chip,
+ * not the surrounding card or page.
+ */
+class ChipErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err) {
+    console.warn('[ChipErrorBoundary] Suppressed MatchScoreChip error:', err);
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div className={`match-score-spacer h-[22px] ${this.props.className || ''}`} aria-hidden="true" />;
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Internal MatchScoreChip component implementation
+ */
+function MatchScoreChipInner({
   matchScore,
   candidateId,
   compact = false,
@@ -67,6 +109,7 @@ export default function MatchScoreChip({
   }
 
   const {
+    id: scoreId,
     state = 'NO_JD',
     rating10,
     score100,
@@ -100,9 +143,22 @@ export default function MatchScoreChip({
   // State: QUEUED / PARSING
   if (state === 'QUEUED' || state === 'PARSING') {
     return (
-      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 animate-pulse ${className}`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-medium bg-blue-50 text-[#1f52cc] border border-blue-100 animate-pulse ${className}`}>
+        <span className="material-symbols-outlined text-[11px] animate-spin">sync</span>
         <span>Scoring…</span>
+      </div>
+    );
+  }
+
+  // State: UNSUPPORTED_FORMAT
+  if (state === 'UNSUPPORTED_FORMAT') {
+    return (
+      <div
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 cursor-help ${className}`}
+        title="Resume format could not be parsed for automated matching (e.g. image-only or corrupt file)."
+      >
+        <span className="material-symbols-outlined text-[11px] text-slate-400">description</span>
+        <span>Resume unreadable</span>
       </div>
     );
   }
@@ -110,14 +166,17 @@ export default function MatchScoreChip({
   // State: FAILED
   if (state === 'FAILED') {
     return (
-      <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 ${className}`}>
-        <span className="material-symbols-outlined text-[12px] text-rose-500">error</span>
-        <span>Couldn't read resume</span>
+      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-semibold bg-rose-50 text-rose-600 border border-rose-200 ${className}`}>
+        <span className="material-symbols-outlined text-[11px] text-rose-500">error_outline</span>
+        <span>Scoring failed</span>
         {isAdmin && onRetry && (
           <button
-            onClick={(e) => { e.stopPropagation(); onRetry(); }}
-            className="ml-1 text-[9px] font-bold text-blue-600 hover:underline cursor-pointer"
-            title="Retry resume scoring"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry();
+            }}
+            className="ml-1 text-[9px] font-bold underline hover:text-rose-800"
           >
             Retry
           </button>
@@ -126,67 +185,50 @@ export default function MatchScoreChip({
     );
   }
 
-  // State: NO_RESUME
-  if (state === 'NO_RESUME') {
-    return (
-      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-50 text-slate-400 border border-slate-200/60 ${className}`}>
-        <span className="material-symbols-outlined text-[12px] text-slate-400">description</span>
-        <span>No resume</span>
-      </div>
-    );
-  }
-
-  // State: UNSUPPORTED_FILE
-  if (state === 'UNSUPPORTED_FILE') {
-    return (
-      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-50 text-slate-500 border border-slate-200/60 ${className}`}>
-        <span className="material-symbols-outlined text-[12px] text-amber-500">folder_zip</span>
-        <span>Resume not readable</span>
-      </div>
-    );
-  }
-
   // State: SCORED
   if (state === 'SCORED') {
     const config = BAND_CONFIG[band] || BAND_CONFIG.Weak;
-    // Explicitly format rating10, correctly rendering 0.0
-    const ratingDisplay = rating10 !== null && rating10 !== undefined ? Number(rating10).toFixed(1) : '—';
-    const score100Display = score100 !== null && score100 !== undefined ? Math.round(Number(score100)) : '—';
+    const ratingDisplay = typeof rating10 === 'number' ? rating10.toFixed(1) : (rating10 || '--');
+    const score100Display = typeof score100 === 'number' ? Math.round(score100) : (score100 || '--');
 
     return (
-      <div className="relative inline-flex items-center gap-1.5 flex-wrap">
-        <div
+      <div
+        className="relative inline-block"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <button
+          type="button"
           onClick={handleClick}
-          onMouseEnter={() => setShowTooltip(true)}
-          onMouseLeave={() => setShowTooltip(false)}
-          className={`group inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-[11px] font-bold tracking-tight cursor-pointer transition-all hover:shadow-sm select-none ${config.bg} ${config.border} ${config.text} ${className}`}
-          role="button"
-          tabIndex={0}
-          aria-label={`Match score: ${ratingDisplay} out of 10, ${config.label}`}
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer select-none ${config.bg} ${config.border} ${config.text} hover:shadow-xs hover:brightness-95 ${className}`}
+          title="Click to view detailed JD match analysis"
+          aria-label={`Match rating: ${ratingDisplay}/10 (${config.label})`}
         >
-          <span className="text-[12px] text-amber-500 font-bold leading-none">★</span>
-          <span>{ratingDisplay}/10</span>
-          <span className="text-[10px] font-medium opacity-80">· {config.label}</span>
-          <span className="material-symbols-outlined text-[12px] opacity-0 group-hover:opacity-100 transition-opacity ml-0.5">
-            open_in_new
-          </span>
-        </div>
+          <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+          <span className="font-extrabold">{ratingDisplay}</span>
+          <span className="text-[9px] opacity-75">/10</span>
+          {!compact && (
+            <span className="ml-0.5 font-semibold text-[9px] uppercase tracking-wide opacity-90">
+              · {band}
+            </span>
+          )}
+          {betterFitRole && (
+            <span
+              className="material-symbols-outlined text-[11px] text-indigo-500 ml-0.5"
+              title={`Stronger match found for ${betterFitRole}`}
+            >
+              swap_horiz
+            </span>
+          )}
+        </button>
 
-        {/* Better fit badge if another role scored >= 1.0 higher */}
-        {betterFitRole && (
-          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
-            <span className="material-symbols-outlined text-[10px] text-purple-600">swap_calls</span>
-            Better fit: {betterFitRole}
-          </span>
-        )}
-
-        {/* Detailed Tooltip on Hover */}
+        {/* Hover Tooltip Breakdown */}
         {showTooltip && (
           <div
-            className="absolute bottom-full left-0 mb-2 z-50 w-72 p-3 bg-slate-900 text-white rounded-xl shadow-xl text-left pointer-events-none animate-in fade-in zoom-in-95 duration-150"
-            style={{ fontSize: '11px', lineHeight: '1.4' }}
+            className="absolute left-0 bottom-full mb-1.5 z-50 w-64 p-3 bg-slate-900 text-white rounded-xl shadow-xl border border-slate-700 text-xs pointer-events-none animate-in fade-in duration-150"
+            role="tooltip"
           >
-            <div className="flex items-center justify-between pb-1.5 border-b border-slate-700">
+            <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
               <span className="font-bold text-white flex items-center gap-1">
                 <span className="text-amber-400">★</span> Score: {score100Display}/100 ({ratingDisplay}/10)
               </span>
@@ -201,30 +243,38 @@ export default function MatchScoreChip({
               </div>
             )}
 
-            {topStrengths.length > 0 && (
+            {Array.isArray(topStrengths) && topStrengths.length > 0 && (
               <div className="mt-2">
                 <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">Matched Strengths</div>
                 <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-200">
-                  {topStrengths.map((s, idx) => (
-                    <li key={idx} className="flex items-start gap-1">
-                      <span className="text-emerald-400 font-bold leading-none">•</span>
-                      <span className="truncate">{s}</span>
-                    </li>
-                  ))}
+                  {topStrengths.map((s, idx) => {
+                    const text = renderItemText(s, scoreId);
+                    if (!text) return null;
+                    return (
+                      <li key={idx} className="flex items-start gap-1">
+                        <span className="text-emerald-400 font-bold leading-none">•</span>
+                        <span className="truncate">{text}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
 
-            {topMissing.length > 0 && (
+            {Array.isArray(topMissing) && topMissing.length > 0 && (
               <div className="mt-1.5">
                 <div className="text-[9px] font-bold uppercase tracking-wider text-rose-400">Missing Key Areas</div>
                 <ul className="mt-0.5 space-y-0.5 text-[10px] text-slate-200">
-                  {topMissing.map((m, idx) => (
-                    <li key={idx} className="flex items-start gap-1">
-                      <span className="text-rose-400 font-bold leading-none">•</span>
-                      <span className="truncate">{m}</span>
-                    </li>
-                  ))}
+                  {topMissing.map((m, idx) => {
+                    const text = renderItemText(m, scoreId);
+                    if (!text) return null;
+                    return (
+                      <li key={idx} className="flex items-start gap-1">
+                        <span className="text-rose-400 font-bold leading-none">•</span>
+                        <span className="truncate">{text}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -239,4 +289,15 @@ export default function MatchScoreChip({
   }
 
   return null;
+}
+
+/**
+ * Shared MatchScoreChip Component wrapped in defensive ChipErrorBoundary
+ */
+export default function MatchScoreChip(props) {
+  return (
+    <ChipErrorBoundary className={props.className}>
+      <MatchScoreChipInner {...props} />
+    </ChipErrorBoundary>
+  );
 }

@@ -1,17 +1,17 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { CardSkeleton } from './Skeleton';
 import CardErrorBoundary from './CardErrorBoundary';
 
 /**
  * PaginatedListView — The definitive shared presentation component for all list views.
  *
- * Enforces:
- * 1. Honest Skeletons: renders skeletons matching the expected initial page size (e.g. 50).
- * 2. Honest Progress: displays "Showing X of Y" only when count is known.
- * 3. Smooth Sentinel Prefetch: triggers fetchNextPage() when user scrolls within 400px of bottom.
- * 4. Inline Loading More indicator at the list foot that doesn't unmount or freeze existing cards.
- * 5. Clean Empty State with "Clear Filters" button when active.
- * 6. Scoped Card Error Boundaries to limit blast radius of corrupted records.
+ * Implements deterministic chunk-loading:
+ * 1. Callback ref for sentinel (disconnects on unmount, attaches on node mount).
+ * 2. Latest-value refs for observer callback to eliminate stale closure bugs.
+ * 3. Dynamic root detection (.os-content container with null/window fallback).
+ * 4. Fill-viewport check after layout settles, on fetch resolution, on resize.
+ * 5. Accessible fallback "Load more" button when hasNextPage is true.
+ * 6. Scoped CardErrorBoundary per card.
  */
 export default function PaginatedListView({
   items = [],
@@ -31,51 +31,120 @@ export default function PaginatedListView({
   gridClassName = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500',
   customEmpty = null,
 }) {
-  const sentinelRef = useRef(null);
+  const observerRef = useRef(null);
+  const sentinelNodeRef = useRef(null);
 
-  // Sentinel Intersection Observer with 800px rootMargin and actual scroll container
+  // Latest props ref to guarantee intersection callback always sees latest state
+  const latestPropsRef = useRef({ hasNextPage, isFetchingNextPage, fetchNextPage });
   useEffect(() => {
-    if (!sentinelRef.current || !hasNextPage || isFetchingNextPage || !fetchNextPage) {
-      return;
+    latestPropsRef.current = { hasNextPage, isFetchingNextPage, fetchNextPage };
+  });
+
+  // Re-check whether sentinel is visible in the viewport / scroll container
+  const checkSentinelVisibilityAndFetch = useCallback(() => {
+    const { hasNextPage: hasNext, isFetchingNextPage: isFetching, fetchNextPage: fetchNext } = latestPropsRef.current;
+    if (!hasNext || isFetching || typeof fetchNext !== 'function') return;
+
+    const sentinel = sentinelNodeRef.current;
+    if (!sentinel) return;
+
+    const scrollContainer = document.querySelector('.os-content');
+    let isVisible = false;
+
+    if (scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const sentinelRect = sentinel.getBoundingClientRect();
+      isVisible = sentinelRect.top <= containerRect.bottom + 800 && sentinelRect.bottom >= containerRect.top - 200;
+    } else {
+      const sentinelRect = sentinel.getBoundingClientRect();
+      const windowHeight = window.innerHeight || document.documentElement.clientHeight || 800;
+      isVisible = sentinelRect.top <= windowHeight + 800 && sentinelRect.bottom >= -200;
     }
+
+    if (isVisible) {
+      fetchNext();
+    }
+  }, []);
+
+  // Callback ref for the sentinel DOM node: guarantees observer is bound whenever node enters DOM
+  const sentinelCallbackRef = useCallback((node) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    sentinelNodeRef.current = node;
+
+    if (!node) return;
 
     const scrollContainer = document.querySelector('.os-content') || null;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          const { hasNextPage: hasNext, isFetchingNextPage: isFetching, fetchNextPage: fetchNext } = latestPropsRef.current;
+          if (hasNext && !isFetching && typeof fetchNext === 'function') {
+            fetchNext();
+          }
         }
       },
       {
         root: scrollContainer,
-        rootMargin: '800px', // Prefetch when within 800px of bottom
+        rootMargin: '800px', // Pre-fetch buffer
         threshold: 0.01,
       }
     );
 
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    observer.observe(node);
+    observerRef.current = observer;
 
-  // Immediate fill check: if sentinel is already in view on mount or chunk load, fetch next chunk
+    // Immediate check right after observer attaches
+    requestAnimationFrame(() => {
+      checkSentinelVisibilityAndFetch();
+    });
+  }, [checkSentinelVisibilityAndFetch]);
+
+  // Clean up observer on unmount
   useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && sentinelRef.current && typeof fetchNextPage === 'function') {
-      const scrollContainer = document.querySelector('.os-content');
-      let isVisible = false;
-      if (scrollContainer) {
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const sentinelRect = sentinelRef.current.getBoundingClientRect();
-        isVisible = sentinelRect.top <= containerRect.bottom + 800;
-      } else {
-        const sentinelRect = sentinelRef.current.getBoundingClientRect();
-        isVisible = sentinelRect.top <= (window.innerHeight || document.documentElement.clientHeight) + 800;
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
       }
-      if (isVisible) {
-        fetchNextPage();
-      }
+    };
+  }, []);
+
+  // Re-check visibility after items update, layout settles, or window resizes
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      checkSentinelVisibilityAndFetch();
+    });
+
+    const handleResize = () => {
+      checkSentinelVisibilityAndFetch();
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+
+    // Also observe the scroll container's size if ResizeObserver is available
+    let resizeObserver = null;
+    const scrollContainer = document.querySelector('.os-content');
+    if (scrollContainer && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        checkSentinelVisibilityAndFetch();
+      });
+      resizeObserver.observe(scrollContainer);
     }
-  }, [items.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', handleResize);
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
+    };
+  }, [items.length, hasNextPage, isFetchingNextPage, checkSentinelVisibilityAndFetch]);
 
   // Initial Loading state
   if (isLoading && items.length === 0) {
@@ -128,9 +197,9 @@ export default function PaginatedListView({
       {/* Infinite Scroll Sentinel / Loading More */}
       {hasNextPage && (
         <div
-          ref={sentinelRef}
-          className="h-14 w-full flex items-center justify-center my-6"
-          aria-hidden="true"
+          ref={sentinelCallbackRef}
+          className="h-20 w-full flex flex-col items-center justify-center my-6"
+          aria-hidden="false"
         >
           {isFetchingNextPage ? (
             <div className="flex items-center gap-2 text-xs font-semibold text-[#1f52cc] animate-pulse">
@@ -138,7 +207,18 @@ export default function PaginatedListView({
               Loading more {resourceName}...
             </div>
           ) : (
-            <div className="h-1 w-full" />
+            <button
+              type="button"
+              onClick={() => {
+                if (!isFetchingNextPage && typeof fetchNextPage === 'function') {
+                  fetchNextPage();
+                }
+              }}
+              className="os-btn-outline !h-8 !px-4 text-xs font-bold !border-slate-200 hover:!border-[#1f52cc] hover:!text-[#1f52cc] text-slate-500 rounded-xl"
+              aria-label={`Load more ${resourceName}`}
+            >
+              Load more {resourceName}
+            </button>
           )}
         </div>
       )}

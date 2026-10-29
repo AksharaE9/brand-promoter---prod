@@ -277,6 +277,21 @@ async function executeJob(jobId) {
           completedAt: new Date()
         }
       });
+    }
+
+    // 3.5 Check for near-empty extracted text (< 50 chars)
+    if (!extractResult.text || extractResult.text.trim().length < 50) {
+      console.warn(`[JobQueue] Candidate ${candidate.id} text too short (${extractResult.text?.length || 0} chars). Marking UNSUPPORTED_FORMAT.`);
+      await prisma.resumeParseJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'UNSUPPORTED_FORMAT',
+          attempts: MAX_ATTEMPTS,
+          lastError: 'Resume text is empty or unreadable (image/scanned document)',
+          durationMs: Date.now() - startTime,
+          completedAt: new Date()
+        }
+      });
       return;
     }
 
@@ -447,6 +462,27 @@ async function reapAbandonedJobs() {
         }
       });
     }
+  }
+
+  // Also fail QUEUED jobs that have sat for > 10 minutes without starting
+  const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+  const stuckQueued = await prisma.resumeParseJob.findMany({
+    where: {
+      status: 'QUEUED',
+      createdAt: { lt: tenMinsAgo }
+    },
+    take: 10
+  });
+
+  for (const job of stuckQueued) {
+    await prisma.resumeParseJob.update({
+      where: { id: job.id },
+      data: {
+        status: 'FAILED',
+        lastError: 'Job timed out after sitting in queue > 10 minutes',
+        completedAt: new Date()
+      }
+    });
   }
 }
 
