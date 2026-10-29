@@ -33,11 +33,13 @@ export default function PaginatedListView({
 }) {
   const sentinelRef = useRef(null);
 
-  // Sentinel Intersection Observer with 400px rootMargin for prefetching
+  // Sentinel Intersection Observer with 800px rootMargin and actual scroll container
   useEffect(() => {
     if (!sentinelRef.current || !hasNextPage || isFetchingNextPage || !fetchNextPage) {
       return;
     }
+
+    const scrollContainer = document.querySelector('.os-content') || null;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -46,8 +48,8 @@ export default function PaginatedListView({
         }
       },
       {
-        root: null,
-        rootMargin: '400px', // Prefetch when within 400px of bottom
+        root: scrollContainer,
+        rootMargin: '800px', // Prefetch when within 800px of bottom
         threshold: 0.01,
       }
     );
@@ -55,6 +57,25 @@ export default function PaginatedListView({
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Immediate fill check: if sentinel is already in view on mount or chunk load, fetch next chunk
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && sentinelRef.current && typeof fetchNextPage === 'function') {
+      const scrollContainer = document.querySelector('.os-content');
+      let isVisible = false;
+      if (scrollContainer) {
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const sentinelRect = sentinelRef.current.getBoundingClientRect();
+        isVisible = sentinelRect.top <= containerRect.bottom + 800;
+      } else {
+        const sentinelRect = sentinelRef.current.getBoundingClientRect();
+        isVisible = sentinelRect.top <= (window.innerHeight || document.documentElement.clientHeight) + 800;
+      }
+      if (isVisible) {
+        fetchNextPage();
+      }
+    }
+  }, [items.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Initial Loading state
   if (isLoading && items.length === 0) {
@@ -82,7 +103,7 @@ export default function PaginatedListView({
         {hasActiveFilters && onClearFilters && (
           <button
             type="button"
-            className="os-btn-outline inline-flex items-center gap-1.5 px-4 py-2 mt-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all"
+            className="os-btn-outline inline-flex items-center gap-1.5 px-4 py-2 mt-2 rounded-xl text-xs font-bold border border-slate-200 text-slate-600 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all cursor-pointer"
             onClick={onClearFilters}
           >
             <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
@@ -104,18 +125,20 @@ export default function PaginatedListView({
         ))}
       </div>
 
-      {/* Infinite Scroll Sentinel */}
+      {/* Infinite Scroll Sentinel / Loading More */}
       {hasNextPage && (
         <div
           ref={sentinelRef}
-          className="h-10 w-full flex items-center justify-center my-6"
+          className="h-14 w-full flex items-center justify-center my-6"
           aria-hidden="true"
         >
-          {isFetchingNextPage && (
+          {isFetchingNextPage ? (
             <div className="flex items-center gap-2 text-xs font-semibold text-[#1f52cc] animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-[#1f52cc] animate-ping" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#1f52cc] animate-ping" />
               Loading more {resourceName}...
             </div>
+          ) : (
+            <div className="h-1 w-full" />
           )}
         </div>
       )}
@@ -123,7 +146,7 @@ export default function PaginatedListView({
       {/* End of List indicator */}
       {!hasNextPage && items.length > 0 && (
         <p className="text-xs text-slate-400 font-medium text-center mt-8 mb-4 w-full">
-          All {totalCount !== null && totalCount > 0 ? totalCount.toLocaleString() : items.length} {resourceName} loaded
+          You've reached the end — {totalCount !== null && totalCount > 0 ? totalCount.toLocaleString() : items.length} {resourceName} loaded
         </p>
       )}
     </div>

@@ -21,6 +21,7 @@ const { runStreamingBulkUploadPipeline, getPipelineJobStatus } = require('../lib
 const { emitBulkUploadProgress, emitBulkUploadCompleted } = require('../sse/bulkUploadEvents');
 const cacheInvalidation = require('../utils/cacheInvalidation');
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
+const { parseJoiningDate } = require('../utils/dateValidation');
 
 // ─── Row Validator ────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ async function validateJoinedCandidateRow(rawRow, rowNumber) {
       phone: phoneDigits,
       email: isEmailValid ? (emailRaw || null) : null,
       role: String(rawRow.role ?? '').trim() || null,
-      joiningDate: String(rawRow.joiningDate ?? rawRow.doj ?? '').trim() || null,
+      joiningDate: parseJoiningDate(rawRow.joiningDate ?? rawRow.doj),
       college: String(rawRow.college ?? '').trim() || null,
       location: String(rawRow.location ?? '').trim() || null,
       course: String(rawRow.course ?? '').trim() || null,

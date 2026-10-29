@@ -53,7 +53,6 @@ const LONG_CACHE_ROUTES = [
   '/dashboard/init',
   '/dashboard/summary',
   '/interviews',
-  '/candidates',
   '/jobs',
   '/users/interviewers',
   '/users',

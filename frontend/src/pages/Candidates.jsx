@@ -33,6 +33,7 @@ import {
   matchesDateFilter,
   dateFilterHint,
   resolveDateFilterRange,
+  formatDisplayDate,
 } from '../lib/dateFilter';
 
 const initialForm = {
@@ -214,24 +215,24 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
                 {candidate.source}
               </div>
             )}
-            {candidate.company && (
-              <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold truncate" style={{ color: '#1f52cc' }}>
-                <span className="material-symbols-outlined text-[11px]" style={{ color: '#1f52cc' }}>domain</span>
-                <span className="truncate">{candidate.company}</span>
-              </div>
-            )}
+            {/* Company line with fixed height spacer to guarantee steady card heights */}
+            <div className="mt-1 h-4 flex items-center gap-1 text-[10px] font-semibold truncate" style={{ color: '#1f52cc' }}>
+              <span className="material-symbols-outlined text-[11px]" style={{ color: '#1f52cc' }}>domain</span>
+              <span className="truncate">{candidate.company || 'Akshara Enterprises'}</span>
+            </div>
             {/* Match score rating chip row */}
-            <div className="mt-1.5 min-h-[22px] flex items-center">
+            <div className="mt-1.5 h-[22px] flex items-center">
               <MatchScoreChip
                 matchScore={candidate.matchScore}
                 candidateId={candidate.id}
                 isAdmin={canManageCandidates}
               />
             </div>
-            {candidate.joiningDate && (
+            {/* Joining date: rendered strictly for Joined / Offered candidates with valid date, NEVER Invalid Date */}
+            {Boolean((candidate.status === 'JOINED' || candidate.status === 'OFFER_SENT' || candidate.offerDecision === 'JOINED') && formatDisplayDate(candidate.joiningDate)) && (
               <div className="mt-2 inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                 <span className="material-symbols-outlined text-[12px]">event_available</span>
-                <span className="text-[9px] font-bold uppercase">Joining: {new Date(candidate.joiningDate).toLocaleDateString('en-IN')}</span>
+                <span className="text-[9px] font-bold uppercase">Joining: {formatDisplayDate(candidate.joiningDate)}</span>
               </div>
             )}
           </div>
@@ -430,10 +431,23 @@ const Candidates = () => {
     refetch,
     error: queryError,
   } = usePaginatedList('/candidates', {
-    initialPageSize: 50,
-    subsequentPageSize: 100,
+    initialPageSize: 48,
+    subsequentPageSize: 48,
     filters: candidatesFilters,
-    queryKey: ['candidates', statusFilter],
+    queryKey: [
+      'candidates',
+      statusFilter,
+      companyFilter,
+      roleFilter,
+      locationFilter,
+      matchBandFilter,
+      matchStateFilter,
+      sortBy,
+      dateFilter,
+      customDateFrom,
+      customDateTo,
+      debouncedSearch
+    ],
   });
 
   const loading = isLoading;

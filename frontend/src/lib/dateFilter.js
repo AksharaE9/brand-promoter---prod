@@ -50,6 +50,20 @@ export function parseFilterDate(value) {
   return new Date(native.getFullYear(), native.getMonth(), native.getDate());
 }
 
+/** Format a date into a clean display string (e.g. "05 Oct 2026"). Returns '' on invalid/null input. Never renders "Invalid Date". */
+export function formatDisplayDate(value, format = 'DD MMM YYYY') {
+  const d = parseFilterDate(value);
+  if (!d) return '';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  if (format === 'DD MMM YYYY') {
+    return `${day} ${month} ${year}`;
+  }
+  return d.toLocaleDateString('en-IN');
+}
+
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }

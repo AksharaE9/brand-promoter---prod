@@ -139,10 +139,9 @@ async function validateFeedbackRow(rawRow, rowNumber, context) {
   }
 
   // Handle DOJ / joiningDate alias
+  const { parseJoiningDate } = require('../utils/dateValidation');
   let dojVal = dataPayload.doj || rawRow.doj || rawRow.DOJ || rawRow.joiningDate || rawRow['Joining Date'] || rawRow['Date of Joining'];
-  if (dojVal) {
-    dataPayload.doj = String(dojVal).trim();
-  }
+  dataPayload.doj = dojVal ? parseJoiningDate(dojVal) : null;
 
   // Handle overallRating alias
   let ratingVal = dataPayload.overallRating || rawRow.overallRating || rawRow['Overall Rating'] || rawRow.rating || rawRow.Rating;

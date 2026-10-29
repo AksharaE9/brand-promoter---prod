@@ -22,6 +22,33 @@ const { resolveCandidateByNumber } = require('../../lib/candidateResolver');
 // Default company — used when none is supplied for backward-compat clients
 const DEFAULT_COMPANY = 'Akshara Enterprises';
 
+const { parseJoiningDate } = require('../../utils/dateValidation');
+
+function encodeCursor(obj) {
+  if (!obj) return null;
+  return Buffer.from(JSON.stringify(obj)).toString('base64url');
+}
+
+function decodeCursor(cursorStr) {
+  if (!cursorStr) return null;
+  try {
+    const raw = Buffer.from(cursorStr, 'base64url').toString('utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && (parsed.id || parsed.t)) return parsed;
+  } catch (_) {}
+
+  // Fallback for legacy timestamp_id format
+  const firstUnderscore = cursorStr.indexOf('_');
+  if (firstUnderscore > 0) {
+    const timeNum = parseInt(cursorStr.slice(0, firstUnderscore), 10);
+    const id = cursorStr.slice(firstUnderscore + 1);
+    if (!isNaN(timeNum) && id) {
+      return { t: new Date(timeNum).toISOString(), id };
+    }
+  }
+  return null;
+}
+
 const isSafeKey = (key) => key && key !== '__proto__' && key !== 'constructor' && key !== 'prototype';
 
 // SEC-003: SSRF guard — blocks RFC1918, loopback, link-local, and non-HTTP/S schemes.
@@ -218,9 +245,13 @@ function attachMatchScoreToCandidate(c) {
   });
 
   const { matchScores, resumeParseJobs, ...rest } = c;
+  const isJoinedOrOffered = Boolean(c.status === 'JOINED' || c.status === 'OFFER_SENT' || c.offerDecision === 'JOINED');
   return {
     ...rest,
+    company: c.company || DEFAULT_COMPANY,
+    joiningDate: isJoinedOrOffered ? c.doj : null,
     matchScore,
+    matchSummary: matchScore,
   };
 }
 
@@ -332,15 +363,14 @@ function buildCandidateWhere(orgId, filters = {}, user = null, q = '') {
 
   const cursor = (filters.cursor || '').trim();
   if (cursor) {
-    const parts = cursor.split('_');
-    if (parts.length === 2) {
-      const [timeStr, cursorId] = parts;
-      const cursorTime = new Date(parseInt(timeStr, 10));
+    const decoded = decodeCursor(cursor);
+    if (decoded && decoded.t && decoded.id && filters.sortBy !== 'matchScore') {
+      const cursorTime = new Date(decoded.t);
       if (!isNaN(cursorTime.getTime())) {
         andConditions.push({
           OR: [
             { updatedAt: { lt: cursorTime } },
-            { updatedAt: cursorTime, id: { lt: cursorId } },
+            { updatedAt: cursorTime, id: { lt: decoded.id } },
           ],
         });
       }
@@ -382,17 +412,131 @@ function buildCandidateWhere(orgId, filters = {}, user = null, q = '') {
   return { AND: andConditions };
 }
 
-const candidateSearchHandler = async (req, res) => {
-  const q = (req.body.q || '').trim();
-  const filters = req.body.filters || {};
-  // Server-side limit cap: max 100
-  const limit = Math.min(100, Math.max(1, Number.parseInt(req.body.limit, 10) || 50));
-  const cursor = (req.body.cursor || '').trim();
-  const orgId = req.user.organizationId || "defaultOrg";
+async function fetchCandidateChunk({ orgId, filters = {}, user = null, search = '', limit = 48, cursor = '' }) {
+  if (filters.sortBy === 'matchScore') {
+    const whereClauses = ['c."organizationId" = $1', 'c."isDeleted" = false'];
+    const params = [orgId];
 
-  const where = buildCandidateWhere(orgId, { ...filters, cursor }, req.user, q);
+    const status = (filters.status || '').trim();
+    if (status && status !== 'All') {
+      const pIdx = params.length + 1;
+      params.push(status);
+      const appSyncedStatuses = new Set(['JOINED', 'OFFER_SENT', 'REJECTED']);
+      if (appSyncedStatuses.has(status)) {
+        whereClauses.push(`(c.status = $${pIdx} OR EXISTS (SELECT 1 FROM applications a WHERE a."candidateId" = c.id AND a.status = $${pIdx} AND a."isDeleted" = false))`);
+      } else {
+        whereClauses.push(`c.status = $${pIdx}`);
+      }
+    }
 
-  const queryOptions = {
+    const company = (filters.company || '').trim();
+    if (company && company !== 'All') {
+      const pIdx = params.length + 1;
+      params.push(company);
+      whereClauses.push(`c.company = $${pIdx}`);
+    }
+
+    const role = (filters.role || '').trim();
+    if (role && role !== 'All') {
+      const pIdx = params.length + 1;
+      params.push(`%${role}%`);
+      whereClauses.push(`(c."preferredRole" ILIKE $${pIdx} OR c."jobTitle" ILIKE $${pIdx} OR EXISTS (SELECT 1 FROM applications a JOIN jobs j ON a."jobId" = j.id WHERE a."candidateId" = c.id AND a."isDeleted" = false AND j.title ILIKE $${pIdx}))`);
+    }
+
+    const location = (filters.location || '').trim();
+    if (location && location !== 'All') {
+      const pIdx = params.length + 1;
+      params.push(`%${location}%`);
+      whereClauses.push(`(c.location ILIKE $${pIdx} OR c.area ILIKE $${pIdx})`);
+    }
+
+    const searchTerm = (search || filters.search || filters.q || '').trim();
+    if (searchTerm) {
+      const pIdx = params.length + 1;
+      params.push(`%${searchTerm}%`);
+      whereClauses.push(`(c."fullName" ILIKE $${pIdx} OR c.email ILIKE $${pIdx} OR c.phone ILIKE $${pIdx})`);
+    }
+
+    const matchBand = (filters.matchBand || '').trim();
+    if (matchBand && matchBand !== 'All') {
+      const pIdx = params.length + 1;
+      params.push(matchBand);
+      whereClauses.push(`(ms.is_primary = true AND ms.band ILIKE $${pIdx})`);
+    }
+
+    const matchState = (filters.matchState || '').trim();
+    if (matchState === 'SCORED') {
+      whereClauses.push('ms.id IS NOT NULL');
+    } else if (matchState === 'NO_RESUME') {
+      whereClauses.push('c."resumeFileId" IS NULL AND c."resumeLinkOriginal" IS NULL AND c."resumeLinkDownload" IS NULL');
+    }
+
+    // Keyset cursor for matchScore
+    if (cursor) {
+      const decoded = decodeCursor(cursor);
+      if (decoded && decoded.id) {
+        if (decoded.rating !== null && decoded.rating !== undefined) {
+          const rIdx = params.length + 1;
+          params.push(Number(decoded.rating));
+          const idIdx = params.length + 1;
+          params.push(decoded.id);
+          whereClauses.push(`(
+            ms.rating_out_of_10 < $${rIdx}
+            OR (ms.rating_out_of_10 = $${rIdx} AND c.id < $${idIdx})
+            OR ms.rating_out_of_10 IS NULL
+          )`);
+        } else {
+          const idIdx = params.length + 1;
+          params.push(decoded.id);
+          whereClauses.push(`(ms.rating_out_of_10 IS NULL AND c.id < $${idIdx})`);
+        }
+      }
+    }
+
+    const limitIdx = params.length + 1;
+    params.push(limit + 1);
+
+    const sql = `
+      SELECT c.id, ms.rating_out_of_10 as rating
+      FROM candidates c
+      LEFT JOIN match_scores ms ON ms.candidate_id = c.id AND ms.is_primary = true
+      WHERE ${whereClauses.join(' AND ')}
+      ORDER BY ms.rating_out_of_10 DESC NULLS LAST, c.id DESC
+      LIMIT $${limitIdx};
+    `;
+
+    const rawRows = await prisma.$queryRawUnsafe(sql, ...params);
+    const hasMore = rawRows.length > limit;
+    if (hasMore) {
+      rawRows.pop();
+    }
+
+    const ids = rawRows.map(r => r.id);
+    const candidatesById = new Map();
+    if (ids.length > 0) {
+      const fetched = await prisma.candidate.findMany({
+        where: { id: { in: ids } },
+        select: candidateListSelect,
+      });
+      for (const c of fetched) {
+        candidatesById.set(c.id, c);
+      }
+    }
+
+    const orderedCandidates = ids.map(id => candidatesById.get(id)).filter(Boolean);
+    const items = orderedCandidates.map(attachMatchScoreToCandidate);
+
+    const lastRow = rawRows[rawRows.length - 1];
+    const nextCursor = (hasMore && lastRow)
+      ? encodeCursor({ rating: lastRow.rating !== null ? Number(lastRow.rating) : null, id: lastRow.id })
+      : null;
+
+    return { items, nextCursor, hasMore, limit };
+  }
+
+  // Default sort: updatedAt DESC, id DESC
+  const where = buildCandidateWhere(orgId, { ...filters, cursor }, user, search);
+  const rawItems = await prisma.candidate.findMany({
     where,
     take: limit + 1,
     orderBy: [
@@ -400,39 +544,51 @@ const candidateSearchHandler = async (req, res) => {
       { id: 'desc' },
     ],
     select: candidateListSelect,
-  };
+  });
+
+  const hasMore = rawItems.length > limit;
+  if (hasMore) {
+    rawItems.pop();
+  }
+
+  const items = rawItems.map(attachMatchScoreToCandidate);
+  const lastItem = rawItems[rawItems.length - 1];
+  const nextCursor = (hasMore && lastItem)
+    ? encodeCursor({ t: lastItem.updatedAt.toISOString(), id: lastItem.id })
+    : null;
+
+  return { items, nextCursor, hasMore, limit };
+}
+
+const candidateSearchHandler = async (req, res) => {
+  const q = (req.body.q || '').trim();
+  const filters = req.body.filters || {};
+  // Server-side limit cap: max 100, default 48
+  const limit = Math.min(100, Math.max(1, Number.parseInt(req.body.limit, 10) || 48));
+  const cursor = (req.body.cursor || '').trim();
+  const orgId = req.user.organizationId || "defaultOrg";
 
   const cacheKey = `candidates:search:${orgId}:${cursor || 'start'}:${limit}:${q}:${JSON.stringify(filters)}`;
 
   const fetchSearch = async () => {
-    const rawItems = await prisma.candidate.findMany(queryOptions);
-    const hasMore = rawItems.length > limit;
-    if (hasMore) {
-      rawItems.pop();
-    }
-
-    let items = rawItems.map(attachMatchScoreToCandidate);
-    if (filters.sortBy === 'matchScore') {
-      items.sort((a, b) => {
-        const scoreA = a.matchScore?.score100 ?? -1;
-        const scoreB = b.matchScore?.score100 ?? -1;
-        return scoreB - scoreA;
-      });
-    }
-
-    const nextCursor = hasMore 
-      ? `${rawItems[rawItems.length - 1].updatedAt.getTime()}_${rawItems[rawItems.length - 1].id}` 
-      : null;
-
-    return {
-      items,
-      nextCursor,
-      hasMore,
+    return await fetchCandidateChunk({
+      orgId,
+      filters,
+      user: req.user,
+      search: q,
       limit,
-    };
+      cursor,
+    });
   };
 
-  const result = await getCached(cacheKey, fetchSearch, 15000);
+  const result = (q || filters.search) ? await fetchSearch() : await getCached(cacheKey, fetchSearch, 15000);
+
+  // Total count for filters (cached 60s)
+  const countKey = `candidates:count:${orgId}:${q}:${JSON.stringify(filters)}`;
+  const totalCount = await getCached(countKey, async () => {
+    const where = buildCandidateWhere(orgId, filters, req.user, q);
+    return await prisma.candidate.count({ where });
+  }, 60000);
 
   res.json({
     success: true,
@@ -441,9 +597,12 @@ const candidateSearchHandler = async (req, res) => {
     rows: result.items,
     nextCursor: result.nextCursor,
     hasMore: result.hasMore,
+    totalCount,
     pagination: {
       limit: result.limit,
       hasMore: result.hasMore,
+      totalCount,
+      nextCursor: result.nextCursor,
     },
   });
 };
@@ -858,6 +1017,7 @@ router.post(
       customFields: data.customFields || null,
       college: data.college || null,
       company: resolvedCompany,           // ── NEW field ──
+      doj: data.doj ? parseJoiningDate(data.doj) : null,
       createdById: req.user.id,
       status: createStatus,
       organizationId: orgId,
@@ -1018,6 +1178,7 @@ router.post(
       category: category || "External",
       customFields: req.body.customFields ? (typeof req.body.customFields === 'string' ? JSON.parse(req.body.customFields) : req.body.customFields) : null,
       company: resolvedCompanyResume,     // ── NEW field ──
+      doj: req.body.doj ? parseJoiningDate(req.body.doj) : null,
       createdById: req.user.id,
       status: createStatus,
       organizationId: orgId,
@@ -1164,59 +1325,44 @@ router.get(
   "/",
   requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
   asyncHandler(async (req, res) => {
-    // Enforce server-side limit cap: max 100, default 50
-    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 50));
+    // Enforce server-side limit cap: max 100, default 48
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 48));
     const cursor = (req.query.cursor || '').trim();
     const search = (req.query.search || req.query.q || '').trim();
     const orgId = req.user.organizationId || "defaultOrg";
 
-    const where = buildCandidateWhere(orgId, req.query, req.user, search);
-
-    const queryOptions = {
-      where,
-      take: limit + 1,
-      orderBy: [
-        { updatedAt: 'desc' },
-        { id: 'desc' },
-      ],
-      select: candidateListSelect,
-    };
-
     const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search}:${JSON.stringify(req.query)}`;
 
     const fetchCandidatesFromDb = async () => {
-      const rawItems = await prisma.candidate.findMany(queryOptions);
-      const hasMore = rawItems.length > limit;
-      if (hasMore) {
-        rawItems.pop();
-      }
-
-      let items = rawItems.map(attachMatchScoreToCandidate);
-      if (req.query.sortBy === 'matchScore') {
-        items.sort((a, b) => {
-          const scoreA = a.matchScore?.score100 ?? -1;
-          const scoreB = b.matchScore?.score100 ?? -1;
-          return scoreB - scoreA;
-        });
-      }
-
-      const nextCursor = hasMore 
-        ? `${rawItems[rawItems.length - 1].updatedAt.getTime()}_${rawItems[rawItems.length - 1].id}` 
-        : null;
-
-      return { items, nextCursor, hasMore, limit };
+      return await fetchCandidateChunk({
+        orgId,
+        filters: req.query,
+        user: req.user,
+        search,
+        limit,
+        cursor,
+      });
     };
 
     let data;
     if (search) {
       data = await fetchCandidatesFromDb();
     } else {
-      data = await getCached(cacheKeyStr, fetchCandidatesFromDb, 30000);
+      data = await getCached(cacheKeyStr, fetchCandidatesFromDb, 15000);
     }
+
+    // Total count for current filters (cached 60s)
+    const countKey = `candidates:count:${orgId}:${search}:${JSON.stringify(req.query)}`;
+    const totalCount = await getCached(countKey, async () => {
+      const where = buildCandidateWhere(orgId, req.query, req.user, search);
+      return await prisma.candidate.count({ where });
+    }, 60000);
 
     const pagination = {
       limit: data.limit,
       hasMore: data.hasMore,
+      totalCount,
+      nextCursor: data.nextCursor,
     };
 
     res.json({
@@ -1226,6 +1372,7 @@ router.get(
       rows: data.items,
       nextCursor: data.nextCursor,
       hasMore: data.hasMore,
+      totalCount,
       pagination,
     });
   })
@@ -1357,6 +1504,8 @@ router.patch(
       if (data[field] !== undefined) {
         if (field === "totalExperienceYears") {
           updateData[field] = data[field] ? parseFloat(data[field]) : null;
+        } else if (field === "doj") {
+          updateData[field] = parseJoiningDate(data[field]);
         } else {
           updateData[field] = data[field];
         }
