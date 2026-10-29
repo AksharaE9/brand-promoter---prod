@@ -107,7 +107,122 @@ const candidateListSelect = {
       },
     },
   },
+  matchScores: {
+    select: {
+      overall: true,
+      ratingOutOf10: true,
+      band: true,
+      isPrimary: true,
+      jobDescription: {
+        select: {
+          id: true,
+          title: true,
+        },
+      },
+      matchedRequirements: true,
+      missingMustHaves: true,
+      computedAt: true,
+    },
+  },
+  resumeParseJobs: {
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: {
+      status: true,
+      lastError: true,
+    },
+  },
 };
+
+/**
+ * Attaches structured matchScore object to candidate record for UI consumption.
+ * Respects MATCH_SCORE_UI_ENABLED flag, role exclusions, and band calculations.
+ */
+function attachMatchScoreToCandidate(c) {
+  if (!c) return c;
+  if (process.env.MATCH_SCORE_UI_ENABLED === 'false') {
+    return c;
+  }
+
+  const roleRaw = (c.preferredRole || c.jobTitle || '').toLowerCase();
+  const isExcludedRole = roleRaw.includes('data analyst') || roleRaw.includes('business analyst') || roleRaw.includes('human resource') || roleRaw.includes('hr intern');
+
+  // If role has no active JD, return null matchScore (renders nothing on card)
+  if (isExcludedRole) {
+    const { matchScores, resumeParseJobs, ...rest } = c;
+    return {
+      ...rest,
+      matchScore: null,
+    };
+  }
+
+  const scores = c.matchScores || [];
+  const primaryScore = scores.find(s => s.isPrimary) || (scores.length > 0 ? scores[0] : null);
+  const otherScores = scores.filter(s => s !== primaryScore);
+
+  let betterFitRole = null;
+  if (primaryScore) {
+    for (const s of otherScores) {
+      if (s.ratingOutOf10 >= primaryScore.ratingOutOf10 + 1.0) {
+        if (!betterFitRole || s.ratingOutOf10 > (betterFitRole.rating || 0)) {
+          betterFitRole = {
+            title: s.jobDescription?.title || 'Alternative Role',
+            rating: s.ratingOutOf10,
+          };
+        }
+      }
+    }
+  }
+
+  const latestJob = (c.resumeParseJobs && c.resumeParseJobs[0]) || null;
+  const hasResume = Boolean(
+    c.resumeFileId ||
+    c.resumeFile ||
+    c.resumeLinkOriginal ||
+    c.resumeLinkDownload
+  );
+
+  let state = 'NO_JD';
+  if (primaryScore) {
+    state = 'SCORED';
+  } else if (latestJob && (latestJob.status === 'RUNNING' || latestJob.status === 'QUEUED')) {
+    state = 'QUEUED';
+  } else if (latestJob && latestJob.status === 'FAILED') {
+    state = 'FAILED';
+  } else if (latestJob && latestJob.status === 'UNSUPPORTED_FORMAT') {
+    state = 'UNSUPPORTED_FILE';
+  } else if (!hasResume) {
+    state = 'NO_RESUME';
+  } else {
+    state = 'QUEUED';
+  }
+
+  const matchScore = primaryScore ? {
+    rating10: primaryScore.ratingOutOf10,
+    score100: primaryScore.overall,
+    band: primaryScore.band,
+    state: 'SCORED',
+    betterFitRole: betterFitRole?.title || null,
+    jdTitle: primaryScore.jobDescription?.title || null,
+    topStrengths: Array.isArray(primaryScore.matchedRequirements) ? primaryScore.matchedRequirements.slice(0, 3) : [],
+    topMissing: Array.isArray(primaryScore.missingMustHaves) ? primaryScore.missingMustHaves.slice(0, 2) : [],
+  } : (state === 'NO_JD' ? null : {
+    rating10: null,
+    score100: null,
+    band: null,
+    state,
+    betterFitRole: null,
+    jdTitle: null,
+    topStrengths: [],
+    topMissing: [],
+  });
+
+  const { matchScores, resumeParseJobs, ...rest } = c;
+  return {
+    ...rest,
+    matchScore,
+  };
+}
 
 // Shared query builder for all candidate list, search, and count operations
 function buildCandidateWhere(orgId, filters = {}, user = null, q = '') {
@@ -232,6 +347,38 @@ function buildCandidateWhere(orgId, filters = {}, user = null, q = '') {
     }
   }
 
+  const matchBand = (filters.matchBand || '').trim();
+  if (matchBand && matchBand !== 'All') {
+    andConditions.push({
+      matchScores: {
+        some: {
+          isPrimary: true,
+          band: { equals: matchBand, mode: 'insensitive' }
+        }
+      }
+    });
+  }
+
+  const matchState = (filters.matchState || '').trim();
+  if (matchState === 'SCORED') {
+    andConditions.push({ matchScores: { some: { isPrimary: true } } });
+  } else if (matchState === 'SCORING' || matchState === 'QUEUED') {
+    andConditions.push({
+      matchScores: { none: {} },
+      resumeParseJobs: { some: { status: { in: ['QUEUED', 'RUNNING'] } } }
+    });
+  } else if (matchState === 'NO_RESUME') {
+    andConditions.push({
+      resumeFileId: null,
+      resumeLinkOriginal: null,
+      resumeLinkDownload: null
+    });
+  } else if (matchState === 'FAILED' || matchState === 'UNREADABLE') {
+    andConditions.push({
+      resumeParseJobs: { some: { status: { in: ['FAILED', 'UNSUPPORTED_FORMAT'] } } }
+    });
+  }
+
   return { AND: andConditions };
 }
 
@@ -258,14 +405,23 @@ const candidateSearchHandler = async (req, res) => {
   const cacheKey = `candidates:search:${orgId}:${cursor || 'start'}:${limit}:${q}:${JSON.stringify(filters)}`;
 
   const fetchSearch = async () => {
-    const items = await prisma.candidate.findMany(queryOptions);
-    const hasMore = items.length > limit;
+    const rawItems = await prisma.candidate.findMany(queryOptions);
+    const hasMore = rawItems.length > limit;
     if (hasMore) {
-      items.pop();
+      rawItems.pop();
+    }
+
+    let items = rawItems.map(attachMatchScoreToCandidate);
+    if (filters.sortBy === 'matchScore') {
+      items.sort((a, b) => {
+        const scoreA = a.matchScore?.score100 ?? -1;
+        const scoreB = b.matchScore?.score100 ?? -1;
+        return scoreB - scoreA;
+      });
     }
 
     const nextCursor = hasMore 
-      ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
+      ? `${rawItems[rawItems.length - 1].updatedAt.getTime()}_${rawItems[rawItems.length - 1].id}` 
       : null;
 
     return {
@@ -447,21 +603,31 @@ router.post(
           select: { id: true },
         });
 
+        let targetCandidateId;
         if (existing) {
           await prisma.candidate.update({
             where: { id: existing.id },
             data: payload,
           });
+          targetCandidateId = existing.id;
           updated += 1;
         } else {
-          await prisma.candidate.create({
+          const createdCandidate = await prisma.candidate.create({
             data: {
               ...payload,
               createdById: req.user.id,
               createdAt: new Date(),
             },
           });
+          targetCandidateId = createdCandidate.id;
           inserted += 1;
+        }
+
+        if (targetCandidateId) {
+          try {
+            const { requestMatchScoring } = require('../matching/scoringService');
+            requestMatchScoring(targetCandidateId, 'BULK_UPLOAD_XLSX').catch(() => {});
+          } catch (_) {}
         }
       } catch (err) {
         skipped += 1;
@@ -594,6 +760,11 @@ router.post(
               isDeleted: false
             }
           });
+
+          try {
+            const { requestMatchScoring } = require('../matching/scoringService');
+            requestMatchScoring(candidate.id, 'BULK_IMPORT_WIZARD').catch(() => {});
+          } catch (_) {}
 
           inserted++;
           importJobs.set(importJobId, { status: 'processing', progress: Math.floor(((i + 1) / rows.length) * 100), total: rows.length, inserted, skipped });
@@ -741,6 +912,12 @@ router.post(
         });
       } catch (auditErr) {
         console.error('[Candidates:Create] Audit log failed (non-fatal):', auditErr.message);
+      }
+      if (candidate.resumeFileId || candidate.resumeLinkOriginal || candidate.resumeLinkDownload) {
+        try {
+          const { requestMatchScoring } = require('../matching/scoringService');
+          requestMatchScoring(candidate.id, 'CREATE_CANDIDATE').catch(() => {});
+        } catch (_) {}
       }
       sse.broadcastToOrg(orgId, 'CANDIDATE_CREATED', {
         candidateId: candidate.id,
@@ -912,9 +1089,9 @@ router.post(
       }
       if (resumeFileId) {
         try {
-          const { enqueueParseJob } = require('../matching/jobQueue');
-          enqueueParseJob({ candidateId: candidate.id, fileMetaId: resumeFileId }).catch(err => {
-            console.warn('[Candidates:CreateResume] Async resume parse enqueue error:', err.message);
+          const { requestMatchScoring } = require('../matching/scoringService');
+          requestMatchScoring(candidate.id, 'CREATE_WITH_RESUME', { fileMetaId: resumeFileId }).catch(err => {
+            console.warn('[Candidates:CreateResume] Async resume score error:', err.message);
           });
         } catch (_) {}
       }
@@ -1008,14 +1185,23 @@ router.get(
     const cacheKeyStr = `candidates:list:${orgId}:${cursor || 'start'}:${limit}:${search}:${JSON.stringify(req.query)}`;
 
     const fetchCandidatesFromDb = async () => {
-      const items = await prisma.candidate.findMany(queryOptions);
-      const hasMore = items.length > limit;
+      const rawItems = await prisma.candidate.findMany(queryOptions);
+      const hasMore = rawItems.length > limit;
       if (hasMore) {
-        items.pop();
+        rawItems.pop();
+      }
+
+      let items = rawItems.map(attachMatchScoreToCandidate);
+      if (req.query.sortBy === 'matchScore') {
+        items.sort((a, b) => {
+          const scoreA = a.matchScore?.score100 ?? -1;
+          const scoreB = b.matchScore?.score100 ?? -1;
+          return scoreB - scoreA;
+        });
       }
 
       const nextCursor = hasMore 
-        ? `${items[items.length - 1].updatedAt.getTime()}_${items[items.length - 1].id}` 
+        ? `${rawItems[rawItems.length - 1].updatedAt.getTime()}_${rawItems[rawItems.length - 1].id}` 
         : null;
 
       return { items, nextCursor, hasMore, limit };
@@ -1239,6 +1425,16 @@ router.patch(
           console.error('[Candidates:Update] company upsert failed:', err.message)
         );
       }
+      // If role was changed, trigger re-resolution and match scoring
+      if (data.preferredRole !== undefined || data.jobTitle !== undefined) {
+        try {
+          const { requestMatchScoring } = require('../matching/scoringService');
+          requestMatchScoring(id, 'ROLE_CHANGE', { force: true }).catch(err =>
+            console.warn('[Candidates:Update] Role change scoring error:', err.message)
+          );
+        } catch (_) {}
+      }
+
       sse.broadcastToOrg(orgId, 'CANDIDATE_UPDATED', {
         candidateId: id,
         changes: data,
@@ -1301,7 +1497,32 @@ router.get(
             sizeBytes: true,
             createdAt: true,
           }
-        }
+        },
+        matchScores: {
+          select: {
+            overall: true,
+            ratingOutOf10: true,
+            band: true,
+            isPrimary: true,
+            jobDescription: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
+            matchedRequirements: true,
+            missingMustHaves: true,
+            computedAt: true,
+          },
+        },
+        resumeParseJobs: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            status: true,
+            lastError: true,
+          },
+        },
       }
     });
     
@@ -1309,7 +1530,7 @@ router.get(
     if (candidate.organizationId !== orgId) {
       throw new ApiError(403, "You do not have access to this candidate's data");
     }
-    res.json({ success: true, data: candidate });
+    res.json({ success: true, data: attachMatchScoreToCandidate(candidate) });
   }),
 );
 
@@ -1458,15 +1679,49 @@ router.post(
 
     setImmediate(() => {
       try {
-        const { enqueueParseJob } = require('../matching/jobQueue');
-        enqueueParseJob({ candidateId: id, fileMetaId: tempFileMeta.id }).catch(err => {
-          console.warn('[Candidates:UploadResume] Async resume parse enqueue error:', err.message);
+        const { requestMatchScoring } = require('../matching/scoringService');
+        requestMatchScoring(id, 'RESUME_UPLOAD_REPLACE', { fileMetaId: tempFileMeta.id, force: true }).catch(err => {
+          console.warn('[Candidates:UploadResume] Async resume score error:', err.message);
         });
       } catch (_) {}
     });
 
     res.json({ success: true, data: { resumeFileId: tempFileMeta.id, storageKey: makeStorageKey(tempFileMeta.id) } });
   }),
+);
+
+// DELETE Candidate Resume
+router.delete(
+  "/:id/resume",
+  requireRoles("SUPER_ADMIN", "RECRUITER", "INTERVIEWER", "USER"),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const orgId = req.user.organizationId || "defaultOrg";
+
+    const candidate = await prisma.candidate.findUnique({
+      where: { id },
+      select: { id: true, organizationId: true }
+    });
+    if (!candidate) throw new ApiError(404, "Candidate not found");
+    if (candidate.organizationId !== orgId) throw new ApiError(403, "Forbidden");
+
+    await prisma.candidate.update({
+      where: { id },
+      data: {
+        resumeFileId: null,
+        resumeLinkOriginal: null,
+        resumeLinkDownload: null
+      }
+    });
+
+    try {
+      const { requestMatchScoring } = require('../matching/scoringService');
+      await requestMatchScoring(id, 'RESUME_DELETE', { isResumeDeleted: true });
+    } catch (_) {}
+
+    await inv.candidate(orgId, id);
+    res.json({ success: true, message: "Resume removed and match score reset" });
+  })
 );
 
 

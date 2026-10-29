@@ -1,0 +1,9 @@
+{
+  "success": false,
+  "code": "UNAUTHORIZED",
+  "message": "Invalid or missing API key in x-api-key header",
+  "error": {
+    "code": "UNAUTHORIZED",
+    "details": "The provided API key does not exist or has expired"
+  }
+}

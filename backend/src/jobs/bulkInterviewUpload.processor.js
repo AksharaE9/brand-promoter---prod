@@ -10,6 +10,7 @@ const cacheInvalidation = require('../utils/cacheInvalidation');
 const { validateSchedulingDate } = require('../utils/dateValidation');
 
 const { BULK_UPLOAD_LIMITS } = require('../config/bulkUploadLimits');
+const MAX_ROWS_PER_UPLOAD = BULK_UPLOAD_LIMITS?.MAX_ROWS || 500;
 
 /**
  * Normalizes a header/key string for case-insensitive, whitespace-tolerant comparison.

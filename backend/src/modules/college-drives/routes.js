@@ -299,11 +299,37 @@ router.get(
     const candidateIds = driveCandidates.map(c => c.candidateId).filter(Boolean);
     const candidateMap = new Map();
     if (candidateIds.length > 0) {
+      const { attachMatchScoreToCandidate } = require("../candidates/routes");
       const candidates = await prisma.candidate.findMany({
         where: { id: { in: candidateIds } },
-        select: { id: true, resumeFileId: true, resumeLinkOriginal: true, preferredRole: true, email: true, phone: true }
+        select: {
+          id: true,
+          preferredRole: true,
+          jobTitle: true,
+          email: true,
+          phone: true,
+          resumeFileId: true,
+          resumeLinkOriginal: true,
+          resumeLinkDownload: true,
+          matchScores: {
+            select: {
+              overall: true,
+              ratingOutOf10: true,
+              band: true,
+              isPrimary: true,
+              jobDescription: { select: { id: true, title: true } },
+              matchedRequirements: true,
+              missingMustHaves: true,
+            },
+          },
+          resumeParseJobs: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { status: true, lastError: true },
+          },
+        }
       });
-      candidates.forEach(c => candidateMap.set(c.id, c));
+      candidates.forEach(c => candidateMap.set(c.id, attachMatchScoreToCandidate(c)));
     }
 
     const data = driveCandidates.map(dc => {
@@ -314,6 +340,7 @@ router.get(
         preferredRole: c?.preferredRole || null,
         email: dc.email || c?.email || null,
         hasResume,
+        matchScore: c?.matchScore || null,
       };
     });
 
@@ -399,6 +426,11 @@ router.post(
     const inv = require("../../utils/cacheInvalidation");
     await inv.drive(orgId, driveId);
     await inv.candidateList(orgId);
+
+    try {
+      const { requestMatchScoring } = require("../matching/scoringService");
+      requestMatchScoring(candidateId, "COLLEGE_DRIVE_ADD").catch(() => {});
+    } catch (_) {}
 
     const sse = require("../../utils/sse");
     sse.broadcastToOrg(orgId, 'DRIVE_CANDIDATES_ADDED', {
@@ -512,6 +544,10 @@ router.post(
             }
           });
           results.inserted++;
+          try {
+            const { requestMatchScoring } = require("../matching/scoringService");
+            requestMatchScoring(candidateId, "COLLEGE_DRIVE_BULK").catch(() => {});
+          } catch (_) {}
         } else {
           results.skipped++;
           results.errors.push(`${sheetInfo}: Candidate already in drive`);

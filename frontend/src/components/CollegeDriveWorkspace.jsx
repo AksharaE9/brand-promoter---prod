@@ -7,6 +7,7 @@ import Reveal from './PageMotion';
 import { subscribeSSE } from '../lib/sse';
 import CreateCandidateModal from './CreateCandidateModal';
 import BulkUploadModal from './BulkUpload/BulkUploadModal';
+import MatchScoreChip from './Candidate/MatchScoreChip';
 import { DRIVE_DESCRIPTION_MAX_WORDS, countWords, validateDriveDescription } from '../config/driveConstants';
 
 const STATUS_OPTIONS = ['ADDED', 'SCREENED', 'SHORTLISTED', 'INTERVIEWED', 'OFFERED', 'JOINED', 'REJECTED'];
@@ -534,6 +535,13 @@ function CollegeDriveWorkspace({ onBanner, onError }) {
                           {cand.preferredRole && (
                             <div className="text-[10px] text-slate-400 font-medium">{cand.preferredRole}</div>
                           )}
+                          <div className="mt-1">
+                            <MatchScoreChip
+                              matchScore={cand.matchScore}
+                              candidateId={cand.candidateId}
+                              isAdmin={isAdmin}
+                            />
+                          </div>
                         </td>
                         <td className="py-4 px-2">
                           <div className="text-xs text-slate-600">{cand.email && cand.email !== 'N/A' ? cand.email : '—'}</div>

@@ -1,0 +1,60 @@
+{
+  "success": true,
+  "total": 3,
+  "page": 1,
+  "limit": 10,
+  "hasMore": false,
+  "results": [
+    {
+      "providerResultId": "rec_res_100234",
+      "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7c",
+      "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7a",
+      "candidate": {
+        "name": "Arjun Sharma",
+        "email": "arjun.sharma.test@example.com",
+        "phone": "+919876543210"
+      },
+      "jobRole": "Operations Intern",
+      "round": 1,
+      "status": "completed",
+      "score": { "raw": 84, "scaleMax": 100 },
+      "recommendation": "strong_hire",
+      "completedAt": "2026-10-28T09:15:00.000Z",
+      "updatedAt": "2026-10-28T09:16:00.000Z"
+    },
+    {
+      "providerResultId": "rec_res_100235",
+      "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7d",
+      "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7b",
+      "candidate": {
+        "name": "Pooja Verma",
+        "email": "pooja.verma.test@example.com",
+        "phone": "+919876543211"
+      },
+      "jobRole": "Business Development Executive Intern",
+      "round": 1,
+      "status": "no_show",
+      "score": { "raw": null, "scaleMax": 100 },
+      "recommendation": "no_hire",
+      "completedAt": "2026-10-28T10:00:00.000Z",
+      "updatedAt": "2026-10-28T10:05:00.000Z"
+    },
+    {
+      "providerResultId": "rec_res_100236",
+      "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7e",
+      "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7c",
+      "candidate": {
+        "name": "Rohan Nair",
+        "email": "rohan.nair.test@example.com",
+        "phone": "+919876543212"
+      },
+      "jobRole": "Sales and Marketing Intern",
+      "round": 1,
+      "status": "in_progress",
+      "score": { "raw": null, "scaleMax": 100 },
+      "recommendation": null,
+      "completedAt": null,
+      "updatedAt": "2026-10-28T10:15:00.000Z"
+    }
+  ]
+}

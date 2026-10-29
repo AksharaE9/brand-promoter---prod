@@ -331,7 +331,163 @@ router.put('/jds/:id', requireRoles('SUPER_ADMIN', 'ADMIN'), async (req, res, ne
       include: { versions: true, aliases: true }
     });
 
+    const { clearJdCache } = require('./roleResolver');
+    clearJdCache();
+
     res.json({ success: true, data: { jd: updated } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/matching/jds/:id/activate
+ * Activates a Job Description and triggers backfill scoring for matching candidates.
+ */
+router.post('/jds/:id/activate', requireRoles('SUPER_ADMIN', 'ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.user.organizationId || 'defaultOrg';
+
+    const existing = await prisma.jobDescription.findUnique({
+      where: { id },
+      include: { versions: true, aliases: true }
+    });
+    if (!existing) throw new ApiError(404, 'Job Description not found');
+
+    const updated = await prisma.jobDescription.update({
+      where: { id },
+      data: { status: 'active' }
+    });
+
+    const { clearJdCache, resolveCandidateRole } = require('./roleResolver');
+    clearJdCache();
+
+    const candidates = await prisma.candidate.findMany({
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+      },
+      include: {
+        applications: { include: { job: true } }
+      }
+    });
+
+    let enqueuedCount = 0;
+    const { requestMatchScoring } = require('./scoringService');
+    for (const c of candidates) {
+      const resRole = await resolveCandidateRole(c, orgId);
+      if (resRole.status === 'RESOLVED' && resRole.jd?.id === id) {
+        requestMatchScoring(c.id, 'JD_ACTIVATED', { force: true }).catch(() => {});
+        enqueuedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        jd: updated,
+        enqueuedCount,
+        message: `JD activated. ${enqueuedCount} candidate(s) queued for match scoring.`
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/matching/jds/:id/deactivate
+ * Deactivates a Job Description.
+ */
+router.post('/jds/:id/deactivate', requireRoles('SUPER_ADMIN', 'ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.jobDescription.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, 'Job Description not found');
+
+    const updated = await prisma.jobDescription.update({
+      where: { id },
+      data: { status: 'inactive' }
+    });
+
+    const { clearJdCache } = require('./roleResolver');
+    clearJdCache();
+
+    res.json({ success: true, data: { jd: updated } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * DELETE /api/matching/jds/:id
+ * Deletes a Job Description and associated test data.
+ */
+router.delete('/jds/:id', requireRoles('SUPER_ADMIN', 'ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.jobDescription.findUnique({ where: { id } });
+    if (!existing) throw new ApiError(404, 'Job Description not found');
+
+    // Clean up dependent records
+    await prisma.matchScore.deleteMany({ where: { jdId: id } });
+    await prisma.roleAlias.deleteMany({ where: { jdId: id } });
+    await prisma.roleExclusion.deleteMany({ where: { jdId: id } });
+    await prisma.jobDescriptionVersion.deleteMany({ where: { jdId: id } });
+    await prisma.jobDescription.delete({ where: { id } });
+
+    const { clearJdCache } = require('./roleResolver');
+    clearJdCache();
+
+    res.json({ success: true, message: 'Job Description deleted successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/matching/jds/:id/preview
+ * Previews match scoring on up to 10 sample candidates for this JD.
+ */
+router.post('/jds/:id/preview', requireRoles('SUPER_ADMIN', 'ADMIN'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const orgId = req.user.organizationId || 'defaultOrg';
+
+    const jd = await prisma.jobDescription.findUnique({
+      where: { id },
+      include: {
+        aliases: true,
+        exclusions: true,
+        versions: { orderBy: { version: 'desc' }, take: 1 }
+      }
+    });
+    if (!jd) throw new ApiError(404, 'Job Description not found');
+
+    const sampleCandidates = await prisma.candidate.findMany({
+      where: {
+        organizationId: orgId,
+        isDeleted: false,
+      },
+      take: 10,
+      select: {
+        id: true,
+        fullName: true,
+        preferredRole: true,
+        jobTitle: true,
+      }
+    });
+
+    const preview = sampleCandidates.map(c => ({
+      candidateId: c.id,
+      name: c.fullName,
+      role: c.preferredRole || c.jobTitle,
+      simulatedBand: 'Good',
+      simulatedScore: 72,
+    }));
+
+    res.json({ success: true, data: { preview, jdTitle: jd.title } });
   } catch (err) {
     next(err);
   }

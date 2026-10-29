@@ -179,7 +179,7 @@ async function optimizeNotesPayload(notesPayload, existingNotesPayload = null) {
 
   const keys = ['phoneFollowUp', 'emailFollowUp', 'morningFollowUp'];
   for (const key of keys) {
-    if (parsed.hasOwnProperty(key)) {
+    if (Object.prototype.hasOwnProperty.call(parsed, key)) {
       const incomingVal = parsed[key];
       // 1. Explicitly deleted / set to null
       if (incomingVal === null) {

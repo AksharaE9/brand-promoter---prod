@@ -350,6 +350,21 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
       getStagesMap()
     ]);
     const { candidates, apps } = analyticsData;
+
+    const candidateIds = candidates.map(c => c.id);
+    const scores = await prisma.matchScore.findMany({
+      where: {
+        candidateId: { in: candidateIds },
+        isPrimary: true,
+      },
+      include: {
+        jobDescription: { select: { title: true } },
+      },
+    });
+    const scoreMap = new Map();
+    for (const s of scores) {
+      scoreMap.set(s.candidateId, s);
+    }
     
     data = candidates.map(c => {
       const id = c.id;
@@ -357,6 +372,7 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
       const recruiter = usersMap[recId] || null;
       const app = apps.find(a => a.candidateId === id) || null;
       const currentStage = app ? (stagesMap[app.currentStageId] || null) : null;
+      const score = scoreMap.get(id);
 
       return {
         "Full Name": c.fullName,
@@ -368,6 +384,10 @@ router.get("/export", requireRoles("SUPER_ADMIN", "RECRUITER"), asyncHandler(asy
         "Recruiter Name": recruiter ? recruiter.fullName : "System",
         "Recruiter Role": recruiter ? recruiter.userType : "N/A",
         Stage: currentStage ? currentStage.name : "Pool",
+        match_score_100: score != null && score.overall != null ? score.overall : "",
+        match_rating_10: score != null ? (score.ratingOutOf10 != null ? score.ratingOutOf10 : (score.overall / 10).toFixed(1)) : "",
+        match_band: score?.band || "",
+        jd_title: score?.jobDescription?.title || "",
         organizationId: c.organizationId || "defaultOrg",
         recruiterId: recId || null,
         recruiterType: recruiter ? recruiter.userType : "N/A",

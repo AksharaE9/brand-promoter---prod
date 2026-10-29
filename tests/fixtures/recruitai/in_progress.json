@@ -1,0 +1,26 @@
+{
+  "provider": "recruit_ai",
+  "providerResultId": "rec_res_100236",
+  "externalReference": "cmvqbje7d005rtbqoy2wvmg7e",
+  "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7e",
+  "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7c",
+  "candidate": {
+    "name": "Rohan Nair",
+    "email": "rohan.nair.test@example.com",
+    "phone": "+919876543212"
+  },
+  "jobRole": "Sales and Marketing Intern",
+  "round": 1,
+  "status": "in_progress",
+  "score": {
+    "raw": null,
+    "scaleMax": 100
+  },
+  "recommendation": null,
+  "competencyScores": {},
+  "summary": null,
+  "integrityFlags": [],
+  "recordingUrl": null,
+  "completedAt": null,
+  "updatedAt": "2026-10-28T10:15:00.000Z"
+}

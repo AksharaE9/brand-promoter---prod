@@ -390,6 +390,16 @@ async function executeJob(jobId) {
         completedAt: new Date()
       }
     });
+
+    try {
+      const sse = require('../../utils/sse');
+      const inv = require('../../utils/cacheInvalidation');
+      sse.broadcastToOrg(candidate.organizationId || 'defaultOrg', 'match_score.updated', {
+        candidateId: candidate.id
+      });
+      inv.candidate(candidate.organizationId || 'defaultOrg', candidate.id).catch(() => {});
+      inv.candidateList(candidate.organizationId || 'defaultOrg').catch(() => {});
+    } catch (_) {}
   } catch (err) {
     const isTerminal = (job.attempts + 1) >= MAX_ATTEMPTS;
     await prisma.resumeParseJob.update({

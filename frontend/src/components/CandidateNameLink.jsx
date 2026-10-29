@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Link } from 'react-router-dom';
 import { TruncatedText } from './TruncatedText';
+import MatchScoreChip from './Candidate/MatchScoreChip';
 
 export const CandidateNameLink = React.memo(function CandidateNameLink({
   candidateId,
@@ -11,6 +12,7 @@ export const CandidateNameLink = React.memo(function CandidateNameLink({
   type = 'candidate', // 'candidate' | 'member'
   variant = 'profile', // 'profile' | 'activity' | 'interview'
   onClick,
+  matchScore,
 }) {
   if (!candidateId) return <TruncatedText text={candidateName || name || 'Deleted Candidate'} />;
 
@@ -41,16 +43,21 @@ export const CandidateNameLink = React.memo(function CandidateNameLink({
       : `/candidates/${candidateId}`;
 
   return (
-    <TruncatedText
-      as={Link}
-      to={toPath}
-      text={displayName || (type === 'member' ? 'Member' : 'Candidate')}
-      className={`underline decoration-transparent hover:decoration-current transition-all font-bold ${colorClass} ${className}`}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (onClick) onClick(e);
-      }}
-    />
+    <span className="inline-flex items-center gap-1.5">
+      <TruncatedText
+        as={Link}
+        to={toPath}
+        text={displayName || (type === 'member' ? 'Member' : 'Candidate')}
+        className={`underline decoration-transparent hover:decoration-current transition-all font-bold ${colorClass} ${className}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onClick) onClick(e);
+        }}
+      />
+      {matchScore && (
+        <MatchScoreChip matchScore={matchScore} candidateId={candidateId} />
+      )}
+    </span>
   );
 });
 

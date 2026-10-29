@@ -1,0 +1,26 @@
+{
+  "provider": "recruit_ai",
+  "providerResultId": "rec_res_100235",
+  "externalReference": "cmvqbje7d005rtbqoy2wvmg7d",
+  "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7d",
+  "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7b",
+  "candidate": {
+    "name": "Pooja Verma",
+    "email": "pooja.verma.test@example.com",
+    "phone": "+919876543211"
+  },
+  "jobRole": "Business Development Executive Intern",
+  "round": 1,
+  "status": "no_show",
+  "score": {
+    "raw": null,
+    "scaleMax": 100
+  },
+  "recommendation": "no_hire",
+  "competencyScores": {},
+  "summary": "Candidate did not join the scheduled session within the grace period.",
+  "integrityFlags": [],
+  "recordingUrl": null,
+  "completedAt": "2026-10-28T10:00:00.000Z",
+  "updatedAt": "2026-10-28T10:05:00.000Z"
+}

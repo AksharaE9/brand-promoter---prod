@@ -136,7 +136,9 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
   let matchedNiceCount = 0;
 
   for (const mh of mustHaves) {
-    const skillNorm = mh.skill.toLowerCase();
+    const skillName = typeof mh === 'string' ? mh : (mh.skill || '');
+    const skillNorm = skillName.toLowerCase();
+    const category = typeof mh === 'object' && mh.category ? mh.category : 'must_have';
     // Check if skill is in experience/leadership bullets (high evidence) or skills section
     let evidenceSnippet = '';
     let strength = 'medium';
@@ -146,8 +148,8 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
       evidenceSnippet = `Demonstrated in practical experience / leadership`;
       matchedMustCount++;
       matchedRequirements.push({
-        skill: mh.skill,
-        category: mh.category || 'must_have',
+        skill: skillName,
+        category,
         evidence: evidenceSnippet,
         strength
       });
@@ -156,34 +158,36 @@ function scoreResumeAgainstJd(parsedResume, jdVersion, jdTitle = '') {
       evidenceSnippet = `Found in skills profile / resume text`;
       matchedMustCount++;
       matchedRequirements.push({
-        skill: mh.skill,
-        category: mh.category || 'must_have',
+        skill: skillName,
+        category,
         evidence: evidenceSnippet,
         strength
       });
     } else {
       missingMustHaves.push({
-        skill: mh.skill,
-        category: mh.category || 'must_have'
+        skill: skillName,
+        category
       });
     }
   }
 
   for (const nh of niceToHaves) {
-    const skillNorm = nh.skill.toLowerCase();
+    const skillName = typeof nh === 'string' ? nh : (nh.skill || '');
+    const skillNorm = skillName.toLowerCase();
+    const category = typeof nh === 'object' && nh.category ? nh.category : 'nice_to_have';
     if (expLower.includes(skillNorm) || leadLower.includes(skillNorm)) {
       matchedNiceCount++;
       matchedRequirements.push({
-        skill: nh.skill,
-        category: nh.category || 'nice_to_have',
+        skill: skillName,
+        category,
         evidence: `Demonstrated in practical experience`,
         strength: 'high'
       });
     } else if (skillsList.some(s => s.toLowerCase().includes(skillNorm)) || rawTextLower.includes(skillNorm)) {
       matchedNiceCount++;
       matchedRequirements.push({
-        skill: nh.skill,
-        category: nh.category || 'nice_to_have',
+        skill: skillName,
+        category,
         evidence: `Listed in skills section`,
         strength: 'medium'
       });

@@ -1,0 +1,32 @@
+{
+  "provider": "recruit_ai",
+  "providerResultId": "rec_res_100234",
+  "externalReference": "cmvqbje7d005rtbqoy2wvmg7c",
+  "externalInterviewId": "cmvqbje7d005rtbqoy2wvmg7c",
+  "externalCandidateId": "cmvqbje7d005rtbqoy2wvmg7a",
+  "candidate": {
+    "name": "Arjun Sharma",
+    "email": "arjun.sharma.test@example.com",
+    "phone": "+919876543210"
+  },
+  "jobRole": "Operations Intern",
+  "round": 1,
+  "status": "completed",
+  "score": {
+    "raw": 84,
+    "scaleMax": 100
+  },
+  "recommendation": "strong_hire",
+  "competencyScores": {
+    "communication": 8.5,
+    "analyticalThinking": 8.2,
+    "roleKnowledge": 8.8
+  },
+  "summary": "Candidate demonstrated exceptional domain understanding and articulate problem-solving skills.",
+  "integrityFlags": [
+    { "type": "tab_switch", "count": 1 }
+  ],
+  "recordingUrl": "https://storage.recruitai.com/recordings/int_100234.mp4",
+  "completedAt": "2026-10-28T09:15:00.000Z",
+  "updatedAt": "2026-10-28T09:16:00.000Z"
+}

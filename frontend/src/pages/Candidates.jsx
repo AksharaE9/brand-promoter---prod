@@ -25,6 +25,7 @@ import { companyApi } from '../services/companyApi';
 import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import './OfferDecision.css';
 import TruncatedText from '../components/TruncatedText';
+import MatchScoreChip from '../components/Candidate/MatchScoreChip';
 import { PLACE_OPTIONS, matchesPlaceFilter } from '../lib/places';
 import { ROLE_OPTIONS, matchesRoleFilter } from '../lib/roles';
 import {
@@ -219,6 +220,14 @@ const CandidateCard = React.memo(({ candidate, canManageCandidates, onDelete, on
                 <span className="truncate">{candidate.company}</span>
               </div>
             )}
+            {/* Match score rating chip row */}
+            <div className="mt-1.5 min-h-[22px] flex items-center">
+              <MatchScoreChip
+                matchScore={candidate.matchScore}
+                candidateId={candidate.id}
+                isAdmin={canManageCandidates}
+              />
+            </div>
             {candidate.joiningDate && (
               <div className="mt-2 inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                 <span className="material-symbols-outlined text-[12px]">event_available</span>
@@ -322,6 +331,9 @@ const Candidates = () => {
   const [locationFilter, setLocationFilter] = useState('All');
   const [companyFilter, setCompanyFilter] = useState('All');     // ── NEW ──
   const [companyOptions, setCompanyOptions] = useState([]);      // ── NEW ──
+  const [matchBandFilter, setMatchBandFilter] = useState('All');
+  const [matchStateFilter, setMatchStateFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('default');
   const [dateFilter, setDateFilter] = useState('All');
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
@@ -389,15 +401,21 @@ const Candidates = () => {
     ...(companyFilter && companyFilter !== 'All' ? { company: companyFilter } : {}),
     ...(roleFilter && roleFilter !== 'All' ? { role: roleFilter } : {}),
     ...(locationFilter && locationFilter !== 'All' ? { location: locationFilter } : {}),
+    ...(matchBandFilter && matchBandFilter !== 'All' ? { matchBand: matchBandFilter } : {}),
+    ...(matchStateFilter && matchStateFilter !== 'All' ? { matchState: matchStateFilter } : {}),
+    ...(sortBy && sortBy !== 'default' ? { sortBy } : {}),
     ...(dateRange?.start ? { dateFrom: dateRange.start.toISOString() } : {}),
     ...(dateRange?.end ? { dateTo: dateRange.end.toISOString() } : {}),
     ...(debouncedSearch && debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-  }), [statusFilter, companyFilter, roleFilter, locationFilter, dateRange, debouncedSearch]);
+  }), [statusFilter, companyFilter, roleFilter, locationFilter, matchBandFilter, matchStateFilter, sortBy, dateRange, debouncedSearch]);
 
   const hasActiveFilters =
     roleFilter !== 'All' ||
     locationFilter !== 'All' ||
     companyFilter !== 'All' ||
+    matchBandFilter !== 'All' ||
+    matchStateFilter !== 'All' ||
+    sortBy !== 'default' ||
     dateFilter !== 'All' ||
     Boolean(customDateFrom) ||
     Boolean(customDateTo) ||
@@ -681,6 +699,7 @@ const Candidates = () => {
       updatedAt: c.updatedAt || null,
       appCreatedAt: matchedApp?.createdAt || null,
       appUpdatedAt: matchedApp?.updatedAt || null,
+      matchScore: c.matchScore || null,
     };
   }), [items, statusFilter]);
 
@@ -688,6 +707,9 @@ const Candidates = () => {
     setRoleFilter('All');
     setLocationFilter('All');
     setCompanyFilter('All');
+    setMatchBandFilter('All');
+    setMatchStateFilter('All');
+    setSortBy('default');
     setDateFilter('All');
     setCustomDateFrom('');
     setCustomDateTo('');
@@ -904,6 +926,57 @@ const Candidates = () => {
               <span className="hidden lg:inline text-[9px] text-slate-400 font-medium whitespace-nowrap">
                 {dateFilterHint(statusFilter)}
               </span>
+            </div>
+
+            {/* Match Band filter */}
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined text-[14px] text-amber-500 absolute left-2.5 pointer-events-none">star</span>
+              <select
+                className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                value={matchBandFilter}
+                onChange={e => setMatchBandFilter(e.target.value)}
+                aria-label="Filter by Match Band"
+              >
+                <option value="All">All Match Bands</option>
+                <option value="Strong">Strong (≥ 8.0)</option>
+                <option value="Good">Good (6.5–7.9)</option>
+                <option value="Partial">Partial (5.0–6.4)</option>
+                <option value="Weak">Weak (&lt; 5.0)</option>
+              </select>
+              <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+            </div>
+
+            {/* Match State filter */}
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined text-[14px] text-blue-500 absolute left-2.5 pointer-events-none">fact_check</span>
+              <select
+                className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                value={matchStateFilter}
+                onChange={e => setMatchStateFilter(e.target.value)}
+                aria-label="Filter by Match State"
+              >
+                <option value="All">All Match States</option>
+                <option value="SCORED">Scored</option>
+                <option value="QUEUED">Scoring…</option>
+                <option value="NO_RESUME">No resume</option>
+                <option value="UNSUPPORTED_FILE">Resume not readable</option>
+              </select>
+              <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
+            </div>
+
+            {/* Sort by dropdown */}
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined text-[14px] text-indigo-500 absolute left-2.5 pointer-events-none">sort</span>
+              <select
+                className="h-9 pl-8 pr-8 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-none focus:border-[#1f52cc] focus:ring-2 focus:ring-blue-100 appearance-none transition-all cursor-pointer"
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+                aria-label="Sort Candidates"
+              >
+                <option value="default">Default Sort</option>
+                <option value="matchScore">Match Score (high → low)</option>
+              </select>
+              <span className="material-symbols-outlined text-[12px] text-slate-400 absolute right-2 pointer-events-none">expand_more</span>
             </div>
 
             {/* Search — name, phone, or email */}

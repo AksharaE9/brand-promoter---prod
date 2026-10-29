@@ -697,6 +697,7 @@ router.post(
       if (i.roundNo === 2) return 'ROUND_2';
       return 'FINAL_ROUND';
     });
+    const completedRounds = [...feedbackRounds, ...scheduledRounds];
 
     // Determine requested round: honor explicit body param if provided, otherwise derive next round
     let targetRound = req.body.round || req.body.requestedRound;

@@ -33,7 +33,13 @@ async function getCachedActiveJds(orgId) {
 
 function normalizeRoleText(str) {
   if (!str || typeof str !== 'string') return '';
-  return str.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+  return str
+    .toLowerCase()
+    .replace(/['’`,.]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -151,12 +157,12 @@ async function resolveCandidateRole(candidate, orgId = 'defaultOrg') {
     for (const a of reviewAliases) {
       if (roleNorm === a.normalizedAlias || roleNorm.includes(a.normalizedAlias)) {
         return {
-          status: 'RESOLVED',
+          status: 'UNMAPPED_ROLE',
           jd,
           jdVersion: jd.versions[0],
           resolutionKind: 'review',
           aliasMatched: a.alias,
-          reason: `Resolved under review tier: "${a.alias}" -> "${jd.title}"`
+          reason: `Resolved under review tier: "${a.alias}" -> "${jd.title}" (pending admin approval)`
         };
       }
     }
@@ -173,8 +179,16 @@ async function resolveCandidateRole(candidate, orgId = 'defaultOrg') {
   };
 }
 
+function clearJdCache() {
+  cachedActiveJds = {};
+  jdsFetchedAt = {};
+  cachedExclusions = null;
+  exclusionsFetchedAt = 0;
+}
+
 module.exports = {
   resolveCandidateRole,
   normalizeRoleText,
-  getCachedActiveJds
+  getCachedActiveJds,
+  clearJdCache
 };

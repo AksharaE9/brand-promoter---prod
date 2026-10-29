@@ -56,7 +56,7 @@ function normalizeJobTitle(title) {
   s = s.replace(/\bhr\b/g, 'human resources');
   s = s.replace(/\bsme\b/g, 'subject matter expert');
   s = s.replace(/\btelesales\b/g, 'tele sales');
-  s = s.replace(/[\/\-_.,()\s]+/g, ' ').trim();
+  s = s.replace(/[/\-_.,()\s]+/g, ' ').trim();
   return s;
 }
 

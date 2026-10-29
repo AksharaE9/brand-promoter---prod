@@ -14,6 +14,7 @@ import { MAX_UPLOAD_BYTES } from '../lib/uploadLimits';
 import { validateUploadFile } from '../lib/fileValidation';
 import { getEffectiveSelectionStatus } from '../lib/interviewTemplates';
 import ResumeAnalysisTab from '../components/Candidate/ResumeAnalysisTab';
+import MatchScoreChip from '../components/Candidate/MatchScoreChip';
 
 /** Cloud resume links (e.g. Google Drive from CSV) open in a new tab; uploaded files download. */
 function resolveResumeAction(candidate) {
@@ -647,7 +648,14 @@ const CandidateProfile = () => {
                               <h1 className="os-h1 !mb-0 !text-3xl">{candidate.fullName}</h1>
                               <div className="os-tag bg-[#eef3ff] text-[#1f4bc6] uppercase font-bold tracking-wider">{candidate.category || 'Company'}</div>
                             </div>
-                            <p className="text-[#1f52cc] mt-1 font-bold text-lg">{candidate.preferredRole || 'Candidate'}</p>
+                            <div className="flex items-center gap-3 mt-1 flex-wrap">
+                              <p className="text-[#1f52cc] font-bold text-lg">{candidate.preferredRole || 'Candidate'}</p>
+                              <MatchScoreChip
+                                matchScore={candidate.matchScore}
+                                candidateId={candidate.id}
+                                isAdmin={['SUPER_ADMIN', 'RECRUITER'].includes(currentUser?.role)}
+                              />
+                            </div>
                             <div className="flex flex-wrap gap-6 mt-4 text-sm text-[#5a6881]">
                               <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">mail</span>{candidate.email}</div>
                               <div className="flex items-center gap-2"><span className="material-symbols-outlined text-[#1f52cc] text-base">call</span>{candidate.phone}</div>
